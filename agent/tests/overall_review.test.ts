@@ -81,5 +81,5 @@ test("评审提示词说明了第六样东西与怎样检查这条规则", () =>
   const text = readFileSync(join(import.meta.dirname, "..", "prompts", "review.md"), "utf-8");
   assert.match(text, /6\. 总体分析的主题（【总体分析的主题】；有的任务没有这一节）/);
   assert.match(text, /对「专门名词应当有主题页」这类规则：只在给了你【总体分析的主题】时才检查/);
-  assert.match(text, /总体分析的一页主题（早先建的任务里是领域说明）/);
+  assert.match(text, /或者是总体分析的一页主题时，说明这件事已经由用户定下或确认/);
 });

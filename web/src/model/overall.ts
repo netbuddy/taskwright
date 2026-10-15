@@ -11,7 +11,7 @@
 import type { CollectionDef, Item, Mention, Source, Task } from "../api/types";
 // 集合名、字段名、状态的取值与「反例：」这几个字，助手一侧与后端也用，只在那边的一个文件里写一遍（它不碰 Node 模块，页面可以直接导入）。
 import { COUNTER_EXAMPLE_PREFIX, EXCEPTION_EXAMPLE_PREFIX, OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED } from "../../../agent/src/lib/overall_analysis.ts";
-import { RESOLVED_VALUE, SOURCE_ITEM, SOURCE_SUPPLEMENT, issueStatus, issuesOf, seenCurrent, sourceKindNow, unresolvedIssuesOf, viewTarget } from "./items";
+import { RESOLVED_VALUE, SOURCE_ITEM, SOURCE_SUPPLEMENT, issueStatus, issuesOf, seenCurrent, unresolvedIssuesOf, viewTarget } from "./items";
 import { QUESTION_BLOCKING, QUESTION_BLOCKING_FIELD } from "../../../agent/src/lib/stage";
 
 export { OVERALL_COLLECTION };
@@ -145,7 +145,7 @@ export function sourcesFor(item: Item, field: string, index: number | null = nul
 export function supplemented(item: Item): { whole: boolean; fields: Set<string>; settled: Set<number>; examples: Set<number>; reasons: string[] } {
   const out = { whole: false, fields: new Set<string>(), settled: new Set<number>(), examples: new Set<number>(), reasons: [] as string[] };
   if (!isPending(item)) return out;
-  const supplements = item.sources.filter((s) => sourceKindNow(String(s.kind)) === SOURCE_SUPPLEMENT);
+  const supplements = item.sources.filter((s) => String(s.kind) === SOURCE_SUPPLEMENT);
   out.reasons = supplements.map((s) => s.excerpt.trim()).filter(Boolean);
   // 哪几处：后端给了 pending_places 就照它（它已经去掉了用户亲手改过的地方）；没有给时从助手补充的来源自己看。
   type Place = { field: string | null; index?: number | null };
@@ -198,13 +198,13 @@ export function addedQuotes(reasons: readonly string[]): string[] {
  * 在正文里找得到的才会被标出来（markPassage）；找不到的照旧只列在来源那一行。
  */
 export function materialQuotes(item: Item): { quote: string; mark: "material"; source: Source }[] {
-  return [...sourcesFor(item, TOPIC.what), ...wholeSources(item)].filter((s) => sourceKindNow(String(s.kind)) === SOURCE_DOCUMENT && s.excerpt.trim() !== "")
+  return [...sourcesFor(item, TOPIC.what), ...wholeSources(item)].filter((s) => String(s.kind) === SOURCE_DOCUMENT && s.excerpt.trim() !== "")
     .map((s) => ({ quote: s.excerpt.trim(), mark: "material" as const, source: s }));
 }
 
 /** 出处的一句短话：谁说的或者哪份材料，后面跟原话（长的截短）。助手补充的写理由；用户已经确认过的写明「你确认过」。 */
 export function sourceShortText(source: Pick<Source, "kind" | "locator" | "excerpt">, pending = false): string {
-  const kind = sourceKindNow(String(source.kind));
+  const kind = String(source.kind);
   const quote = source.excerpt.length > 36 ? `${source.excerpt.slice(0, 36)}…` : source.excerpt;
   if (kind === SOURCE_SUPPLEMENT) return `${pending ? "助手补的" : "助手补的，你确认过"} · 理由：${source.excerpt}`;
   if (kind === SOURCE_USER_WORDS) return `你说的「${quote}」`;
@@ -220,7 +220,7 @@ export function wholeSources(item: Item): Source[] {
 
 /** 节标题下面那一行小字要的三样：材料几处（种类为「文档原文」的来源）、澄清几条（种类为「用户的话」的来源）、这一页现在的内容用户看没看过（它现在所在的修订上有一条接受的确认标记）。 */
 export function sectionLead(item: Item): { materials: number; clarified: number; seen: boolean } {
-  const kinds = item.sources.map((s) => sourceKindNow(String(s.kind)));
+  const kinds = item.sources.map((s) => String(s.kind));
   return {
     materials: kinds.filter((kind) => kind === SOURCE_DOCUMENT).length,
     clarified: kinds.filter((kind) => kind === SOURCE_USER_WORDS).length,

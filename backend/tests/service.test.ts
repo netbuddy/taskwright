@@ -287,19 +287,20 @@ describe("Word 材料", () => {
 
 // ───────────── 任务列表里的两种打不开的任务 ─────────────
 
-test("修订统一之前建的任务照样列出，标明不支持且打不开", async () => {
+test("修订统一之前建的任务（库没有格式号）照样列出，标为旧格式且打不开", async () => {
   const root = fresh();
   const old = join(root, "tasks", "TASK-OLD");
   mkdirSync(old, { recursive: true });
   const { DatabaseSync } = await import("node:sqlite");
   const db = new DatabaseSync(join(old, "task.sqlite"));
-  db.exec("CREATE TABLE task (task_id TEXT); INSERT INTO task VALUES ('TASK-OLD'); CREATE TABLE item_version (task_id TEXT, item_id TEXT, version_no INTEGER, revision_no INTEGER);");
+  db.exec("CREATE TABLE task (task_id TEXT, task_name TEXT, definition_path TEXT, started_at TEXT); INSERT INTO task VALUES ('TASK-OLD', '旧任务', 'docs/x.json', '2026-01-01'); " +
+    "CREATE TABLE item_version (task_id TEXT, item_id TEXT, version_no INTEGER, revision_no INTEGER);");
   db.close();
   const service = newService(null, root);
   const rows = service.listTasks();
   assert.deepEqual(rows.map((r) => [r.task_id, r.unavailable, r.supported]), [["TASK-OLD", "旧格式", false]]);
-  assert.match(String(rows[0].note), /这个任务是旧格式/);
-  assert.equal(codeOf(() => service.task("TASK-OLD")), "not_found");
+  assert.match(String(rows[0].note), /这个任务库的格式是 0（没有编过版本号，0\.4 建的）/);
+  assert.equal(codeOf(() => service.task("TASK-OLD")), "task_unavailable", "与别的格式太早的任务一样：列着，打不开");
   assert.equal(existsSync(join(old, occupancy.LOCK_NAME)), false, "旧格式的任务不接手，也不写占用标记");
 });
 

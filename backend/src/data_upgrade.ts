@@ -96,17 +96,6 @@ function taskLabel(taskDir: string): { task_id: string | null; name: string | nu
   }
 }
 
-/** 修订统一之前建的任务（最早的格式）：这个程序不支持，也升不了，不算在要升级的里面（列表里另有「旧格式」的说明）。 */
-function unsupportedOldFormat(taskDir: string): boolean {
-  const db = library.openRo(taskDir);
-  try {
-    return db !== null && library.isPreRevision(db);
-  } catch {
-    return false;
-  } finally {
-    db?.close();
-  }
-}
 
 /** 只读地看一遍数据目录，得出要升级什么。什么都不改，也不建任何文件。 */
 export function planUpgrade(where: DataLocations): UpgradePlan {
@@ -131,8 +120,8 @@ export function planUpgrade(where: DataLocations): UpgradePlan {
     if (version === null || version === TASK_DB_VERSION) continue;
     const task: PlannedTask = { dir, ...taskLabel(taskDir), version };
     if (version > TASK_DB_VERSION) plan.newer.push({ ...task, written_by: taskWrittenBy(taskDir) });
-    // 格式早于本程序能升级的最早格式（含修订统一之前的）：不升级，服务把它列为旧格式。
-    else if (version < MIN_TASK_DB_VERSION || unsupportedOldFormat(taskDir)) continue;
+    // 格式早于本程序能升级的最早格式：不升级，服务把它列为旧格式。
+    else if (version < MIN_TASK_DB_VERSION) continue;
     else if (failures.has(dir)) plan.failed.push({ ...task, error: failures.get(dir)! });
     else plan.tasks.push(task);
   }

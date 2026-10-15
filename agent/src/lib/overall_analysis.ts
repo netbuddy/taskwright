@@ -40,8 +40,8 @@ export const COUNTER_EXAMPLE_PREFIX = "反例：";
 /** 「例子」里一项以它开头的是例外（流程走不通、要另行处理的情形），与反例并列的另一种写法。 */
 export const EXCEPTION_EXAMPLE_PREFIX = "例外：";
 
-/** 来源种类里的「助手补充」与它在早期版本里的名字，以及依据另一个条目的种类「条目」。本文件不导入别的模块，所以写在这里。 */
-const SUPPLEMENT_KINDS: readonly string[] = ["助手补充", "执行者补充"];
+/** 来源种类里的「助手补充」，以及依据另一个条目的种类「条目」。本文件不导入别的模块，所以写在这里。 */
+const SUPPLEMENT_KIND = "助手补充";
 const ITEM_KIND = "条目";
 /** 依据任务里一张图的来源的种类。 */
 const FIGURE_KIND = "图";
@@ -77,9 +77,9 @@ export function isUsable(fields: Fields): boolean {
 
 // ───────────── 待核实 ─────────────
 
-/** 一条来源是不是助手补充的（早期版本叫执行者补充）。 */
+/** 一条来源是不是助手补充的。 */
 export function isSupplement(kind: unknown): boolean {
-  return typeof kind === "string" && SUPPLEMENT_KINDS.includes(kind);
+  return kind === SUPPLEMENT_KIND;
 }
 
 /** 助手补充的一条来源支持哪几处：一处写字段名，指到列表字段的某一项时另写第几项（从 0 起）；空列表是支持整个条目。 */

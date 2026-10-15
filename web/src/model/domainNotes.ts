@@ -1,7 +1,7 @@
-// 可被引作来源的解释性条目（需求规格任务里是「领域说明」集合）在界面上的几样派生：
+// 任务定义写了「界面」一项的集合在界面上的几样派生：
 // 条目的分组字段值、谁引用了一个条目、这个条目自己引用了哪些还在的条目。
 // 集合名、字段名都取自任务定义；引用它的来源种类是「条目」（出处写条目编号），与依据别的集合的条目是同一种。
-// 不另存任何关系：来源表与「条目引用」字段就是全部依据，与 agent 侧 lib/conditions.ts 的 unlinkedDomainNotes 同一口径。
+// 不另存任何关系：来源表与「条目引用」字段就是全部依据。
 
 import type { CollectionDef, Item, Task } from "../api/types";
 import { SOURCE_ITEM } from "./items";
@@ -60,9 +60,4 @@ export function citationsOf(task: Task, itemId: string): Citation[] {
 export function liveOwnRefs(task: Task, item: Item): string[] {
   const live = new Set(task.items.map((i) => i.item_id));
   return refsOf(task, item).filter((id) => live.has(id));
-}
-
-/** 完成条件接口给的「还没有和任何条目关联」的提示里，这个集合涉及的条目编号。 */
-export function unlinkedIds(task: Task, collection: string): string[] {
-  return (task.completion?.hints ?? []).filter((h) => h.kind === "unlinked_domain_notes" && h.collection === collection).flatMap((h) => h.items);
 }

@@ -8,7 +8,7 @@
 import type { Item, Task } from "../api/types";
 import type { DiagramGraph } from "../../../agent/src/lib/diagram_scan.ts";
 import { CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_ROLES, type Toc, sectionOf, tocOrder } from "./chapters";
-import { mainStatus, sourceKindNow } from "./items";
+import { mainStatus } from "./items";
 import { dependents, isDeprecated, isOverall } from "./overall";
 import { sectionFigures } from "./sectionDiagrams";
 
@@ -85,7 +85,7 @@ export function traceOf(task: Task, contents: Toc, item: Item): Trace {
   const materials: Trace["materials"] = [];
   let clarified = 0;
   for (const source of item.sources) {
-    const kind = sourceKindNow(String(source.kind));
+    const kind = String(source.kind);
     if (kind === "用户的话") clarified += 1;
     if (kind !== "文档原文") continue;
     const name = source.locator.split("/").pop() ?? source.locator;

@@ -34,7 +34,6 @@ import { ItemDetail, type SubmitAction, type ViewRequest } from "./ItemDetail";
 import { ItemStatus } from "./ItemStatus";
 import { submitQuestion, submitTitle } from "../../model/submit";
 import { changesAfter, changesLine, nextVersionNo } from "../../model/versions";
-import { unlinkedIds } from "../../model/domainNotes";
 import { initialTab, readTab, saveTab, tabOrder } from "../../model/itemsTab";
 import { ASSET_PANES, type AssetPane, paneCount, paneKey, paneOfCollection, paneOfKey } from "../../model/assetTabs";
 import { MaterialsTab } from "./MaterialsTab";
@@ -459,7 +458,7 @@ export function ItemsPanel({
           </div>
         ) : (
           <div className="list">
-            {def?.display?.note && <CollectionLead name={def.name} note={def.display.note} unlinked={unlinkedIds(task, def.name)} />}
+            {def?.display?.note && <CollectionLead name={def.name} note={def.display.note} />}
             {items.map((item) => {
               const summary = summaryOf(task, item);
               return (
@@ -484,11 +483,10 @@ export function ItemsPanel({
 }
 
 /** 任务定义「界面」里写了说明的集合：页签下先写一句白话说明它是什么，再写有几条还没和任何条目关联。 */
-export function CollectionLead({ name, note, unlinked }: { name: string; note: string; unlinked: string[] }) {
+export function CollectionLead({ name, note }: { name: string; note: string }) {
   return (
     <div className="dn-lead" data-testid="collection-lead">
       <b>{name}：{note}</b>
-      {unlinked.length > 0 && <> 有 {unlinked.length} 条还没有和任何条目关联（{unlinked.join("、")}）。</>}
     </div>
   );
 }

@@ -63,9 +63,9 @@ export const TASK_ABANDONED = "已放弃";
  * 依据方的种类（来源表的 kind 列）：
  * - 「文档原文」：材料里或知识库文档里的一段原话，出处写文件的路径（知识库文档以 knowledge/ 开头，不另立种类）。
  * - 「用户的话」：用户在对话里说过的一段原话。
- * - 「助手补充」：助手按常识补上、或者从材料里推出来而材料没有明说的内容；摘录里写的是理由。早期版本叫「执行者补充」。
+ * - 「助手补充」：助手按常识补上、或者从材料里推出来而材料没有明说的内容；摘录里写的是理由。
  * - 「条目」：任务里的另一个条目，出处写它的条目编号（例如 DN-002、UC-003），摘录写引用的那句；另记引用时它的修订号
- *   （depends_revision），它之后又改了，读取一侧据此标「依据已变」。早期版本只能引用「领域说明」集合里的条目，种类名就叫「领域说明」。
+ *   （depends_revision），它之后又改了，读取一侧据此标「依据已变」。
  * - 「图」：任务里的一张图，出处写图的编号（例如 D-002），摘录可以不写，写了要逐字出现在那张图现在的 Mermaid 文本里；
  *   同样记下引用时图的修订号（图自己的修订号）。只有条目能依据图，一张图不能把另一张图当作依据。
  * - 「用户直接修改」：早期版本在用户直接改了某个字段时由系统写的，出处是那次操作的编号；现在不再写，也不再显示，
@@ -78,21 +78,6 @@ export const SOURCE_FIGURE = "图";
 export const SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM, SOURCE_FIGURE, SOURCE_USER_EDIT] as const;
 /** 助手可以填的五种。 */
 export const EXECUTOR_SOURCE_KINDS = ["文档原文", "用户的话", SOURCE_SUPPLEMENT, SOURCE_ITEM, SOURCE_FIGURE] as const;
-/** 早期版本的两个种类名与它们现在的名字。库迁移之前读到的、助手照旧说明写来的都按现在的名字认（sourceKindNow）。 */
-export const LEGACY_SOURCE_KINDS: Readonly<Record<string, string>> = { 执行者补充: SOURCE_SUPPLEMENT, 领域说明: SOURCE_ITEM };
-/** 一个种类名现在叫什么：早期版本的名字换成现在的，别的照原样。 */
-export const sourceKindNow = (kind: string): string => LEGACY_SOURCE_KINDS[kind] ?? kind;
-/**
- * 一条来源的出处现在怎样写。早期版本的「执行者补充」出处照例就写「执行者补充」这几个字，现在写「助手补充」；别的出处照原样。
- * 迁移改写旧行、迁移之前只读的一侧读旧行，用的是同一条规矩。
- */
-export const sourceLocatorNow = (kind: string, locator: string): string =>
-  kind in LEGACY_SOURCE_KINDS && LEGACY_SOURCE_KINDS[kind] === SOURCE_SUPPLEMENT && locator === kind ? SOURCE_SUPPLEMENT : locator;
-/**
- * 「领域说明」集合的名字：0.4 建的任务里助手记下领域里的说法与规矩的那个集合，这些任务照旧用它。引用它里面的条目，种类是「条目」。
- * 之后建的任务里这个位置上是「总体分析」集合（lib/overall_analysis.ts 的 OVERALL_COLLECTION），一个任务只会有其中一个。
- */
-export const DOMAIN_NOTE_COLLECTION = "领域说明";
 
 /** 产出方是哪种要素（来源表的 element_kind 列）：条目，或者图。 */
 export const ELEMENT_ITEM = "条目";
@@ -102,14 +87,8 @@ export const ELEMENT_KINDS = [ELEMENT_ITEM, ELEMENT_FIGURE] as const;
 /**
  * 读来源表时「只要某一种要素的来源」这个条件，拼在 WHERE 里用，开头自带 AND。条目的来源与图的来源同在一张表里，
  * 靠 element_kind 区分；凡是按条目编号取来源的地方都要带上它，免得把图的来源当成条目的。alias 是表的别名（带点，例如 "s."）。
- * 还没有迁过的库（来源表没有 element_kind 一列，只读的一侧会遇到）里只有条目的来源：要条目的不加条件，要图的一行都不取。
  */
-/** 来源提到要素层时给来源表加的一列：有它就是现在的样子，没有就是还没有迁过的库（只读的一侧会遇到）。 */
-export const SOURCE_ELEMENT_COLUMN = "element_kind";
-
-export function elementClause(db: DatabaseSync, kind: string = ELEMENT_ITEM, alias = ""): string {
-  const migrated = (db.prepare("PRAGMA table_info(item_source)").all() as { name: string }[]).some((row) => row.name === SOURCE_ELEMENT_COLUMN);
-  if (!migrated) return kind === ELEMENT_ITEM ? "" : " AND 0";
+export function elementClause(kind: string = ELEMENT_ITEM, alias = ""): string {
   return ` AND ${alias}element_kind = '${kind === ELEMENT_FIGURE ? ELEMENT_FIGURE : ELEMENT_ITEM}'`;
 }
 export const SOURCE_USER_WORDS = "用户的话";
@@ -354,7 +333,7 @@ export const REVISION_CALL_INDEX_SQL =
 export const REVISION_CALL_LOOKUP_INDEX = "revision_call_id_lookup";
 
 
-/** 来源表的建表语句。建新库与把旧库的来源表迁成现在的样子（migrateSourcesToElements）用的是同一份，只是表名不同。 */
+/** 来源表的建表语句。name 是表名。 */
 export function itemSourceSql(name: string): string {
   return `CREATE TABLE ${name} (
   task_id      TEXT NOT NULL,          -- 所属任务的任务编号
@@ -611,15 +590,6 @@ export function ensureSchema(db: DatabaseSync, ctx: UpgradeContext = { notes: []
 
 
 
-/** 修订统一之前的库给出的拒绝文字。后端与观测台遇到这种库时说的是同一件事。 */
-export const OLD_VERSION_FORMAT_TEXT =
-  "这个任务是旧格式：条目还按内容版本号记（修订统一之前建的），本版本不支持，库表改动不做迁移，所以没有写入。请新建一个任务。";
-
-/** 库里的条目内容表还有没有 version_no 列（修订统一之前的格式）。 */
-export function hasVersionColumns(db: DatabaseSync): boolean {
-  const columns = (db.prepare("PRAGMA table_info(item_version)").all() as { name: string }[]).map((row) => row.name);
-  return columns.includes("version_no");
-}
 
 
 

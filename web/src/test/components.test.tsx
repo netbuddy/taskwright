@@ -100,12 +100,10 @@ describe("卡片五种主行为", () => {
     expect(h2.onMessage).toHaveBeenCalledWith(TEMPLATES.another, expect.objectContaining({ choice: "换一个" }));
   });
 
-  it("给建议值的依据：早先记下的种类名「执行者补充」「领域说明」显示成「助手补充」「条目」，依据条目时带上它的编号", () => {
+  it("给建议值的依据：写种类与摘录，依据条目时带上它的编号", () => {
     card({ kind: "suggest", text: "时限建议七天。", value: "七天", basis: [
-      { kind: "执行者补充", locator: "执行者补充", excerpt: "行业惯例" }, { kind: "领域说明", locator: "DN-002", excerpt: "退款时限" },
-      { kind: "条目", locator: "UC-003", excerpt: "七天内处理" }] });
+      { kind: "助手补充", locator: "助手补充", excerpt: "行业惯例" }, { kind: "条目", locator: "UC-003", excerpt: "七天内处理" }] });
     expect(screen.getByText("依据：助手补充「行业惯例」")).toBeInTheDocument();
-    expect(screen.getByText("依据：条目 DN-002「退款时限」")).toBeInTheDocument();
     expect(screen.getByText("依据：条目 UC-003「七天内处理」")).toBeInTheDocument();
   });
 

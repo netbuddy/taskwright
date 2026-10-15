@@ -19,7 +19,7 @@ const page = (id: string, fields: Record<string, unknown>, revision = 1): PlainI
 const useCase = (id: string, fields: Record<string, unknown>): PlainItem => ({ item_id: id, collection: "功能用例", revision_no: 1, fields });
 
 test("待核实：当前修订上还在的助手补充都待核实；这一段修订里用户看过一次就是确认整个条目，之后自己再改也不丢", () => {
-  assert.deepEqual([isSupplement("助手补充"), isSupplement("执行者补充"), isSupplement("用户的话"), isSupplement(null)], [true, true, false, false]);
+  assert.deepEqual([isSupplement("助手补充"), isSupplement("执行者补充"), isSupplement("用户的话"), isSupplement(null)], [true, false, false, false]);
   const saved = (viewed = false) => ({ byUser: false, viewed });
   const edited = (viewed = false) => ({ byUser: true, viewed });
   const supplements = [[{ field: "已经定下的", index: 1 }], [{ field: "例子", index: 0 }, { field: "它是什么" }]];

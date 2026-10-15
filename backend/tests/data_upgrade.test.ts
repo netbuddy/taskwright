@@ -56,17 +56,16 @@ function makeAncient(where: Data, id: string, version: number): void {
 
 const version = (where: Data, id: string) => library.taskDbVersion(join(where.tasksDir, id));
 
-test("看：全新的数据目录没有要升级的，什么都不建；有上一版的任务、现在的任务、更新的任务、修订统一之前的任务与格式太早的任务时各归各类", async () => {
+test("看：全新的数据目录没有要升级的，什么都不建；有上一版的任务、现在的任务、更新的任务与格式太早的任务时各归各类", async () => {
   const empty = { dataDir: join(tmp, "never"), tasksDir: join(tmp, "never", "tasks"), knowledgeDir: null };
   const none = planUpgrade(empty);
   assert.deepEqual([none.service.state, none.tasks, none.failed, none.newer, upgradeNeeded(none)], ["missing", [], [], [], false]);
   assert.equal(existsSync(empty.dataDir), false, "只看不建");
 
-  const where = await dataWith(["旧甲", "旧乙", "现在的", "更新的", "最早的", "太早的"]);
-  const [a, b, , newer, ancient, tooOld] = where.ids;
+  const where = await dataWith(["旧甲", "旧乙", "现在的", "更新的", "太早的"]);
+  const [a, b, , newer, tooOld] = where.ids;
   makeOld(where, a);
   makeOld(where, b);
-  makeOld(where, ancient, "ALTER TABLE item_version ADD COLUMN version_no INTEGER");
   makeAncient(where, tooOld, 5);
   const raw = new DatabaseSync(join(where.tasksDir, newer, DB_NAME));
   raw.exec(`PRAGMA user_version = ${TASK_DB_VERSION + 1}`);
@@ -74,7 +73,7 @@ test("看：全新的数据目录没有要升级的，什么都不建；有上�
   writeFileSync(join(where.tasksDir, newer, TASK_JSON), JSON.stringify({ upgraded_by_version: "0.8.0" }), "utf-8");
   const plan = planUpgrade(where);
   assert.equal(plan.service.state, "missing");
-  assert.deepEqual(plan.tasks.map((t) => [t.dir, t.task_id, t.name, t.version]).sort(), [[a, a, "旧甲", 8], [b, b, "旧乙", 8]].sort(), "修订统一之前的与格式太早的不升级");
+  assert.deepEqual(plan.tasks.map((t) => [t.dir, t.task_id, t.name, t.version]).sort(), [[a, a, "旧甲", 8], [b, b, "旧乙", 8]].sort(), "格式太早的不升级");
   assert.deepEqual(plan.newer.map((t) => [t.dir, t.written_by]), [[newer, "0.8.0"]]);
   assert.deepEqual(plan.failed, []);
   assert.equal(upgradeNeeded(plan), true);

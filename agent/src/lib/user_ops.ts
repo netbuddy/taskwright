@@ -62,7 +62,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { ACTOR_EXECUTOR, ACTOR_USER, LEGACY_ACTOR_MODEL, dump, emit, load, wallClockText } from "./db.ts";
+import { ACTOR_EXECUTOR, ACTOR_USER, dump, emit, load, wallClockText } from "./db.ts";
 import { DefinitionError, FIELD_ITEM_REF, FIELD_TEXT_LIST, KEEP_PENDING_STATUS, validateDefinition } from "./definition.ts";
 import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
 import { SaveRejected, type Source, type Support, isEmptyValue, saveRevision } from "./save_revision.ts";
@@ -144,7 +144,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 function actorWord(actor: string): string {
-  return actor === ACTOR_USER ? "user" : actor === ACTOR_EXECUTOR || actor === LEGACY_ACTOR_MODEL ? "executor" : actor;
+  return actor === ACTOR_USER ? "user" : actor === ACTOR_EXECUTOR ? "executor" : actor;
 }
 
 /** 用户在界面上发起评审的操作种类。它不在 USER_OP_KINDS 里：不写修订、不经 runUserOperation。 */
@@ -515,8 +515,8 @@ function editedOnlyWithSupplements(db: DatabaseSync, itemId: string, revisionNo:
   const seen = marks.filter((one) => !one.basis.includes(`"${CONFIRMATION_BASIS.ui_edit}"`));
   if (seen.length > 0 && seen[seen.length - 1].attitude === "接受") return false;
   const supplement = db.prepare(
-    `SELECT 1 FROM item_source WHERE item_id = ? AND revision_no = ? AND kind IN (?, ?)${elementClause(db)} LIMIT 1`,
-  ).get(itemId, revisionNo, SOURCE_SUPPLEMENT, "执行者补充");
+    `SELECT 1 FROM item_source WHERE item_id = ? AND revision_no = ? AND kind = ?${elementClause()} LIMIT 1`,
+  ).get(itemId, revisionNo, SOURCE_SUPPLEMENT);
   return supplement !== undefined;
 }
 

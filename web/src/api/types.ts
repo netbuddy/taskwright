@@ -105,16 +105,15 @@ export interface Completion {
   /** 一句话概括，与执行者看到的说法相同。 */
   brief?: string;
   conditions: CompletionCondition[];
-  /** 完成条件之外的提示，不是门禁。kind 为 unlinked_domain_notes：还没有和任何条目关联的领域说明（0.4 建的任务）；
-   *  untagged_overall_pages：总体分析里在用而还没有贴标签的主题。 */
+  /** 完成条件之外的提示，不是门禁。kind 为 untagged_overall_pages：总体分析里在用而还没有贴标签的主题。 */
   hints?: CompletionHint[];
 }
 
 export interface CompletionHint {
-  kind: "unlinked_domain_notes" | "untagged_overall_pages" | string;
+  kind: "untagged_overall_pages" | string;
   collection: string;
   items: string[];
-  /** 一句完整的话，例如「有 2 条领域说明还没有和任何条目关联：DN-003、DN-004。」 */
+  /** 一句完整的话，例如「有 2 页主题还没有贴标签：OA-003、OA-004。……」 */
   summary: string;
 }
 
@@ -999,7 +998,7 @@ export interface TaskListEntry {
   /** 最近活动：会话里最近一条消息、最近一次启动或结束工作项、建任务，取最晚的那个时刻。 */
   last_active_at: string;
   session_count: number;
-  /** 为假时列出来但打不开，note 写明原因：修订统一之前建的旧格式任务，或者正被别的服务占用（这时有 occupied）。 */
+  /** 为假时列出来但打不开，note 写明原因：格式太早的旧格式任务，或者正被别的服务占用（这时有 occupied）。 */
   supported?: boolean;
   note?: string;
   /** 正被别的服务占用：那个服务的端口、进程号、主机名。 */
@@ -1215,7 +1214,6 @@ export type ErrorCode =
   | "bad_request"
   | "rejected"
   | "stale_revision"
-  | "old_format"
   | "undo_conflict"
   | "session_busy"
   | "executor_starting"

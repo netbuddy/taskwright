@@ -17,14 +17,10 @@ export const DB_NAME = "task.sqlite";
 /**
  * 发起方：谁让这次写入发生。执行者经工具的写入记 executor；用户在界面上的直接操作经扩展命令写入，记 user。
  * 取值用英文，与接口里库事件的 actor 字段一致，后端转发时不必翻译。
- * 最早格式的库里发起方写的是「模型」，读取一侧把它当作 executor 的旧写法。
  */
 export const ACTOR_EXECUTOR = "executor";
 export const ACTOR_USER = "user";
 export type Actor = typeof ACTOR_EXECUTOR | typeof ACTOR_USER;
-/** 最早格式的库里执行者写入记的发起方。新代码不再写它，只在读取与核对时认它。 */
-export const LEGACY_ACTOR_MODEL = "模型";
-
 /** 事件名。每个写入工具各记一种，名字用英文大写，与表名列名一样不用中文。 */
 export const EVENT_TASK_CREATED = "TASK_CREATED";
 export const EVENT_REVISION_SAVED = "REVISION_SAVED";

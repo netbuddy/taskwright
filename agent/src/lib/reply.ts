@@ -32,7 +32,7 @@ import { ToolRejection, codesOf, withCodes } from "./tool_rejection.ts";
 import { GUIDANCE_PREFIX, problem, problemText, splitGuide } from "./save_revision.ts";
 import { codeOf, fillText, refusalText } from "./texts.ts";
 import { type Refusal, STAGE_PARAM_RETIRED } from "./stage.ts";
-import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT, sourceKindNow } from "./schema.ts";
+import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT } from "./schema.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
 export { type TurnCall, lastAssistantTurn };
@@ -363,7 +363,7 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
     }
   }
 
-  // 给建议值的依据：交给 checkBasis 按保存修订的来源同一套规则逐字核对（文档原文、用户的话、领域说明），核对后的依据替换模型写的
+  // 给建议值的依据：交给 checkBasis 按保存修订的来源同一套规则逐字核对（文档原文、用户的话、条目等），核对后的依据替换模型写的
   // （用户的话的出处由工具代填；一条依据的摘录是材料里连续的一段，引几处就写几条）。
   let checkedBasis: ReplyAct["basis"] | null = null;
   if (k === "suggest") {
@@ -412,8 +412,7 @@ function basisShape(basis: unknown[], errors: string[], whereOf: (index: number)
       errors.push(problem(refusalText("source.item_not_object", { where })));
       return;
     }
-    // 早期版本的种类名（「执行者补充」「领域说明」）照收，按现在的名字核对。
-    const kind = typeof one.kind === "string" ? sourceKindNow(one.kind) : one.kind;
+    const kind = one.kind;
     if (typeof kind !== "string" || !(BASIS_KINDS as readonly string[]).includes(kind)) {
       errors.push(problem(refusalText("source.kind_invalid", { where, given: String(JSON.stringify(one.kind)), kinds: BASIS_KINDS.map((x) => `「${x}」`).join("、") })));
     }

@@ -33,8 +33,6 @@ export function errorText(error: ApiError): string {
       // 执行者在同一条会话里工作（对话严格轮替）与在另一条会话里工作，后端各给了说法。
       return error.data.reason === "working" ? (error.message || "助手正在工作，这一轮做完之后才能发下一句。")
         : "助手正在另一条会话里工作，做完才能在这里继续。";
-    case "old_format":
-      return error.message || "这个任务是旧格式（修订统一之前建的），现在的程序不支持。请新建一个任务。";
     case "timeout":
       return "这次修改还没有得到确认，请稍后看是否已经生效。";
     case "executor_unavailable":

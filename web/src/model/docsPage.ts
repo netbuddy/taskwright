@@ -3,7 +3,7 @@
 
 import type { Item, Task } from "../api/types";
 import { requirementItems } from "./assetTabs";
-import { SOURCE_FIGURE, SOURCE_ITEM, issueRefs, sourceKindNow } from "./items";
+import { SOURCE_FIGURE, SOURCE_ITEM, issueRefs } from "./items";
 import { isOverall } from "./overall";
 import { openClarifyQuestions } from "./pendingWork";
 import { changesAfter, latestVersion, somethingToPublish } from "./versions";
@@ -29,7 +29,7 @@ export function differenceLine(task: Task): string {
 /** 一个需求条目依据的业务说明的页与图：来源里种类为「条目」且是业务说明的页的，与种类为「图」的。 */
 export function basisOf(task: Task, item: Item): { pages: string[]; diagrams: string[] } {
   const pageIds = new Set(task.items.filter((one) => isOverall(one.collection)).map((one) => one.item_id));
-  const kinds = item.sources.map((one) => ({ kind: sourceKindNow(String(one.kind)), locator: one.locator }));
+  const kinds = item.sources.map((one) => ({ kind: String(one.kind), locator: one.locator }));
   return {
     pages: kinds.filter((one) => one.kind === SOURCE_ITEM && pageIds.has(one.locator)).map((one) => one.locator),
     diagrams: kinds.filter((one) => one.kind === SOURCE_FIGURE).map((one) => one.locator),

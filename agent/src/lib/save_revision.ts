@@ -54,7 +54,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, LEGACY_ACTOR_MODEL, databasePath, dump, emit, load, wallClockText } from "./db.ts";
+import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, databasePath, dump, emit, load, wallClockText } from "./db.ts";
 import {
   type CollectionDef,
   type FieldDef,
@@ -78,7 +78,7 @@ import {
 import { DIAGRAM_ID, type DiagramRecord, latestVersion as latestDiagramVersion, readDiagrams } from "./diagram.ts";
 import { parsePdfLocator } from "./pdf_locations.ts";
 import { PDF_SPAN_LIMIT, pdfProjectionUnits, pdfUnitIndex, pdfUnitsWith, placePdfExcerpt } from "./pdf_source.ts";
-import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, sourceKindNow, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
 import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
@@ -159,7 +159,7 @@ interface SourceRow {
 /** 发起方写成中文。拒绝原因的事实一层也给人看，所以执行者写作「助手」。 */
 function actorText(actor: string): string {
   if (actor === ACTOR_USER) return fillText("part.actor_user");
-  if (actor === ACTOR_EXECUTOR || actor === LEGACY_ACTOR_MODEL) return fillText("part.actor_executor");
+  if (actor === ACTOR_EXECUTOR) return fillText("part.actor_executor");
   return `「${actor}」`;
 }
 
@@ -1151,9 +1151,6 @@ function quoteOf(excerpt: string): string {
  * 种类为「用户的话」的来源，出处在这里代填（见文件开头的说明）；supports 所指的字段是否存在、
  * 序号是否在范围内，要等字段合并完才知道，另由 checkSupports 核对。
  *
- * 种类名先换成现在的叫法：早期版本的「执行者补充」「领域说明」照收，存成「助手补充」「条目」（已有任务目录里复制的说明、
- * 续接的旧会话还会这样写）。「图」这种要素还没有做出来，助手写了就拒绝。
- *
  * 种类为「助手补充」的来源，出处不用写，这里一律填「助手补充」；摘录是理由，必须有。
  *
  * 种类为「条目」的来源，出处去掉首尾空白后由 itemSource.ref 核对是任务里还在的另一个条目（哪个集合都可以），摘录（去掉首尾空白）
@@ -1196,8 +1193,7 @@ function checkSources(
       ok = false;
       return;
     }
-    // 早期版本的种类名照收，按现在的名字核对与保存。
-    const one: Record<string, unknown> = typeof given.kind === "string" ? { ...given, kind: sourceKindNow(given.kind) } : given;
+    const one: Record<string, unknown> = given;
     const missing: string[] = [];
     // 「用户直接修改」是早期版本由系统写的，执行者不能填；执行者只能填 EXECUTOR_SOURCE_KINDS 那几种。
     const allowed: readonly string[] = actor === ACTOR_USER ? SOURCE_KINDS : EXECUTOR_SOURCE_KINDS;

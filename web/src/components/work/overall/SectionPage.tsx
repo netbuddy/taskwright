@@ -21,7 +21,7 @@
 import { useState, type ReactNode } from "react";
 import type { CollectionDef, Item, Source, Task } from "../../../api/types";
 import { CHAPTER_FLOWS, INTRO_NAME, UNSORTED_NAME, chapterByNo, introChapter, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
-import { SOURCE_SUPPLEMENT, issueAnswerText, sourceKindNow, writeOffReason } from "../../../model/items";
+import { SOURCE_SUPPLEMENT, issueAnswerText, writeOffReason } from "../../../model/items";
 import {
   DEPRECATED, TOPIC, addedQuotes, confirmAction, dependents, exampleKind, examplesOf, isBlockingQuestion, isDeprecated, isPending, labelsOf, markPassage, materialQuotes, openQuestions,
   pendingCount, questionBlockingText, questionLanded, questionReason, questionRevisit, settledQuestions, retellText, reviseDependentsText, sectionLead, seeInstead, settledOf, sourceShortText, sourcesFor, supplemented, titleOf, whatOf, wholeSources,
@@ -37,8 +37,8 @@ function SourceLine({ sources, pending = false, onLocate }: { sources: Source[];
   return (
     <div className="oa-src">
       {sources.map((s, i) => {
-        const supplement = sourceKindNow(String(s.kind)) === SOURCE_SUPPLEMENT;
-        const canLocate = !supplement && sourceKindNow(String(s.kind)) === "文档原文" && !!onLocate;
+        const supplement = String(s.kind) === SOURCE_SUPPLEMENT;
+        const canLocate = !supplement && String(s.kind) === "文档原文" && !!onLocate;
         return (
           <span key={i} className={`one${supplement && pending ? " v" : ""}${canLocate ? " link" : ""}`} role={canLocate ? "button" : undefined}
             title={canLocate ? "在右边的材料里看这句原文" : undefined} onClick={canLocate ? () => onLocate!(s.excerpt, s.locator) : undefined}>

@@ -16,7 +16,7 @@ import { type Toc, sectionLabel } from "../../../model/chapters";
 import {
   DIAGRAM_DELETED_TEXT, EXPORT_NEEDS_SAVE_TEXT, NOTHING_DRAWN_TEXT, PREVIEW_TEXT, diagramPreview, drawnNote, otherSourcesText, revisionLine, revisionText, saveFailedText,
 } from "../../../model/diagrams";
-import { SOURCE_ITEM, sourceKindNow, writeOffReason } from "../../../model/items";
+import { SOURCE_ITEM, writeOffReason } from "../../../model/items";
 import { type FigureSlot, classNamesOf, looseDiagrams, markClasses, sectionFigures, sourcePages } from "../../../model/sectionDiagrams";
 import { SourceBox, type SubmitAction } from "../ItemDetail";
 import { errorText } from "../errors";
@@ -175,7 +175,7 @@ function FigureBody({ host, row, decorate, more }: { host: FigureHost; row: Diag
   const titleOf = (itemId: string) => task.items.find((one) => one.item_id === itemId)?.title ?? "";
   const shownText = preview ?? detail.mermaid;
   const pages = sourcePages(task, contents, diagramId);
-  const otherSources = detail.sources.filter((source) => !(sourceKindNow(String(source.kind)) === SOURCE_ITEM && pages.some((page) => page.item_id === source.locator))).length;
+  const otherSources = detail.sources.filter((source) => !(String(source.kind) === SOURCE_ITEM && pages.some((page) => page.item_id === source.locator))).length;
   const basedOn = detail.depended_by.filter((one) => one.element_kind === SOURCE_ITEM).map((one) => task.items.find((item) => item.item_id === one.id)).filter((one) => one !== undefined);
 
   return (

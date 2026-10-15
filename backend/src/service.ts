@@ -2,7 +2,7 @@
  * 任务服务：接手 --tasks 目录下的每个任务，拼出各读取接口的数据，建任务，收材料。它不写库（建任务经 agent 的 createTask 除外）。
  *
  * 接手任务时在任务目录里写一份占用标记（service.lock，见 occupancy.ts），退出时删掉；正被别的活着的服务占用的任务不接手：
- * 列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。修订统一之前建的任务（旧格式）不接手，列表里标明不支持。
+ * 列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。数据格式早于本程序能升级的最早格式的任务（旧格式）不接手，列表里标明不支持。
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -233,7 +233,6 @@ export class Service {
   readonly tasks = new Map<string, Task>();
   /** 正被别的服务占用、本服务没有接手的任务：任务编号 → {lock, dir}。 */
   readonly occupied = new Map<string, { lock: occupancy.Lock; dir: string }>();
-  readonly skipped = new Set<string>();
   /**
    * 数据格式与这个程序对不上、所以没有接手的任务，按目录名记：上一版建的、数据还没有升级（「需要升级」），升级过但没有做成
    * （「需要处理」），或者是更新的版本写的（「需要更新的程序」）。列表里照样列出并写明原因，打不开。每次扫描重算。
@@ -322,13 +321,7 @@ export class Service {
       let taskId: string | null = null;
       let row: Row | undefined;
       try {
-        if (db !== null && library.isPreRevision(db)) {
-          // 修订统一之前建的任务：本版本不支持，不接手（库表改动不做迁移）。
-          if (!this.skipped.has(name)) {
-            this.skipped.add(name);
-            console.log(`跳过任务目录 ${name}：${library.OLD_FORMAT_TEXT}`);
-          }
-        } else if (db !== null) {
+        if (db !== null) {
           row = db.prepare("SELECT task_id, task_name, definition_path, started_at FROM task LIMIT 1").get() as Row | undefined;
           taskId = row ? row.task_id : null;
         }
@@ -476,18 +469,6 @@ export class Service {
         version_count: null, latest_published_at: null,
         last_active_at: existsSync(folder) ? clock.fromEpochNs(statSync(folder, { bigint: true }).mtimeNs) : null,
         session_count: null, supported: false, note: problem.note,
-      });
-    }
-    // 修订统一之前建的任务：本版本打不开，照样列出来并标明不支持，免得用户以为任务丢了。
-    for (const name of [...this.skipped].sort(library.byCodePoint)) {
-      const folder = join(this.tasksDir, name);
-      let modified: string | null = null;
-      if (existsSync(folder)) modified = clock.fromEpochNs(statSync(folder, { bigint: true }).mtimeNs);
-      out.push({
-        task_id: name, task_name: name, task_type: null, domain_tag: null, unavailable: "旧格式",
-        item_count: null, completion_met: null, completion_total: null, completion_unmet: null, flow: null, work_item_count: null, blocking_count: null,
-        version_count: null, latest_published_at: null,
-        last_active_at: modified, session_count: null, supported: false, note: library.OLD_FORMAT_TEXT,
       });
     }
     return out;

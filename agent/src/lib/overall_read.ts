@@ -50,7 +50,7 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
   }));
   // 每个条目当前修订上的来源：一条来源在库里可以占几行（每个支持的地方一行），按位置号归成一条。
   const sourceRows = db.prepare(
-    `SELECT s.item_id, s.position, s.kind, s.locator, s.excerpt, s.field, s.field_index FROM item_source s WHERE s.task_id = ?${elementClause(db, ELEMENT_ITEM, "s.")} ` +
+    `SELECT s.item_id, s.position, s.kind, s.locator, s.excerpt, s.field, s.field_index FROM item_source s WHERE s.task_id = ?${elementClause(ELEMENT_ITEM, "s.")} ` +
       "AND s.revision_no = (SELECT MAX(revision_no) FROM item_version w WHERE w.task_id = s.task_id AND w.item_id = s.item_id) ORDER BY s.item_id, s.position, s.support_no",
   ).all(taskId) as { item_id: string; position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
   const sources = new Map<string, { position: number; kind: string; locator: string; excerpt: string; supports: { field: string; index: number | null }[] }[]>();
@@ -101,7 +101,6 @@ export function overallState(db: DatabaseSync, taskId: string, definition: TaskD
   const citedFigure = (diagramId: string) => (figureViewed.has(diagramId) ? { viewed: figureViewed.get(diagramId)! } : null);
   const verification = new Map<string, ItemVerification>();
   for (const item of items) {
-    // 早期版本的库里依据另一个条目的来源种类叫「领域说明」，那时没有总体分析，不会指到它的页，所以只看现在的种类名。
     const basis = basisPending((sources.get(item.item_id) ?? []).filter((one) => one.kind === SOURCE_ITEM || one.kind === SOURCE_FIGURE), cited, citedFigure);
     verification.set(item.item_id, { ...own.get(item.item_id)!, basis_pending: basis });
   }

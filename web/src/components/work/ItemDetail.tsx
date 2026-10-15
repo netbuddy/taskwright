@@ -603,7 +603,7 @@ function CitedBy({ task, item, onOpenItem }: { task: Task; item: Item; onOpenIte
       {cited.length === 0 ? (
         <div className="citedby-empty" data-testid="cited-by-none">
           还没有别的条目把它写成来源，也没有别的条目在关联条目里写它。
-          {own.length > 0 ? `它自己关联了 ${own.join("、")}，所以不算「没有和任何条目关联」。` : "它现在没有和任何条目关联。"}
+          {own.length > 0 ? `它自己关联了 ${own.join("、")}。` : "它现在没有和任何条目关联。"}
         </div>
       ) : cited.map((c, i) => (
         <div className="citedby" key={i} data-testid={`cited-by-${c.item.item_id}`}>

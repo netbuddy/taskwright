@@ -585,7 +585,7 @@ export function lampDiagrams(db: DatabaseSync, taskId: string, definition: TaskD
   if (records.length === 0) return [];
   const prefixes = definition.collections.map((one) => one.prefix);
   const cited = db.prepare(
-    `SELECT locator FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind = ?${elementClause(db, ELEMENT_FIGURE)} ORDER BY position`,
+    `SELECT locator FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind = ?${elementClause(ELEMENT_FIGURE)} ORDER BY position`,
   );
   return records.map((record) => {
     const now = latestVersion(record)!;

@@ -24,7 +24,7 @@ import { type TaskDefinition, keepPendingField, validateDefinition } from "./def
 import { mentionLines, overallState, pendingSummary, verificationLines } from "./overall_read.ts";
 import { stageLines, stageSummary } from "./stage_read.ts";
 import { cardsOpenInStage, openCardsLine, openProposal, proposalLine } from "./stage_proposal.ts";
-import { BUSY_TIMEOUT_MS, OLD_VERSION_FORMAT_TEXT, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, hasVersionColumns, sourceKindNow, sourceLocatorNow, elementClause } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, elementClause } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts, unansweredActs } from "./dialogue_acts.ts";
 import { hasColumn } from "./dialogue_schema.ts";
@@ -55,7 +55,6 @@ function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRo
       | TaskRow
       | undefined;
     if (!task) throw notInputProblem(new Error(fillText("get_item.no_task")));
-    if (hasVersionColumns(db)) throw notInputProblem(new Error(OLD_VERSION_FORMAT_TEXT));
     return body(db, task, validateDefinition(JSON.parse(task.definition_text)));
   } finally {
     db.close();
@@ -92,7 +91,7 @@ function diagramOutcome(db: DatabaseSync, taskId: string, definition: TaskDefini
     }));
   }
   const sources = (db.prepare(
-    `SELECT kind, locator, excerpt, depends_revision FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ?${elementClause(db, ELEMENT_FIGURE)} ORDER BY position`,
+    `SELECT kind, locator, excerpt, depends_revision FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ?${elementClause(ELEMENT_FIGURE)} ORDER BY position`,
   ).all(taskId, id, shown.revision_no) as { kind: string; locator: string; excerpt: string; depends_revision: number | null }[]);
   const itemNow = db.prepare(
     "SELECT i.deleted_in_revision AS deleted, (SELECT MAX(revision_no) FROM item_version v WHERE v.task_id = i.task_id AND v.item_id = i.item_id) AS no " +
@@ -189,14 +188,13 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     const sources = (db
       .prepare(
         `SELECT position, kind, locator, excerpt, field, field_index, ${hasColumn(db, "item_source", "normalized_value") ? "normalized_value" : "NULL AS normalized_value"} ` +
-          `FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause(db)} ORDER BY position, support_no`,
+          `FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause()} ORDER BY position, support_no`,
       )
       .all(task.task_id, itemId, shown, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null }[])
       .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[]; normalized_value?: string }[]>((list, one) => {
         let source = list[one.position - 1];
         if (!source) {
-          // 还没有迁过的库里种类是早期版本的名字：给助手看的一律是现在的名字。
-          list[one.position - 1] = source = { kind: sourceKindNow(one.kind), locator: sourceLocatorNow(one.kind, one.locator), excerpt: one.excerpt, supports: [] };
+          list[one.position - 1] = source = { kind: one.kind, locator: one.locator, excerpt: one.excerpt, supports: [] };
           if (one.normalized_value !== null) source.normalized_value = one.normalized_value;
         }
         if (one.field !== null) source.supports.push(one.field_index === null ? { field: one.field } : { field: one.field, index: one.field_index });

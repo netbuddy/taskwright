@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { App as AntApp, ConfigProvider } from "antd";
 import { useState, type ReactNode } from "react";
 import type { Completion, Item, Task } from "../api/types";
-import { citationsOf, unlinkedIds } from "../model/domainNotes";
+import { citationsOf } from "../model/domainNotes";
 import { ItemsPanel } from "../components/work/ItemsPanel";
 import { ItemStatus } from "../components/work/ItemStatus";
 import { SidePanel } from "../components/work/SidePanel";
@@ -32,7 +32,7 @@ function dn(id: string, title: string, cat: string, refs: string[] = [], revisio
     sources: [src("用户的话", "s#u1", `${title}是这个意思`)], fields: { 标题: title, 内容: `${title}的解释`, 类别: cat, 关联条目: refs } } as Item;
 }
 
-const HINT = { kind: "unlinked_domain_notes" as const, collection: "领域说明", items: ["DN-004"], summary: "有 1 条领域说明还没有和任何条目关联：DN-004。" };
+const HINT = { kind: "untagged_overall_pages" as const, collection: "领域说明", items: ["DN-004"], summary: "有 1 页主题还没有贴标签：DN-004。" };
 
 function task(over: Partial<Task> = {}): Task {
   return {
@@ -64,10 +64,9 @@ function task(over: Partial<Task> = {}): Task {
 }
 
 describe("领域说明的派生", () => {
-  it("谁引用了它：来源里写了它的（附支持的字段与摘录）；未关联的编号取自完成条件的提示", () => {
+  it("谁引用了它：来源里写了它的（附支持的字段与摘录）", () => {
     const t = task();
     expect(citationsOf(t, "DN-002").map((c) => [c.item.item_id, c.how, c.where, c.excerpt])).toEqual([["UC-001", "source", "参与者第 2 条", "借还台管理员的解释"]]);
-    expect(unlinkedIds(t, "领域说明")).toEqual(["DN-004"]);
   });
 });
 
@@ -96,10 +95,10 @@ function Panel({ t }: { t: Task }) {
 }
 
 describe("条目区与详情", () => {
-  it("领域说明页签下先写一句白话与未关联条数", () => {
+  it("写了「界面」一项的集合，页签下先写一句白话", () => {
     render(<Panel t={task()} />);
     fireEvent.click(screen.getByText("领域说明", { selector: ".itab" }));
-    expect(screen.getByTestId("collection-lead").textContent).toBe("领域说明：材料里或你说明过的背景、术语、角色，供条目引用。 有 1 条还没有和任何条目关联（DN-004）。");
+    expect(screen.getByTestId("collection-lead").textContent).toBe("领域说明：材料里或你说明过的背景、术语、角色，供条目引用。");
   });
 
   it("底部「来源」一节里领域说明的编号 DN-002 点一下打开那条说明；说明的详情列出被哪些条目引用", () => {
@@ -114,17 +113,17 @@ describe("条目区与详情", () => {
     expect(within(detail).queryByTestId("review-one")).toBeNull();
   });
 
-  it("没有别的条目引用它时写一句说明，自己关联了条目的注明不算未关联", () => {
+  it("没有别的条目引用它时写一句说明，自己关联了条目的写明关联了哪几条", () => {
     render(<Panel t={task()} />);
     fireEvent.click(screen.getByText("领域说明", { selector: ".itab" }));
     fireEvent.click(screen.getByTestId("item-DN-001"));
-    expect(screen.getByTestId("cited-by-none").textContent).toContain("它自己关联了 UC-002，所以不算「没有和任何条目关联」");
+    expect(screen.getByTestId("cited-by-none").textContent).toContain("它自己关联了 UC-002。");
   });
 });
 
 describe("完成条件面板的提示行", () => {
   it("写在所属集合那一组末尾，写明不挡发布版本", () => {
     render(<CompletionPanel completion={task().completion} />);
-    expect(screen.getByTestId("cond-hint").textContent).toBe("ⓘ提示：有 1 条领域说明还没有和任何条目关联：DN-004。这一条不挡发布版本，只是告诉你哪些还没用上。");
+    expect(screen.getByTestId("cond-hint").textContent).toBe("ⓘ提示：有 1 页主题还没有贴标签：DN-004。这一条不挡发布版本，只是告诉你哪些还没用上。");
   });
 });

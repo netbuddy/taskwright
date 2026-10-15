@@ -4,7 +4,7 @@
 
 import type { DiagramRow, Item, Task } from "../api/types";
 import { type Toc, chapterByNo, sectionLabel } from "./chapters";
-import { SOURCE_FIGURE, sourceKindNow } from "./items";
+import { SOURCE_FIGURE } from "./items";
 import { isOverall } from "./overall";
 import { figureHome } from "./sectionDiagrams";
 
@@ -35,7 +35,7 @@ export function homeText(task: Task, contents: Toc, diagramId: string): string {
 /** 依据这张图写的条目（业务说明的页不算），按编号。 */
 export function basedOnDiagram(task: Task, diagramId: string): Item[] {
   return task.items
-    .filter((one) => !isOverall(one.collection) && one.sources.some((source) => sourceKindNow(String(source.kind)) === SOURCE_FIGURE && source.locator === diagramId))
+    .filter((one) => !isOverall(one.collection) && one.sources.some((source) => String(source.kind) === SOURCE_FIGURE && source.locator === diagramId))
     .sort((a, b) => a.item_id.localeCompare(b.item_id, undefined, { numeric: true }));
 }
 

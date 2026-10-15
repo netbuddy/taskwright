@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, databasePath, emit, wallClockText } from "./db.ts";
 import { topicLines } from "./overall_analysis.ts";
-import { SOURCE_DOCUMENT, SOURCE_ITEM, SOURCE_USER_EDIT, SOURCE_USER_WORDS, sourceKindNow, sourceLocatorNow, withTaskDatabase, ELEMENT_ITEM, elementClause } from "./schema.ts";
+import { SOURCE_DOCUMENT, SOURCE_ITEM, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase, ELEMENT_ITEM, elementClause } from "./schema.ts";
 import { DOCX_LOCATOR } from "./docx_source.ts";
 import { parsePdfLocator } from "./pdf_locations.ts";
 import { extractJson, type ModelCallRecord } from "./model_call.ts";
@@ -240,8 +240,6 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       // 早期版本写下的「用户直接修改」不交给评审：条目上的话都算用户自己的，来源只列引用的原始片段。
       const sources = db.prepare("SELECT position, kind, locator, excerpt, field, field_index FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ? AND element_kind = ? ORDER BY position, support_no")
         .all(task.task_id, want.item_id, want.revision_no, SOURCE_USER_EDIT, ELEMENT_ITEM) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null }[];
-      // 还没有迁过的库里种类是早期版本的名字：一律按现在的名字交给评审。
-      for (const one of sources) [one.locator, one.kind] = [sourceLocatorNow(one.kind, one.locator), sourceKindNow(one.kind)];
       items.push({
         ...want, collection: row.collection, fields, decls, rules, rulesPath: decl?.reviewRules?.file ?? null,
         rulesDigest: digest(JSON.stringify(rules) + "\n" + JSON.stringify(decls)),
@@ -360,7 +358,7 @@ function liveItems(db: DatabaseSync, taskId: string, collections: CollectionDef[
       "WHERE i.task_id = ? AND i.deleted_in_revision IS NULL " +
       "AND v.revision_no = (SELECT MAX(w.revision_no) FROM item_version w WHERE w.task_id = i.task_id AND w.item_id = i.item_id)",
   ).all(taskId) as { item_id: string; collection: string; serial: number; revision_no: number; fields: string }[];
-  const sourcesOf = db.prepare(`SELECT kind, locator, excerpt FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause(db)} ORDER BY position, support_no`);
+  const sourcesOf = db.prepare(`SELECT kind, locator, excerpt FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause()} ORDER BY position, support_no`);
   const order = (name: string) => { const at = collections.findIndex((c) => c.name === name); return at < 0 ? collections.length : at; };
   return rows
     .sort((a, b) => order(a.collection) - order(b.collection) || a.serial - b.serial)
@@ -371,7 +369,7 @@ function liveItems(db: DatabaseSync, taskId: string, collections: CollectionDef[
         fieldNames: decl?.fields.map((f) => f.name) ?? [],
         refFields: decl?.fields.filter((f) => f.type === FIELD_ITEM_REF).map((f) => f.name) ?? [],
         problem: decl ? keepPendingField(decl) !== null : false,
-        sources: (sourcesOf.all(taskId, r.item_id, r.revision_no, SOURCE_USER_EDIT) as TaskItem["sources"]).map((one) => ({ ...one, kind: sourceKindNow(one.kind), locator: sourceLocatorNow(one.kind, one.locator) })),
+        sources: (sourcesOf.all(taskId, r.item_id, r.revision_no, SOURCE_USER_EDIT) as TaskItem["sources"]),
       };
     });
 }

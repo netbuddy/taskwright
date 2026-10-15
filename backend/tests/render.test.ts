@@ -1,6 +1,6 @@
 /**
  * 生成文档：按修订整体导出、如实标注确认与评审；文档请求的写法；「用户的话」的出处换成读者看得懂的说法；
- * Word 材料的出处只写文件名；真实任务类型的模板里的领域说明两节；模板的按字段筛选与按字段归组。
+ * Word 材料的出处只写文件名；真实任务类型里依据另一个条目的来源怎样写；模板的按字段筛选与按字段归组。
  */
 
 import assert from "node:assert/strict";
@@ -11,7 +11,7 @@ import { ApiError } from "../src/errors.ts";
 import * as library from "../src/library.ts";
 import * as render from "../src/render.ts";
 import { type Task, wordsLocator } from "../src/service.ts";
-import { makeLegacyTask, makeWorkspace, tempDir } from "./helpers.ts";
+import { makePagedTask, makeWorkspace, tempDir, topicPage } from "./helpers.ts";
 
 let tmp: string;
 let ws: string;
@@ -121,58 +121,34 @@ test("导出文档里 Word 材料的出处只写文件名", () => {
   assert.equal(render.sourcesText(lib, "UC-001", 1), "文档原文，出处 inputs/需求.docx（「逾期的每本每天罚款一角」）；文档原文，出处 inputs/a.md（「原文」）");
 });
 
-// ───────────── 真实任务类型的模板：领域说明 ─────────────
+// ───────────── 真实任务类型：依据另一个条目的来源与集合的界面一项 ─────────────
 
-describe("软件需求规格说明模板里的领域说明", () => {
+describe("真实任务类型里依据另一个条目的来源", () => {
   const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭口令登录。" };
-  const note = (title: string, category: string, content: string) => ({ op: "add", collection: "领域说明", fields: { 标题: title, 内容: content, 类别: category }, sources: [SOURCE] });
   let text: string;
   let typed: string;
   before(() => {
-    typed = makeLegacyTask(join(tmp, "typed"), { "材料.md": "读者凭口令登录。管理员在服务台办理借还。" }, [
-      [note("口令", "术语", "读者登录时输入的一串字符"), note("管理员", "角色", "在服务台办理借还的工作人员"), note("开学第一周", "背景", "借还量最大的一周"), note("借阅", "术语", "读者把书借走")],
+    typed = makePagedTask(join(tmp, "typed"), { "材料.md": "读者凭口令登录。管理员在服务台办理借还。" }, [topicPage("口令", "读者登录时输入的一串字符", SOURCE)], [
       [{ op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] },
-        sources: [SOURCE, { kind: "条目", locator: "DN-001", excerpt: "读者登录时输入的一串字符", supports: [{ field: "基本流程", index: 0 }] }] }],
+        sources: [SOURCE, { kind: "条目", locator: "OA-001", excerpt: "读者登录时输入的一串字符", supports: [{ field: "基本流程", index: 0 }] }] }],
       [{ op: "add", collection: "约束", fields: { 类别: "安全", 句式类型: "普遍型", 需求语句: "口令输错三次后锁定账号。" },
         sources: [{ kind: "条目", locator: "UC-001", excerpt: "读者登录系统。" }, { kind: "助手补充", excerpt: "输错多次后锁定是通行的做法" }] }],
     ]);
     text = render.render(typed, library.libraryOf(typed));
   });
-  const section = (title: string) => {
-    const start = text.indexOf(`## ${title}`);
-    const end = text.indexOf("\n## ", start + 1);
-    return text.slice(start, end >= 0 ? end : undefined);
-  };
 
-  test("功能需求之前多了两节，后面的章节顺延编号", () => {
-    assert.deepEqual(text.split("\n").filter((l) => l.startsWith("## ")), ["## 1 术语与定义", "## 2 总体描述", "## 3 功能需求", "## 4 非功能需求", "## 5 约束", "## 6 问题"]);
-  });
-  test("术语与定义只收类别为术语的，按编号排", () => {
-    const terms = section("1 术语与定义");
-    assert.ok(terms.includes("- **口令**（DN-001）：读者登录时输入的一串字符 ［修订 1 · 未确认］来源：文档原文，出处 inputs/材料.md（「读者凭口令登录。」）"));
-    assert.ok(terms.indexOf("DN-001") < terms.indexOf("DN-004"));
-    assert.ok(!terms.includes("DN-002") && !terms.includes("DN-003"));
-  });
-  test("总体描述收其余的，按类别归组，组的先后按每组第一个编号", () => {
-    const overview = section("2 总体描述");
-    assert.ok(overview.indexOf("### 角色") < overview.indexOf("### 背景"));
-    assert.ok(overview.includes("- **DN-002 管理员**：在服务台办理借还的工作人员"));
-    assert.ok(overview.includes("- **DN-003 开学第一周**：借还量最大的一周"));
-    assert.ok(!overview.includes("DN-001") && !overview.includes("本文档没有总体描述。"));
-  });
   test("定义视图带上集合的界面一项，没写的集合为空", () => {
     const view = library.definitionView(library.libraryOf(typed).definition).collections;
-    const notes = view.find((c) => c.name === "领域说明")!;
-    assert.deepEqual(notes.display, { side_tab: true, group_field: "类别", leading_groups: ["术语"], note: "材料里或你说明过的背景、术语、角色，供条目引用。" });
+    const pages = view.find((c) => c.name === "总体分析")!;
+    assert.deepEqual(Object.keys(pages.display!).sort(), ["group_field", "leading_groups", "note", "side_tab"]);
+    assert.equal(pages.display!.group_field, "标签");
     assert.equal(view.find((c) => c.name === "功能用例")!.display, null);
-    assert.equal(notes.needs_review, false);
+    assert.equal(pages.needs_review, false);
   });
   test("依据另一个条目的来源写成它所在的集合名、编号加摘录；助手补充写理由、不写出处", () => {
-    const uc = section("3 功能需求");
-    assert.ok(uc.includes("领域说明 DN-001（「读者登录时输入的一串字符」）"));
-    assert.ok(!uc.includes("出处 DN-001"));
-    const constraints = section("5 约束");
-    assert.ok(constraints.includes("来源：功能用例 UC-001（「读者登录系统。」）；助手补充（「输错多次后锁定是通行的做法」）"), constraints);
+    assert.ok(text.includes("总体分析 OA-001（「读者登录时输入的一串字符」）"), text);
+    assert.ok(!text.includes("出处 OA-001"));
+    assert.ok(text.includes("来源：功能用例 UC-001（「读者登录系统。」）；助手补充（「输错多次后锁定是通行的做法」）"), text);
   });
 });
 

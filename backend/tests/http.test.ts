@@ -10,7 +10,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import * as clock from "../src/clock.ts";
-import { ApiError, STATUS } from "../src/errors.ts";
+import { ApiError } from "../src/errors.ts";
 import { dispatch, headerParams, makeServer, parseMultipart, parseQuery, unquote } from "../src/http.ts";
 import { Service } from "../src/service.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
@@ -40,7 +40,6 @@ test("错误形状与状态码", () => {
   assert.deepEqual(error.body(), { ok: false, error: { code: "session_busy", message: "助手正在另一条会话里工作。", data: { active_session: "s1" } } });
   assert.deepEqual(["bad_request", "rejected", "executor_starting", "too_large", "unsupported_type", "task_occupied", "forbidden", "别的"].map((c) => new ApiError(c, "").status),
     [400, 422, 503, 413, 415, 409, 403, 500]);
-  assert.equal(STATUS.old_format, 409);
 });
 
 test("路由分派：没有的接口、没有的任务、pi 不在且没有给会话时的直接操作与停下、方法不对", async () => {

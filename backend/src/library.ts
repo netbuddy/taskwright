@@ -83,7 +83,7 @@ export async function backupTaskDb(taskDir: string, target: string): Promise<num
   return statSync(target).size;
 }
 
-/** 库里的发起方写法换成接口的写法：最早格式里的「模型」算执行者。 */
+/** 库里的发起方写法换成接口的写法：不是用户的都算执行者。 */
 export function actorWord(actor: unknown): string {
   return actor === ACTOR_USER ? ACTOR_USER : "executor";
 }
@@ -526,12 +526,6 @@ export function inReadTransaction<T>(db: DatabaseSync, body: () => T): T {
   }
 }
 
-/** 修订统一之前建的库：条目内容表还有 version_no 列。本版本不支持这种库，库表改动不做迁移。 */
-export function isPreRevision(db: DatabaseSync): boolean {
-  return columnNames(db, "item_version").has("version_no");
-}
-
-export const OLD_FORMAT_TEXT = "这个任务是旧格式（修订统一之前建的，条目还按内容版本号记），本版本不支持。请新建一个任务。";
 
 const all = (db: DatabaseSync, sql: string, ...params: any[]) => (db.prepare(sql).all(...params) as Row[]).map((r) => ({ ...r }));
 
@@ -564,7 +558,6 @@ export interface LibraryData {
  * withReview 为真时另取还没有结束的那批评审的最后一条进度（整份数据用）。
  */
 export function readAll(db: DatabaseSync, afterSeq: number | null = null, withReview = false): LibraryData {
-  if (isPreRevision(db)) throw new ApiError("old_format", OLD_FORMAT_TEXT);
   return inReadTransaction(db, () => {
     const taskRow = db.prepare("SELECT * FROM task ORDER BY started_at LIMIT 1").get() as Row | undefined;
     const seq = Number((db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM event").get() as Row).n);

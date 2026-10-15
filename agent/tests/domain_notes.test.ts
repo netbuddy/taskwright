@@ -14,7 +14,6 @@ import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { loadDefinition, validateDefinition } from "../src/lib/definition.ts";
 import { CHAPTERS } from "../src/lib/overall_chapters.ts";
-import { checkCompletion, completionHints, unlinkedDomainNotes } from "../src/lib/conditions.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
@@ -110,13 +109,6 @@ test("来源种类「条目」：哪个集合的条目都可以引用，任务�
   assert.deepEqual(itemRows(dir, "UC-001", out.details.revision_no).map((row) => [row.locator, row.excerpt, row.depends_revision]), [["UC-002", "点退出", 1]]);
 });
 
-test("来源种类「条目」：早期版本的名字「领域说明」照收，存成「条目」；查看条目时读到的也是「条目」", () => {
-  const dir = workspace();
-  const out = saveRevision(callIn(dir), { operations: [cite("DN-001", 1, "UC-001", "登录时输入的一串字符", "领域说明")] });
-  assert.deepEqual(itemRows(dir, "UC-001", out.details.revision_no).map((row) => [row.kind, row.locator, row.depends_revision]), [["条目", "DN-001", 2]]);
-  assert.equal(query(dir, "SELECT 1 FROM item_source WHERE kind = '领域说明'").length, 0);
-});
-
 test("来源种类「条目」：摘录要逐字出现在那个条目当前修订的某段文字里，标点不同也拒绝", () => {
   const dir = workspace();
   // 标题里的一段也认。
@@ -205,46 +197,6 @@ test("来源种类「图」：出处不是图的编号、任务里没有这张�
     /第 1 条来源的种类是「图」，出处 FIG-001 不是图的编号[\s\S]*出处写一张还在的图的编号，例如 D-001/);
   assert.throws(() => saveRevision(callIn(dir), { operations: [cite("D-001", 1, "UC-001", "登录", "图")] }),
     /第 1 条来源的种类是「图」，出处 D-001 指向的图在这个任务里不存在/);
-});
-
-test("提示：还没有和任何条目关联的领域说明——来源引用、别的条目的关联条目、自己的关联条目三种联系都算，删掉的条目不算", () => {
-  const dir = workspace();
-  // DN-001 被 UC-001 引作来源（a）；DN-002 被问题条目的关联条目写了（b）；
-  // DN-003 自己关联了 UC-002（c）；DN-004 什么联系都没有；DN-005 只关联了后来删掉的 UC-002 之外的已删条目。
-  saveRevision(callIn(dir), { operations: [cite("DN-001")] });
-  saveRevision(callIn(dir), { operations: [
-    { op: "add", collection: "问题", fields: { 事项: "管理员是谁", 状态: "未解决", 关联条目: ["DN-002"] }, sources: [SOURCE] },
-    note("借阅", "术语", ["UC-002"]), note("开学", "背景"),
-  ] });
-  saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "临时", 步骤: ["一步"] }, sources: [SOURCE] }] });
-  saveRevision(callIn(dir), { operations: [note("假期", "背景", ["UC-003"])] });
-  saveRevision(callIn(dir), { operations: [{ op: "delete", item: "UC-003", base_revision: 5 }] });
-  const db = new DatabaseSync(databasePath(dir), { readOnly: true });
-  try {
-    const taskId = (db.prepare("SELECT task_id FROM task").get() as { task_id: string }).task_id;
-    assert.deepEqual(unlinkedDomainNotes(db, taskId), ["DN-004", "DN-005"]);
-    const completion = { 用例: ["至少一个条目"], 领域说明: ["每个条目用户确认"] };
-    assert.deepEqual(completionHints(db, taskId, completion), [{
-      kind: "unlinked_domain_notes", collection: "领域说明", items: ["DN-004", "DN-005"],
-      summary: "有 2 条领域说明还没有和任何条目关联：DN-004、DN-005。",
-    }]);
-    // 完成条件里没有领域说明集合时不算提示；领域说明「每个条目用户确认」照常核对（都还没看过）。
-    assert.deepEqual(completionHints(db, taskId, { 用例: ["至少一个条目"] }), []);
-    const confirm = checkCompletion(db, taskId, completion).find((r) => r.collection === "领域说明")!;
-    assert.equal(confirm.state, "unmet");
-    assert.equal(confirm.unmet.length, 5);
-  } finally {
-    db.close();
-  }
-  // 查询任务状态的文字与结构化内容都带这条提示，写明不挡发布版本。
-  const status = getTaskStatus(dir);
-  assert.match(status.text, /提示（不挡发布版本）：有 2 条领域说明还没有和任何条目关联：DN-004、DN-005。/);
-  assert.deepEqual(status.details.hints.map((h: any) => h.items), [["DN-004", "DN-005"]]);
-  // 服务端与观测台经命令行入口取完成条件，输出里也带 hints。
-  const cli = resolve(import.meta.dirname, "../src/cli/check_completion.mts");
-  const taskId = query<{ task_id: string }>(dir, "SELECT task_id FROM task")[0].task_id;
-  const out = JSON.parse(execFileSync(process.execPath, [cli, databasePath(dir), taskId, JSON.stringify({ 领域说明: ["每个条目用户确认"] })], { encoding: "utf-8" }));
-  assert.deepEqual(out.hints.map((h: any) => h.items), [["DN-004", "DN-005"]]);
 });
 
 test("任务 skill 写了总体分析的做法，不出现平台的内部用词", () => {
