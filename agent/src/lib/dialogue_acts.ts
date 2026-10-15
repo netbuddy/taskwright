@@ -25,7 +25,7 @@ import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
 import { FUNCTION_NAMES, GATE_INVALID_TEXT, GATE_MISSING_TEXT, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { proposalFor, proposalKindOf } from "./stage_proposal.ts";
-import { textPrefix } from "./texts.ts";
+import { fillText, refusalText, textPrefix } from "./texts.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
   type ScanOutcome,
@@ -468,16 +468,15 @@ export function requireUnderstanding(workspaceDir: string, sessionId: string, br
     db.close();
   }
   const shown = problems.slice(-GATE_PROBLEMS_SHOWN);
-  const why = shown.length === 0
-    ? GATE_MISSING_TEXT
-    : `这一轮写了 ${problems.length} 个 JSON 片段，${GATE_INVALID_TEXT}。` +
-      `${problems.length > shown.length ? `最近 ${shown.length} 个` : "各片段"}的问题：` + shown.map((one, i) => `（${i + 1}）${one}`).join("");
   // 引出用户那句原话：助手被拒几次之后容易忘了要理解的是哪一句。
-  const said = run.userText.trim() ? `：「${quotedUserText(run.userText)}」` : "";
-  const fact = `${label}没有执行：${INTENT_GATE_TEXT}${said}。${why}。`;
-  const guidance = "请按平台说明「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
-    `写完接着调用 ${toolName}。`;
-  throw new ToolRejection(`${fact}\n${guidance}`, fact, guidance, "gate");
+  const said = run.userText.trim() ? fillText("part.user_said", { text: quotedUserText(run.userText) }) : "";
+  const refusal = shown.length === 0
+    ? refusalText("gate.understanding_missing", { label, said, tool: toolName })
+    : refusalText("gate.understanding_invalid", {
+      label, said, tool: toolName, count: problems.length, problems: shown.map((one, i) => `（${i + 1}）${one}`).join(""),
+      which: problems.length > shown.length ? fillText("part.understanding_recent", { count: shown.length }) : fillText("part.understanding_each"),
+    });
+  throw new ToolRejection(`${refusal.fact}\n${refusal.guidance}`, refusal.fact, refusal.guidance, [refusal.code]);
 }
 
 /** 门禁拒绝时最多列几个片段的问题（最近的几个）。 */

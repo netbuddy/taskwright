@@ -46,7 +46,8 @@ import { envKnowledgeRoot, knowledgeFilePath } from "./knowledge.ts";
 import { isKnowledgeLocator } from "./knowledge_locator.ts";
 import { reviewRefusal } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
-import { ToolRejection } from "./tool_rejection.ts";
+import { fillText } from "./texts.ts";
+import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 
 /** 材料全文给评审者的上限：全部材料文件的字符数不超过它时给全文。 */
 export const MATERIAL_FULL_LIMIT = 20000;
@@ -78,7 +79,14 @@ export const FIELD_RULE: ReviewRule = {
   正例: "每个必填字段都有内容。",
 };
 
-export class ReviewError extends Error {}
+/** 评审被拒：message 是给助手（或页面）的原话，codes 是原因码（见 lib/tool_rejection.ts）。 */
+export class ReviewError extends Error {
+  codes: string[];
+  constructor(message: string, codes: readonly string[] = []) {
+    super(message);
+    this.codes = [...codes];
+  }
+}
 
 export interface RequestedItem { item_id: string; revision_no: number }
 export interface FieldDecl { 名: string; 类型: string; 必填?: boolean; 取值?: string[] }
@@ -123,18 +131,18 @@ export function checkReviewParams(params: unknown): RequestedItem[] | null {
   const items = (params as { items?: unknown })?.items;
   if (items === undefined || items === null) return null;
   if (!Array.isArray(items) || items.length === 0) {
-    throw new ReviewError("items 要么不写（评全部待评审的条目），要么写一个不为空的列表，每项是 { item_id, revision_no }。什么都没有评。");
+    throw new ReviewError(fillText("request_review.items_not_nonempty_list"), ["request_review.items_not_nonempty_list"]);
   }
   const seen = new Set<string>();
   return items.map((raw, index) => {
     const one = raw as { item_id?: unknown; revision_no?: unknown };
     if (typeof one?.item_id !== "string" || !one.item_id.trim()) {
-      throw new ReviewError(`items 的第 ${index + 1} 项要写 item_id（条目编号，例如 UC-001）。什么都没有评。`);
+      throw new ReviewError(fillText("request_review.item_id_missing", { no: index + 1 }), ["request_review.item_id_missing"]);
     }
     if (!Number.isInteger(one.revision_no) || (one.revision_no as number) < 1) {
-      throw new ReviewError(`items 的第 ${index + 1} 项（${one.item_id}）要写 revision_no，一个从 1 起的整数。什么都没有评。`);
+      throw new ReviewError(fillText("request_review.revision_no_invalid", { no: index + 1, item: one.item_id }), ["request_review.revision_no_invalid"]);
     }
-    if (seen.has(one.item_id)) throw new ReviewError(`items 里 ${one.item_id} 写了两次。什么都没有评。`);
+    if (seen.has(one.item_id)) throw new ReviewError(fillText("request_review.item_duplicate", { item: one.item_id }), ["request_review.item_duplicate"]);
     seen.add(one.item_id);
     return { item_id: one.item_id, revision_no: one.revision_no as number };
   });
@@ -148,19 +156,19 @@ const digest = (text: string) => createHash("sha256").update(text).digest("hex")
  */
 export function prepareReviews(workspaceDir: string, requested: RequestedItem[] | null, by: "executor" | "user" = "user", sessionId: string | null = null): PreparedReviews {
   const path = databasePath(workspaceDir);
-  if (!existsSync(path)) throw new ReviewError("这个任务目录还没有任务数据库，没有条目可以评审。");
+  if (!existsSync(path)) throw notInputProblem(new ReviewError(fillText("request_review.no_database")));
   const system = readFileSync(REVIEW_PROMPT_PATH, "utf-8");
   const db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
   try {
     const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       { task_id: string; definition_text: string } | undefined;
-    if (!task) throw new ReviewError("库里还没有任务，没有条目可以评审。");
+    if (!task) throw notInputProblem(new ReviewError(fillText("request_review.no_task")));
     const definition = validateDefinition(JSON.parse(task.definition_text));
     // 工作的阶段（lib/stage.ts）：助手要到写条目阶段才能请求评审，看的是这条会话的工作项（sessionId）。用户在页面上发起的评审不看阶段；早先建的任务没有阶段。
     if (by === "executor") {
       const stage = stageOf(db, workspaceDir, task.task_id, definition, sessionId);
       const refusal = stage ? reviewRefusal(stage) : null;
-      if (refusal) throw new ToolRejection(`什么都没有评：${refusal[0]}。\n怎么办：${refusal[1]}。`, refusal[0], refusal[1]);
+      if (refusal) throw new ToolRejection(fillText("part.review_refused", { fact: refusal.fact, guidance: refusal.guidance }), refusal.fact, refusal.guidance, [refusal.code]);
     }
     const reviewed = new Set(Object.entries(definition.completion).filter(([, list]) => list.includes(REVIEW_CONDITION)).map(([name]) => name));
     const current = (itemId: string) => db.prepare(
@@ -177,22 +185,32 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
       return hashOf.get(collection)!;
     };
     let wanted: RequestedItem[];
+    // 不能评的原因：原话与原因码各一份，按出现的先后。
     const problems: string[] = [];
+    const codes: string[] = [];
+    const problem = (code: string, text: string) => { problems.push(text); codes.push(code); };
     if (requested) {
       wanted = [];
       for (const want of requested) {
         const row = current(want.item_id);
-        if (!row) { problems.push(`库里没有条目 ${want.item_id}`); continue; }
-        if (row.deleted_in_revision !== null) { problems.push(`条目 ${want.item_id} 已经删除了`); continue; }
-        if (!reviewed.has(row.collection)) { problems.push(`条目 ${want.item_id} 所在的集合「${row.collection}」不要求评审`); continue; }
-        if (row.revision_no !== want.revision_no) { problems.push(`条目 ${want.item_id} 现在是修订 ${row.revision_no}，你写的是修订 ${want.revision_no}；只能评条目当前所在的修订`); continue; }
+        const item = want.item_id;
+        if (!row) { problem("request_review.item_not_found", fillText("request_review.item_not_found", { item })); continue; }
+        if (row.deleted_in_revision !== null) { problem("request_review.item_deleted", fillText("request_review.item_deleted", { item })); continue; }
+        if (!reviewed.has(row.collection)) {
+          problem("request_review.collection_not_reviewed", fillText("request_review.collection_not_reviewed", { item, collection: row.collection }));
+          continue;
+        }
+        if (row.revision_no !== want.revision_no) {
+          problem("request_review.revision_stale", fillText("request_review.revision_stale", { item, now: row.revision_no, given: want.revision_no }));
+          continue;
+        }
         if (currentReviews(db, task.task_id, want.item_id, want.revision_no, hash(row.collection)).length) {
-          problems.push(`${want.item_id} 在当前修订上已经评过，内容和规则都没变；同一次修订、同一套规则只评审一次`);
+          problem("request_review.already_reviewed", fillText("request_review.already_reviewed", { item }));
           continue;
         }
         wanted.push(want);
       }
-      if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
+      if (problems.length) throw new ReviewError(fillText("part.review_nothing_because", { problems: problems.join("；") }), codes);
     } else {
       wanted = pendingItems(db, task.task_id, [...reviewed], hash);
     }
@@ -212,7 +230,7 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         try {
           rulesOf.set(row.collection, decl?.reviewRules ? effectiveRules(workspaceDir, decl.reviewRules) : [FIELD_RULE]);
         } catch (error) {
-          problems.push(`集合「${row.collection}」的评审规矩读不出来：${(error as Error).message}`);
+          problem("request_review.rules_unreadable", fillText("request_review.rules_unreadable", { collection: row.collection, why: (error as Error).message }));
           rulesOf.set(row.collection, []);
         }
       }
@@ -231,8 +249,9 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
         system, user: assembleUser(want, row.collection, fields, decls, rules, sources, [...othersLines(live, want.item_id, materials), ...topics], materials),
       });
     }
-    if (problems.length) throw new ReviewError(`什么都没有评，因为：${problems.join("；")}。`);
-    if (!items.length) throw new ReviewError("没有需要评审的条目：要评审的集合里，每个条目在当前所在的修订、当前规则下都已经有评审记录了。");
+    // 走到这里的原因只有评审规矩读不出来：那是任务类型文件的问题，不是输入的问题，不记进拒绝表。
+    if (problems.length) throw notInputProblem(new ReviewError(fillText("part.review_nothing_because", { problems: problems.join("；") }), codes));
+    if (!items.length) throw new ReviewError(fillText("request_review.nothing_to_review"), ["request_review.nothing_to_review"]);
     return { taskId: task.task_id, items, scope: requested ? "named" : "pending", reviewerVersion: digest(system) };
   } finally {
     db.close();

@@ -2,7 +2,8 @@
  * 模板的三条守护（agent/prompts/tools/ 与 agent/prompts/runtime/，加载器在 agent/src/lib/texts.ts）：
  * 代码用的每个键都在；没有哪个模板闲着；代码填的值与模板的占位一一对上。另核对索引 agent/prompts/README.md 列了每一份模板文件。
  *
- * 代码怎样用键靠静态扫描：扫助手库、后端与页面的源码里 fillText("键", …)、textKey("键")、textPrefix("键") 与 textPattern("键") 这几种写法（键是字面的字符串）。
+ * 代码怎样用键靠静态扫描：扫助手库、后端与页面的源码里 fillText("键", …)、textKey("键")、textPrefix("键")、textPattern("键") 与 refusalText("键", …)
+ * 这几种写法（键是字面的字符串；refusalText 另把键加 .guide、原因码加 .guide 的指引层算作用到了，占位按两层合起来核对）。
  * 页面也导入的助手库文件用 lib/shared_texts.ts 里的同名函数，模板取自由 runtime/shared.md 生成的 lib/shared_texts.gen.ts，另核对它没有过期。
  * fillText 的第二个参数写成对象字面量时，逐个比对象的键与模板的占位；写成变量、带展开（...）时扫不出来，
  * 留给运行时登记：fillText 每次调用都核对给的值与占位，对不上就抛错，跑到它的测试会失败。
@@ -12,7 +13,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { test } from "node:test";
-import { renderShared } from "../../scripts/render-shared-texts.mts";
+import { SHARED_FILES, renderShared } from "../../scripts/render-shared-texts.mts";
 import { SHARED_TEMPLATES } from "../src/lib/shared_texts.gen.ts";
 import { TEXT_DIRS, fillText, templates, textKey, usedTextKeys } from "../src/lib/texts.ts";
 
@@ -24,7 +25,7 @@ const SKIPPED = new Set(["agent/src/lib/texts.ts", "web/src/test"]);
 interface Call {
   file: string;
   line: number;
-  fn: "fillText" | "textKey" | "textPrefix" | "textPattern";
+  fn: "fillText" | "textKey" | "textPrefix" | "textPattern" | "refusalText";
   /** 第一个参数是字面的字符串时是那个键，否则为 null。 */
   key: string | null;
   /** fillText 的第二个参数：没有给是空数组；对象字面量是它的键；别的写法（变量、带展开）为 null。 */
@@ -93,7 +94,7 @@ function objectKeys(src: string, i: number): string[] | null {
 /** 一段源码里的调用；行号从 1 起。 */
 function scanText(src: string, file = ""): Call[] {
   const calls: Call[] = [];
-  for (const m of src.matchAll(/(?<![\w$.])(fillText|textKey|textPrefix|textPattern)\(/g)) {
+  for (const m of src.matchAll(/(?<![\w$.])(fillText|textKey|textPrefix|textPattern|refusalText)\(/g)) {
     const fn = m[1] as Call["fn"];
     const line = src.slice(0, m.index).split("\n").length;
     let i = m.index + m[0].length;
@@ -108,7 +109,7 @@ function scanText(src: string, file = ""): Call[] {
       while (/\s/.test(src[i])) i++;
       values = src[i] === ")" ? [] : src[i] === "{" ? objectKeys(src, i) : null;
     }
-    calls.push({ file, line, fn, key: literal[1], values: fn === "fillText" ? values : [] });
+    calls.push({ file, line, fn, key: literal[1], values: fn === "fillText" || fn === "refusalText" ? values : [] });
   }
   return calls;
 }
@@ -123,7 +124,9 @@ test("代码用的每个键都有模板", () => {
 });
 
 test("没有闲置的模板：每个模板的键都在代码里以字面的字符串出现过", () => {
-  const used = new Set(CALLS.map((one) => one.key));
+  // refusalText 的键另把它加 .guide 的那一个（指引层）算作用到了。
+  const codeOf = (key: string) => key.split(".").slice(0, 2).join(".");
+  const used = new Set(CALLS.flatMap((one) => (one.fn === "refusalText" && one.key ? [one.key, `${one.key}.guide`, `${codeOf(one.key)}.guide`] : [one.key])));
   const idle = [...ALL.values()].filter((one) => !used.has(one.key)).map((one) => `${one.file} ${one.key}`);
   assert.deepEqual(idle, [], "这些模板没有代码用，删掉或接上");
 });
@@ -131,10 +134,11 @@ test("没有闲置的模板：每个模板的键都在代码里以字面的字�
 test("占位都被填了：fillText 的值写成对象字面量的，对象的键与模板的占位一一对上；扫不出来的留给运行时核对", () => {
   const wrong: string[] = [];
   for (const one of CALLS) {
-    if (one.fn !== "fillText" || one.key === null || one.values === null) continue;
+    if ((one.fn !== "fillText" && one.fn !== "refusalText") || one.key === null || one.values === null) continue;
     const template = ALL.get(one.key);
     if (!template) continue;
-    const want = [...template.placeholders].sort();
+    const guide = one.fn === "refusalText" ? (ALL.get(`${one.key}.guide`) ?? ALL.get(`${one.key.split(".").slice(0, 2).join(".")}.guide`)) : undefined;
+    const want = [...new Set([...template.placeholders, ...(guide?.placeholders ?? [])])].sort();
     const got = [...one.values].sort();
     if (want.join(",") !== got.join(",")) wrong.push(`${at(one)} ${one.key}：模板要 [${want.join(", ")}]，代码给了 [${got.join(", ")}]`);
   }
@@ -183,9 +187,9 @@ test("索引 agent/prompts/README.md 列了每一份模板文件", () => {
   assert.deepEqual(unlisted, [], `这些模板文件索引里没有列：${unlisted.join("、")}（相对 ${relative(ROOT, join(ROOT, "agent", "prompts"))}）`);
 });
 
-test("页面与助手共用的模板：生成的 lib/shared_texts.gen.ts 与 runtime/shared.md 一致，与读文件读到的也一致", () => {
-  const source = readFileSync(join(ROOT, "agent", "prompts", "runtime", "shared.md"), "utf-8");
-  assert.equal(readFileSync(join(ROOT, "agent", "src", "lib", "shared_texts.gen.ts"), "utf-8"), renderShared(source),
+test("页面与助手共用的模板：生成的 lib/shared_texts.gen.ts 与共用的模板文件一致，与读文件读到的也一致", () => {
+  const sources = Object.fromEntries(SHARED_FILES.map((file) => [file, readFileSync(join(ROOT, "agent", "prompts", file), "utf-8")]));
+  assert.equal(readFileSync(join(ROOT, "agent", "src", "lib", "shared_texts.gen.ts"), "utf-8"), renderShared(sources),
     "lib/shared_texts.gen.ts 过期了，跑 node scripts/render-shared-texts.mts");
   for (const one of SHARED_TEMPLATES) assert.deepEqual(ALL.get(one.key), one, one.key);
 });

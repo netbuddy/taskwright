@@ -50,7 +50,7 @@ test("数到哪里为止：用户的一句话，或者三个工具里任何一�
 });
 
 test("到第 5 次时返回「出错并结束本次运行」的结果，带着拒绝原因与停下的那句话；没到时是 null，照常抛异常", () => {
-  const error = new ToolRejection(missing(), "事实", "指引", "gate");
+  const error = new ToolRejection(missing(), "事实", "指引", ["gate.understanding_missing"]);
   for (const prior of [0, 1, 2, 3]) assert.equal(stopAtLimit(error, [user("你好"), ...times(prior, refused(missing()))]), null, `之前被拒 ${prior} 次`);
   const stopped = stopAtLimit(error, [user("你好"), ...times(4, refused(missing()))])!;
   assert.deepEqual(stopped, {
@@ -69,9 +69,9 @@ test("到第 5 次时返回「出错并结束本次运行」的结果，带着�
 });
 
 test("认「先写理解」那道门的拒绝：是这道门的才算，输入不合规的、别的门的、普通异常都不算", () => {
-  assert.equal(isUnderstandingGate(new ToolRejection(missing("保存修订"), "事实", "指引", "gate")), true);
+  assert.equal(isUnderstandingGate(new ToolRejection(missing("保存修订"), "事实", "指引", ["gate.understanding_missing"])), true);
   assert.equal(isUnderstandingGate(new ToolRejection("保存修订没有执行：来源找不到。", "事实", "指引", "input")), false);
-  assert.equal(isUnderstandingGate(new ToolRejection("发布版本没有执行：用户还没有同意完成。", "事实", "指引", "gate")), false);
+  assert.equal(isUnderstandingGate(new ToolRejection("发布版本没有执行：用户还没有同意完成。", "事实", "指引", ["publish_version.consent_none"])), false);
   assert.equal(isUnderstandingGate(new Error(missing())), false);
 });
 

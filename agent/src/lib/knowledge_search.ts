@@ -24,6 +24,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { selectedKnowledge } from "./knowledge.ts";
+import { fillText } from "./texts.ts";
+import { ToolRejection } from "./tool_rejection.ts";
 
 /** 任务服务写在任务目录里的占用标记（backend/src/occupancy.ts 的 LOCK_NAME，两边是一份约定）。 */
 export const LOCK_NAME = "service.lock";
@@ -149,10 +151,14 @@ export function backendAddresses(taskDir: string): string[] {
 /** 把参数整理好；写得不对时抛异常。 */
 export function searchParams(params: { query?: unknown; limit?: unknown }): { query: string; limit: number } {
   const query = typeof params.query === "string" ? params.query.trim() : "";
-  if (!query) throw new Error("query 要写要找的内容，用一句完整的话写出来，不能是空的。");
+  if (!query) {
+    const text = fillText("search_knowledge.query_empty");
+    throw new ToolRejection(text, text, "", ["search_knowledge.query_empty"]);
+  }
   const limit = params.limit === undefined || params.limit === null ? SEARCH_DEFAULT_LIMIT : params.limit;
   if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
-    throw new Error(`limit 要写 1 到 ${SEARCH_MAX_LIMIT} 的整数，不写是 ${SEARCH_DEFAULT_LIMIT}。`);
+    const text = fillText("search_knowledge.limit_invalid", { max: SEARCH_MAX_LIMIT, default: SEARCH_DEFAULT_LIMIT });
+    throw new ToolRejection(text, text, "", ["search_knowledge.limit_invalid"]);
   }
   return { query, limit };
 }

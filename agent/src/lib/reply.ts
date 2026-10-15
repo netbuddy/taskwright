@@ -180,7 +180,7 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
 
   // stage 与 reason 已经停用：助手不能自己移动阶段，往前、往后都是发卡片由用户点。这一个版本里两项仍在参数表里，
   // 写了（不是 null、不是空白）就拒绝并指引发卡片；不写照常。
-  if (!isBlank(params.stage) || !isBlank(params.reason)) errors.push(withGuide(...STAGE_PARAM_RETIRED));
+  if (!isBlank(params.stage) || !isBlank(params.reason)) errors.push(withGuide(STAGE_PARAM_RETIRED.fact, STAGE_PARAM_RETIRED.guidance));
 
   // activity_done：助手汇报本会话的工作项（单项活动）做完了。只认 true、false 与 null；写了 true 而这条会话不在做单项活动的工作项就拒绝。
   const done = params.activity_done;
@@ -188,7 +188,7 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
     errors.push("activity_done 只能写 true 或 false：本会话的工作项是单项活动、这项活动做够了、要汇报做完时写 true，别的时候不写");
   } else if (done === true) {
     const refusal = facts.activityDoneRefusal?.() ?? null;
-    if (refusal !== null) errors.push(withGuide(...refusal));
+    if (refusal !== null) errors.push(withGuide(refusal.fact, refusal.guidance));
   }
 
   // informs：每条是 { text, items? }；为兼容旧写法，一句纯文字也认，当作没有 items。

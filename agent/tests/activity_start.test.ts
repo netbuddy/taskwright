@@ -22,6 +22,9 @@ import { ToolRejection } from "../src/lib/tool_rejection.ts";
 import { NOT_IN_FLOW_TEXT, START_SESSION_RETIRED, UserOpError, runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, makeWorkspace, nodeMoves, overallDefinition, query } from "./helpers.ts";
 
+/** 拒绝的两层文字，照「[事实, 指引]」比；原因码另比。 */
+const pair = (r: { fact: string; guidance: string } | null | undefined) => (r ? [r.fact, r.guidance] : r);
+
 const DEFINITION = validateDefinition(overallDefinition());
 
 function workspace(definition: unknown = overallDefinition(), material = true): { dir: string; taskId: string } {
@@ -356,10 +359,10 @@ test("这条会话不在做流程的工作项时，卡片上的进入与退回�
 test("回复里的 activity_done 怎样核对：单项活动的工作项放行；流程的工作项、自由讨论的会话、没有阶段的任务都拒绝；放行了也不改任何记录", () => {
   const { dir, taskId } = workspace();
   // 自由讨论的会话：拒绝。
-  assert.deepEqual(activityDoneGate(dir, "s-free"), ["回复里写了 activity_done，而本会话不属于任何工作项，没有活动可以汇报做完", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"]);
+  assert.deepEqual(pair(activityDoneGate(dir, "s-free")), ["回复里写了 activity_done，而本会话不属于任何工作项，没有活动可以汇报做完", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"]);
   // 流程的工作项：拒绝。
   start(dir, "s-flow", "核读材料", true);
-  assert.match(activityDoneGate(dir, "s-flow")![0], /^回复里写了 activity_done，而本会话的工作项是工作流程，现在在核读材料阶段/);
+  assert.match(activityDoneGate(dir, "s-flow")!.fact, /^回复里写了 activity_done，而本会话的工作项是工作流程，现在在核读材料阶段/);
   // 单项活动的工作项：放行，不记任何东西，会话照旧在做它。
   start(dir, "s-alone", "澄清", false);
   const before = count(dir, "event");
@@ -368,6 +371,6 @@ test("回复里的 activity_done 怎样核对：单项活动的工作项放行�
   assert.deepEqual([stageIn(dir, taskId, "s-alone"), stageIn(dir, taskId, "s-flow")], ["clarifying", "reading"]);
   // 没有阶段的任务、还没有库的目录：拒绝。
   const old = workspace(demoDefinition());
-  assert.deepEqual(activityDoneGate(old.dir, "s"), ["回复里写了 activity_done，而这个任务没有活动可以汇报做完", "去掉 activity_done 这一项再回复"]);
-  assert.deepEqual(activityDoneGate(makeWorkspace(overallDefinition()), "s")?.[0], "回复里写了 activity_done，而这个任务没有活动可以汇报做完");
+  assert.deepEqual(pair(activityDoneGate(old.dir, "s")), ["回复里写了 activity_done，而这个任务没有活动可以汇报做完", "去掉 activity_done 这一项再回复"]);
+  assert.deepEqual(pair(activityDoneGate(makeWorkspace(overallDefinition()), "s"))?.[0], "回复里写了 activity_done，而这个任务没有活动可以汇报做完");
 });

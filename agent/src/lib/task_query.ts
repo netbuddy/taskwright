@@ -33,6 +33,7 @@ import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.
 import { knowledgeDetails, knowledgeSection, listMaterials } from "./task_status.ts";
 import { envKnowledgeRoot, selectedKnowledge } from "./knowledge.ts";
 import { fillText } from "./texts.ts";
+import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 
 /** 工具的返回：给模型的一段文字，给读取一侧的结构化内容。 */
 export interface QueryOutcome {
@@ -40,18 +41,21 @@ export interface QueryOutcome {
   details: Record<string, unknown>;
 }
 
+/** 查看条目的一次拒绝：一段文字（只有事实层）与它的原因码。 */
+const refused = (code: string, text: string): ToolRejection => new ToolRejection(text, text, "", [code]);
+
 function withTask<T>(workspaceDir: string, body: (db: DatabaseSync, task: TaskRow, definition: TaskDefinition) => T): T {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) {
-    throw new Error("这个任务目录里还没有任务记录，没有东西可以查。任务由用户在界面上创建，请把这个情况如实告诉用户。");
+    throw notInputProblem(new Error(fillText("get_item.no_database")));
   }
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
   try {
     const task = db.prepare("SELECT task_id, task_name, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
       | TaskRow
       | undefined;
-    if (!task) throw new Error("库里还没有任务记录，没有东西可以查。");
-    if (hasVersionColumns(db)) throw new Error(OLD_VERSION_FORMAT_TEXT);
+    if (!task) throw notInputProblem(new Error(fillText("get_item.no_task")));
+    if (hasVersionColumns(db)) throw notInputProblem(new Error(OLD_VERSION_FORMAT_TEXT));
     return body(db, task, validateDefinition(JSON.parse(task.definition_text)));
   } finally {
     db.close();
@@ -75,11 +79,18 @@ function diagramOutcome(db: DatabaseSync, taskId: string, definition: TaskDefini
   const records = readDiagrams(db, taskId);
   const record = records.find((one) => one.diagram_id === id);
   const alive = liveDiagrams(records).map((one) => one.diagram_id);
-  if (!record || record.versions.length === 0) throw new Error(`这个任务里没有图 ${id}。现有的图是：${alive.length ? alive.join("、") : "（一张都没有）"}。`);
-  if (record.deleted_in_revision !== null) throw new Error(`图 ${id} 已经在它的修订 ${record.deleted_in_revision} 删除了。现有的图是：${alive.length ? alive.join("、") : "（一张都没有）"}。`);
+  const aliveText = alive.length ? alive.join("、") : fillText("part.no_diagrams");
+  if (!record || record.versions.length === 0) throw refused("get_item.diagram_not_found", fillText("get_item.diagram_not_found", { diagram: id, alive: aliveText }));
+  if (record.deleted_in_revision !== null) {
+    throw refused("get_item.diagram_deleted", fillText("get_item.diagram_deleted", { diagram: id, revision: record.deleted_in_revision, alive: aliveText }));
+  }
   const current = latestVersion(record)!;
   const shown = wanted === null ? current : record.versions.find((one) => one.revision_no === wanted);
-  if (!shown) throw new Error(`图 ${id} 没有修订 ${wanted}；它有这些修订：${record.versions.map((one) => `修订 ${one.revision_no}`).join("、")}（图的修订号是图自己的）。`);
+  if (!shown) {
+    throw refused("get_item.diagram_revision_missing", fillText("get_item.diagram_revision_missing", {
+      diagram: id, wanted: String(wanted), list: record.versions.map((one) => fillText("part.revision_no", { revision: one.revision_no })).join("、"),
+    }));
+  }
   const sources = (db.prepare(
     `SELECT kind, locator, excerpt, depends_revision FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ?${elementClause(db, ELEMENT_FIGURE)} ORDER BY position`,
   ).all(taskId, id, shown.revision_no) as { kind: string; locator: string; excerpt: string; depends_revision: number | null }[]);
@@ -139,10 +150,10 @@ function diagramOutcome(db: DatabaseSync, taskId: string, definition: TaskDefini
  */
 export function getItem(workspaceDir: string, params: { item_id?: unknown; revision_no?: unknown }, sessionId?: string): QueryOutcome {
   const itemId = typeof params.item_id === "string" ? params.item_id.trim().toUpperCase() : "";
-  if (!itemId) throw new Error("item_id 要写条目编号，例如 UC-001。");
+  if (!itemId) throw refused("get_item.item_id_missing", fillText("get_item.item_id_missing"));
   const wanted = params.revision_no;
   if (wanted !== undefined && wanted !== null && !(typeof wanted === "number" && Number.isInteger(wanted) && wanted >= 1)) {
-    throw new Error(`revision_no 应当是从 1 起的整数，或者不写（看最新内容），现在写的是 ${JSON.stringify(wanted)}。`);
+    throw refused("get_item.revision_no_invalid", fillText("get_item.revision_no_invalid", { given: String(JSON.stringify(wanted)) }));
   }
   return withTask(workspaceDir, (db, task, definition) => {
     const item = db
@@ -154,15 +165,23 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
       const alive = (db.prepare("SELECT item_id FROM item WHERE task_id = ? AND deleted_in_revision IS NULL ORDER BY rowid").all(task.task_id) as {
         item_id: string;
       }[]).map((row) => row.item_id);
-      throw new Error(`这个任务里没有条目 ${itemId}。现有的条目是：${alive.length ? alive.join("、") : "（一个都没有）"}。`);
+      throw refused("get_item.item_not_found", fillText("get_item.item_not_found", { item: itemId, alive: alive.length ? alive.join("、") : fillText("part.no_items") }));
     }
-    if (item.deleted_in_revision !== null) throw new Error(`条目 ${itemId} 已在修订 ${item.deleted_in_revision} 删除，不在交付物里了。`);
+    if (item.deleted_in_revision !== null) {
+      throw refused("get_item.item_deleted", fillText("get_item.item_deleted", { item: itemId, revision: item.deleted_in_revision }));
+    }
     const revisions = itemRevisions(db, task.task_id, itemId);
     const current = revisions[revisions.length - 1];
     const newest = latestRevision(db, task.task_id);
-    if (typeof wanted === "number" && wanted > newest) throw new Error(`这个任务还没有修订 ${wanted}，最新是修订 ${newest}。`);
+    if (typeof wanted === "number" && wanted > newest) {
+      throw refused("get_item.revision_beyond_latest", fillText("get_item.revision_beyond_latest", { wanted, newest }));
+    }
     const shown = typeof wanted === "number" ? [...revisions].reverse().find((n) => n <= wanted) : current;
-    if (shown === undefined) throw new Error(`修订 ${wanted} 时还没有条目 ${itemId}；它在这些修订里改动过：${revisions.map((n) => `修订 ${n}`).join("、")}。`);
+    if (shown === undefined) {
+      throw refused("get_item.item_absent_at_revision", fillText("get_item.item_absent_at_revision", {
+        wanted: String(wanted), item: itemId, list: revisions.map((n) => fillText("part.revision_no", { revision: n })).join("、"),
+      }));
+    }
     const row = db
       .prepare("SELECT fields FROM item_version WHERE task_id = ? AND item_id = ? AND revision_no = ?")
       .get(task.task_id, itemId, shown) as { fields: string };

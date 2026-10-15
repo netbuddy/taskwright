@@ -68,7 +68,23 @@
 | `runtime/status.md` | 会话开始或续接时扩展写进会话的任务状况：现状、上次之后的变化、材料与分段、知识库一段、还在等回应的行为（`agent/src/lib/task_status.ts`）；后端 `conversation.ts` 由 `status.head_now`、`status.head_changes`、`status.change_by_executor` 生成正则、按 `status.open_acts` 的开头认，换成页面的说法 | 模型；页面换一道说法再显示 | 见各段的用途一行（时刻、任务名、条目数、材料路径与大小、知识库与文档等） | `agent/tests/texts_guard.test.ts`、`agent/tests/task_status.test.ts`、`agent/tests/task_status_knowledge.test.ts`、`backend/tests/task_status_display.test.ts` |
 | `runtime/task_query.md` | 「查看条目」与「查询任务状态」返回给助手的文字：图的内容、条目末尾的修改提示、各集合的条目、未解决与未读、材料的分段、评审发现（`agent/src/lib/task_query.ts`） | 模型 | 见各段的用途一行 | `agent/tests/texts_guard.test.ts`、`agent/tests/read_tools_and_user_edit_source.test.ts`、`agent/tests/diagram_query.test.ts`、`agent/tests/pdf_materials.test.ts` 等 |
 | `runtime/status_page.md` | 任务起点页与活动输入页上的说明（`backend/src/task_status.ts` 的 startPageTexts） | 用户 | `status_page.lead` 有 `{{task}}`（任务名） | `agent/tests/texts_guard.test.ts`、`backend/tests/task_status.test.ts` |
+| `runtime/rejections_shared.md` | 按阶段、按工作项拦下助手的拒绝语（`agent/src/lib/stage.ts`：写条目、改主题页、画图、请求评审、发布版本、汇报活动做完、回复里停用的阶段参数）与总体分析的最低门（`agent/src/lib/overall_analysis.ts`）。页面经生成的 `shared_texts.gen.ts` 读 | 模型；事实层也显示给用户 | 见各段的用途一行（阶段名、集合名、卡片选项的键与文字等） | `agent/tests/texts_guard.test.ts`、`agent/tests/stage_save.test.ts`、`agent/tests/stage_diagram.test.ts`、`agent/tests/stage_review.test.ts`、`agent/tests/overall_gate.test.ts` 等 |
+| `runtime/rejections_gate.md` | 守门的拒绝语：这一轮还没写理解（`agent/src/lib/dialogue_acts.ts`）、问题条目改状态要用户先点头（`agent/src/lib/problem_consent.ts`）、任务没有活动可以汇报做完（`agent/src/lib/stage_read.ts`） | 模型；事实层也显示给用户 | 见各段的用途一行 | `agent/tests/texts_guard.test.ts`、`agent/tests/dialogue_acts.test.ts`、`agent/tests/problem_consent.test.ts`、`agent/tests/rejection_limit.test.ts` |
+| `runtime/rejections_publish_version.md` | 发布版本被拒（`agent/src/lib/publish_version.ts`）：阶段、完成条件、用户同意、存档之后再核对、存档没有做成 | 模型；页面上发布时给用户 | 见各段的用途一行（版本号、修订号、选项的文字等） | `agent/tests/texts_guard.test.ts`、`agent/tests/completion_consent.test.ts`、`agent/tests/version_archive.test.ts`、`backend/tests/complete_consent.test.ts` |
+| `runtime/rejections_request_review.md` | 请求评审被拒（`agent/src/lib/review.ts`）：参数、点名的条目、没有要评的 | 模型；页面上发起评审时给用户 | 见各段的用途一行 | `agent/tests/texts_guard.test.ts`、`agent/tests/review.test.ts`、`agent/tests/review_lifecycle.test.ts`、`agent/tests/stage_review.test.ts` |
+| `runtime/rejections_get_item.md` | 查看条目被拒（`agent/src/lib/task_query.ts`）：条目或图不在、修订号不对 | 模型 | 见各段的用途一行 | `agent/tests/texts_guard.test.ts`、`agent/tests/read_tools_and_user_edit_source.test.ts`、`agent/tests/diagram_query.test.ts` |
+| `runtime/rejections_search_knowledge.md` | 查找知识库的参数写得不对（`agent/src/lib/knowledge_search.ts`） | 模型 | `search_knowledge.limit_invalid` 有 `{{max}}`、`{{default}}` | `agent/tests/texts_guard.test.ts`、`agent/tests/knowledge_search.test.ts` |
 | `runtime/ui_ops.md` | 用户在页面上做了一件事之后追加进会话的界面操作说明：改字段、删除、标为先不管、看过了、撤销、保留与撤销保留、启动与换站、接着做与删除工作项、发布、改评审规则（`agent/src/lib/user_ops.ts`），继续本阶段（`user_stage.ts`），改图（`user_diagram.ts`），点卡片与界面评审结束（`agent/src/hooks/user_commands.ts`）；以及后端替用户发的「我先不管」那句（`backend/src/executor.ts`，助手 `dialogue_acts.ts` 按它的开头认） | 模型 | 见各段的用途一行（条目编号、修订号、清单、字段内容等） | `agent/tests/texts_guard.test.ts`、`agent/tests/user_ops.test.ts`、`agent/tests/stage_continue.test.ts`、`agent/tests/user_diagram.test.ts`、`backend/tests/conversation.test.ts` 等 |
 
 工具文件依赖随 pi 安装的包，单元测试里导入不了：工具登记时用对了哪些键，由守护测试的静态扫描核对；
 模板里的文字由上表最后一栏的测试钉着，没有列测试的几份改动要有意为之。守护测试还核对每一份模板文件在本表里都列着。
+
+## 拒绝语与原因码
+
+工具的拒绝语放在 `runtime/rejections_*.md`。拒绝语的键就是原因码：前两段是哪个工具（共用的守门是 `gate`）与哪一种原因，
+例如 `save_revision.collection_unknown`；第三段是只差情形的变体（`gate.stage_item_write.idle` 是会话空闲时那一种），原因码仍取前两段。
+键加 `.guide` 是指引层（给助手的「怎么办」），变体没有自己的指引层时用原因码那一层的；以 `part.` 开头的是几种拒绝共用的半句，不是原因码。
+代码用 `refusalText("键", {…})` 一次取原因码与两层文字，把原因码交给拒绝（`ToolRejection` 的最后一项）；拒绝记进任务库的
+`tool_rejection` 表时，`reason_code` 存第一个原因码，`reason_codes` 存全部。守门类的原因码（`agent/src/lib/tool_rejection.ts` 的 `GATE_CODES`）
+记作缺前置步骤（`gate`），别的记作输入不合规（`input`）；库打不开、没有任务记录、存档没有做成这些不是输入的问题，不记进表。
+

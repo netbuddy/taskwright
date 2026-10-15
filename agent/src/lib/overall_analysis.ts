@@ -13,8 +13,11 @@
  *
  * 0.4 建的任务没有这个集合（它们的集合叫「领域说明」，照旧）：没有词表，没有提到，也没有最低门；待核实照样算。
  *
- * 本文件不导入任何模块：后端的快照、助手的读取、评审提示都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
+ * 本文件只导入不读文件的共用模板（lib/shared_texts.ts）：后端的快照、助手的读取、评审提示都调它，页面也可以直接导入（agent/tests/web_imports.test.ts 守着）。
  */
+
+import { fillText, refusalText } from "./shared_texts.ts";
+import type { RefusalText } from "./texts_core.ts";
 
 /** 集合的名字。 */
 export const OVERALL_COLLECTION = "总体分析";
@@ -381,18 +384,15 @@ export function pageFacts(itemId: string, fields: Fields, pending: boolean, view
 /**
  * 最低门：任务里至少要有一页在用的主题贴了标签、有例子、用户又看过，才能往别的集合里新增条目。
  * 待不待核实不在这道门里：用户看过就是确认了整页，助手补的内容也随之确认；没有助手补充的页同样要用户看过才算。
- * 过得去返回 null；过不去返回一句事实，写明现在差的是什么（一页都没有，或者最接近的那一页差哪几样）。
+ * 过得去返回 null；过不去返回原因码与两层文字：事实写明现在差的是什么（一页都没有，或者最接近的那一页差哪几样），指引说怎样过这道门。
  */
-export function gateFact(pages: readonly PageFacts[]): string | null {
+export function gateFact(pages: readonly PageFacts[]): RefusalText | null {
   const live = pages.filter((one) => !one.deprecated);
   if (live.some((one) => one.tagged && one.examples > 0 && one.viewed)) return null;
-  const head = "还没有用户看过的主题";
-  if (live.length === 0) return `${head}：总体分析里还没有一页主题`;
+  if (live.length === 0) return refusalText("gate.overall_no_viewed_topic.none");
   // 最接近的一页：差得最少的，一样少时取编号在前的。
-  const missing = (one: PageFacts) => [...(one.tagged ? [] : ["还没有贴标签"]), ...(one.examples > 0 ? [] : ["还没有例子"]), ...(one.viewed ? [] : ["用户还没有看过"])];
+  const missing = (one: PageFacts) => [...(one.tagged ? [] : [fillText("part.page_no_tags")]), ...(one.examples > 0 ? [] : [fillText("part.page_no_examples")]),
+    ...(one.viewed ? [] : [fillText("part.page_unviewed")])];
   const closest = [...live].sort((a, b) => missing(a).length - missing(b).length)[0];
-  return `${head}：总体分析里还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 ${closest.item_id}，它${missing(closest).join("、")}）`;
+  return refusalText("gate.overall_no_viewed_topic", { item: closest.item_id, missing: missing(closest).join("、") });
 }
-
-/** 最低门过不去时「怎么办」那一句。 */
-export const GATE_GUIDANCE = "先在总体分析里立一页主题、写一个例子，请用户打开那一页看一眼（看过就算确认），再写条目";

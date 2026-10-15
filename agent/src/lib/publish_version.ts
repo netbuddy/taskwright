@@ -24,7 +24,8 @@ import { stageOf } from "./stage_read.ts";
 import { CONFIRM_CONDITION, checkCompletion, type ConditionResult, unreadItems, unreadList } from "./conditions.ts";
 import { NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { validateDefinition } from "./definition.ts";
-import { ToolRejection } from "./tool_rejection.ts";
+import { fillText, refusalText } from "./texts.ts";
+import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 import { AGREE_TEXT, COMPLETE_KEY, type CardClick, type Consent, DECLINE_TEXT, judgeConsent } from "./completion_consent.ts";
 import { clickEventSeq } from "./dialogue_acts.ts";
 import { type FigureTally, nextVersionNo, recordVersion, versionDir } from "./versions.ts";
@@ -60,11 +61,7 @@ export interface Archive {
 }
 
 /** 拒绝时给助手的指引：怎样问用户这个任务是否已经完成、可以发布了。 */
-export const CONSENT_GUIDANCE =
-  "请用回复的请选择（choose）问用户这个任务是否已经完成、可以发布了：问句照实写出事实与后果，例如「功能用例、非功能需求、约束一共 12 个条目，" +
-  "都已经评审通过或者由你保留了写法，你也都看过了，没有未解决的问题。这个任务是否已经完成、可以发布第 1 版？发布之后仍然可以接着修改，以后再发布新的一版。」" +
-  `（数字与事实照实填写）；两个选项是 { key: "${COMPLETE_KEY}", text: "${AGREE_TEXT}" } 与「${DECLINE_TEXT}」。` +
-  `用户在卡片上点了「${AGREE_TEXT}」之后再调用「发布版本」；用户在对话里打字说要发布不算，照样先发卡片。`;
+export const CONSENT_GUIDANCE = fillText("part.publish_consent_guidance", { key: COMPLETE_KEY, agree: AGREE_TEXT, decline: DECLINE_TEXT });
 
 /** 卡片点击换成同意：点击之后那句话记进对话行为表时的事件序号，定下点的时候交付物是哪次修订。库里找不到那一行时为空。 */
 function cardConsent(db: DatabaseSync, taskId: string, sessionId: string, click: CardClick): Consent | null {
@@ -82,23 +79,24 @@ export interface PublishOutcome {
 
 function describe(r: ConditionResult): string {
   const items = (r.unmet ?? []).map((u) => u.item).filter(Boolean);
-  return `「${r.collection}」${r.condition}：${r.summary}${items.length ? `还差 ${items.join("、")}。` : ""}`;
+  return fillText("part.publish_condition", {
+    collection: r.collection, condition: r.condition, summary: r.summary, missing: items.length ? fillText("part.publish_missing", { items: items.join("、") }) : "",
+  });
 }
 
 /** 在调用方开好的事务里核对能不能发布：阶段（只看助手）、完成条件、同意。通过时定下版本号与修订号，不写任何东西；不通过抛 ToolRejection。 */
 function check(db: DatabaseSync, call: PublishCall): PublishCheck {
   const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
-  if (!task) throw new Error("库里还没有任务，没有可以发布的版本。");
+  if (!task) throw notInputProblem(new Error(fillText("publish_version.no_task")));
   const definition = validateDefinition(JSON.parse(task.definition_text));
   const versionNo = nextVersionNo(db, task.task_id);
-  const nope = `第 ${versionNo} 版没有发布`;
   // 工作的阶段（lib/stage.ts）：助手只有在评审确认与编写文档阶段才能发布，先于完成条件核对。用户在页面上发布不看阶段；早先建的任务没有阶段。
   if ((call.actor ?? ACTOR_EXECUTOR) !== ACTOR_USER) {
     const stage = stageOf(db, call.workspaceDir, task.task_id, definition, call.sessionId);
     const refusal = stage ? publishRefusal(stage) : null;
     if (refusal) {
-      const fact = `${nope}：${refusal[0]}。`;
-      throw new ToolRejection(`${fact}\n${refusal[1]}。`, fact, `${refusal[1]}。`);
+      const fact = fillText("part.publish_not_published", { version: versionNo, fact: refusal.fact });
+      throw new ToolRejection(`${fact}\n${refusal.guidance}。`, fact, `${refusal.guidance}。`, [refusal.code]);
     }
   }
   const results = checkCompletion(db, task.task_id, definition.completion, { workspaceDir: call.workspaceDir });
@@ -108,12 +106,13 @@ function check(db: DatabaseSync, call: PublishCall): PublishCheck {
     const unread = unreadItems(db, task.task_id, definition.completion,
       (name) => definition.collections.find((c) => c.name === name)?.fields[0]?.name);
     const others = unmet.filter((r) => r.condition !== CONFIRM_CONDITION);
-    const fact = `${nope}。\n` +
-      (unread.length ? `还有 ${unread.length} 条你从没看过：${unreadList(unread)}。\n` : "") +
-      (others.length ? `另有 ${others.length} 条完成条件没有满足：\n${others.map((r, i) => `${i + 1}. ${describe(r)}`).join("\n")}\n` : "");
-    const guidance = (unread.length ? "请把上面「还有 N 条你从没看过」那句原样告诉用户，请用户打开这几条看一眼；" : "请把缺的告诉用户；") +
-      "补齐之后再调用「发布版本」。";
-    throw new ToolRejection(fact + guidance, fact.trimEnd(), guidance);
+    const fact = fillText("publish_version.completion_unmet", {
+      version: versionNo,
+      unread: unread.length ? `${fillText("part.publish_unread", { count: unread.length, list: unreadList(unread) })}\n` : "",
+      others: others.length ? `${fillText("part.publish_others", { count: others.length, list: others.map((r, i) => `${i + 1}. ${describe(r)}`).join("\n") })}\n` : "",
+    });
+    const guidance = unread.length ? fillText("part.publish_unmet_guidance_unread") : fillText("part.publish_unmet_guidance");
+    throw new ToolRejection(fact + guidance, fact.trimEnd(), guidance, ["publish_version.completion_unmet"]);
   }
   const latest = Number((db.prepare("SELECT COALESCE(MAX(revision_no), 0) AS n FROM revision WHERE task_id = ?").get(task.task_id) as { n: number }).n);
   const consent = call.consent?.source === "card" ? cardConsent(db, task.task_id, call.sessionId, call.consent.click)
@@ -122,22 +121,22 @@ function check(db: DatabaseSync, call: PublishCall): PublishCheck {
   if (!verdict.ok && consent?.source === "page") {
     // 页面上的发布：同意就是这次点击，没同过意与点的是另一项都不会出现；只可能是页面看到的修订已经不是现在的。说明是给用户看的。
     const stale = verdict.reason === "stale" ? verdict : { revisionNo: consent.revisionNo, latest };
-    const fact = `这次没有发布：你看到的是修订 ${stale.revisionNo}，交付物现在已经是修订 ${stale.latest}。请看过现在的内容再发布。`;
-    throw new ToolRejection(fact, fact, "");
+    const fact = fillText("publish_version.page_revision_stale", { seen: stale.revisionNo, latest: stale.latest });
+    throw new ToolRejection(fact, fact, "", ["publish_version.page_revision_stale"]);
   }
   if (!verdict.ok) {
-    const fact = `${nope}：` + (verdict.reason === "none"
-      ? `用户还没有在问这个任务是否已经完成的卡片上点「${AGREE_TEXT}」。`
+    const [code, fact] = verdict.reason === "none"
+      ? ["publish_version.consent_none", fillText("publish_version.consent_none", { version: versionNo, agree: AGREE_TEXT })]
       : verdict.reason === "declined"
-        ? `用户在最近一张问这个任务是否已经完成的卡片上选的是「${verdict.optionText ?? DECLINE_TEXT}」。`
-        : `用户在修订 ${verdict.revisionNo} 时点了「${AGREE_TEXT}」，之后交付物又有了修订 ${verdict.latest}，要重新问。`);
-    throw new ToolRejection(`${fact}\n${CONSENT_GUIDANCE}`, fact, CONSENT_GUIDANCE);
+        ? ["publish_version.consent_declined", fillText("publish_version.consent_declined", { version: versionNo, chosen: verdict.optionText ?? DECLINE_TEXT })]
+        : ["publish_version.consent_stale", fillText("publish_version.consent_stale", { version: versionNo, agreed_at: verdict.revisionNo, agree: AGREE_TEXT, latest: verdict.latest })];
+    throw new ToolRejection(`${fact}\n${CONSENT_GUIDANCE}`, fact, CONSENT_GUIDANCE, [code]);
   }
   return { taskId: task.task_id, versionNo, revisionNo: latest, conditions: results.length };
 }
 
 function noDatabase(error: unknown): never {
-  if (error instanceof NoDatabaseYet) throw new Error("这个任务目录还没有任务数据库，没有可以发布的版本。");
+  if (error instanceof NoDatabaseYet) throw notInputProblem(new Error(fillText("publish_version.no_database")));
   throw error;
 }
 
@@ -159,10 +158,10 @@ export function publishVersion(call: PublishCall, archive: Archive, expect?: { v
     return withTaskDatabase(call.workspaceDir, { createIfMissing: false }, (db) => {
       const now = check(db, call);
       if (expect && (now.versionNo !== expect.versionNo || now.revisionNo !== expect.revisionNo)) {
-        const fact = now.versionNo !== expect.versionNo
-          ? `这次没有发布：第 ${expect.versionNo} 版已经发布过了，请看过现在的版本再发布。`
-          : `这次没有发布：存档是按修订 ${expect.revisionNo} 生成的，交付物现在已经是修订 ${now.revisionNo}。请看过现在的内容再发布。`;
-        throw new ToolRejection(fact, fact, "");
+        const [code, fact] = now.versionNo !== expect.versionNo
+          ? ["publish_version.version_already_published", fillText("publish_version.version_already_published", { version: expect.versionNo })]
+          : ["publish_version.revision_moved_during_archive", fillText("publish_version.revision_moved_during_archive", { archived: expect.revisionNo, now: now.revisionNo })];
+        throw new ToolRejection(fact, fact, "", [code]);
       }
       const recorded = recordVersion(db, {
         taskId: now.taskId, sessionId: call.sessionId, callId: call.callId, actor: call.actor ?? ACTOR_EXECUTOR, revisionNo: now.revisionNo,
@@ -180,9 +179,9 @@ export function publishVersion(call: PublishCall, archive: Archive, expect?: { v
 
 /** 文档存档没有做成时的拒绝（任务服务联系不上、生成出错）。why 是原因。 */
 export function archiveRefusal(versionNo: number, why: string): ToolRejection {
-  const fact = `第 ${versionNo} 版没有发布：这一版的文档没有存下来（${why}）。这是程序这边的问题，不是交付物有问题。`;
-  const guidance = "请把这件事告诉用户，请用户稍后在页面上点「发布版本」再试。";
-  return new ToolRejection(`${fact}\n${guidance}`, fact, guidance);
+  const refusal = refusalText("publish_version.archive_failed", { version: versionNo, why });
+  // 存档没有做成是程序这边的问题，不是输入的问题：不记进拒绝表。
+  return notInputProblem(new ToolRejection(`${refusal.fact}\n${refusal.guidance}`, refusal.fact, refusal.guidance, [refusal.code]));
 }
 
 /**

@@ -112,3 +112,35 @@ export function prefixOf(one: Template): string {
   const at = one.body.indexOf("{{");
   return at < 0 ? one.body : one.body.slice(0, at);
 }
+
+/** 一次拒绝的原因码与两层文字：事实（哪里不对）与指引（接下来怎么办；没有这一层时是空的）。 */
+export interface RefusalText {
+  code: string;
+  fact: string;
+  guidance: string;
+}
+
+/** 指引层模板的键：事实层的键后面加 .guide。 */
+export const GUIDE_SUFFIX = ".guide";
+
+/** 拒绝语模板的键对应的原因码：键的前两段（工具或类别、原因）；第三段是只差情形的变体，同一个原因码。 */
+export function codeOf(key: string): string {
+  return key.split(".").slice(0, 2).join(".");
+}
+
+/**
+ * 按键取一次拒绝的两层文字：事实层是这个键的模板，指引层是它加 .guide 的那一个；变体没有时取原因码加 .guide 的那一个；都没有就是空的。
+ * 给的值要覆盖两层的全部占位，每一层只用它自己的那几个；有哪个值两层都用不上，或者少了哪个，都抛错。
+ */
+export function refusalFrom(lookup: (key: string) => Template | undefined, key: string, values: Record<string, string | number> = {}): RefusalText {
+  const fact = lookup(key);
+  if (!fact) throw new TextsError(`没有键为「${key}」的拒绝语模板`);
+  // 变体（第三段）没有自己的指引层时，用原因码那一层的指引：几种情形说的是同一件该怎么办。
+  const code = codeOf(key);
+  const guide = lookup(key + GUIDE_SUFFIX) ?? (code !== key ? lookup(code + GUIDE_SUFFIX) : undefined);
+  const wanted = new Set([...fact.placeholders, ...(guide?.placeholders ?? [])]);
+  const extra = Object.keys(values).filter((name) => !wanted.has(name));
+  if (extra.length) throw new TextsError(`拒绝语「${key}」的值对不上：多给了 ${extra.join("、")}`);
+  const pick = (one: Template) => Object.fromEntries(one.placeholders.filter((name) => Object.hasOwn(values, name)).map((name) => [name, values[name]]));
+  return { code, fact: fill(fact, pick(fact)), guidance: guide ? fill(guide, pick(guide)) : "" };
+}

@@ -155,7 +155,7 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   if (!userEdit && call.actor !== ACTOR_USER) {
     const stage = stageOf(db, call.workspaceDir, taskId, definition, call.sessionId);
     const refusal = stage ? diagramRefusal(stage) : null;
-    if (refusal) throw reject(...refusal);
+    if (refusal) throw reject(refusal.fact, refusal.guidance);
   }
   const records = readDiagrams(db, taskId);
   const deleting = params.delete === true;

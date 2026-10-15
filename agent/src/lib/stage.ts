@@ -12,7 +12,8 @@
 
 import { OVERALL_FIELDS, isDeprecated, tagsOf } from "./overall_analysis.ts";
 import { CHAPTERS, CHAPTER_DECISIONS, CHAPTER_RULES, chapterOfLabels } from "./overall_chapters.ts";
-import { fillText } from "./shared_texts.ts";
+import { fillText, refusalText } from "./shared_texts.ts";
+import type { RefusalText } from "./texts_core.ts";
 
 /** 六个阶段在库里与接口里的写法，按先后排。 */
 export const STAGES = ["reading", "clarifying", "modeling", "writing", "reviewing", "document"] as const;
@@ -167,16 +168,13 @@ export function stageBackedBy(key: unknown): Exclude<Stage, "document"> | null {
 /** 怎样提议退回某个阶段：告诉助手用哪张卡片、两个选项怎样写。 */
 export function backCardGuidance(to: Exclude<Stage, "document">): string {
   const back = BACK_OPTIONS[to];
-  return `请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 ${back.key}「${back.text}」、${STAY_HERE_OPTION.key}「${STAY_HERE_OPTION.text}」`;
+  return fillText("part.back_card", { back_key: back.key, back_text: back.text, stay_key: STAY_HERE_OPTION.key, stay_text: STAY_HERE_OPTION.text });
 }
 
-/** 回复里写了已经停用的 stage 时的拒绝：事实与怎么办。 */
-export const STAGE_PARAM_RETIRED: Refusal = [
-  "回复里写了 stage（或 reason），这两项已经停用：阶段不由你移动，任务还在原来的阶段",
-  "往前进入下一段，用进入下一段的请选择卡片提议；这一段的输入大面积不能用、要退回前面的阶段，用请选择卡片提议退回并在问句里写明原因，" +
-    `两个选项的键与文字照这样写：${Object.values(BACK_OPTIONS).map((one) => `${one.key}「${one.text}」`).join("、")}里要退到的那一个，与 ${STAY_HERE_OPTION.key}「${STAY_HERE_OPTION.text}」；都由用户在卡片上点。` +
-    "只是有一处没弄明白时不要退回：记一条问题条目，在那一处标「待定」，接着做这一段",
-];
+/** 回复里写了已经停用的 stage 时的拒绝：原因码、事实与怎么办。 */
+export const STAGE_PARAM_RETIRED: Refusal = refusalText("reply.stage_param_retired", {
+  back_options: Object.values(BACK_OPTIONS).map((one) => `${one.key}「${one.text}」`).join("、"), stay_key: STAY_HERE_OPTION.key, stay_text: STAY_HERE_OPTION.text,
+});
 
 /**
  * 总体分析还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
@@ -229,7 +227,7 @@ export function forwardCardGuidance(from: Stage): string {
   const next = nextStage(from);
   if (next === null || from === "document") return "";
   const enter = ENTER_OPTIONS[next], stay = STAY_OPTIONS[from];
-  return `请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 ${enter.key}「${enter.text}」、${stay.key}「${stay.text}」`;
+  return fillText("part.forward_card", { enter_key: enter.key, enter_text: enter.text, stay_key: stay.key, stay_text: stay.text });
 }
 
 /**
@@ -301,14 +299,11 @@ export const PROPOSAL_VOIDED_NOTE = fillText("stage.proposal_voided");
  * （流程的工作项的某一站，或者空闲）。流程里做完一段不由助手结束：用进入下一段的卡片提议，由用户点。
  */
 export function activityDoneRefusal(position: Position): Refusal {
-  if (position === IDLE) {
-    return ["回复里写了 activity_done，而本会话不属于任何工作项，没有活动可以汇报做完", "去掉 activity_done 这一项再回复。启动哪一项活动由用户从任务起点页决定"];
-  }
+  if (position === IDLE) return refusalText("gate.activity_done_not_single_activity.idle");
   const forward = forwardCardGuidance(position);
-  return [
-    `回复里写了 activity_done，而本会话的工作项是工作流程，现在在${STAGE_NAMES[position]}阶段：这一项只在工作项是单项活动时用，流程里的阶段做完了不由你汇报`,
-    `去掉 activity_done 这一项再回复。${forward ? `这一段做完了要往前走，${forward}，由用户在卡片上点` : "这一段做完了，照这一段的说明请用户过目"}`,
-  ];
+  return refusalText("gate.activity_done_not_single_activity", {
+    stage: STAGE_NAMES[position], next: forward ? fillText("part.done_forward", { forward }) : fillText("part.done_review"),
+  });
 }
 
 /** 助手汇报单项活动的工作项做完时，对话里那条回复下面的一行。汇报只是一句话：工作项照旧留着，不改任何记录。 */
@@ -426,8 +421,8 @@ export function canWrite(stage: Position, kind: WriteKind): boolean {
   return ALLOWED[stage].includes(kind);
 }
 
-/** 拒绝的两层文字：事实（现在在哪个阶段、拦下的是什么）与怎么办（这一步要先做什么、谁能移动）。 */
-export type Refusal = [fact: string, guidance: string];
+/** 拒绝的原因码与两层文字：事实（现在在哪个阶段、拦下的是什么）与怎么办（这一步要先做什么、谁能移动）。 */
+export type Refusal = RefusalText;
 
 const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", delete: "删除" };
 
@@ -436,23 +431,18 @@ const OP_WORDS: Record<string, string> = { add: "新增", update: "修改", dele
  * 回去要由用户决定：助手发卡片提议退回并写明原因，用户点了才退。
  */
 function howToLeaveDocument(back: Exclude<Stage, "document">): string {
-  return `编写文档阶段只补写主题页的文字。要做这件事，得先回到${STAGE_NAMES[back]}：${backCardGuidance(back)}，由用户在卡片上点`;
+  return fillText("part.leave_document", { stage: STAGE_NAMES[back], back_card: backCardGuidance(back) });
 }
-
-/** 空闲时被拦的事实开头的那半句。 */
-const IDLE_FACT = "本会话不属于任何工作项";
 
 /**
- * 空闲时被拦怎么办：这件事要在哪一项活动里做（where），而启动哪一项活动由用户定——从任务起点页启动一个工作项。
- * 空闲时助手能做的与澄清相同：立主题页、改主题页、记问题条目。
+ * 空闲时被拦怎么办的后半句：启动哪一项活动由用户定——从任务起点页启动一个工作项。
+ * 空闲时助手能做的与澄清相同：立主题页、改主题页、记问题条目。前半句（这件事要在哪一项活动里做）在各条拒绝语的指引层里。
  */
-function howToLeaveIdle(where: string): string {
-  return `${where}。启动哪一项活动由用户决定：请用户从任务起点页启动一个工作项。本会话里你可以立主题页、改主题页、记问题条目`;
-}
+const howToLeaveIdle = (): string => fillText("part.leave_idle");
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
 function howToReachWriting(): string {
-  return `进入写条目要由用户在卡片上选「${START_ITEMS_TEXT}」：你可以先立页、请用户看，觉得理解够了就用请选择卡片提议`;
+  return fillText("part.reach_writing", { start_items: START_ITEMS_TEXT });
 }
 
 /**
@@ -461,16 +451,10 @@ function howToReachWriting(): string {
  */
 export function itemRefusal(stage: Position, op: string, collection: string): Refusal | null {
   if (canWrite(stage, "item")) return null;
-  if (stage === IDLE) {
-    return [`${IDLE_FACT}，这时不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`, howToLeaveIdle(`「${collection}」的条目要在写条目这项活动里写`)];
-  }
-  if (stage === "document") {
-    return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`, howToLeaveDocument("reviewing")];
-  }
-  return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能${OP_WORDS[op] ?? "写"}「${collection}」的条目`,
-    `「${collection}」的条目要到写条目阶段才能写。${howToReachWriting()}`,
-  ];
+  const words = { op: OP_WORDS[op] ?? "写", collection };
+  if (stage === IDLE) return refusalText("gate.stage_item_write.idle", { ...words, leave_idle: howToLeaveIdle() });
+  if (stage === "document") return refusalText("gate.stage_item_write.document", { ...words, stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("reviewing") });
+  return refusalText("gate.stage_item_write", { ...words, stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
 /**
@@ -479,14 +463,15 @@ export function itemRefusal(stage: Position, op: string, collection: string): Re
  */
 export function pageRefusal(stage: Position, op: string, changed: readonly string[] = []): Refusal | null {
   if (stage !== "reviewing") return null;
-  const guidance = `要动主题页的内容，得先回到澄清或整理建模：${backCardGuidance("clarifying")}，由用户在卡片上点`;
-  const head = `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段`;
-  if (op === "add") return [`${head}不能新立主题页`, guidance];
-  if (op === "delete") return [`${head}不能删除主题页`, guidance];
+  const common = { stage: STAGE_NAMES[stage], back_card: backCardGuidance("clarifying") };
+  if (op === "add") return refusalText("gate.stage_page_write.add", common);
+  if (op === "delete") return refusalText("gate.stage_page_write.delete", common);
   const allowed: string[] = [OVERALL_FIELDS.status, OVERALL_FIELDS.seeAlso];
   const others = changed.filter((name) => !allowed.includes(name));
   if (others.length === 0) return null;
-  return [`${head}主题页只能改「${OVERALL_FIELDS.status}」与「${OVERALL_FIELDS.seeAlso}」，这次还改了${others.map((name) => `「${name}」`).join("、")}`, guidance];
+  return refusalText("gate.stage_page_write.fields", {
+    ...common, status: OVERALL_FIELDS.status, see_also: OVERALL_FIELDS.seeAlso, fields: others.map((name) => `「${name}」`).join("、"),
+  });
 }
 
 /**
@@ -495,38 +480,29 @@ export function pageRefusal(stage: Position, op: string, changed: readonly strin
  */
 export function diagramRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "diagram")) return null;
-  if (stage === IDLE) return [`${IDLE_FACT}，这时不能画图、改图或删图`, howToLeaveIdle("图要在整理建模这项活动里画")];
-  if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`, howToLeaveDocument("modeling")];
+  if (stage === IDLE) return refusalText("gate.stage_diagram.idle", { leave_idle: howToLeaveIdle() });
+  if (stage === "document") return refusalText("gate.stage_diagram.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("modeling") });
   const enterModeling = ENTER_OPTIONS.modeling.text;
-  return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能画图、改图或删图`,
-    stage === "reading"
-      ? `图要到整理建模阶段才能画。往前进入下一段要由用户在卡片上点，你只能提议：材料读完之后先提议进入澄清，${forwardCardGuidance("reading")}；澄清告一段落之后，再照同样的办法提议「${enterModeling}」`
-      : `图要到整理建模阶段才能画。进入整理建模要由用户在卡片上选「${enterModeling}」，你只能提议：澄清告一段落之后，${forwardCardGuidance("clarifying")}`,
-  ];
+  return stage === "reading"
+    ? refusalText("gate.stage_diagram.reading", { stage: STAGE_NAMES[stage], forward: forwardCardGuidance("reading"), enter_modeling: enterModeling })
+    : refusalText("gate.stage_diagram", { stage: STAGE_NAMES[stage], forward: forwardCardGuidance("clarifying"), enter_modeling: enterModeling });
 }
 
 /** 助手请求评审：写条目之前的阶段都拦，空闲时也拦。可以时返回 null。 */
 export function reviewRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "review")) return null;
-  if (stage === IDLE) return [`${IDLE_FACT}，这时不能请求评审`, howToLeaveIdle("评审要在写条目或评审确认这项活动里请求")];
-  if (stage === "document") return [`任务现在在${STAGE_NAMES[stage]}阶段，这个阶段不能请求评审`, howToLeaveDocument("reviewing")];
-  return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，评审要到写条目阶段才能请求`,
-    `条目写出来之后再评审。${howToReachWriting()}`,
-  ];
+  if (stage === IDLE) return refusalText("gate.stage_review.idle", { leave_idle: howToLeaveIdle() });
+  if (stage === "document") return refusalText("gate.stage_review.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("reviewing") });
+  return refusalText("gate.stage_review", { stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
 /** 助手发布版本：评审确认与编写文档两个阶段可以，空闲时不可以。可以时返回 null。 */
 export function publishRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "publish")) return null;
-  if (stage === IDLE) return [`${IDLE_FACT}，这时不能发布版本`, howToLeaveIdle("发布版本要在评审确认或编写文档这项活动里做")];
-  return [
-    `任务现在在${STAGE_NAMES[stage]}阶段，发布版本要在评审确认阶段`,
-    stage === "writing"
-      ? `条目写完之后，要由用户在卡片上选「${ENTER_OPTIONS.reviewing.text}」进入评审确认，再发布版本。${forwardCardGuidance("writing")}`
-      : `要先写条目、再由用户进入评审确认，才能发布版本。${howToReachWriting()}`,
-  ];
+  if (stage === IDLE) return refusalText("gate.stage_publish.idle", { leave_idle: howToLeaveIdle() });
+  return stage === "writing"
+    ? refusalText("gate.stage_publish.writing", { stage: STAGE_NAMES[stage], enter_reviewing: ENTER_OPTIONS.reviewing.text, forward: forwardCardGuidance("writing") })
+    : refusalText("gate.stage_publish", { stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
 // ───────────── 每个阶段还差什么：灯 ─────────────

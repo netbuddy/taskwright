@@ -34,6 +34,7 @@ import {
   type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
   activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
 } from "./stage.ts";
+import { refusalText } from "./texts.ts";
 import { listMaterials } from "./task_status.ts";
 import { versionCount } from "./versions.ts";
 
@@ -282,7 +283,7 @@ export function deleteWorkItem(db: DatabaseSync, item: ActivityRecord, who: Omit
  * 汇报做完只是回复下面的一句话，不改任何记录。自己开事务。
  */
 export function activityDoneGate(workspaceDir: string, sessionId: string): Refusal | null {
-  const none: Refusal = ["回复里写了 activity_done，而这个任务没有活动可以汇报做完", "去掉 activity_done 这一项再回复"];
+  const none: Refusal = refusalText("gate.activity_done_not_single_activity.no_stages");
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;

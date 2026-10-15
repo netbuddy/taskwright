@@ -83,7 +83,7 @@ import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
-import { GATE_GUIDANCE, OVERALL_COLLECTION, OVERALL_FIELDS, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
+import { OVERALL_COLLECTION, OVERALL_FIELDS, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { type Position, itemRefusal, pageRefusal } from "./stage.ts";
 import { stageOf } from "./stage_read.ts";
@@ -464,8 +464,8 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         return;
       }
       const staged = stageRefusal(collection, "add");
-      if (staged) errors.push(withGuide(...staged));
-      if (gate !== null && collection.name !== OVERALL_COLLECTION && keepPendingField(collection) === null) errors.push(withGuide(gate, GATE_GUIDANCE));
+      if (staged) errors.push(withGuide(staged.fact, staged.guidance));
+      if (gate !== null && collection.name !== OVERALL_COLLECTION && keepPendingField(collection) === null) errors.push(withGuide(gate.fact, gate.guidance));
       if (raw.item !== undefined) errors.push("新增时不要写 item，条目编号由工具生成");
       if (!isObject(raw.fields)) {
         errors.push("fields 应当是一个对象，键是字段名，值是字段内容");
@@ -557,7 +557,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (op === "delete") {
       const staged = stageRefusal(collection, "delete");
       if (staged) {
-        problems.push({ label, fact: staged[0], guidance: staged[1] });
+        problems.push({ label, fact: staged.fact, guidance: staged.guidance });
         return;
       }
       planned.push({ op: "delete", itemId, collection: row.collection, fromRevision: current.revision_no });
@@ -589,7 +589,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       // 这个阶段能不能改它：别的集合的条目要到写条目阶段；评审确认阶段总体分析的页只能改状态与改看，所以要看这次改动了哪几个字段。
       const changed = [...new Set([...Object.keys(before), ...Object.keys(merged)])].filter((name) => !sameJson(before[name], merged[name]));
       const staged = stageRefusal(collection, "update", changed);
-      if (staged) errors.push(withGuide(...staged));
+      if (staged) errors.push(withGuide(staged.fact, staged.guidance));
     }
     // 旧的「用户直接修改」当作不存在（见文件开头）。用户的操作（直接修改、撤销）都交来完整的来源，不经这里沿用，撤销照原样恢复。
     const previousSources = sourcesOf(itemId, current.revision_no).filter((one) => one.kind !== SOURCE_USER_EDIT);
