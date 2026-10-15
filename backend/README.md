@@ -49,7 +49,31 @@
 | `src/workspace.ts` | 建任务：复制起始文件、写 pi 项目设置、调用 `createTask`，失败时整体清理。 |
 | `src/occupancy.ts` | 任务占用标记 `service.lock`。 |
 | `src/projection.ts` | Word 材料文字版（代码里叫 projection）的薄适配：文字版只有一份实现，这里只负责调用它。 |
-| `src/paths.ts` | 仓根目录与各资源的位置（只在这一处从自身文件位置推出仓根），以及用户数据目录。 |
+| `src/paths.ts` | 仓根目录与各资源的位置（只在这一处从自身文件位置推出仓根），以及用户数据目录、数据目录与日志目录。 |
+| `src/errors.ts` | 接口错误的统一形状与错误码到 HTTP 状态码的对照。 |
+| `src/clock.ts`、`src/files.ts`、`src/py.ts` | 小工具：时间一律写成带时区的 ISO 8601；读文本文件时统一行尾；早先 Python 版沿用下来的真假判断与取值写法。 |
+| `src/task_status.ts` | 任务状况：任务做到哪里了，任务起点页、切换工作面板与对话区的卡片用它；由程序据任务记录算出，不经模型。 |
+| `src/task_json.ts` | 任务目录里的 `task.json`：哪个产品版本建的、哪种任务类型的第几版与第几个修订、属主与建立时刻。 |
+| `src/task_types.ts` | 数据目录下的 `task-types/`：播种产品自带的任务类型、`manifest.json`、修订（每个修订一份完整目录），建任务从这里复制。 |
+| `src/service_db.ts` | 服务级库：数据目录下的 `service.sqlite`，放任务登记与任务类型的修订记录这类不属于某一个任务的数据。 |
+| `src/data_upgrade.ts`、`src/data_command.ts` | 数据升级（启动时与命令行 `data upgrade` 走同一段代码：先看、再备份、再升级，写报告），以及命令行的数据命令。 |
+| `src/data_pack.ts`、`src/zip.ts` | 数据包：把任务与知识库导出成一个 `.taskwright.zip`、再导入；zip 文件的最小读写只用 Node 自带的模块。 |
+| `src/desktop_dirs.ts` | 桌面包的目录：全部放在数据目录一个根下（含 Taskwright 自己的 pi 配置目录 `pi/` 与程序内容 `cache/`），以及第一次启动时从本机 pi 配置复制一次。 |
+| `src/product_settings.ts` | 产品自己的设置文件 `settings.json`：选定的语言模型与嵌入模型、查询前缀、产品登记过的模型服务；不存密钥。 |
+| `src/config_files.ts`、`src/codex.ts` | 与 pi 共用的 `models.json`、`auth.json` 的读写（只改自己那几项、写前备份、与 pi 同一把锁）；「Codex 订阅」在 pi 里对应哪个服务商。 |
+| `src/model_config.ts`、`src/model_test.ts` | 在界面上配置模型服务与选定模型（接口文档第 10 节），以及测试语言模型、嵌入模型。 |
+| `src/embedding.ts` | 调嵌入模型，把文字换算成数字串；知识库按意思查找与文档换算都用它。 |
+| `src/knowledge.ts` | 知识库：库的增删改名、文档的上传与删除、通用知识库。 |
+| `src/knowledge_chunks.ts`、`src/knowledge_embedder.ts`、`src/knowledge_embeddings.ts` | 知识库文档的换算：切成片段、后台排队送去嵌入模型、把数字串存在文档旁边。 |
+| `src/knowledge_search.ts`、`src/knowledge_keywords.ts`、`src/knowledge_passage.ts` | 知识库查找：按意思与按字面两路并行，查到的片段按位置从源文字现读原文交给助手。 |
+| `src/pdf_projection.ts`、`src/pdf_projection_cli.mts`、`src/pdf_upload.ts` | PDF 材料的投影、分段清单与位置表；上传时另起一次运行来生成，到时限没结束就停掉。 |
+| `src/render_chapters.ts` | 生成文档里「业务说明」七章与追溯附录：与页面同一套章节规则，纯读取。 |
+| `src/export_docx.ts`、`src/export_document_docx.ts`、`src/docx_lib.mjs` | 导出 Word：选中的条目、整份生成文档；`docx_lib.mjs` 是用到的那几样 docx 包功能，安装包里另外打包。 |
+| `src/version_archive.ts` | 发布一个版本时，把这一版的文档（Markdown 与 Word）存进任务目录的 `versions/v{N}/`。 |
+| `src/diagram_validate.ts`、`src/diagram_worker.ts`、`src/diagram_engine.mjs` | 校验图的 Mermaid 文本：在另一条线程里解析、到时限就结束那条线程；引擎把 mermaid 的解析接到没有浏览器的 Node 里。 |
+| `src/transport.ts`、`src/transport_rpc.ts` | pi 与 PiSession 之间按行收发文字的一层；子进程实现，后端里与子进程和管道有关的代码只许写在这里。 |
+| `src/debug_prompt.ts`、`src/persona_draft.ts` | 调试模式的两样：设置里的提示词目录与最近一次发给模型的系统提示；把用户说过的话整理成模拟器用户画像的草稿。 |
+| `src/print_command.mts` | 打印在一个任务目录里起 pi 终端界面的命令行，给 `scripts/tui.sh` 用。 |
 | `profiles/` | 启动配置：`dev.json` 开发与服务器用，`desktop.json` 桌面包用（除 Langfuse 环境标签外与 dev 相同），`fake.json` 测试用（模型换成假模型端点；假模型端点不在后端目录里，在仓根的 `tools/fake-model/`，说明见那里的 README.md）。 |
 | `prompts/executor_system_prompt.md` | 执行者的系统提示，启动配置的 `system_prompt_file` 指向它。 |
 
