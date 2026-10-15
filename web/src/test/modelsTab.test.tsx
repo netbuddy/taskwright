@@ -1,4 +1,4 @@
-// 工作台「分析模型」页签：全部图的索引表——按种类分组、所属节或章首、修订与「刚改」、查看、被哪些条目依据、「在节中查看」；表上一行计数。
+// 工作台「分析模型」页签：全部图的索引表——按种类分组、所属节或章首、修订与「刚改」、查看、被哪些条目依据、「打开所在章节」；表上一行计数。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { DiagramRow, Task } from "../api/types";
@@ -45,11 +45,11 @@ describe("「分析模型」页签", () => {
     expect(screen.getByTestId("models-count")).toHaveTextContent("共 3 张 · 已查看 1 · 刚改 1 · 被条目依据 1");
   });
 
-  it("「在节中查看」与被依据的条目各交给条目区，每行只有「在节中查看」一个链接；没有图时写一句怎样得到图", () => {
+  it("「打开所在章节」与被依据的条目各交给条目区，每行只有「打开所在章节」一个链接；没有图时写一句怎样得到图", () => {
     const task = drawn();
     const [onView, onOpenItem] = [vi.fn(), vi.fn()];
     const view = render(<div className="app"><ModelsTab task={task} contents={toc(task)} onView={onView} onOpenItem={onOpenItem} /></div>);
-    expect([...screen.getByTestId("model-D-001").querySelectorAll("td.acts a")].map((a) => a.textContent)).toEqual(["在节中查看"]);
+    expect([...screen.getByTestId("model-D-001").querySelectorAll("td.acts a")].map((a) => a.textContent)).toEqual(["打开所在章节"]);
     fireEvent.click(screen.getByTestId("model-view-D-002"));
     fireEvent.click(screen.getByText("UC-001", { selector: "a" }));
     expect([onView.mock.calls, onOpenItem.mock.calls]).toEqual([[["D-002"]], [["UC-001"]]]);

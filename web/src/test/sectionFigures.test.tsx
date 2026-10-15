@@ -315,7 +315,7 @@ describe("地址里的图与条目依据里的图", () => {
     expect(screen.getByTestId("overall-intro")).toBeInTheDocument();
   });
 
-  it("地址里只说看图（tab=diagrams）：停在「分析模型」页签；在那里点「在节中查看」去那张图所在的节并显示它", async () => {
+  it("地址里只说看图（tab=diagrams）：停在「分析模型」页签；在那里点「打开所在章节」去那张图所在的节并显示它", async () => {
     const task = drawn();
     serve(task);
     const first = render(<Panel t={task} first={null} from={{ diagrams: true, collection: "功能用例" }} />);
