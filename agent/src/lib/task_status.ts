@@ -120,7 +120,7 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
 /**
  * 「这个任务选用的知识库」一段：每个知识库一行写名字与文档个数，下面每份文档一行（名字、种类、大小、出处的写法；
  * 不给路径，不给正文）。所有选用的知识库都没有文档（或者没有知识库）时是空文字。任务现状、续接时的变化与「查询任务状态」都用它。
- * 开头那句里的规矩与系统提示、平台 skill 第二节第 4 条、查找知识库工具的说明是同一条，改一处要四处一起改。
+ * 开头那句里的规矩与系统提示、平台说明第二节第 4 条、查找知识库工具的说明是同一条，改一处要四处一起改。
  */
 export function knowledgeSection(libraries: SelectedLibrary[]): string {
   if (!libraries.some((one) => one.documents.length > 0)) return "";

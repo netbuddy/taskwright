@@ -116,13 +116,11 @@
         "--thinking",
         "medium",
         "--skill",
-        "<仓根>/agent/prompts/skills/taskwright-executor",
-        "--skill",
         "<目录>/tasks/<任务1>/.pi/skills",
         "--session-dir",
         "<目录>/runs/<任务1>/pi-sessions/service",
         "--system-prompt",
-        "你是 Taskwright 的执行者，与用户协作，把用户提出的事情做成经过用户确认的、结构化的交付物。\n\n## 怎样工作\n\n1. 你在一个已经创建好的任务里工作。skill 清单里有两个 skill：taskwright-executor 写你在这个系统里怎样工作，另一个写这类任务怎么做。\n2. 动手之前，先用 read 读 taskwright-executor 的正文，再读任务 skill 的正文，再按它们说的做。任务 skill 会说明领域规矩文档在哪里；规矩文档也要读。\n3. 与任务无关的闲聊照常简短回应，不要调用写入类的工具。\n4. 拿不准用户的意思时，先问清楚再做；一次只问一件事。\n5. 想知道任务进行到哪一步、还缺什么，用查询工具去看，不要凭记忆。\n6. 对用户说话一律用 reply 工具，包括闲聊。\n7. 材料里把具体规定指给了别的文档（例如「按公司规范执行」「见术语表」）时，必须到知识库里把那条规定查出来写进条目，并记来源；查法见 taskwright-executor 第二节第 4 条。\n8. 查知识库用 search_knowledge 这一个工具；不要用 grep 去翻知识库，命中太多也拿不全。查到的片段就是逐字的原文，摘录从片段逐字抄，不必再读知识库文件核对。\n9. 不要一次整份读大文件：长材料照 taskwright-executor 第二节第 1 条按块读。\n\n## 底线\n\n1. 交付物的内容只通过工具写入。工具拒绝时，读它给出的原因，改正之后再试；不要绕开工具，也不要对用户说已经做完了而实际没有。\n2. 不编造用户的话里和材料里都没有的事实。按常识补充的内容，要向用户说明这是你补充的。\n3. 条目的内容接受不接受，由用户决定：用户在界面上打开一个条目看过它，就算确认了；看过之后你再改，它也不会翻回未读。还有用户从没看过的条目（未读）时，不要发布版本。\n4. 全程使用中文。"
+        "你是 Taskwright 的执行者，与用户协作，把用户提出的事情做成经过用户确认的、结构化的交付物。\n\n## 怎样工作\n\n1. 你在一个已经创建好的任务里工作。这段话后面依次接着三样东西：平台说明，写你在这个系统里怎样工作，所有任务类型通用；任务类型说明，写这类任务怎么做；最后是「现在这个阶段」，写任务现在在哪个阶段、这一段做什么、不做什么。\n2. 这几份说明已经在下文，不用再去读 skill 文件。任务类型说明点名的任务定义与领域规矩文档仍要用 read 读，读完再按它们说的做。\n3. 「现在这个阶段」与前面两份说明不一致时，照「现在这个阶段」做。\n4. 与任务无关的闲聊照常简短回应，不要调用写入类的工具。\n5. 拿不准用户的意思时，先问清楚再做；一次只问一件事，用哪一种卡片问照平台说明第五节。\n6. 想知道任务进行到哪一步、还缺什么，用查询工具去看，不要凭记忆。\n7. 对用户说话一律用 reply 工具，包括闲聊。\n\n## 底线\n\n1. 交付物的内容只通过工具写入。工具拒绝时，读它给出的原因，改正之后再试；不要绕开工具，也不要对用户说已经做完了而实际没有。\n2. 不编造用户的话里和材料里都没有的事实。按常识补充的内容，要向用户说明这是你补充的。\n3. 条目的内容接受不接受，由用户决定：用户在界面上打开一个条目看过它，就算确认了；看过之后你再改，它也不会翻回未读。还有用户从没看过的条目（未读）时，不要发布版本。\n4. 全程使用中文。\n"
        ],
        "工具白名单": [
         "read",
@@ -138,18 +136,6 @@
         "request_review",
         "search_knowledge"
        ],
-       "平台 skill": {
-        "代码仓里的路径": "agent/prompts/skills/taskwright-executor",
-        "文件": [
-         {
-          "字节数": 62228,
-          "摘要值": "017569f6159ff7c8",
-          "路径": "SKILL.md"
-         }
-        ],
-        "有没有": true,
-        "目录": "<仓根>/agent/prompts/skills/taskwright-executor"
-       },
        "归档文件": "service-<时刻>.jsonl",
        "扩展": [
         {
@@ -162,8 +148,8 @@
         "代码仓里的路径": "agent/prompts/stages",
         "文件": [
          {
-          "字节数": 3882,
-          "摘要值": "e8af7e3c47446fb2",
+          "字节数": 3453,
+          "摘要值": "ebdec06930db7f2f",
           "路径": "README.md"
          },
          {
@@ -280,11 +266,6 @@
       "已加载的 skill": {
        "skill": [
         {
-         "名字": "taskwright-executor",
-         "描述": "你在 Taskwright 里怎样工作：系统消息、工具、来源、回复、评审、用户看过与完成。",
-         "文件": "<仓根>/agent/prompts/skills/taskwright-executor/SKILL.md"
-        },
-        {
          "名字": "srs-authoring",
          "描述": "编制软件需求规格说明。当用户提供了一份需求文档、一段需求描述，或者口头说明了用户想要的系统功能，并希望整理成需求、用例、需求规格说明时使用。不适用于闲聊、与需求无关的提问。",
          "文件": "<目录>/tasks/<任务1>/.pi/skills/srs-authoring/SKILL.md"
@@ -302,14 +283,13 @@
       "知识仓库摘要": {
        "位置": [
         ".pi/skills",
-        "docs",
-        "代码仓的 agent/prompts/skills/taskwright-executor（平台 skill）"
+        "docs"
        ],
        "摘要算法": "SHA-256 取前 16 位十六进制",
        "文件": [
         {
-         "字节数": 7964,
-         "摘要值": "2cbddb21efcb544e",
+         "字节数": 7935,
+         "摘要值": "5109142c6065bc1e",
          "路径": ".pi/skills/srs-authoring/SKILL.md"
         },
         {
@@ -356,18 +336,11 @@
          "字节数": 1997,
          "摘要值": "6442b1b94708b838",
          "路径": "docs/templates/srs.md"
-        },
-        {
-         "代码仓里的路径": "agent/prompts/skills/taskwright-executor/SKILL.md",
-         "字节数": 62228,
-         "摘要值": "017569f6159ff7c8",
-         "来自": "平台 skill",
-         "路径": "<仓根>/agent/prompts/skills/taskwright-executor/SKILL.md"
         }
        ],
        "时刻": "<时刻>",
        "记录": "知识仓库摘要",
-       "说明": "启动 pi 之前那一刻，任务目录知识仓库与平台 skill 里每份文件的路径与内容摘要值；只记摘要值，不记内容。"
+       "说明": "启动 pi 之前那一刻，任务目录知识仓库里每份文件的路径与内容摘要值；只记摘要值，不记内容。"
       },
       "读不懂的行数": 0
      }
@@ -494,7 +467,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"63efe663559b2cf7\",\"bytes\":79708,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65777,\"lines\":238,\"digest\":\"2d5e4ee84f810996\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7662,\"lines\":30,\"digest\":\"70e8d45a759591da\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"0f0cdc845702dfbd\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"890a94e145a6cae2\",\"bytes\":79679,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65777,\"lines\":238,\"digest\":\"2d5e4ee84f810996\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7633,\"lines\":30,\"digest\":\"85579fb1e9002bca\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"0f0cdc845702dfbd\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

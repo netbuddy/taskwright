@@ -50,7 +50,7 @@ test("不给 --shell 时打印给人看的几行，系统提示全文换成它�
   const lines = done.stdout.trimEnd().split("\n");
   assert.match(lines[0], /^任务 TASK-001「.*」，状态是进行中；任务目录 /);
   assert.equal(lines[1], `会话文件放在 ${join(tmp, "runs", "pi-sessions", "试一下")}，这次开一条新会话`);
-  assert.match(lines[3], /（系统提示全文，取自 [^）]+executor_system_prompt\.md）/);
+  assert.match(lines[3], /（系统提示全文，取自 agent\/prompts\/stages\/system\.md）/);
 });
 
 test("续接：--continue 取最近的会话文件，--session 用给的那一个；没有可续接的、文件不存在、任务目录不对时拒绝", () => {

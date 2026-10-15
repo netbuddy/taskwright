@@ -247,39 +247,12 @@ test("提示：还没有和任何条目关联的领域说明——来源引用�
   assert.deepEqual(out.hints.map((h: any) => h.items), [["DN-004", "DN-005"]]);
 });
 
-test("平台 skill 与任务 skill 写了总体分析的做法；平台 skill 末尾留着老任务（领域说明）的三条", () => {
-  const platform = readFileSync(resolve(import.meta.dirname, "../prompts/skills/taskwright-executor/SKILL.md"), "utf-8");
-  const section = platform.slice(platform.indexOf("## 十、总体分析（任务定义里有「总体分析」集合时）"), platform.indexOf("## 十一、画图"));
-  assert.ok(section.length > 0);
-  // 十一件事各有一条。
-  for (const head of ["1. **抓没说清的词。**", "2. **逐条要例子、问例外。**", "3. **找冲突。**", "4. **复述。**", "5. **问为什么。**", "6. **记决定与假设。**",
-    "7. **建议标签与上级主题。**", "8. **条目晚于理解。**", "9. **两种节奏。**", "10. **工作的阶段。**", "11. **往前进入下一个阶段要由用户决定。**"]) assert.ok(section.includes(head), head);
-  assert.match(section, /你要做的是下面十一件事。/);
-  // 工作的阶段：五个阶段的名字、自己只能退回前面的阶段、往前走用卡片提议（四张卡片各两个固定的选项）。
-  assert.match(section, /工作分五个阶段：核读材料、澄清、整理建模、写条目、评审确认/);
-  assert.match(section, /你自己只能把任务退回前面的阶段[^]*在回复里另写 `stage`（阶段的名字）与 `reason`（一句话，说明为什么现在退回去）/);
-  assert.match(section, /你不能自己把任务往前移。/);
-  for (const pair of ["`enter_clarify`「进入澄清」、`continue_reading`「继续本阶段」", "`enter_consolidate`「进入整理建模」、`continue_clarify`「继续本阶段」",
-    "`start_items`「开始写条目」、`continue_consolidate`「继续本阶段」", "`enter_review`「进入评审确认」、`continue_writing`「继续本阶段」"]) assert.ok(section.includes(pair), pair);
-  assert.match(section, /以「例外：」开头的例子/);
-  assert.match(section, /先给一个候选的「它是什么」与一个候选的例子/);
-  assert.match(section, /`story_ok`「采纳为例子」、`story_fix`「有误，需修改」、`story_again`「换一个例子重述」/);
-  assert.match(section, /种类写「用户的话」，摘录就是「采纳为例子」/);
-  assert.match(section, /总体分析里还要已经有至少一页在用的主题贴了标签、写了例子、用户又看过/);
-  assert.doesNotMatch(section, /又不待核实/);
-  assert.match(section, /`supports` 写 `\{"field": "已经定下的", "index": 2\}`/);
-  // 老任务的三条原样留着。
-  const legacy = section.slice(section.indexOf("### 老任务（任务定义里的集合叫「领域说明」时）"));
-  assert.match(legacy, /我把「借还台管理员」记到领域说明了（DN-002）/);
-  assert.match(legacy, /来源种类写「条目」（见第四节），locator 写它的条目编号/);
-  assert.match(legacy, /领域说明只写解释那一半，规则那一半按任务 skill 的分拣放到该放的地方/);
-  assert.match(legacy, /excerpt 逐字照抄那条说明的标题或内容里你引用的那一段，包括标点/);
-  // 这一节（老任务小节除外）与任务 skill 里不出现这几个词。
+test("任务 skill 写了总体分析的做法，不出现平台的内部用词", () => {
+  // 任务 skill 里不出现这几个词。
   // 任务 skill 的文字分三份：每个阶段都要用的在 SKILL.md，核读材料与写条目各有一段在旁边的 stages/ 目录里。
   const taskDir = resolve(import.meta.dirname, "../../task-types/srs-authoring/.pi/skills/srs-authoring");
   const task = ["SKILL.md", "stages/reading.md", "stages/writing.md"].map((name) => readFileSync(resolve(taskDir, name), "utf-8")).join("\n");
   for (const word of ["节点", "联系", "要素", "依据门", "派生", "投影", "schema"]) {
-    assert.ok(!section.slice(0, section.indexOf("### 老任务")).includes(word), `平台 skill 第十节里有「${word}」`);
     assert.ok(!task.includes(word), `任务 skill 里有「${word}」`);
   }
   assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、总体分析/);

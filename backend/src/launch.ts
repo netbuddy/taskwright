@@ -158,15 +158,6 @@ export function resolveExtension(entry: Record<string, any>): string | null {
   throw new LaunchError(`扩展「${name}」的 source 只能写 repo 或 env，${source === undefined || source === null ? "现在没有写" : `现在写的是 '${source}'`}。`);
 }
 
-/** 平台 skill 所在的目录；配置没写这一项返回 null，写了但目录里没有 SKILL.md 就报错。 */
-export function platformSkillDir(profile: Profile): string | null {
-  const rel = profile.platform_skill;
-  if (!rel) return null;
-  const path = fromRoot(rel);
-  if (!isFile(join(path, "SKILL.md"))) throw new LaunchError(`配置里写的平台 skill 应当在代码仓的 ${rel}/SKILL.md，但那里没有这个文件。`);
-  return path;
-}
-
 /**
  * 启动配置里「材料分段」一节的三个参数；没写的一项用 agent 侧 lib/segments.ts 的默认值。写了但不是正整数时抛 LaunchError。
  * 生成分段清单（上传 Word 材料）与 pi 里的扩展读清单都用这一份。
@@ -311,9 +302,7 @@ export function buildCommand(profile: Profile, workspace: string, sessionDir: st
   const model = resolveModel(profile).model;
   if (model) args.push("--model", model);
   if (profile.thinking) args.push("--thinking", profile.thinking);
-  // 先传平台 skill，再传任务目录里的技能：两个 --skill 的先后决定 pi 的 skill 清单里的顺序。
-  const platform = platformSkillDir(profile);
-  if (platform !== null) args.push("--skill", platform);
+  // 任务目录里的技能（任务类型的 skill）。
   const skillsDir = profile.workspace_skills_dir;
   if (skillsDir && isDir(join(workspace, skillsDir))) args.push("--skill", resolve(workspace, skillsDir));
   args.push("--session-dir", sessionDir);
@@ -341,7 +330,6 @@ export function startupRecord(profile: Profile, argv: string[]) {
     // 模型来自哪里只在桌面形态或者模型来自产品设置时写；服务器形态没有在界面上选过模型时，启动记录不多这一项（tests/profiles.test.ts 核对）
     ...(profile[PI_SETTINGS_MODEL] || resolveModel(profile).from === "产品设置" ? { 模型来自: modelSource(profile) } : {}),
     环境标签: (profile.langfuse || {}).environment ?? "",
-    "平台 skill": platformSkillRecord(profile),
     按阶段的说明: stagePromptRecord(),
     流程的说明: flowPromptRecord(),
   };
@@ -351,12 +339,6 @@ function modelSource(profile: Profile): string {
   const resolved = resolveModel(profile);
   if (resolved.from === "产品设置") return `产品设置（${resolved.settings} 里在界面上选定的语言模型）`;
   return resolved.from === "助手程序的设置" ? `助手程序的设置（${resolved.settings} 的 defaultProvider 与 defaultModel）` : "启动配置";
-}
-
-export function platformSkillRecord(profile: Profile) {
-  const path = platformSkillDir(profile);
-  if (path === null) return { 有没有: false, 说明: "启动配置里没有写 platform_skill，这次没有加载平台 skill。" };
-  return { 有没有: true, 代码仓里的路径: profile.platform_skill, 目录: path, 文件: digestFiles(path, path) };
 }
 
 /** 有阶段的任务的系统提示用的那几份文件所在的目录，相对代码仓根目录（扩展在每次运行开始之前用它们拼系统提示，见 agent/src/hooks/stage_prompt.ts）。 */
@@ -429,22 +411,14 @@ export function digestFiles(base: string, relativeTo: string): Record<string, un
   return files;
 }
 
-/** 启动那一刻知识仓库里每份文件的路径、字节数与内容摘要值；配置了平台 skill 时它的文件也记进来。 */
-export function knowledgeSnapshot(workspace: string, profile: Profile | null = null) {
+/** 启动那一刻知识仓库里每份文件的路径、字节数与内容摘要值。 */
+export function knowledgeSnapshot(workspace: string) {
   const files: Record<string, unknown>[] = [];
   for (const sub of KNOWLEDGE_DIRS) {
     const base = join(workspace, sub);
     if (isDir(base)) files.push(...digestFiles(base, workspace));
   }
-  const where = [...KNOWLEDGE_DIRS];
-  const platform = profile ? platformSkillDir(profile) : null;
-  if (platform !== null) {
-    for (const one of digestFiles(platform, platform)) {
-      files.push({ ...one, 路径: join(platform, String(one["路径"])), 来自: "平台 skill", 代码仓里的路径: `${profile!.platform_skill}/${one["路径"]}` });
-    }
-    where.push(`代码仓的 ${profile!.platform_skill}（平台 skill）`);
-  }
-  return { 摘要算法: "SHA-256 取前 16 位十六进制", 位置: where, 文件: files };
+  return { 摘要算法: "SHA-256 取前 16 位十六进制", 位置: [...KNOWLEDGE_DIRS], 文件: files };
 }
 
 /** pi 会放进系统提示的上下文文件：照 pi 的发现规则在磁盘上查一遍（pi 的 RPC 没有查询这一项的命令）。 */

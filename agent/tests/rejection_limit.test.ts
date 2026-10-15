@@ -14,7 +14,7 @@ import { consecutiveReplyRejections, decideReply } from "../src/lib/reply.ts";
 import { ToolRejection } from "../src/lib/tool_rejection.ts";
 
 /** 「先写理解」那道门拒绝时的文字，照 lib/dialogue_acts.ts 拼的样子。 */
-const missing = (label = "回复") => `${label}没有执行：${INTENT_GATE_TEXT}。${GATE_MISSING_TEXT}。\n请按平台 skill「先写理解」一节的格式……`;
+const missing = (label = "回复") => `${label}没有执行：${INTENT_GATE_TEXT}。${GATE_MISSING_TEXT}。\n请按平台说明「先写理解」一节的格式……`;
 const invalid = `回复没有执行：${INTENT_GATE_TEXT}。这一轮写了 2 个 JSON 片段，${GATE_INVALID_TEXT}。各片段的问题：（1）……`;
 const FORM = "回复没有执行：informs 应当是一个列表。";
 

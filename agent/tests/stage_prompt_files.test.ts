@@ -1,11 +1,6 @@
 /**
  * 有阶段的任务用的说明文件（agent/prompts/stages/）的内容检查。只读这些文件，不改。
- *
- * 平台说明现在有两份：早先的任务经 --skill 读的那一份（agent/prompts/skills/taskwright-executor/SKILL.md），
- * 与有阶段的任务放进系统提示的共用部分（agent/prompts/stages/common.md）。两份的第一到九节与第十一节本应相同
- * （第十节两份各写各的，第十二节「随时可用的七项能力」只有共用部分有），
- * 这里逐段核对：把早先那一份套上下面 EDITS 表里列的几处有意的改动之后，要与共用部分一字不差。
- * 改了其中一份而没有改另一份，这例测试会指出第一处不同的段落；确是只该改一份的，在 EDITS 里加一条并写明原因。
+ * 平台说明只有一份：放进系统提示的共用部分（agent/prompts/stages/common.md）。
  */
 
 import assert from "node:assert/strict";
@@ -31,7 +26,6 @@ const EMPTY_LAMP_INPUT: LampInput = {
 };
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const LEGACY = join(ROOT, "agent", "prompts", "skills", "taskwright-executor", "SKILL.md");
 const STAGES_DIR = join(ROOT, "agent", "prompts", "stages");
 /** 读 stages 目录里的一份文件。活动的定义开头有一段头（lib/activity_def.ts），拼系统提示时去掉，这里也去掉。 */
 const readRaw = (name: string) => skillBody(readFileSync(join(STAGES_DIR, name), "utf-8"));
@@ -46,60 +40,9 @@ const read = (name: string) => {
   return stage ? `${readRaw(name).trimEnd()}\n\n${nodeSection(FLOW, stage)}\n` : readRaw(name);
 };
 
-/** 两份里不比的两节：早先那一份的第十节写全部阶段的做法与早先的任务，共用部分的第十节只写各阶段都要用的；第十二节只有共用部分有。 */
+/** 共用部分的第十节（各阶段都要用的）与第十二节（随时可用的七项能力）。 */
 const SECTION_TEN = "十、";
 const SECTION_TWELVE = "十二、";
-
-/**
- * 有意的改动：早先那一份里的 from（必须正好出现一次），在共用部分里是 to。to 为空串是整段删去。
- */
-const EDITS: { why: string; from: string; to: string }[] = [
-  {
-    why: "第五节第 8 条：有阶段的任务里澄清是一问一答，每答一条就发一张「是否已解决」的卡片会打断节奏；改成答完的几条用一张卡片一起问，并写明了结时记落实到。早先的任务没有这个字段，也不分阶段，照旧。",
-    from: "   - 不缺了，就在同一轮回复的末尾用请选择问用户这个问题是否已解决，在 `items` 里点名这个问题条目，选项固定三个：「已解决」「还没解决，继续改」「先不管，保留」。不要用请过目问，见第 5 条。\n   - 用户选「已解决」，就把问题的状态改为已解决，在处理结果里写明采纳的内容；选「先不管，保留」，就把状态改为「用户决定保留」，在处理结果里写明用户决定先保留。这两种都只改状态与处理结果两个字段。选「还没解决，继续改」，就问用户还要怎么改。",
-    to: "   - 不缺了，这个问题在内容上就答完了；它的状态要用户在卡片上点过才能改。手上没有别的事要问时，在同一轮回复的末尾用请选择问这个问题是否已解决，在 `items` 里点名这个问题条目，选项固定三个：「已解决」「还没解决，继续改」「先不管，保留」。不要用请过目问，见第 5 条。\n   - 手上还有别的事要接着问时（澄清阶段一问一答就是这样），不要每答一条就发这张卡片：直接问下一件，开头用一句话带过刚记下的事，例如「借期 30 天，记进『借书』那一页了。」等到没有要问的了、或者要提议进入下一段之前，用一张这样的卡片把已经答完的几条一起问，`items` 点名这几条问题条目。只放答案已经写进条目的问题。\n   - 用户选「已解决」，就把卡片点名的问题的状态改为已解决（点名了几条就在一次保存里都改），在处理结果里写明采纳的内容，在「落实到」里写答案写进了哪里；选「先不管，保留」，就把状态改为「用户决定保留」，在处理结果里写明用户决定先保留。这两种都只改状态、处理结果与落实到。选「还没解决，继续改」，就问用户还要怎么改。",
-  },
-  {
-    why: "读材料那一步：早先的任务读到的内容都整理成条目；有阶段的任务按阶段写，核读材料阶段写不了条目。",
-    from: "把这次读到的几块里的内容整理成条目并保存（照任务 skill 的分批规矩），再读后面的块",
-    to: "把这次读到的几块里的内容按现在这个阶段该写的东西整理并保存（核读材料阶段写主题页与问题条目，写条目阶段写条目；一次保存写多少照任务 skill 的分批规矩），再读后面的块",
-  },
-  {
-    why: "第三节第 6 条：「把材料里的内容都写成条目之后再回复」对早先的任务是对的，有阶段的任务只做这个阶段能做的。",
-    from: "6. **把用户交代的事做完再回复。** 用户要你整理材料，就把材料里的内容都写成条目之后再回复；不要只写了一部分就停下来。一次保存写不下时分几批保存，中间不回复用户。",
-    to: "6. **把这个阶段该做的事做完再回复。** 用户交代的事，在现在这个阶段能做的那一部分做完之后再回复，不要只做了一部分就停下来；一次保存写不下时分几批保存，中间不回复用户。这个阶段不能做的那一部分，照「现在这个阶段」里「用户的话落在这一段之外时」说的办。",
-  },
-  {
-    why: "第三节第 7 条与第五节第 8 条、系统提示重复，共用部分删去。",
-    from: "\n7. **一次只问一件事。** 拿不准用户的意思时先问清楚再做，先问最影响其他条目的那一件。",
-    to: "",
-  },
-  {
-    why: "第五节开头先说清三种回应各用在什么时候，并举一个把二选一写成提问的反例。",
-    from: "这时用回复工具把话重新说一遍。\n",
-    to: "这时用回复工具把话重新说一遍。\n\n**先分清你要的是哪一种回应。** 要用户答是或否、或者在几个答案里挑一个，用请选择（`choose`），把可选的答案写成选项；要用户同意你打算怎样做，用提议（`propose`）；只有用户要自己说出内容、没法从几个选项里挑的开放问题，才用提问（`ask`）。反例：你拿不准用户是要「只立主题页然后停下」还是要「连条目一起整理」，这是在两种做法里挑一种，应当用请选择，把两种做法写成两个选项；写成提问「你希望只建总体分析页，还是同时整理完整的交付物？」是错的：提问的卡片上没有可点的选项，用户只能打字。提问里出现「是否」「能不能」「要不要」这类词时，工具会拒绝并要你改用请选择或提议。\n",
-  },
-  {
-    why: "第五节第 7 条的例句本身是一道是非题，共用部分换成一个开放问题。",
-    from: "例如：「材料里写了逾期要罚款，但没说逾期期间能不能续借，这会影响续借的办理前提。逾期未还的读者能不能续借？」",
-    to: "例如：「材料里写了逾期要罚款，但没写每天罚多少，这会影响逾期还书的办理步骤。逾期每册每天罚多少钱？」",
-  },
-  {
-    why: "第四节末尾：有阶段的任务里一处定不了时写「待定」并记问题条目（第十节第 9 条）。早先的任务没有这一条。",
-    from: "\n\n## 五、怎样回复\n",
-    to: "\n\n**还定不了的地方。** 一个字段现在定不了时写「待定：」加一句说明，不要空着，也不要自己编一个；同时记一条问题条目把这件事记下来，规矩见第十节第 9 条。\n\n## 五、怎样回复\n",
-  },
-  {
-    why: "第十一节第 4 条：图上还没有定的节点以「待定：」开头。早先的任务没有这一条。",
-    from: "界面据此列出图里画了哪些条目。只写任务里现有的条目编号。",
-    to: "界面据此列出图里画了哪些条目。只写任务里现有的条目编号。一个节点画的事还没有定时，节点的文字以「待定：」开头，例如 `c{\"待定：借满时怎么办\"}`，并照第十节第 9 条记一条问题条目。",
-  },
-  {
-    why: "画图：有阶段的任务要到整理建模阶段才能画，并且可以先提议。",
-    from: "1. **只在用户要求时画。** 用户说「把这几个用例画成用例图」「给退款流程画一张时序图」这类话时才画；整理条目时不要主动画图。",
-    to: "1. **什么时候画。** 核读材料与澄清两个阶段不能画图，工具会拒绝。从整理建模阶段起，用户说「把这几个用例画成用例图」「给退款流程画一张时序图」这类话时画；你觉得一张图能帮用户看清时先提议，用户同意之后再画，不要不问就画。整理建模阶段例外：这一段你主动把五种图画出来，不等用户提出，也不用先提议，见「现在这个阶段」。",
-  },
-];
 
 /** 去掉开头两行 --- 之间的 frontmatter。 */
 function body(text: string): string {
@@ -114,32 +57,6 @@ function sections(text: string): Map<string, string> {
   for (const part of parts.slice(1)) out.set(part.slice(0, part.indexOf("\n")), "## " + part.replace(/\n+$/, "") + "\n");
   return out;
 }
-
-/** 早先那一份套上有意的改动。每一处改动必须正好对上一次，否则说明那句话已经变了，表要跟着改。 */
-function edited(text: string): string {
-  let out = text;
-  for (const edit of EDITS) {
-    const found = out.split(edit.from).length - 1;
-    assert.equal(found, 1, `EDITS 里这一条在早先那一份平台说明里应当正好出现一次，现在是 ${found} 次（${edit.why}）`);
-    out = out.replace(edit.from, edit.to);
-  }
-  return out;
-}
-
-test("共用部分的第一到九节与第十一节，同早先那一份平台说明逐段相同；有意不同的几处都列在表上", () => {
-  const legacy = sections(edited(body(readFileSync(LEGACY, "utf-8"))));
-  const common = sections(read("common.md"));
-  const titles = (all: Map<string, string>) => [...all.keys()].filter((title) => !title.startsWith(SECTION_TEN) && !title.startsWith(SECTION_TWELVE));
-  assert.deepEqual(titles(common), titles(legacy), "两份的节标题与次序应当相同（第十、十二节除外）");
-  assert.equal(titles(common).length, 10);
-  for (const title of titles(common)) {
-    const want = legacy.get(title)!.split("\n");
-    const got = common.get(title)!.split("\n");
-    for (let i = 0; i < Math.max(want.length, got.length); i++) {
-      assert.equal(got[i], want[i], `「${title}」一节第 ${i + 1} 行两份不同。两份都该改就都改；只该改一份的，在本文件的 EDITS 里加一条并写明原因`);
-    }
-  }
-});
 
 test("共用部分不带 frontmatter，不提早先的任务，理解格式那一段由同一个脚本生成", () => {
   const text = read("common.md");
@@ -188,14 +105,12 @@ test("共用部分的第十二节：随时可用的七项能力各一条，三�
   assert.ok(twelve.split("\n").length <= 40, `第十二节现在 ${twelve.split("\n").length} 行`);
 });
 
-test("有阶段的任务的系统提示：说明已在下文、不用再读 skill 文件，「现在这个阶段」优先；底线四条与早先那一份相同", () => {
+test("有阶段的任务的系统提示：说明已在下文、不用再读 skill 文件，「现在这个阶段」优先；末尾是底线一节", () => {
   const system = read("system.md");
-  const legacy = readFileSync(join(ROOT, "backend", "prompts", "executor_system_prompt.md"), "utf-8");
   assert.match(system, /这几份说明已经在下文，不用再去读 skill 文件。/);
   assert.match(system, /「现在这个阶段」与前面两份说明不一致时，照「现在这个阶段」做。/);
   assert.doesNotMatch(system, /先用 read 读 taskwright-executor/);
-  const bottom = (text: string) => text.slice(text.indexOf("## 底线")).trim();
-  assert.equal(bottom(system), bottom(legacy));
+  assert.match(system, /\n## 底线\n/);
 });
 
 // ───────────── 六个阶段各一段 ─────────────

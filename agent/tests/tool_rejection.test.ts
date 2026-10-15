@@ -98,7 +98,7 @@ test("缺前置步骤（这一轮还没写理解）的拒绝记 gate，工作编
   assert.equal(row.reason_kind, "gate");
   assert.equal(row.work_id, "w-u-7");
   assert.match(row.fact, /^保存修订没有执行：.*这一轮还没有写理解。$/);
-  assert.match(row.guidance, /^请按平台 skill「先写理解」一节的格式.*写完接着调用 save_revision。$/);
+  assert.match(row.guidance, /^请按平台说明「先写理解」一节的格式.*写完接着调用 save_revision。$/);
 });
 
 test("回复、发布版本、请求评审被拒各记一行", async () => {

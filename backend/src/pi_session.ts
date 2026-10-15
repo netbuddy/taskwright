@@ -313,13 +313,13 @@ export class PiSession {
     // 文件名只精确到秒，同一秒里的两次启动共用一组文件：先记下哪几份是这一次新建的，启动失败时只删这一次新建的空文件。
     this.newFiles = [this.archivePath, this.notesPath, this.timesPath].filter((path) => !existsSync(path));
     // 打开归档文件或记知识仓库摘要时出错：关掉已经打开的、删掉这一次新建的空文件再报错，不留下没关的文件。
-    // 知识仓库摘要里的启动配置错误（平台 skill 不在了）照原样报，别的按准备文件出错报。
+    // 启动配置错误照原样报，别的按准备文件出错报。
     let knowledge: ReturnType<typeof launch.knowledgeSnapshot>;
     try {
       this.archive = openSync(this.archivePath, "a");
       this.notes = openSync(this.notesPath, "a");
       this.times = openSync(this.timesPath, "a");
-      knowledge = launch.knowledgeSnapshot(this.workspace, this.profile);
+      knowledge = launch.knowledgeSnapshot(this.workspace);
     } catch (error) {
       this.closeFiles();
       this.removeEmptyArchive();
@@ -342,7 +342,7 @@ export class PiSession {
     this.note("启动", { ...launch.startupRecord(this.profile, this.command), 任务目录: this.workspace, 接回的会话文件: sessionFile ?? "",
       是不是重启接回: sessionFile !== null, 归档文件: basename(this.archivePath) });
     this.read(transport);
-    this.note("知识仓库摘要", { ...knowledge, 说明: "启动 pi 之前那一刻，任务目录知识仓库与平台 skill 里每份文件的路径与内容摘要值；只记摘要值，不记内容。" });
+    this.note("知识仓库摘要", { ...knowledge, 说明: "启动 pi 之前那一刻，任务目录知识仓库里每份文件的路径与内容摘要值；只记摘要值，不记内容。" });
     this.note("上下文文件", launch.contextFileCandidates(this.command, this.workspace, env));
     await this.noteLoadedSkills();
   }

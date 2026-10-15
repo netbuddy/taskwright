@@ -1,6 +1,6 @@
 /**
  * 对话理解：理解格式的核对、按登记的 schema 从助手消息里认出并记下理解、一轮结束时没有理解记失败、三个工具的门禁、回复记执行者的行为、
- * 保存修订记理解编号与规范化值、三个派生事实，以及 schema 是唯一来源（向用户要的回应的枚举、平台 skill 的生成区）；平台 skill 回复一节的判据。
+ * 保存修订记理解编号与规范化值、三个派生事实，以及 schema 是唯一来源（向用户要的回应的枚举、平台说明 的生成区）；平台说明 回复一节的判据。
  */
 
 import assert from "node:assert/strict";
@@ -437,7 +437,7 @@ test("门禁：这一轮没有合格理解时三个工具的拒绝理由相同�
   const dir = workspaceWithItems();
   const branch = [userEntry("整理一下", "u-1")];
   assert.throws(() => requireUnderstanding(dir, SESSION, branch, "保存修订", "save_revision"),
-    /^Error: 保存修订没有执行：先按 schema 写下你对用户这句话的理解：「整理一下」。这一轮还没有写理解。\n请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，写完接着调用 save_revision。$/);
+    /^Error: 保存修订没有执行：先按 schema 写下你对用户这句话的理解：「整理一下」。这一轮还没有写理解。\n请按平台说明「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，写完接着调用 save_revision。$/);
   record(dir, branch, "我去整理。", ["save_revision"]);
   assert.throws(() => requireUnderstanding(dir, SESSION, branch, "发布版本", "publish_version"), /这一轮还没有写理解/);
   record(dir, branch, '{"acts": "整理"}', ["save_revision"]);
@@ -730,10 +730,10 @@ test("对话理解之前建的库：打开时补建对话行为表、给修订�
   assert.equal(query(dir, "SELECT * FROM revision").length, 1);
 });
 
-test("唯一来源：回复的五种主行为取自 schema；平台 skill 的生成区与 schema 一致", () => {
+test("唯一来源：回复的五种主行为取自 schema；平台共用说明的生成区与 schema 一致", () => {
   assert.deepEqual([...ACT_KINDS], [...EXECUTOR_FUNCTIONS]);
   assert.deepEqual([...EXECUTOR_FUNCTIONS], ["ask", "confirm", "suggest", "choose", "propose"]);
-  const path = join(import.meta.dirname, "..", "prompts", "skills", "taskwright-executor", "SKILL.md");
+  const path = join(import.meta.dirname, "..", "prompts", "stages", "common.md");
   const text = readFileSync(path, "utf-8");
   assert.match(text, /\n（理解格式说明开始，由 agent\/prompts\/schemas\/user_intent.schema.json 生成，不要手改）\n/);
   assert.match(text, /\n（理解格式说明结束）\n/);
@@ -742,14 +742,14 @@ test("唯一来源：回复的五种主行为取自 schema；平台 skill 的生
   assert.doesNotMatch(text, /第一段/);
   // 一句话只写一份理解，不要在后面的消息里重复写。
   assert.match(text, /一句话只写一份理解，写完直接调用工具，不要在后面的消息里重复写；调用保存修订之前先确认这一轮已经写过理解。/);
-  // 平台 skill 里的格式说明与识别用的 schema 是同一个文件。
+  // 平台共用说明里的格式说明与识别用的 schema 是同一个文件。
   assert.equal(REGISTERED_OUTPUTS[0].schema, INTENT_SCHEMA);
-  assert.equal(renderDocument(text), text, "SKILL.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");
+  assert.equal(renderDocument(text), text, "common.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");
   for (const fn of INTENT_SCHEMA.$defs.user_function.enum) assert.match(text, new RegExp("`" + fn + "`"));
 });
 
-test("平台 skill 第五节：向用户要回应的判据、三个正例一个反例、告知点名条目；同批引用的编号规矩", () => {
-  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "skills", "taskwright-executor", "SKILL.md"), "utf-8");
+test("平台共用说明第五节：向用户要回应的判据、三个正例一个反例、告知点名条目；同批引用的编号规矩", () => {
+  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "stages", "common.md"), "utf-8");
   assert.match(text, /向用户要的回应，只在你等用户的一个具体回应、没有它下一步做不了或不该做时才填；它的文字是要用户回应的那句话，不是你的答案。/);
   assert.match(text, /正例一：用户问「材料里写了保留几天吗」，材料没写。你先答「材料没写」，再提问「你希望保留几天？」。/);
   assert.match(text, /正例二：用户问「现在还差什么」。你答完还差哪几项，再请选择「现在完成」还是「还要再改」。/);
@@ -779,7 +779,7 @@ test("功能说明写明三条判据（告知与纠正、请求与纠正、询�
   assert.match(usage.clarify, /判据是那个说法出自你刚才的回复/);
   assert.match(usage.affirm, /用户回答你的请选择（选了其中一项）或者说自己看过了，是告知，不是同意/);
   assert.equal(INTENT_SCHEMA.properties.acts.description, "用户这句话里的对话行为，按用户说的先后排，一件事一项。");
-  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "skills", "taskwright-executor", "SKILL.md"), "utf-8");
+  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "stages", "common.md"), "utf-8");
   assert.match(text, /怎么数：按用户话里的分句或分号逐段看，每一段有一个独立的用意就是一项/);
   assert.match(text, /三段话三项的例子：用户说「每人最多借五本；逾期罚款的事先不管；毕业生什么时候注销借书证，材料里写了吗？」，写告知、告知、询问三项。/);
   assert.match(text, /两段话其实是一项的例子：用户说「续借的事我想好了：每本最多续借一次」，前一段只是引出后一段，写一项告知。/);

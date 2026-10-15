@@ -272,7 +272,7 @@ export function understandingFactErrors(db: DatabaseSync, taskId: string, sessio
 }
 
 /**
- * 登记的结构化输出之一：执行者对用户这句话的理解。schema 就是发给执行者的那一份（平台 skill 里的说明由它生成）；
+ * 登记的结构化输出之一：执行者对用户这句话的理解。schema 就是发给执行者的那一份（平台说明里的说明由它生成）；
  * 每句用户的话都必须有一份，这一轮结束时没有就记 USER_INTENT_MISSING。
  */
 export const USER_INTENT_OUTPUT: StructuredOutput = {
@@ -474,7 +474,7 @@ export function requireUnderstanding(workspaceDir: string, sessionId: string, br
   // 引出用户那句原话：助手被拒几次之后容易忘了要理解的是哪一句。
   const said = run.userText.trim() ? `：「${quotedUserText(run.userText)}」` : "";
   const fact = `${label}没有执行：${INTENT_GATE_TEXT}${said}。${why}。`;
-  const guidance = "请按平台 skill「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
+  const guidance = "请按平台说明「先写理解」一节的格式，在你的文字输出里写一个 JSON 对象，写下你对用户这句话的理解，" +
     `写完接着调用 ${toolName}。`;
   throw new ToolRejection(`${fact}\n${guidance}`, fact, guidance, "gate");
 }
@@ -778,7 +778,7 @@ export function dialogueFactLines(facts: DialogueFacts): string[] {
         one.values.map((v) => `修订 ${v.revision_no}：${JSON.stringify(v.value)}`).join("，")).join("；")}。`,
     );
   }
-  if (lines.length > 0) lines.push("这几条事实只供参考，怎样用见平台 skill「三个事实怎么用」一节。");
+  if (lines.length > 0) lines.push("这几条事实只供参考，怎样用见平台说明「三个事实怎么用」一节。");
   return lines;
 }
 

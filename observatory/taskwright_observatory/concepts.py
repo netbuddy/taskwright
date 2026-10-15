@@ -203,8 +203,8 @@ def pi_concepts() -> list[dict]:
             "观测台的叫法": "skill",
             "pi 的名字": "skill",
             "一句话解释": "一份写在 SKILL.md 里的执行方法说明。pi 启动时只把每个 skill 的名字与描述放进系统提示，"
-                          "正文要助手自己用 read 去读。本仓里助手有两个 skill：代码仓里的平台 skill（taskwright-executor，所有任务类型共用），"
-                          "与任务目录里的任务 skill（这类任务的做法）。",
+                          "正文要助手自己用 read 去读。本仓里助手只有一个 skill：任务目录里的任务 skill（这类任务的做法）；"
+                          "有阶段的任务里，它的正文由扩展直接拼进系统提示。所有任务类型共用的平台说明在代码仓的 agent/prompts/stages/ 下，不是 skill。",
             "官方原句": "At startup, pi scans skill locations and extracts names and descriptions. "
                         "This is progressive disclosure: only descriptions are always in context, "
                         "full instructions load on-demand.",
@@ -390,7 +390,7 @@ def backend_concepts() -> list[dict]:
                          "各来自不同的时钟，混着用会画出自相矛盾的图，所以它们只作为文字显示，"
                          "并写明是谁记的时刻。缺收到时刻的那次运行不画时间条，也不拿别的时钟顶替。"},
         {"名字": "知识仓库摘要值", "它是什么": "启动 pi 之前那一刻，任务目录里 .pi/skills/ 与 docs/ 下每份文件、"
-                                               "以及代码仓里平台 skill 目录下每份文件内容的 SHA-256 摘要值取前 16 位。两次启动之间某份文件改过，它的摘要值就不同。",
+                                               "内容的 SHA-256 摘要值取前 16 位（早先的归档里还有代码仓里平台 skill 目录下的文件）。两次启动之间某份文件改过，它的摘要值就不同。",
          "来源": "后端补记里的「知识仓库摘要」记录",
          "与 pi 的关系": "与 pi 无关。观测台据它说出每次运行用的是哪一版知识；这件事做出来之前的归档写「这条归档没有记下」。"},
         {"名字": "收到时刻索引", "它是什么": "归档旁边同名的 .times.jsonl 文件，它的第 N 行记的是"
@@ -446,7 +446,7 @@ def display_terms() -> list[dict]:
              "「助手按需读过」来自 read 工具的调用；「工具读过」来自会自己读文件的工具的参数；"
              "「启动时放进了系统提示」来自后端补记里 pi 实际加载的 skill；摘要值来自后端补记。"),
         term("知识仓库", "给助手读的那些文件：任务目录里执行方法（skill）所在的 .pi/skills/、各类文档所在的 docs/，"
-             "加上代码仓里的平台 skill（所有任务类型共用，不复制进任务目录）。",
+             "早先的归档里还算上代码仓里的平台 skill（现已退役）。",
              not_pi + "它也不是某种数据库，就是这几个目录。", "按目录列出，不看内容。"),
         term("模型交互", "一轮里 pi 与模型一问一答的那一段：一次模型请求，加模型的应答。", not_pi,
              "一轮里只有一次模型请求（pi 的 runLoop 每轮只请求一次模型）。"),

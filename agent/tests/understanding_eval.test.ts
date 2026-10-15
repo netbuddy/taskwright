@@ -1,4 +1,4 @@
-// 对话理解评测的判分逻辑、从平台 skill 截取第八节、提示拼装，以及评测集本身的形式（agent/eval/understanding/）。
+// 对话理解评测的判分逻辑、从平台共用说明截取第八节、提示拼装，以及评测集本身的形式（agent/eval/understanding/）。
 // 跑分要调真模型，不在这里；这里只测不调模型的部分。
 
 import assert from "node:assert/strict";
@@ -9,14 +9,14 @@ import { buildPrompt, majority, parseUnderstanding, scoreCase, tally, understand
 import { INTENT_SCHEMA, schemaErrors, USER_FUNCTIONS } from "../src/lib/intent_schema.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const SKILL = readFileSync(join(ROOT, "agent/prompts/skills/taskwright-executor/SKILL.md"), "utf-8");
+const SKILL = readFileSync(join(ROOT, "agent/prompts/stages/common.md"), "utf-8");
 const CASES: EvalCase[] = readFileSync(join(ROOT, "agent/eval/understanding/cases.jsonl"), "utf-8")
   .split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
 
 const exp = (function_: string, keywords: string[], extra: Partial<ExpectedAct> = {}): ExpectedAct =>
   ({ function: function_, summary: "", keywords, ...extra });
 
-test("从 SKILL.md 截取第八节：从「## 八、」到下一个二级标题之前，含由 schema 生成的格式说明", () => {
+test("从平台共用说明 common.md 截取第八节：从「## 八、」到下一个二级标题之前，含由 schema 生成的格式说明", () => {
   const section = understandingSection(SKILL);
   assert.match(section, /^## 八、先写理解/);
   assert.match(section, /（理解格式说明开始/);

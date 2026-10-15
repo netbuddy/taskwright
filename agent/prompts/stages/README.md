@@ -15,6 +15,6 @@
 
 任务类型一级的文字在任务类型的 skill 目录里：`SKILL.md` 的正文是每个阶段都要用的部分，旁边的 `stages/<阶段的键>.md` 是那个阶段的一段，没有这个文件就是这一段没有内容。
 
-早先的任务没有阶段，它们的文字不在这里：系统提示是 `backend/prompts/executor_system_prompt.md`，平台说明是 `agent/prompts/skills/taskwright-executor/SKILL.md`。`common.md` 的第一到九节与第十一节同那一份平台说明本应相同（第十节与第十二节只有有阶段的任务才有），`agent/tests/stage_prompt_files.test.ts` 逐段核对；有意不同的几处列在那份测试的 `EDITS` 表里。改工具的用法、来源、回复这类两种任务都受影响的说明时，两份都要改。
+平台说明只有 `common.md` 这一份：早先的任务用的那一份平台 skill 与它的系统提示已经删去。
 
 `common.md` 里的理解格式说明由 `scripts/render-intent-schema.mjs` 生成，不要手改。

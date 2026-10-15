@@ -55,9 +55,6 @@ export const PLATFORM_FLOWS_DIR = join(PROMPTS_DIR, "flows");
 export const FLOWS_SUBDIR = "flows";
 export const FLOW_ANALYSIS_FILE = "analysis.md";
 
-/** 平台 skill 的目录：它是早先的任务读的那一份，有阶段的任务不读它，认任务 skill 时要把它排除。 */
-export const PLATFORM_SKILL_DIR = join(PROMPTS_DIR, "skills", "taskwright-executor");
-
 export const SYSTEM_FILE = "system.md";
 export const COMMON_FILE = "common.md";
 /** 任务 skill 的目录里放按阶段的几段的子目录。 */
@@ -254,11 +251,6 @@ export function piTail(current: string, custom: string): string {
   return /<cwd>[\s\S]*?<\/cwd>/.exec(withoutSkills)?.[0] ?? "";
 }
 
-/** 任务 skill：pi 加载的 skill 里除了平台 skill 之外的那些，按 pi 给的次序。 */
-export function taskSkills(skills: readonly LoadedSkill[]): LoadedSkill[] {
-  return skills.filter((one) => resolve(dirname(one.filePath)) !== resolve(PLATFORM_SKILL_DIR));
-}
-
 export interface ComposeInput {
   /** 任务现在在哪个阶段；空闲时是 idle。 */
   stage: Position;
@@ -340,7 +332,8 @@ function slots(input: ComposeInput, io: PromptIo): Slot[] {
     return { part, from: "builtin", file: relative(REPO_ROOT, path), path };
   };
   const inTask = (part: PartKind, path: string): Source => ({ part, from: "task", file: relative(resolve(input.workspaceDir), resolve(path)), path });
-  const skills = taskSkills(input.skills);
+  // 任务 skill：pi 加载的 skill（只有任务目录里任务类型的那一份），按 pi 给的次序。
+  const skills = input.skills;
   const wanted: [Slot["part"], boolean, Source[]][] = [
     ["system", true, [builtin("system", SYSTEM_FILE)]],
     ["platform_common", true, [builtin("platform_common", COMMON_FILE)]],
