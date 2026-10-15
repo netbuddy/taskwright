@@ -10,7 +10,8 @@ import { after, test } from "node:test";
 import { appVersion } from "../src/paths.ts";
 import { Service, taskTypeVersion } from "../src/service.ts";
 import { readTaskJson } from "../src/task_json.ts";
-import { MANIFEST_NAME, definitionFileOf, listTaskTypes, readManifest, seedTaskTypes, taskTypesRoot } from "../src/task_types.ts";
+import { ServiceDb } from "../src/service_db.ts";
+import { MANIFEST_NAME, TaskTypeError, definitionFileOf, listTaskTypes, readManifest, recordSeedRevisions, restoreTaskTypeRevision, revisionNumbers, revisionsDir, saveTaskTypeRevision, seedTaskTypes, taskTypesRoot } from "../src/task_types.ts";
 import { ROOT, captureConsole, tempDir } from "./helpers.ts";
 
 captureConsole();
@@ -23,7 +24,8 @@ test("播种：数据目录下还没有 task-types 时把产品自带的每种�
   const data = join(tmp, "seed");
   assert.deepEqual(seedTaskTypes(data, "0.6.0"), [KEY]);
   const root = taskTypesRoot(data);
-  assert.deepEqual(readdirSync(root).sort(), [MANIFEST_NAME, KEY]);
+  assert.deepEqual(readdirSync(root).sort(), [".revisions", MANIFEST_NAME, KEY]);
+  assert.deepEqual(readdirSync(join(root, ".revisions", KEY)), ["1"], "播种那一刻存成修订 1");
   assert.equal(readFileSync(join(root, KEY, definitionFileOf(KEY)), "utf-8"), readFileSync(join(SHIPPED, KEY, definitionFileOf(KEY)), "utf-8"));
   const seeded = readManifest(root).types[KEY];
   assert.deepEqual([seeded.source_version, seeded.product_version], [taskTypeVersion(KEY), "0.6.0"]);
@@ -70,5 +72,52 @@ test("任务服务启动时播种；建任务从用户目录复制，任务类�
     assert.equal(readTaskJson(dir)?.task_type_version, 99);
   } finally {
     await service.close();
+  }
+});
+
+test("修订与回退：改一份文件存成修订 2 并记下经过；改坏任务定义被拒、什么都不动；回退到修订 1 是新的修订 3，内容与修订 1 一样，不删任何修订", () => {
+  const data = join(tmp, "revise");
+  seedTaskTypes(data, "0.6.0");
+  const registry = ServiceDb.open(data, "0.6.0");
+  try {
+    recordSeedRevisions(data, registry);
+    const root = taskTypesRoot(data);
+    const skillPath = `.pi/skills/${KEY}/SKILL.md`;
+    const original = readFileSync(join(root, KEY, skillPath), "utf-8");
+    // 修订 1 是播种：每份文件都记作新加。
+    const first = registry.taskTypeRevisions(KEY);
+    assert.deepEqual(first.map((one) => [one.revision_no, one.actor, one.note]), [[1, "system", `从产品自带的第 ${taskTypeVersion(KEY)} 版播种`]]);
+    assert.ok(first[0].files.some((one) => one.path === skillPath && one.change === "added"));
+
+    // 修订 2：改 skill、加一份规矩文档。
+    const two = saveTaskTypeRevision(data, registry, KEY, { [skillPath]: original + "\n补一句本单位的约定。\n", "docs/domain-knowledge/本单位.md": "本单位的写法。\n" }, "user", "补本单位的约定");
+    assert.equal(two, 2);
+    assert.ok(readFileSync(join(root, KEY, skillPath), "utf-8").endsWith("补一句本单位的约定。\n"));
+    assert.deepEqual(registry.taskTypeRevisions(KEY).at(-1)!.files.map((one) => [one.path, one.change]),
+      [[skillPath, "changed"], ["docs/domain-knowledge/本单位.md", "added"]]);
+    assert.deepEqual(revisionNumbers(data, KEY), [1, 2]);
+    assert.equal(readFileSync(join(revisionsDir(data, KEY), "2", skillPath), "utf-8"), readFileSync(join(root, KEY, skillPath), "utf-8"));
+    // 什么都没有改到：不记新修订。
+    assert.equal(saveTaskTypeRevision(data, registry, KEY, { [skillPath]: readFileSync(join(root, KEY, skillPath), "utf-8") }, "user", "没改"), null);
+
+    // 改坏任务定义：被拒，当前版与修订都不动。
+    assert.throws(() => saveTaskTypeRevision(data, registry, KEY, { [definitionFileOf(KEY)]: "{不是 JSON" }, "user", "改坏"), TaskTypeError);
+    assert.throws(() => saveTaskTypeRevision(data, registry, KEY, { "../外面.md": "x" }, "user", "跑出目录"), /不跑出这个目录/);
+    assert.deepEqual(revisionNumbers(data, KEY), [1, 2]);
+    assert.deepEqual(readdirSync(root).filter((name) => name.startsWith(`.${KEY}.`)), [], "暂存目录都清掉了");
+
+    // 回退到修订 1：新的修订 3，内容与修订 1 一样；规矩文档删了、skill 改回来了。
+    assert.equal(restoreTaskTypeRevision(data, registry, KEY, 1, "user"), 3);
+    assert.equal(readFileSync(join(root, KEY, skillPath), "utf-8"), original);
+    assert.equal(existsSync(join(root, KEY, "docs/domain-knowledge/本单位.md")), false);
+    const three = registry.taskTypeRevisions(KEY).at(-1)!;
+    assert.deepEqual([three.revision_no, three.note, three.files.map((one) => [one.path, one.change])],
+      [3, "回退到修订 1", [[skillPath, "changed"], ["docs/domain-knowledge/本单位.md", "removed"]]]);
+    assert.deepEqual(revisionNumbers(data, KEY), [1, 2, 3]);
+    // 已经是那个样子：不记新修订；没有的修订号报错。
+    assert.equal(restoreTaskTypeRevision(data, registry, KEY, 1, "user"), null);
+    assert.throws(() => restoreTaskTypeRevision(data, registry, KEY, 9, "user"), /没有修订 9/);
+  } finally {
+    registry.close();
   }
 });

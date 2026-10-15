@@ -28,7 +28,7 @@ import { Hub } from "./hub.ts";
 import { DEBUG_MODE, PI_SETTINGS_MODEL, type Profile, pdfLimitsOf, segmentParamsOf } from "./launch.ts";
 import { worksFromEntries } from "./work_summary.ts";
 import { CreateTaskError, DEFAULT_TYPE, availableTemplates, createTaskDir } from "./workspace.ts";
-import { listTaskTypes, seedTaskTypes, taskTypesRoot, typeInfo } from "./task_types.ts";
+import { listTaskTypes, recordSeedRevisions, seedTaskTypes, taskTypesRoot, typeInfo } from "./task_types.ts";
 import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
 import { readTaskJson, writeTaskJson } from "./task_json.ts";
 import type { PendingUpgrade } from "./data_upgrade.ts";
@@ -265,6 +265,7 @@ export class Service {
     // 任务类型落在数据目录下的 task-types/：第一次启动（或者产品带来了新的任务类型）时从产品自带的那一份播种，已有的不动（见 task_types.ts）。
     this.typesRoot = taskTypesRoot(this.dataDir);
     if (options.createTasksDir !== false) seedTaskTypes(this.dataDir, appVersion());
+    if (this.registry && options.createTasksDir !== false) recordSeedRevisions(this.dataDir, this.registry);
     // 知识库根目录同样转成绝对路径；第一次启动、还没有知识库的清单时建出通用知识库。
     this.knowledge = options.knowledgeDir ? new KnowledgeStore(resolve(options.knowledgeDir)) : null;
     if (this.knowledge && options.createTasksDir !== false) this.knowledge.ensure();
@@ -305,6 +306,8 @@ export class Service {
   /** 数据升级做完之后把打开着的服务级库接上（升级之前没有打开它）。 */
   attachRegistry(registry: ServiceDb): void {
     this.registry = registry;
+    // 播种时还没有服务级库的（数据要先升级），任务类型的修订 1 只存了目录：这时补记它的经过。
+    recordSeedRevisions(this.dataDir, registry);
   }
 
   scan(): void {
@@ -498,7 +501,7 @@ export class Service {
   create(body: Record<string, any>) {
     const taskType = or(body.task_type, DEFAULT_TYPE) as string;
     // 用户目录里还没有的（例如只读地建了服务对象之后）先播种。
-    seedTaskTypes(this.dataDir, appVersion());
+    if (seedTaskTypes(this.dataDir, appVersion()).length && this.registry) recordSeedRevisions(this.dataDir, this.registry);
     const available = availableTemplates(this.typesRoot);
     if (!available.includes(taskType)) {
       throw new ApiError("bad_request", `没有「${pyStr(taskType)}」这种任务类型。`, { available });
