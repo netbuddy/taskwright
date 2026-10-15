@@ -227,12 +227,13 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
             note = "；".join(f"{item_id} 依据的 {'、'.join(unseen[item_id])} 用户还没看过" for item_id in missing)
             return (FAILED if missing else PASSED), missing, (note + "。" if note else ""), {}
         if key == "no_pending_items":
-            if not others:
-                return NOT_APPLICABLE, [], "总体分析以外还没有条目。", {}
+            requirements = [i for i in others if i["所属集合"] != QUESTIONS]      # 问题条目不算待核实的需求
+            if not requirements:
+                return NOT_APPLICABLE, [], "还没有需求条目。", {}
             if facts is None:
                 return UNKNOWN, [], facts_problem or "取不到待核实的情况。", {}
             verification = facts.get("verification") or {}
-            missing = [i["条目编号"] for i in others
+            missing = [i["条目编号"] for i in requirements
                        if (verification.get(i["条目编号"]) or {}).get("pending_verification")
                        or (verification.get(i["条目编号"]) or {}).get("basis_pending")]
             return (FAILED if missing else PASSED), missing, "", {}

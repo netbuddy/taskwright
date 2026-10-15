@@ -173,8 +173,8 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   now = summary()!;
   // 用户还没有看过任何一张图：不通过；这个用例也因为依据的图没看过而待核实。
   assert.deepEqual(brief(now, "basis_diagrams_viewed"), [false, ["UC-001"]]);
-  // （那条规则冲突的问题依据的两页用户没有看过，它本来就待核实。）
-  assert.deepEqual(brief(now, "no_pending_items"), [false, ["TBD-001", "UC-001"]]);
+  // （那条规则冲突的问题依据的两页用户没有看过，它本来就待核实；问题条目不算进这一盏灯。）
+  assert.deepEqual(brief(now, "no_pending_items"), [false, ["UC-001"]]);
   assert.equal(pendingText(dir, taskId, definition), "待核实的条目：依据的主题待核实、用户还没有看过或已废弃的 1 个：TBD-001；依据的图用户还没有看过的 1 个：UC-001。");
   assert.deepEqual(verificationOfItem(dir, taskId, definition, "UC-001"), [{ item_id: "D-002", reason: "unviewed", see: null },
     ["待核实：它依据的图 D-002 用户还没有看过它现在的内容。请用户把这张图看一遍（看过就算确认）。"]]);
@@ -186,7 +186,7 @@ test("与图、规则冲突有关的几盏灯从库里读：角色进两种图�
   assert.deepEqual(verificationOfItem(dir, taskId, definition, "UC-001")[0], { item_id: "D-004", reason: "unviewed", see: null });
   view("D-004");
   assert.deepEqual(brief(summary()!, "basis_diagrams_viewed"), [true, []]);
-  assert.deepEqual([brief(summary()!, "no_pending_items"), verificationOfItem(dir, taskId, definition, "UC-001")], [[false, ["TBD-001"]], [null, []]]);
+  assert.deepEqual([brief(summary()!, "no_pending_items"), verificationOfItem(dir, taskId, definition, "UC-001")], [[true, []], [null, []]]);
 });
 
 test("材料清单里由 Word 或 PDF 材料生成的文字版与分段清单不算一份材料；原件不在时照算", () => {
