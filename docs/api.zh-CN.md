@@ -91,7 +91,7 @@ data: {
 | `material_removed` | 删除了一份材料，或者一份材料被替换掉了（第 5.1 节） | `at`、`path`；由 Word 材料、PDF 材料生成的文件随它一起删掉，不另发事件。被替换掉的时候另带 `replaced_by`，值是换上来的那份材料的路径，紧接着有一条那份材料的 `material_added` |
 | `work_summary` | 一个工作单元结束后 | `work_id`、`at`、`seconds`、`step_count`、`stages`（每项带 `text`）、`outcome`（这个工作单元怎样结束，取值与 `work_ended` 相同；刷新后读到的对话里的 `work_summary` 消息带同样的值）；只有 `outcome` 为 `stopped_by_user` 时另有 `saved`：这个工作单元实际保存了什么，`{"revisions": […], "items": n, "diagrams": n}`。它按这个工作单元各次工具调用的调用编号到任务库里查，不看会话里有没有工具结果，所以停止到达时已经写进库、结果却没有回到会话的那一次保存也算在内。`revisions` 是保存的任务修订号，从小到大；`items` 是这些修订碰到的条目个数（同一个条目只数一次）；`diagrams` 是保存过的图的张数（图的修订号各算各的，不在 `revisions` 里）。一个工具调用都没有的工作单元不读任务库，直接给空值。任务库没法查时 `saved` 为 `null`。停止不回滚任何东西 |
 | `work_ended` | 智能体这一轮工作稳定下来 | `work_id`、`at`、`seconds`、`step_count`（与 `work_summary` 的相同，由会话记录算出，被停下时一条消息里没有开始执行的工具调用也算在内；会话记录读不出这次工作时用本轮记下的计数）、`outcome`（`replied`、`no_reply`、`stopped_by_user`、`failed`、`stopped_by_limit`；前四种按这个工作单元最后一条助手消息判断，所以调用模型出错、随后自动重试成功的工作单元是 `replied` 或 `no_reply`，不是 `failed`；`stopped_by_limit` 是智能体这一轮连续被拒到上限、由工具停下的，见本节末尾「连续被拒的上限」） |
-| `problem` | 需要让用户知道的问题（见第 5.5 节） | `code`、`text`、`retry` |
+| `problem` | 需要让用户知道的问题（见第 5.5 节） | `code`、`text`、`retry`（模型服务暂时不可用、自动重试时是 `{attempt, delay_ms}`：第几次重试、隔多少毫秒再试，助手程序没说时为 `null`；别的问题是 `null`） |
 | `executor_state` | 执行者的可用状态发生变化 | `state`（`not_started`、`starting`、`idle`、`working`、`exited`、`failed_to_start`）、`text`、`active_session`；续接失败（`session_resume_failed`）之后 `state` 为 `not_started`，`text` 写明助手没有接上这条会话 |
 | `system_note` | 会话开始时的任务状态消息，或固定的兜底提示句 | `message_id`、`at`、`text`、`kind`（`task_status` 或 `reply_fallback`）；任务状态消息的 `text` 是页面上的写法：开头是「这条会话开始时（时刻）的任务状况：」或「接着这条会话继续时（时刻），上次之后交付物的变化：」，只写给助手看的那一行（还在等回应的助手行为）不带；助手看到的原文不变，刷新之后从对话记录读回的也是页面上的写法。任务状态消息另带 `details`（兜底提示句没有这一项）：助手一侧写这条消息时记下的事实，页面拿它把这条消息折叠成一行要点。会话开始时的那一种，`details.kind` 为 `现状`，有 `conditions_total`、`conditions_met`、`conditions_unmet`、`conditions_empty`（完成条件共几条、已满足、还差、所在集合还没有条目而暂时不用核对的各几条）、`unresolved`（未解决的问题条数）、`items`（各集合的条目数）、`materials.files`（材料目录里的文件，每项有 `path`、`bytes` 与 `derived_from`：由同一清单里哪个文件生成，判法与任务页接口的材料清单相同，不是生成的文件为 `null`），任务选用的知识库里有文档时另有 `knowledge`（每个知识库的 `id`、`name` 与 `documents`）。续接时的那一种，`details.kind` 为 `变化`，有 `added`、`updated`、`deleted`（上次之后新增、修改、删除的条目）、`new_materials`（上次之后放进材料目录的文件的路径，其中也有生成的文件）与 `materials`，选用的知识库或其中的文档变过时另有 `knowledge`。这条会话里上一次运行是被用户停止的、此后用户还没有再说话时，`last_run_stopped` 为 `true`，文字里有一句「上一次运行被用户停止，没有做完。」；这种情形下别的都没有变化也写一条，其余情形不带这个键。只写给助手看的 `open_acts` 不带。消息没有记下这些事实时 `details` 为 `null` |
 | `service_exiting` | 服务即将停止：页面上请求退出、收到 SIGINT 或 SIGTERM、收到 SIGHUP（Windows 另有 SIGBREAK）；在关掉各任务的 pi、结束事件流之前发出 | `mode`（`desktop` 或 `server`）、`at`。页面收到后应显示服务已经停止，并且不再重连。 |
@@ -397,14 +397,13 @@ data: {
 | `executor_starting` | 503 | pi 正在启动 |
 | `executor_unavailable` | 503 | pi 启动失败（`data.detail`），或者 pi 不在运行时来了没有带 `session` 的直接操作 |
 | `session_resume_failed` | 503 | 续接或切换之后 pi 接着的不是请求的会话（见 5.6 节）；pi 已停掉，用户的话没有发出去；`data.session_id` 是请求的会话 |
-| `busy_timeout` | 503 | 等待数据库写锁超时 |
+| `busy_timeout` | 503 | 直接操作交给助手之后 10 秒内没有得到结果；操作可能随后生效，`message` 请用户稍后看是否已经生效，`data.op_id` 是这次操作的编号 |
 | `too_large`、`unsupported_type` | 413、415 | 附件过大（材料超过 5 MB，知识库文档超过 20 MB），或类型不受支持 |
 | `duplicate_content`、`name_taken` | 409 | 上传的材料与本任务已有的某份材料内容完全相同，或者与已有的某份材料同名而内容不同（见第 5 节的「材料」）；`data.path` 是已有的那份材料。替换材料时新文件与被替换的那份内容完全相同也返回 `duplicate_content`（第 5.1 节「替换材料」）。知识库文档比的是同一个库里已有的文档，`data.name` 是那份文档（第 11 节） |
 | `in_use` | 409 | 选定的模型属于要删除的模型服务，或者正要被停用（见第 10 节）；`data.provider_id` 是那个模型服务 |
 | `config_unwritable` | 409 | `models.json`、`auth.json` 或产品自己的设置文件读不成一个 JSON 对象，或者里面有注释、改写时会丢掉（见第 10 节）；`data.file` 是文件名，文件原样不动 |
 | `config_locked` | 503 | 别的程序拿着这几个文件之一的锁超过两秒（见第 10 节）；`data.file` 是文件名 |
 | `busy` | 409 | 已经有一个语言模型的测试在跑（见第 10 节） |
-| `embedding_failed` | 502 | 知识库按意思查找时，换算要找的那句话，模型服务出了事：连不上、到时间没有回答、回答了错误（见第 11 节）。说明是模型服务给的那一句 |
 
 ## 9 其他约定
 

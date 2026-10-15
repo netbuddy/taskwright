@@ -94,7 +94,7 @@ describe("工作视图里的两种报法", () => {
   it("服务器问题：带重试信息的报警告，同一种问题再次重试时重新出现；其余报失败", () => {
     vi.useFakeTimers();
     const Probe = ({ problems }: { problems: Problem[] }) => { useProblemToasts(problems); return null; };
-    const retry = (n: number): Problem => ({ code: "model_unavailable", text: `模型服务暂时不可用，正在第 ${n} 次重试。`, retry: { attempt: n, after_ms: 2000 } });
+    const retry = (n: number): Problem => ({ code: "model_unavailable", text: `模型服务暂时不可用，正在第 ${n} 次重试。`, retry: { attempt: n, delay_ms: 2000 } });
     const { rerender } = render(<ToastProvider><Probe problems={[retry(1)]} /></ToastProvider>);
     expect(screen.getByTestId("toast-warn")).toHaveTextContent("第 1 次重试");
     advance(9000);

@@ -271,10 +271,10 @@ test("limit 不写是 3，最多 5", () => {
 
 test("这一次没有做成：任务服务回答了错误时带上它的那句话；没有占用标记、标记里的端口连不上时说联系不上；都请再查一次、仍然不成就告诉用户并记问题条目，不提 grep", async () => {
   const root = makeRoot();
-  reply = () => ({ status: 502, body: { ok: false, error: { code: "embedding_failed", message: "模型服务回答了错误（HTTP 500）：model is loading", data: {} } } });
+  reply = () => ({ status: 500, body: { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: "disk I/O error" } } } });
   const failed = await searchKnowledge(makeTask(), root, { query: "罚款" });
-  assert.equal(failed.text, "按意思查找这一次没有做成：模型服务回答了错误（HTTP 500）：model is loading。可以再查一次；仍然不成时把这个原因告诉用户，这一处先保留材料的原话并记一条问题条目。");
-  assert.equal(failed.details.reason, "embedding_failed");
+  assert.equal(failed.text, "按意思查找这一次没有做成：后端出错了。可以再查一次；仍然不成时把这个原因告诉用户，这一处先保留材料的原话并记一条问题条目。");
+  assert.equal(failed.details.reason, "internal");
   // 回答不是约定的样子（例如端口上是别的程序）：写状态码。
   reply = () => ({ status: 404, body: {} });
   assert.equal((await searchKnowledge(makeTask(), root, { query: "罚款" })).text, failedText("系统回答了错误（HTTP 404）"));
