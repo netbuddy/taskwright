@@ -31,6 +31,7 @@ import { runUserOperation } from "../src/lib/user_ops.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
 import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, overallDefinition, query, tempDir } from "./helpers.ts";
+import { fillText } from "../src/lib/texts.ts";
 
 const SESSION = "session-test";
 
@@ -483,7 +484,7 @@ test("门禁拒绝「回复」不算回复的形式被拒：连续被拒的计�
   const branch = [
     userEntry("你好"),
     rejection("这次回复的形式不对，没有送达。"),
-    rejection("回复没有执行：先按 schema 写下你对用户这句话的理解。"),
+    rejection(`${fillText("gate.understanding_missing", { label: "回复", said: "" })}\n请按平台说明「先写理解」一节的格式……`),
     rejection("这次回复的形式不对，没有送达。"),
   ];
   assert.equal(consecutiveReplyRejections(branch as never), 2);

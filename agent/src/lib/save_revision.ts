@@ -177,7 +177,7 @@ const OP_NAMES: Record<string, string> = {
 
 /**
  * 拒绝原因分两层：事实（改了什么、为什么不行，一句话，面向人）与指引（接下来该怎么做，只给助手）。
- * 核对函数往 errors 里推的一条文字可以用 withGuide 把两层拼在一起，组装时再拆开。
+ * 核对函数往 errors 里推的一条文字用 problem（或 problemText）把拒绝语的键与两层编在一起，组装时再拆开（splitGuide）。
  * 给模型的正文每个操作两行：「- 操作 N（……）：事实」与「  怎么办：指引」；后端的过程摘要只取事实（backend/src/work_summary.ts）。
  */
 export interface RejectReason {
@@ -191,16 +191,12 @@ const GUIDE = "\u0000";
 const KEY = "\u0001";
 /** 指引那一行的开头（「怎么办：」）。后端的过程摘要按它认出指引（backend/src/work_summary.ts）。 */
 export const GUIDANCE_PREFIX = textPrefix("part.save_guidance");
-/** 没有原因码的一条（只有两层文字）。 */
-export function withGuide(fact: string, guidance: string): string {
-  return `${fact}${GUIDE}${guidance}`;
-}
 /** 一条带拒绝语键的错误：键、事实与指引编进一段文字（errors 列表里的一项），组装时再拆开（splitGuide）。key 是完整的键（可以带变体）。 */
 export function problemText(refusal: { key: string; fact: string; guidance: string }): string {
   return `${refusal.key}${KEY}${refusal.fact}${GUIDE}${refusal.guidance}`;
 }
 /** 取好的拒绝语编成一条错误（键写在调用处的 refusalText 里，守护测试才扫得到）。 */
-const problem = (refusal: RefusalText): string => problemText(refusal);
+export const problem = (refusal: RefusalText): string => problemText(refusal);
 /** 一个操作的若干条错误拼成一条原因：事实用「；」接起来，指引也是。subject 是事实里没点到条目时补在前面的主语。 */
 function reasonOf(label: string, subject: string, errors: string[]): RejectReason {
   const facts: string[] = [];

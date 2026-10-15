@@ -18,7 +18,7 @@ import { basename } from "node:path";
 import * as clock from "./clock.ts";
 import { INTENT_SCHEMA_PATH } from "./paths.ts";
 import { LOCATIONS_SUFFIX } from "../../agent/src/lib/docx_locations.ts";
-import { GATE_MISSING_TEXT, INTENT_GATE_TEXT } from "../../agent/src/lib/intent_schema.ts";
+import { understandingGateOf } from "../../agent/src/lib/intent_schema.ts";
 import { SEGMENTS_SUFFIX } from "../../agent/src/lib/segments.ts";
 import { jsonOrText } from "../../agent/src/lib/task_read.ts";
 import { openRo } from "./library.ts";
@@ -26,7 +26,7 @@ import { PDF_LOCATIONS_SUFFIX } from "../../agent/src/lib/pdf_locations.ts";
 import { PDF_SEGMENTS_SUFFIX } from "../../agent/src/lib/pdf_segments.ts";
 import { PDF_PROJECTION_SUFFIX } from "./pdf_projection.ts";
 import { LEGACY_SUFFIX, SUFFIX } from "./projection.ts";
-import { textPattern, textPrefix } from "../../agent/src/lib/texts.ts";
+import { fillText, textPattern, textPrefix } from "../../agent/src/lib/texts.ts";
 import { isObject, or, truthy } from "./py.ts";
 
 export const REPLY_TOOL = "reply";
@@ -69,13 +69,12 @@ export function rejectionReasons(details: Dict | null, text: string): string[] {
 
 /** 工具结果正文里的文字部分，连成一段。 */
 /**
- * 「回复」被拒是哪一种，按拒绝的文字认（文字是助手一侧拼的，两句固定的话见 agent/src/lib/intent_schema.ts）：
+ * 「回复」被拒是哪一种，按拒绝的文字认（文字是助手一侧按模板拼的，认法见 agent/src/lib/intent_schema.ts 的 understandingGateOf）：
  * 这一轮还没有写理解、写了但不合格，或者别的（回复的形式不对）。
  */
 export type ReplyRefusal = "understanding_missing" | "understanding_invalid" | "form";
 export function replyRefusal(text: string): ReplyRefusal {
-  if (!text.includes(INTENT_GATE_TEXT)) return "form";
-  return text.includes(GATE_MISSING_TEXT) ? "understanding_missing" : "understanding_invalid";
+  return understandingGateOf(text) ?? "form";
 }
 
 /** 「回复」被拒时过程摘要里的说法，按真实原因分写；模型接着会再试，所以都说「正在补」「正在改」。 */
@@ -88,16 +87,16 @@ export const REPLY_REFUSAL_TEXT: Record<ReplyRefusal, string> = {
 export const LIMIT_STOPPED_STEP_TEXT = "助手这一轮没有按规矩回答，已经停下";
 
 /**
- * 「保存图」被拒是哪一种，按拒绝的文字认（文字是助手一侧拼的，见 agent/src/lib/save_diagram.ts 的 reject 与 VALIDATION_FAILED_TEXT、
- * lib/save_revision.ts 的 checkSources）：没有写来源、Mermaid 文本没有通过校验，或者别的。过程摘要只给前两种加括注。
+ * 「保存图」被拒是哪一种，按拒绝的文字认（文字是助手一侧按模板拼的，见 agent/prompts/runtime/rejections_save_diagram.md 与 rejections_source.md）：
+ * 没有写来源、Mermaid 文本没有通过校验，或者别的。过程摘要只给前两种加括注。会话记录里只有文字、没有原因码，所以按模板的开头认。
  */
 export type DiagramRejection = "no_sources" | "mermaid" | "other";
-const DIAGRAM_REJECTED_HEAD = "这张图没有保存：";
 export function diagramRejection(text: string): DiagramRejection {
-  if (!text.startsWith(DIAGRAM_REJECTED_HEAD)) return "other";
-  const fact = text.slice(DIAGRAM_REJECTED_HEAD.length);
-  if (fact.startsWith("Mermaid 文本没有通过校验")) return "mermaid";
-  return fact.startsWith("缺少 sources") || fact.startsWith("sources 应当是") ? "no_sources" : "other";
+  const head = textPrefix("part.diagram_head");
+  if (!text.startsWith(head)) return "other";
+  if (text.startsWith(fillText("part.mermaid_failed_head"))) return "mermaid";
+  const fact = text.slice(head.length);
+  return fact.startsWith(textPrefix("source.missing")) || fact.startsWith(textPrefix("source.not_nonempty_list")) ? "no_sources" : "other";
 }
 
 /** 「保存图」被拒时过程摘要里括注的说法；别的原因不加括注（原因在工具的结果里）。 */

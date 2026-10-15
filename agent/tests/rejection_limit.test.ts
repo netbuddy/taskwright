@@ -6,16 +6,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
-import { GATE_INVALID_TEXT, GATE_MISSING_TEXT, INTENT_GATE_TEXT } from "../src/lib/intent_schema.ts";
+import { fillText } from "../src/lib/texts.ts";
 import {
   REJECTION_LIMIT, STOPPED_STATUS_KEY, STOPPED_TEXT, consecutiveRefusals, endedStopped, isUnderstandingGate, refusalKind, reportStopped, stopAtLimit,
 } from "../src/lib/rejection_limit.ts";
 import { consecutiveReplyRejections, decideReply } from "../src/lib/reply.ts";
 import { ToolRejection } from "../src/lib/tool_rejection.ts";
 
-/** 「先写理解」那道门拒绝时的文字，照 lib/dialogue_acts.ts 拼的样子。 */
-const missing = (label = "回复") => `${label}没有执行：${INTENT_GATE_TEXT}。${GATE_MISSING_TEXT}。\n请按平台说明「先写理解」一节的格式……`;
-const invalid = `回复没有执行：${INTENT_GATE_TEXT}。这一轮写了 2 个 JSON 片段，${GATE_INVALID_TEXT}。各片段的问题：（1）……`;
+/** 「先写理解」那道门拒绝时的文字，照 lib/dialogue_acts.ts 拼的样子（事实一层取自模板，后面接指引）。 */
+const missing = (label = "回复") => `${fillText("gate.understanding_missing", { label, said: "" })}\n请按平台说明「先写理解」一节的格式……`;
+const invalid = `${fillText("gate.understanding_invalid", { label: "回复", said: "", count: 2, which: fillText("part.understanding_each"), problems: "（1）……" })}\n请按……`;
 const FORM = "回复没有执行：informs 应当是一个列表。";
 
 const user = (text: string) => ({ type: "message", message: { role: "user", content: text } });
@@ -70,7 +70,7 @@ test("到第 5 次时返回「出错并结束本次运行」的结果，带着�
 
 test("认「先写理解」那道门的拒绝：是这道门的才算，输入不合规的、别的门的、普通异常都不算", () => {
   assert.equal(isUnderstandingGate(new ToolRejection(missing("保存修订"), "事实", "指引", ["gate.understanding_missing"])), true);
-  assert.equal(isUnderstandingGate(new ToolRejection("保存修订没有执行：来源找不到。", "事实", "指引", "input")), false);
+  assert.equal(isUnderstandingGate(new ToolRejection("保存修订没有执行：来源找不到。", "事实", "指引", ["source.material_not_found"])), false);
   assert.equal(isUnderstandingGate(new ToolRejection("发布版本没有执行：用户还没有同意完成。", "事实", "指引", ["publish_version.consent_none"])), false);
   assert.equal(isUnderstandingGate(new Error(missing())), false);
 });

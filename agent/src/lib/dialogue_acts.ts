@@ -22,7 +22,7 @@ import { DatabaseSync } from "node:sqlite";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { ACTOR_EXECUTOR, ACTOR_USER, databasePath, dump, emit, load, wallClockText } from "./db.ts";
 import { hasColumn, hasDialogueTable } from "./dialogue_schema.ts";
-import { FUNCTION_NAMES, GATE_INVALID_TEXT, GATE_MISSING_TEXT, INTENT_GATE_TEXT, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
+import { FUNCTION_NAMES, INTENT_SCHEMA, INTENT_SCHEMA_FILE, SUMMARY_LIMIT } from "./intent_schema.ts";
 import { BUSY_TIMEOUT_MS, NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { proposalFor, proposalKindOf } from "./stage_proposal.ts";
 import { fillText, refusalText, textPrefix } from "./texts.ts";

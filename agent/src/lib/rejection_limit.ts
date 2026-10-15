@@ -22,7 +22,7 @@
  */
 
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
-import { GATE_MISSING_TEXT, INTENT_GATE_TEXT } from "./intent_schema.ts";
+import { understandingGateOf } from "./intent_schema.ts";
 import { REPLY_TOOL_NAME } from "./reply.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 
@@ -43,8 +43,7 @@ export type RefusalKind = "understanding_missing" | "understanding_invalid" | "f
 
 /** 按拒绝的文字认它是哪一种。 */
 export function refusalKind(text: string): RefusalKind {
-  if (!text.includes(INTENT_GATE_TEXT)) return "form";
-  return text.includes(GATE_MISSING_TEXT) ? "understanding_missing" : "understanding_invalid";
+  return understandingGateOf(text) ?? "form";
 }
 
 type BranchEntry = { type: string; message?: { role?: string; toolName?: string; isError?: boolean; content?: unknown } };
@@ -67,7 +66,7 @@ export function consecutiveRefusals(branch: BranchEntry[]): number {
       count += 1;
     } else if (role === "toolResult" && GATED_TOOL_NAMES.includes(toolName ?? "")) {
       if (entry.message.isError !== true) break;
-      if (textOfContent(entry.message.content).includes(INTENT_GATE_TEXT)) count += 1;
+      if (understandingGateOf(textOfContent(entry.message.content)) !== null) count += 1;
     } else if (role === "user") {
       if (textOfContent(entry.message.content).trim() !== FALLBACK_TEXT) break;
     }
@@ -75,9 +74,9 @@ export function consecutiveRefusals(branch: BranchEntry[]): number {
   return count;
 }
 
-/** 这个异常是不是「先写理解」那道门的拒绝。 */
+/** 这个异常是不是「先写理解」那道门的拒绝：按它带的原因码认。 */
 export function isUnderstandingGate(error: unknown): boolean {
-  return error instanceof ToolRejection && error.reasonKind === "gate" && error.message.includes(INTENT_GATE_TEXT);
+  return error instanceof ToolRejection && error.codes.some((code) => code === "gate.understanding_missing" || code === "gate.understanding_invalid");
 }
 
 /** 「出错并结束本次运行」的工具结果。 */

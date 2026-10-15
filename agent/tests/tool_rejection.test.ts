@@ -117,6 +117,19 @@ test("缺前置步骤（这一轮还没写理解）的拒绝记 gate，工作编
   assert.match(row.guidance, /^请按平台说明「先写理解」一节的格式.*写完接着调用 save_revision。$/);
 });
 
+test("回复被拒时逐条记下原因码：按核对的先后；同一轮混入别的工具调用的拒绝也带原因码", async () => {
+  const dir = workspaceWithTask();
+  await assert.rejects(replyTool(dir, "call-codes", { text: "好的" }), /这次回复的形式不对/);
+  await assert.rejects(withRejectionRecord({ workspaceDir: dir, sessionId: SESSION, callId: "call-alone", toolName: "reply" }, {}, () =>
+    decideReply({ informs: [], act: null, text: "好" }, {
+      toolCallId: "call-alone", callsThisTurn: [{ id: "call-alone", name: "reply" }, { id: "x", name: "save_revision" }], revisionFact: () => "还没有库",
+    })), /回复必须单独调用/);
+  assert.deepEqual(rejections(dir).map((one) => [one.call_id, one.reason_code, JSON.parse(one.reason_codes), one.reason_kind]), [
+    ["call-codes", "reply.informs_missing", ["reply.informs_missing", "reply.act_missing"], "input"],
+    ["call-alone", "reply.not_alone", ["reply.not_alone"], "input"],
+  ]);
+});
+
 test("回复、发布版本、请求评审被拒各记一行", async () => {
   const dir = workspaceWithTask();
   await assert.rejects(replyTool(dir, "call-reply", { informs: [], act: null }), /这次回复的形式不对/);
