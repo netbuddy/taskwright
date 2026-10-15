@@ -60,7 +60,7 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     const taskDir = join(dir, "tasks", taskId);
     const expected = (stage: "reading" | "clarifying") => composeStagePrompt({
       stage, workspaceDir: taskDir, tail: `<cwd>\n${taskDir}\n</cwd>`,
-      skills: [{ name: "srs-authoring", filePath: join(taskDir, ".pi", "skills", "srs-authoring", "SKILL.md") }],
+      skills: [{ name: "requirements-engineering", filePath: join(taskDir, ".pi", "skills", "requirements-engineering", "SKILL.md") }],
     });
 
     // 第一次运行：任务在核读材料。这次运行的两个请求（立页之前、工具结果回来之后）收到的都是核读材料的那一份。
@@ -97,12 +97,12 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     assert.deepEqual(notes.map((n) => [n.replaced, n.stage, n.how]), [[true, "reading", "recomposed"], [true, "clarifying", "recomposed"], [true, "clarifying", "reused"]]);
     const own = (text: string) => text.slice(0, -`\n\n<cwd>\n${taskDir}\n</cwd>`.length);
     assert.deepEqual(notes.map((n) => n.digest), [digestOf(own(reading.text)), digestOf(own(clarifying.text)), digestOf(own(clarifying.text))]);
-    assert.deepEqual(notes[0].parts.map((p: Dict) => p.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/srs-authoring/SKILL.md",
-      "agent/prompts/stages/reading.md", "agent/prompts/flows/analysis.md", ".pi/skills/srs-authoring/stages/reading.md"]);
+    assert.deepEqual(notes[0].parts.map((p: Dict) => p.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/requirements-engineering/SKILL.md",
+      "agent/prompts/stages/reading.md", "agent/prompts/flows/analysis.md", ".pi/skills/requirements-engineering/stages/reading.md"]);
     assert.ok(!JSON.stringify(notes).includes("你是 Taskwright 的执行者"));
 
     // 早先的任务：把另一个任务的任务定义改成没有「总体分析」集合的样子（早先建的任务就是这样），它没有阶段。
-    const oldId: string = (await call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "早先的任务" })).body.task_id;
+    const oldId: string = (await call("POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "早先的任务" })).body.task_id;
     const oldDir = join(dir, "tasks", oldId);
     writeFileSync(join(oldDir, "inputs", "材料.md"), "读者凭借书证借书。\n", "utf-8");
     const definition = JSON.parse(sqlGet(oldDir, "SELECT definition_text FROM task")!.definition_text);
@@ -116,7 +116,7 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     const old = systemText(requests()[4]);
     const legacy = readFileSync(join(ROOT, "agent", "prompts", "stages", "system.md"), "utf-8");
     assert.ok(old.startsWith(legacy), "系统提示的开头就是启动参数给的那一份");
-    assert.match(old, /<skills>[\s\S]*<name>srs-authoring<\/name>[\s\S]*<\/skills>/);
+    assert.match(old, /<skills>[\s\S]*<name>requirements-engineering<\/name>[\s\S]*<\/skills>/);
     assert.ok(!old.includes("taskwright-executor"));
     assert.ok(old.endsWith(`<cwd>\n${oldDir}\n</cwd>`));
     assert.ok(!old.includes("# 现在这个阶段："));

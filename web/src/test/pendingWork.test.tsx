@@ -32,7 +32,7 @@ const DIAGRAM = { diagram_id: "D-001", name: "自助借书流程", kind: "flowch
 
 function taskOf(over: Partial<TaskDetail> = {}, lamps: StageView["lamps"] = LAMPS): TaskDetail {
   return {
-    task_id: "TASK-P", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
+    task_id: "TASK-P", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "",
     definition: { collections: [QUESTIONS, OVERALL, USE_CASES] }, completion: null, latest_revision: 9,
     items: [
       item("OA-001", "总体分析", "自助借书"), item("OA-003", "总体分析", "逾期不能续借"),

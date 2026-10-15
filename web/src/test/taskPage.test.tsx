@@ -55,7 +55,7 @@ const session = (id: string, name: string | null, last: string | null, over: Par
 
 function detail(over: Partial<TaskDetail> = {}): TaskDetail {
   return {
-    task_id: "TASK-P", task_name: "退款需求走查", task_type: "软件需求规格说明编制", domain_tag: null,
+    task_id: "TASK-P", task_name: "退款需求走查", task_type: "需求工程", domain_tag: null,
     started_at: "2026-09-28T17:49:00",
     definition: { collections: COLLECTIONS }, items: [], completion: null, latest_revision: 0, sessions: [],
     materials: [], knowledge_libraries: ["general", "lib-cb"], ...over,
@@ -159,7 +159,7 @@ describe("任务头", () => {
     expect(text(root.querySelector(".tp-crumb"))).toBe("任务›退款需求走查");
     expect(root.querySelector(".tp-crumb a")).toHaveAttribute("href", "#/tasks");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("退款需求走查");
-    expect(screen.getByTestId("task-meta").textContent).toBe("任务类型：软件需求规格说明编制 · 电商售后 · 创建于 2026-09-28 17:49，最近一次活动在 2026-09-29 10:02。");
+    expect(screen.getByTestId("task-meta").textContent).toBe("任务类型：需求工程 · 电商售后 · 创建于 2026-09-28 17:49，最近一次活动在 2026-09-29 10:02。");
     const frame = screen.getByTestId("task-frame");
     expect(text(frame.querySelector(".topbar .tname"))).toBe("退款需求走查");
     expect(text(frame.querySelector(".topbar .sname"))).toBe("任务起点");
@@ -182,12 +182,12 @@ describe("任务头", () => {
     page(detail({ task_type_versions: { copied: 1, current: 2 } }));
     await ready();
     expect(screen.getByTestId("task-type-version")).toHaveTextContent("任务类型说明是 1 版，当前产品自带的是 2 版。");
-    expect(screen.getByTestId("task-meta").textContent).toBe("任务类型：软件需求规格说明编制 · 创建于 2026-09-28 17:49。任务类型说明是 1 版，当前产品自带的是 2 版。");
+    expect(screen.getByTestId("task-meta").textContent).toBe("任务类型：需求工程 · 创建于 2026-09-28 17:49。任务类型说明是 1 版，当前产品自带的是 2 版。");
     cleanup();
     page(detail({ task_type_versions: { copied: 1, current: 1 } }));
     await ready();
     expect(screen.queryByTestId("task-type-version")).toBeNull();
-    expect(screen.getByTestId("task-meta").textContent).toBe("任务类型：软件需求规格说明编制 · 创建于 2026-09-28 17:49。");
+    expect(screen.getByTestId("task-meta").textContent).toBe("任务类型：需求工程 · 创建于 2026-09-28 17:49。");
   });
 
   it("发布过版本的任务照常可以做：任务名旁没有状态、没有只读说明；有活动目录、「进入工作台」、上传区与知识库的改选用", async () => {

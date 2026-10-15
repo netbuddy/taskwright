@@ -197,7 +197,7 @@ for (const signal of ["SIGHUP", "SIGTERM", "SIGINT"] as const) {
     });
     let stream: ReturnType<typeof request> | undefined;
     try {
-      const created = await call(port, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "关窗测试" });
+      const created = await call(port, "POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "关窗测试" });
       const taskDir = join(dir, "tasks", created.body.task_id);
       let events = "";
       stream = request({ host: "127.0.0.1", port, path: `/api/v1/tasks/${created.body.task_id}/events` }, (res) => res.on("data", (c) => (events += c)));

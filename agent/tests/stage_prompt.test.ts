@@ -19,8 +19,8 @@ import { STAGE_PROMPT_STATUS_KEY, type StagePromptReport, stagePromptFor } from 
 import { CALL_SESSION, DEFINITION_PATH, callIn, demoDefinition, idleSessions, enterStage, makeWorkspace, overallDefinition, tempDir } from "./helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
-const SRS_TYPE = join(ROOT, "task-types", "srs-authoring");
-const SRS_SKILL = { name: "srs-authoring", filePath: join(SRS_TYPE, ".pi", "skills", "srs-authoring", "SKILL.md") };
+const SRS_TYPE = join(ROOT, "task-types", "requirements-engineering");
+const SRS_SKILL = { name: "requirements-engineering", filePath: join(SRS_TYPE, ".pi", "skills", "requirements-engineering", "SKILL.md") };
 const TAIL = "<cwd>\n/somewhere/task\n</cwd>";
 
 const temps: string[] = [];
@@ -41,8 +41,8 @@ for (const stage of STAGES) {
     assert.deepEqual(prompt.parts.map((one) => one.part),
       ["system", "platform_common", "task_common", "platform_stage", "node_exit", ...(hasTaskStage ? ["task_stage"] : []), "tail"]);
     assert.deepEqual(prompt.parts.map((one) => one.from), ["builtin", "builtin", "task", "builtin", "builtin", ...(hasTaskStage ? ["task"] : []), "pi"]);
-    assert.deepEqual(prompt.parts.map((one) => one.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/srs-authoring/SKILL.md",
-      `agent/prompts/stages/${stage}.md`, "agent/prompts/flows/analysis.md", ...(hasTaskStage ? [`.pi/skills/srs-authoring/stages/${stage}.md`] : []), null]);
+    assert.deepEqual(prompt.parts.map((one) => one.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/requirements-engineering/SKILL.md",
+      `agent/prompts/stages/${stage}.md`, "agent/prompts/flows/analysis.md", ...(hasTaskStage ? [`.pi/skills/requirements-engineering/stages/${stage}.md`] : []), null]);
     // 活动的说明到「做到什么算够」为止；接在后面的是流程定义里这个节点的一节：出口与用户说的话不属于本段时，别的节点的不在里面。
     const [activity, exit] = [prompt.parts[3].text, prompt.parts[4].text];
     assert.ok(activity.startsWith(`# 现在这个阶段：${STAGE_NAMES[stage]}\n`) && !/^## 出口$/m.test(activity));
@@ -63,7 +63,7 @@ for (const stage of STAGES) {
     assert.doesNotMatch(prompt.text, /^---$/m);
     assert.doesNotMatch(prompt.text, /<skills>|<available_skills>/);
     assert.doesNotMatch(prompt.text, /### 老任务/);
-    assert.ok(prompt.text.includes("# 软件需求规格说明编制"));
+    assert.ok(prompt.text.includes("# 需求工程"));
   });
 }
 
@@ -359,7 +359,7 @@ test("提示词目录里有哪一份就用哪一份，没有的照旧；空目�
   const one = composeStagePrompt(input("clarifying"), io);
   assert.deepEqual(one.parts.map((p) => [p.part, p.from, p.file]), [
     ["system", "builtin", "agent/prompts/stages/system.md"], ["platform_common", "builtin", "agent/prompts/stages/common.md"],
-    ["task_common", "task", ".pi/skills/srs-authoring/SKILL.md"], ["platform_stage", "prompt_dir", "clarifying.md"],
+    ["task_common", "task", ".pi/skills/requirements-engineering/SKILL.md"], ["platform_stage", "prompt_dir", "clarifying.md"],
     ["node_exit", "builtin", "agent/prompts/flows/analysis.md"], ["tail", "pi", null]]);
   assert.ok(one.text.includes("改过的一句。"));
   assert.ok(!one.text.includes("问法有六种"));
@@ -381,7 +381,7 @@ test("提示词目录里有哪一份就用哪一份，没有的照旧；空目�
     ["task_common", "prompt_dir", "task-type/common.md"], ["platform_stage", "prompt_dir", "clarifying.md"], ["node_exit", "builtin", "agent/prompts/flows/analysis.md"],
     ["task_stage", "prompt_dir", "task-type/clarifying.md"], ["tail", "pi", null]]);
   assert.equal(two.parts[2].text, "# 改过的任务类型说明");
-  assert.ok(!two.text.includes("# 软件需求规格说明编制"));
+  assert.ok(!two.text.includes("# 需求工程"));
   // 一份空文件：这一部分就没有了。
   writeFileSync(join(dir, "task-type", "clarifying.md"), "\n", "utf-8");
   assert.ok(!composeStagePrompt(input("clarifying")).parts.some((p) => p.part === "task_stage"));
@@ -536,7 +536,7 @@ test("工作项是单项活动时：活动的说明原样，节点的出口换�
   const inFlow = compose("modeling");
   assert.deepEqual(alone.parts.map((one) => [one.part, one.from, one.file]), [
     ["system", "builtin", "agent/prompts/stages/system.md"], ["platform_common", "builtin", "agent/prompts/stages/common.md"],
-    ["task_common", "task", ".pi/skills/srs-authoring/SKILL.md"], ["platform_stage", "builtin", "agent/prompts/stages/modeling.md"], ["node_exit", "builtin", null], ["tail", "pi", null]]);
+    ["task_common", "task", ".pi/skills/requirements-engineering/SKILL.md"], ["platform_stage", "builtin", "agent/prompts/stages/modeling.md"], ["node_exit", "builtin", null], ["tail", "pi", null]]);
   assert.ok(io.reads.every((path) => !path.includes("flows")));
   // 活动的说明与在流程里时是同一份文字；不同的只有出口那一部分。
   assert.equal(alone.parts[3].text, inFlow.parts[3].text);
@@ -563,7 +563,7 @@ test("任务空闲时：一段固定的开头，后面接澄清那项活动的�
   assert.equal(idle.stage, IDLE);
   assert.deepEqual(idle.parts.map((one) => [one.part, one.from, one.file]), [
     ["system", "builtin", "agent/prompts/stages/system.md"], ["platform_common", "builtin", "agent/prompts/stages/common.md"],
-    ["task_common", "task", ".pi/skills/srs-authoring/SKILL.md"], ["platform_stage", "builtin", "agent/prompts/stages/clarifying.md"], ["tail", "pi", null]]);
+    ["task_common", "task", ".pi/skills/requirements-engineering/SKILL.md"], ["platform_stage", "builtin", "agent/prompts/stages/clarifying.md"], ["tail", "pi", null]]);
   for (const part of ["system", "platform_common", "task_common", "tail"]) {
     assert.equal(idle.parts.find((one) => one.part === part)!.text, clarifying.parts.find((one) => one.part === part)!.text, part);
   }

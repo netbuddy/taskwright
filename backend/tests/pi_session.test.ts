@@ -22,7 +22,7 @@ const saved = process.env.TASKWRIGHT_PI_ENTRY;
 before(() => {
   tmp = tempDir();
   workspace = join(tmp, "ws");
-  cpSync(join(ROOT, "task-types", "srs-authoring"), workspace, { recursive: true });
+  cpSync(join(ROOT, "task-types", "requirements-engineering"), workspace, { recursive: true });
   process.env.TASKWRIGHT_PI_ENTRY = FAKE_PI;
 });
 after(() => {

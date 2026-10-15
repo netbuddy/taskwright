@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
@@ -75,7 +75,7 @@ for (const sample of Object.keys(SAMPLE_TASKS) as (keyof typeof SAMPLE_TASKS)[])
     assert.deepEqual(plan.tasks.map((t) => [t.dir, t.task_id, t.name, t.version]), [[id, id, SAMPLE_TASKS[sample][1], 8]]);
     const { report, registry } = await runUpgrade(plan, { productVersion: "0.6.0" });
     try {
-      assert.deepEqual([report.fatal, report.tasks.map((t) => [t.dir, t.from, t.to, t.ok, t.error, t.notes])], [null, [[id, 8, TASK_DB_VERSION, true, null, []]]]);
+      assert.deepEqual([report.fatal, report.tasks.map((t) => [t.dir, t.from, t.to, t.ok, t.error, t.notes])], [null, [[id, 8, TASK_DB_VERSION, true, null, ["任务类型改名为「需求工程」：docs/task-definitions/requirements-engineering.json"]]]]);
       assert.match(reportText(report), /成功，用了 \d+ 毫秒/);
       const now = facts(taskDir);
       assert.deepEqual({ ...now, tables: undefined }, { ...before, tables: undefined }, "条目、修订、来源、工作项、会话与拒绝记录一条不少");
@@ -88,6 +88,21 @@ for (const sample of Object.keys(SAMPLE_TASKS) as (keyof typeof SAMPLE_TASKS)[])
         db.close();
       }
       assert.equal(readTaskJson(taskDir)?.upgraded_by_version, "0.6.0");
+      // 任务类型改名：任务目录里的任务定义文件与库里的定义路径、定义快照里的执行方法与任务名都换成「需求工程」。
+      assert.deepEqual(readdirSync(join(taskDir, "docs", "task-definitions")), ["requirements-engineering.json"]);
+      const definition = readFileSync(join(taskDir, "docs", "task-definitions", "requirements-engineering.json"), "utf-8");
+      assert.match(definition, /"任务名": "需求工程"/);
+      assert.match(definition, /"执行方法": "\.pi\/skills\/requirements-engineering\/SKILL\.md"/);
+      const row = (() => {
+        const db = new DatabaseSync(join(taskDir, DB_NAME), { readOnly: true });
+        try {
+          return db.prepare("SELECT definition_path, definition_text FROM task").get() as { definition_path: string; definition_text: string };
+        } finally {
+          db.close();
+        }
+      })();
+      assert.equal(row.definition_path, "docs/task-definitions/requirements-engineering.json");
+      assert.equal(row.definition_text, definition, "快照与改过的定义文件逐字相同");
       assert.equal(library.taskDbVersion(join(report.backup!.dir, "tasks", id)), 8, "备份里是升级之前的库");
       // 甲：在那条会话里工作项照旧在澄清；乙：没有工作项，会话空闲。
       assert.equal(library.stageView(taskDir, "session-sample")!.current, withWorkItem ? "clarifying" : "idle");

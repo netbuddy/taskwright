@@ -266,9 +266,9 @@
       "已加载的 skill": {
        "skill": [
         {
-         "名字": "srs-authoring",
-         "描述": "编制软件需求规格说明。当用户提供了一份需求文档、一段需求描述，或者口头说明了用户想要的系统功能，并希望整理成需求、用例、需求规格说明时使用。不适用于闲聊、与需求无关的提问。",
-         "文件": "<目录>/tasks/<任务1>/.pi/skills/srs-authoring/SKILL.md"
+         "名字": "requirements-engineering",
+         "描述": "需求工程：把需求弄清楚、写成条目、评审确认，并发布需求规格说明。当用户提供了一份需求文档、一段需求描述，或者口头说明了用户想要的系统功能，并希望整理成需求、用例、需求规格说明时使用。不适用于闲聊、与需求无关的提问。",
+         "文件": "<目录>/tasks/<任务1>/.pi/skills/requirements-engineering/SKILL.md"
         }
        ],
        "取得到吗": true,
@@ -288,24 +288,24 @@
        "摘要算法": "SHA-256 取前 16 位十六进制",
        "文件": [
         {
-         "字节数": 7935,
-         "摘要值": "5109142c6065bc1e",
-         "路径": ".pi/skills/srs-authoring/SKILL.md"
+         "字节数": 8002,
+         "摘要值": "60ee718eea8921e4",
+         "路径": ".pi/skills/requirements-engineering/SKILL.md"
         },
         {
          "字节数": 1301,
          "摘要值": "e0b12c1094a9e014",
-         "路径": ".pi/skills/srs-authoring/stages/document.md"
+         "路径": ".pi/skills/requirements-engineering/stages/document.md"
         },
         {
          "字节数": 759,
          "摘要值": "4cef4158146b2a3c",
-         "路径": ".pi/skills/srs-authoring/stages/reading.md"
+         "路径": ".pi/skills/requirements-engineering/stages/reading.md"
         },
         {
          "字节数": 4786,
          "摘要值": "5a1f4f82069fcc19",
-         "路径": ".pi/skills/srs-authoring/stages/writing.md"
+         "路径": ".pi/skills/requirements-engineering/stages/writing.md"
         },
         {
          "字节数": 6506,
@@ -328,9 +328,9 @@
          "路径": "docs/review-rules/use-case.json"
         },
         {
-         "字节数": 5145,
-         "摘要值": "015b92b9f1886af4",
-         "路径": "docs/task-definitions/srs-authoring.json"
+         "字节数": 5138,
+         "摘要值": "f2e0abb3f9368588",
+         "路径": "docs/task-definitions/requirements-engineering.json"
         },
         {
          "字节数": 1997,
@@ -366,7 +366,7 @@
     },
     "扩展写入的消息": [
      {
-      "文字": "【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：软件需求规格说明编制），任务编号 <任务1>。交付物还没有任何条目。要发布版本，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\n没有开着的提议。",
+      "文字": "【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：需求工程），任务编号 <任务1>。交付物还没有任何条目。要发布版本，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\n没有开着的提议。",
       "时刻": "<时刻>",
       "时刻秒": "<时刻数>",
       "条目编号": "<条目1>",
@@ -457,7 +457,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"kind\":\"现状\",\"text\":\"【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：软件需求规格说明编制），任务编号 <任务1>。交付物还没有任何条目。要发布版本，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\\n没有开着的提议。\",\"details\":{\"kind\":\"现状\",\"task_id\":\"<任务1>\",\"task_name\":\"对照任务\",\"task_type\":\"软件需求规格说明编制\",\"items\":{\"功能用例\":0,\"非功能需求\":0,\"约束\":0,\"问题\":0,\"总体分析\":0},\"conditions_total\":9,\"conditions_met\":0,\"conditions_unmet\":1,\"conditions_empty\":8,\"unresolved\":0,\"materials\":{\"dir\":\"inputs/\",\"files\":[{\"path\":\"inputs/材料.md\",\"bytes\":27}],\"citations\":[{\"path\":\"inputs/材料.md\",\"cited\":0}]},\"proposal\":null},\"entry_id\":\"<条目1>\",\"session_id\":\"<会话1>\"}",
+        "文字": "{\"kind\":\"现状\",\"text\":\"【执行者开始这条会话时（<时分秒>）的任务状况：由扩展写入，不是用户打的字】任务「对照任务」（类型：需求工程），任务编号 <任务1>。交付物还没有任何条目。要发布版本，还差 1 项：功能用例至少要有一个条目。未解决的问题条目有 0 条。材料目录 inputs/ 里有 1 个文件：inputs/材料.md（27 字节）。\\n没有开着的提议。\",\"details\":{\"kind\":\"现状\",\"task_id\":\"<任务1>\",\"task_name\":\"对照任务\",\"task_type\":\"需求工程\",\"items\":{\"功能用例\":0,\"非功能需求\":0,\"约束\":0,\"问题\":0,\"总体分析\":0},\"conditions_total\":9,\"conditions_met\":0,\"conditions_unmet\":1,\"conditions_empty\":8,\"unresolved\":0,\"materials\":{\"dir\":\"inputs/\",\"files\":[{\"path\":\"inputs/材料.md\",\"bytes\":27}],\"citations\":[{\"path\":\"inputs/材料.md\",\"cited\":0}]},\"proposal\":null},\"entry_id\":\"<条目1>\",\"session_id\":\"<会话1>\"}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-task-status",
@@ -467,7 +467,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"890a94e145a6cae2\",\"bytes\":79679,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65777,\"lines\":238,\"digest\":\"2d5e4ee84f810996\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/srs-authoring/SKILL.md\",\"bytes\":7633,\"lines\":30,\"digest\":\"85579fb1e9002bca\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"0f0cdc845702dfbd\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"7cbbfc88a661a290\",\"bytes\":79672,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65777,\"lines\":238,\"digest\":\"2d5e4ee84f810996\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/requirements-engineering/SKILL.md\",\"bytes\":7626,\"lines\":30,\"digest\":\"9693716b6d934989\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"0f0cdc845702dfbd\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

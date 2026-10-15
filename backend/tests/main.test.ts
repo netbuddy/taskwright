@@ -250,7 +250,7 @@ test("真进程：desktop 形态只绑 127.0.0.1；--port 0 由系统挑端口�
     assert.doesNotMatch(log(), /被占用/, "给 0 时不说端口被占用");
     assert.equal((await call("127.0.0.1", port, "GET", "/api/v1/service")).body.port, port, "服务信息回出实际端口");
     if (lanAddress) await assert.rejects(call(lanAddress, port, "GET", "/api/v1/service"), "desktop 形态从别的网卡连不上");
-    const created = await call("127.0.0.1", port, "POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "退出测试" });
+    const created = await call("127.0.0.1", port, "POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "退出测试" });
     const taskDir = join(tmp, "desktop", "tasks", created.body.task_id);
     const lock = JSON.parse(readFileSync(join(taskDir, LOCK_NAME), "utf-8"));
     assert.deepEqual([lock.port, lock.pid, lock.mode], [port, child.pid, "desktop"], "占用标记写实际端口与运行形态");

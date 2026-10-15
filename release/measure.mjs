@@ -73,7 +73,7 @@ async function once(index) {
     if (fs.existsSync(opened) && fs.readFileSync(opened, "utf8").trim().split("\n").length >= 2) break;
   }
   if (withPi) {
-    const task = await post("/api/v1/tasks", { task_type: "srs-authoring", task_name: "measure" });
+    const task = await post("/api/v1/tasks", { task_type: "requirements-engineering", task_name: "measure" });
     await post(`/api/v1/tasks/${task.task_id}/sessions`, {});
   }
   await sleep(1000);                            // let the processes settle before reading memory

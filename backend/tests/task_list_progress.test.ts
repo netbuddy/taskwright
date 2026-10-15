@@ -36,7 +36,7 @@ test("进展：流程工作项在写条目（第 4 站）、两个工作项、�
     "SELECT task_id, 's2', 'ui-op-alone', 'user', 'clarifying', NULL, NULL, '', '2026-10-11T10:00:00', 9000, NULL FROM task"]]);
   const service = new Service(tasks, join(tmp, "runs"), {}, { port: 1, registry: null });
   try {
-    const empty = service.create({ task_type: "srs-authoring", task_name: "空任务" }).task_id;
+    const empty = service.create({ task_type: "requirements-engineering", task_name: "空任务" }).task_id;
     const rows = Object.fromEntries(service.listTasks().map((one) => [one.task_name === "空任务" ? "empty" : "busy", one]));
     assert.deepEqual([rows.busy.flow, rows.busy.work_item_count, rows.busy.blocking_count],
       [{ name: "需求分析", node: "writing", node_name: "写条目", ordinal: 4 }, 2, 2]);

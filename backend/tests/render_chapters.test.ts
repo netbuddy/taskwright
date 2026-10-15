@@ -22,7 +22,7 @@ let ws: string;
 let text: string;
 before(() => {
   tmp = tempDir();
-  ws = makeTypedTask(tmp, "srs-authoring", { "材料.md": `${MATERIAL.join("\n")}\n` }, [
+  ws = makeTypedTask(tmp, "requirements-engineering", { "材料.md": `${MATERIAL.join("\n")}\n` }, [
     [
       page({ 标题: "自助借书", 标签: ["流程"], 它是什么: `${MATERIAL[0]}\n\n系统登记借出与应还日期。`, 例子: ["小陈周三借了两本书。", "例外：借书证过期时自助机拒绝借书。"],
         已经定下的: [MATERIAL[2], "待定：借书证丢失的读者能不能借书"] },

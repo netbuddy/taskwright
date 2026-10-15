@@ -62,8 +62,8 @@ for (const version of VERSIONS) {
       const now = facts(join(target.tasksDir, id));
       assert.deepEqual([now.task_id, now.version, now.revisions, now.items, now.sources], [id, TASK_DB_VERSION, 1, 1, 1]);
       // 升级时补写了 task.json；登记表里有它；升级用的服务级库、报告与暂存目录都没有留在目标里。
-      assert.deepEqual([readTaskJson(join(target.tasksDir, id))?.task_type, readTaskJson(join(target.tasksDir, id))?.upgraded_by_version], ["srs-authoring", "0.5.0"]);
-      assert.deepEqual(registry.tasks().map((t) => [t.task_id, t.name, t.owner, t.task_type, t.dir]), [[id, nameOf(version), "local", "srs-authoring", id]]);
+      assert.deepEqual([readTaskJson(join(target.tasksDir, id))?.task_type, readTaskJson(join(target.tasksDir, id))?.upgraded_by_version], ["requirements-engineering", "0.5.0"]);
+      assert.deepEqual(registry.tasks().map((t) => [t.task_id, t.name, t.owner, t.task_type, t.dir]), [[id, nameOf(version), "local", "requirements-engineering", id]]);
       assert.deepEqual(readdirSync(target.tasksDir), [id]);
       assert.equal(existsSync(join(target.dataDir, "backups")), false, "导入时的升级不在目标数据目录里留备份");
 

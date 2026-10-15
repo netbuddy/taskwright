@@ -30,7 +30,7 @@ test("服务信息的 upload：上限 5 MB、「单个文件不能超过 5 MB。
   }
   const service = new Service(join(tmp, "tasks"), join(tmp, "runs"), {}, { port: 1 });
   try {
-    const { task_id: taskId } = service.create({ task_type: "srs-authoring" });
+    const { task_id: taskId } = service.create({ task_type: "requirements-engineering" });
     assert.throws(() => service.upload(service.task(taskId), "a.md", Buffer.alloc(MAX_UPLOAD + 1)),
       (error: unknown) => error instanceof ApiError && error.code === "too_large" && error.message === TOO_LARGE_TEXT);
   } finally {
@@ -41,7 +41,7 @@ test("服务信息的 upload：上限 5 MB、「单个文件不能超过 5 MB。
 test("上传类型不符的文件时报的那句话，与服务信息 upload.unsupported_type_text 给前端的是同一句", async () => {
   const service = new Service(join(tmp, "types"), join(tmp, "types-runs"), {}, { port: 1 });
   try {
-    const { task_id: taskId } = service.create({ task_type: "srs-authoring" });
+    const { task_id: taskId } = service.create({ task_type: "requirements-engineering" });
     assert.equal(serviceInfo(service).upload.unsupported_type_text, unsupportedTypeText());
     assert.equal(unsupportedTypeText(), "只接受 .md、.txt、Word 的 .docx 与 PDF 文件。", "由扩展名清单拼出，不写个数");
     for (const name of ["图.png", "说明.pptx", "没有扩展名"]) {

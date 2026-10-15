@@ -91,8 +91,8 @@ test("评审规矩写对了能读出来；没有这个键的旧任务定义照�
 });
 
 test("真实的任务类型：三个集合的规则文件都能读，问题集合与领域说明集合不评审", () => {
-  const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
-  const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
+  const typeDir = resolve(import.meta.dirname, "../../task-types/requirements-engineering");
+  const { definition } = loadDefinition(typeDir, "docs/task-definitions/requirements-engineering.json");
   assert.deepEqual(definition.collections.map((c) => c.reviewRules?.file ?? null),
     ["docs/review-rules/use-case.json", "docs/review-rules/ears.json", "docs/review-rules/ears.json", null, null]);
   const count = (file: string) => (JSON.parse(readFileSync(join(typeDir, file), "utf-8")) as unknown[]).length;
@@ -106,8 +106,8 @@ test("真实的任务类型：三个集合的规则文件都能读，问题集�
 });
 
 test("真实的任务类型：UC-R15 与 EARS-R10 是可选规则，默认写在关闭名单里，实际要评的规则里没有它们", () => {
-  const typeDir = resolve(import.meta.dirname, "../../task-types/srs-authoring");
-  const { definition } = loadDefinition(typeDir, "docs/task-definitions/srs-authoring.json");
+  const typeDir = resolve(import.meta.dirname, "../../task-types/requirements-engineering");
+  const { definition } = loadDefinition(typeDir, "docs/task-definitions/requirements-engineering.json");
   const level = (file: string, id: string) =>
     (JSON.parse(readFileSync(join(typeDir, file), "utf-8")) as { 编号: string; 级别: string }[]).find((r) => r.编号 === id)?.级别;
   assert.equal(level("docs/review-rules/use-case.json", "UC-R15"), "可选");

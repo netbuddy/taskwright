@@ -38,7 +38,7 @@ async function withTask(body: (service: Service, t: ReturnType<Service["task"]>)
   const root = fresh();
   const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1 });
   try {
-    const t = service.task(service.create({ task_type: "srs-authoring", task_name: "去重" }).task_id);
+    const t = service.task(service.create({ task_type: "requirements-engineering", task_name: "去重" }).task_id);
     await body(service, t);
   } finally {
     await service.close();
@@ -109,8 +109,8 @@ test("不同任务各自上传同一份文件，互不影响", async () => {
   const root = fresh();
   const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1 });
   try {
-    const a = service.task(service.create({ task_type: "srs-authoring", task_name: "甲任务" }).task_id);
-    const b = service.task(service.create({ task_type: "srs-authoring", task_name: "乙任务" }).task_id);
+    const a = service.task(service.create({ task_type: "requirements-engineering", task_name: "甲任务" }).task_id);
+    const b = service.task(service.create({ task_type: "requirements-engineering", task_name: "乙任务" }).task_id);
     assert.equal(service.upload(a, "需求.md", Buffer.from("同一份")).path, "inputs/需求.md");
     assert.equal(service.upload(b, "需求.md", Buffer.from("同一份")).path, "inputs/需求.md");
   } finally {
@@ -206,7 +206,7 @@ test("并发：两个请求同时上传同一份文件只存下一份；同时�
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
   const port = (server.address() as AddressInfo).port;
   try {
-    const taskId = service.create({ task_type: "srs-authoring", task_name: "并发" }).task_id;
+    const taskId = service.create({ task_type: "requirements-engineering", task_name: "并发" }).task_id;
     const t = service.task(taskId);
     for (let round = 0; round < 5; round++) {
       const same = await Promise.all([post(port, taskId, `同一份${round}.md`, `内容${round}`), post(port, taskId, `同一份${round}.md`, `内容${round}`),
@@ -232,7 +232,7 @@ test("经 HTTP：同名同内容报内容相同（duplicate_content）；同名�
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
   const port = (server.address() as AddressInfo).port;
   try {
-    const taskId = service.create({ task_type: "srs-authoring", task_name: "经 HTTP" }).task_id;
+    const taskId = service.create({ task_type: "requirements-engineering", task_name: "经 HTTP" }).task_id;
     const t = service.task(taskId);
     assert.equal((await post(port, taskId, "需求说明.md", "买家可以申请退货。")).status, 200);
     const before = readFileSync(join(t.dir, "inputs", "需求说明.md"));

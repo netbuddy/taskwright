@@ -34,7 +34,7 @@ const MET: Completion = { all_met: true, unmet_count: 0, brief: "", hints: [], c
 function task(over: Partial<Task> = {}): Task {
   const collection = (name: string, prefix: string) => ({ name, prefix, needs_review: false, review_rules: null, fields: [{ name: "用例名称", type: "文本", required: true, values: null }] });
   return {
-    task_id: "TASK-001", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
+    task_id: "TASK-001", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "",
     definition: { collections: [collection("功能用例", "UC"), collection("约束", "CON"),
       { name: "问题", prefix: "TBD", needs_review: false, review_rules: null, fields: [
         { name: "事项", type: "文本", required: true, values: null }, { name: "状态", type: "枚举", required: true, values: ["未解决", "已解决", "用户决定保留"] }] },

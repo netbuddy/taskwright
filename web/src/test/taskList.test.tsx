@@ -10,7 +10,7 @@ import { TaskListPage } from "../pages/TaskListPage";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-const base = { task_type: "软件需求规格说明编制", domain_tag: null, item_count: null, completion_met: null, completion_total: null,
+const base = { task_type: "需求工程", domain_tag: null, item_count: null, completion_met: null, completion_total: null,
   completion_unmet: null, version_count: null, latest_published_at: null, last_active_at: null, session_count: null } as unknown as TaskListEntry;
 
 describe("任务列表", () => {

@@ -207,7 +207,7 @@ test("全新的数据目录、或者只有现在格式的任务：两种形态�
     try {
       assert.equal(started.service.upgrade, null);
       assert.ok(existsSync(join(data, SERVICE_DB_NAME)), "任务登记直接建出来");
-      started.service.create({ task_type: "srs-authoring", task_name: "新任务" });
+      started.service.create({ task_type: "requirements-engineering", task_name: "新任务" });
     } finally {
       await started.stop();
     }

@@ -10,7 +10,7 @@ json() { python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
 
 echo "1. create a task"
 TASK=$(curl -sf -X POST "$API/tasks" -H 'Content-Type: application/json' \
-  -d '{"task_type": "srs-authoring", "task_name": "School library lending", "domain_tag": "library"}' | json 'd["task_id"]')
+  -d '{"task_type": "requirements-engineering", "task_name": "School library lending", "domain_tag": "library"}' | json 'd["task_id"]')
 echo "   task: $TASK"
 
 echo "2. upload the requirements material"

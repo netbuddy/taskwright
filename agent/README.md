@@ -91,7 +91,7 @@
 `TASK_CREATED` 事件。它不再登记成执行者的工具；任务服务在进程里直接调用它，手工建任务时经 `cli/create_task.mts`：
 
 ```
-node cli/create_task.mts --dir <任务目录> --definition docs/task-definitions/srs-authoring.json --op-id ui-op-… [--name 任务名] [--tag 领域标签]
+node cli/create_task.mts --dir <任务目录> --definition docs/task-definitions/requirements-engineering.json --op-id ui-op-… [--name 任务名] [--tag 领域标签]
 ```
 
 **保存修订**（`save_revision`，参数 `operations`：操作列表）。每个操作是新增、修改、删除三种之一：

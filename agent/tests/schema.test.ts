@@ -1,13 +1,14 @@
 /** 建库的三种情况：库不存在、已是新库、是旧库。 */
 
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath } from "../src/lib/db.ts";
 import { MIN_TASK_DB_VERSION, NewerTaskDatabase, NoDatabaseYet, OlderTaskDatabase, TABLE_NAMES, TASK_DB_VERSION, TASK_JSON, upgradeTaskDatabase, withTaskDatabase } from "../src/lib/schema.ts";
-import { asFormat8, makeWorkspace, query } from "./helpers.ts";
+import { createTask } from "../src/lib/create_task.ts";
+import { asFormat8, callIn, makeWorkspace, query } from "./helpers.ts";
 
 /** 库里记的格式版本（PRAGMA user_version）。 */
 const version = (dir: string) => query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version;
@@ -162,6 +163,37 @@ test("格式早于 8 的库被拒绝，库原样不动：没有编过版本号�
     assert.deepEqual([version(dir), tables(dir)], [old, ["task"]], String(old));
     assert.notEqual(journal(dir).toLowerCase(), "wal", "被拒的库不切日志模式");
   }
+});
+
+test("格式 8 升到 9：任务类型「软件需求规格说明编制」改名「需求工程」，任务目录里的定义文件、skill 目录与 task.json、库里的定义路径与快照一起改；再升一次不出错", () => {
+  const root = join(import.meta.dirname, "..", "..", "task-types", "requirements-engineering");
+  const dir = makeWorkspace();
+  cpSync(root, dir, { recursive: true });
+  rmSync(join(dir, "docs", "task-definitions", "requirements-engineering.json"));
+  rmSync(join(dir, ".pi", "skills", "requirements-engineering"), { recursive: true });
+  const oldDefinition = readFileSync(join(root, "docs", "task-definitions", "requirements-engineering.json"), "utf-8")
+    .replace('"任务名": "需求工程"', '"任务名": "软件需求规格说明编制"').replace(".pi/skills/requirements-engineering/SKILL.md", ".pi/skills/srs-authoring/SKILL.md");
+  writeFileSync(join(dir, "docs", "task-definitions", "srs-authoring.json"), oldDefinition, "utf-8");
+  const oldSkill = readFileSync(join(root, ".pi", "skills", "requirements-engineering", "SKILL.md"), "utf-8")
+    .replace("name: requirements-engineering", "name: srs-authoring").replace("# 需求工程", "# 软件需求规格说明编制");
+  mkdirSync(join(dir, ".pi", "skills", "srs-authoring"), { recursive: true });
+  writeFileSync(join(dir, ".pi", "skills", "srs-authoring", "SKILL.md"), oldSkill, "utf-8");
+  writeFileSync(join(dir, TASK_JSON), JSON.stringify({ task_type: "srs-authoring", owner: "local" }, null, 2) + "\n", "utf-8");
+  createTask(callIn(dir), { definition_path: "docs/task-definitions/srs-authoring.json" });
+  asFormat8(dir);
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 8, to: 9, notes: ["任务类型改名为「需求工程」：docs/task-definitions/requirements-engineering.json、.pi/skills/requirements-engineering/"] });
+  const definition = readFileSync(join(dir, "docs", "task-definitions", "requirements-engineering.json"), "utf-8");
+  assert.equal(existsSync(join(dir, "docs", "task-definitions", "srs-authoring.json")), false);
+  assert.match(definition, /"任务名": "需求工程"/);
+  assert.match(definition, /"执行方法": "\.pi\/skills\/requirements-engineering\/SKILL\.md"/);
+  assert.deepEqual(readdirSync(join(dir, ".pi", "skills")), ["requirements-engineering"]);
+  const skill = readFileSync(join(dir, ".pi", "skills", "requirements-engineering", "SKILL.md"), "utf-8");
+  assert.ok(skill.includes("\nname: requirements-engineering\n") && skill.includes("\n# 需求工程\n"));
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, TASK_JSON), "utf-8")), { task_type: "requirements-engineering", owner: "local" });
+  assert.deepEqual(query<any>(dir, "SELECT definition_path, definition_text FROM task").map((row) => [row.definition_path, row.definition_text]),
+    [["docs/task-definitions/requirements-engineering.json", definition]]);
+  // 再升一次：已经是 9，什么都不动。
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 9, to: 9, notes: [] });
 });
 
 test("数据升级用的入口：格式 8 升到 9 并说出升级前后的版本；已经是 9 的原样返回；没有库文件时不建", () => {

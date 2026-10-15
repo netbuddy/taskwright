@@ -185,7 +185,7 @@ class StageCardsTest(unittest.TestCase):
         on_disk = sorted(f"agent/prompts/stages/{p.name}" for p in (REPO / "agent" / "prompts" / "stages").iterdir() if p.is_file())
         self.assertEqual(sorted(path for path in listed if path.startswith("agent/prompts/stages/")), on_disk)
         for path, where in (("agent/prompts/stages/common.md", "代码仓"), ("agent/prompts/stages/system.md", "代码仓"),
-                            (".pi/skills/srs-authoring/SKILL.md", "任务目录"), (".pi/skills/srs-authoring/stages/reading.md", "任务目录")):
+                            (".pi/skills/requirements-engineering/SKILL.md", "任务目录"), (".pi/skills/requirements-engineering/stages/reading.md", "任务目录")):
             self.assertEqual((listed[path]["来自"], len(listed[path]["摘要值"])), (where, 16), path)
         self.assertFalse([path for path in listed if path.startswith("docs/") or path.startswith("/") or path.startswith("agent/prompts/skills/")])
         self.assertIn(f"- 提示词版本：{summary['提示词版本']}（每份文件见最后的「提示词」一节）", text)

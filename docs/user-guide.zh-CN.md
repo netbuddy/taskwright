@@ -2,7 +2,7 @@
 
 # 用户手册（User guide）
 
-本手册讲服务跑起来之后怎么用（安装与模型接入见[部署](deployment.zh-CN.md)）。先在网页界面里走一遍完整的一个任务，从创建任务到生成文档，再介绍示例脚本、其他操作方式与观测台。用的是随附的任务类型「软件需求规格说明」，以及 `examples/library-lending/` 里的示例材料。想先配着截图一步步走完一个任务，可以从[教程](tutorials/srs-authoring.zh-CN.md)开始。
+本手册讲服务跑起来之后怎么用（安装与模型接入见[部署](deployment.zh-CN.md)）。先在网页界面里走一遍完整的一个任务，从创建任务到生成文档，再介绍示例脚本、其他操作方式与观测台。用的是随附的任务类型「需求工程」，以及 `examples/library-lending/` 里的示例材料。想先配着截图一步步走完一个任务，可以从[教程](tutorials/srs-authoring.zh-CN.md)开始。
 
 用 `scripts/dev.sh` 启动后端与网页界面（见 [deployment.zh-CN.md](deployment.zh-CN.md)），打开 `http://localhost:5680`。
 

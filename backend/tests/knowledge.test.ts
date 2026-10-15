@@ -58,7 +58,7 @@ function multipart(filename: string, data: Buffer, fields: Dict = {}): [Buffer, 
   return [Buffer.concat(parts), { "content-type": "multipart/form-data; boundary=B" }];
 }
 
-const newTask = (service: Service, name = "任务") => service.task(service.create({ task_type: "srs-authoring", task_name: name }).task_id);
+const newTask = (service: Service, name = "任务") => service.task(service.create({ task_type: "requirements-engineering", task_name: name }).task_id);
 
 test("服务第一次启动时建出通用知识库；再次启动不重建", async () => {
   const service = fresh();

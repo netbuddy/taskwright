@@ -203,7 +203,7 @@ class LampTest(unittest.TestCase):
 # 建任务目录与写库都用产品自己的函数；发起方写用户，所以不受助手一侧的几道核对拦着。
 CREATE = r"""
 import { createTaskDir } from "./backend/src/workspace.ts";
-process.stdout.write(JSON.stringify(createTaskDir(process.argv[1], "srs-authoring", null, null, "TASK-T")));
+process.stdout.write(JSON.stringify(createTaskDir(process.argv[1], "requirements-engineering", null, null, "TASK-T")));
 """
 SAVE = r"""
 import { saveRevision } from "./agent/src/lib/save_revision.ts";

@@ -14,7 +14,7 @@ import { prepareReviews } from "../src/lib/review.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, startWriting, viewReadyPage } from "./helpers.ts";
 
-const TASK_TYPE = join(import.meta.dirname, "..", "..", "task-types", "srs-authoring");
+const TASK_TYPE = join(import.meta.dirname, "..", "..", "task-types", "requirements-engineering");
 const page = (fields: Record<string, unknown>) =>
   ({ op: "add", collection: "总体分析", fields: { 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources: [SOURCE] });
 const useCase = { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["读者选一本在架的书", "馆员把书放到预留架"] }, sources: [SOURCE] };
@@ -71,7 +71,7 @@ test("任务类型的两个规则文件各有一条「专门名词应当有主�
     assert.equal(rule.级别, "可选", id);
     assert.match(rule.条文, /专门名词.*应当在总体分析里有一页主题.*「这个词还没有主题页」/, id);
   }
-  const definition = validateDefinition(JSON.parse(readFileSync(join(TASK_TYPE, "docs", "task-definitions", "srs-authoring.json"), "utf-8")), "srs-authoring.json", { baseDir: TASK_TYPE });
+  const definition = validateDefinition(JSON.parse(readFileSync(join(TASK_TYPE, "docs", "task-definitions", "requirements-engineering.json"), "utf-8")), "requirements-engineering.json", { baseDir: TASK_TYPE });
   const effective = (name: string) => effectiveRules(TASK_TYPE, definition.collections.find((c) => c.name === name)!.reviewRules!).map((rule) => rule.编号);
   assert.ok(effective("功能用例").includes("UC-R16"));
   for (const name of ["非功能需求", "约束"]) assert.ok(effective(name).includes("EARS-R11"), name);

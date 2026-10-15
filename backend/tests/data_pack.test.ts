@@ -85,7 +85,7 @@ test("整套导出：清单文件记着版本、范围、任务与知识库；�
   const material = byPath.get(`tasks/${a}/inputs/售后退款 业务说明.md`)!;
   assert.deepEqual([material.sha256, material.mtime_ms], [sha256(readFileSync(join(where.tasksDir, a, "inputs", "售后退款 业务说明.md"))), materialAt]);
   for (const path of [`tasks/${a}/${DB_NAME}`, `tasks/${a}/task.json`, `tasks/${a}/knowledge.json`, `tasks/${a}/.pi/settings.json`, `tasks/${a}/inputs/图.png`,
-    `tasks/${a}/docs/task-definitions/srs-authoring.json`, ...archive.map((one) => `runs/${a}/${one}`)]) assert.ok(byPath.has(path), path);
+    `tasks/${a}/docs/task-definitions/requirements-engineering.json`, ...archive.map((one) => `runs/${a}/${one}`)]) assert.ok(byPath.has(path), path);
   assert.equal(byPath.get(`runs/${a}/${archive[0]}`)!.sha256, sha256(readFileSync(join(where.runsDir, a, archive[0]))), "归档原样");
   const left = manifest.files.map((f) => f.path).filter((path) => /service\.lock|\.uploading|\.tmp$|-wal$|-shm$/.test(path));
   assert.deepEqual(left, [], "占用标记、暂存目录、临时文件与日志文件不带");
@@ -100,7 +100,7 @@ test("整套导出：清单文件记着版本、范围、任务与知识库；�
   assert.deepEqual(JSON.parse(content(PACK_LIBRARIES).toString("utf-8")).libraries.map((one: any) => one.id).sort(), ["general", lib.id].sort());
   const register = JSON.parse(content(PACK_REGISTER).toString("utf-8")).tasks as Record<string, unknown>[];
   assert.deepEqual(register.map((row) => [row.task_id, row.name, row.owner, row.status, row.task_type, row.dir]).sort(),
-    [[a, "甲", "local", null, "srs-authoring", a], [b, "乙", "local", null, "srs-authoring", b]].sort());
+    [[a, "甲", "local", null, "requirements-engineering", a], [b, "乙", "local", null, "requirements-engineering", b]].sort());
 
   // 包里的任务库与原库内容相同（条数相同），而且只是一个文件。
   const copyDir = fresh("db");

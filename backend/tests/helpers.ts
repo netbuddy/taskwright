@@ -122,13 +122,13 @@ export function topicPage(title: string, what: string, source: unknown, tags: st
 }
 
 /**
- * 用现行任务类型（srs-authoring）建一个任务目录，给只测与任务类型无关的机制（依据已变、导出、图）的测试用：
+ * 用现行任务类型（requirements-engineering）建一个任务目录，给只测与任务类型无关的机制（依据已变、导出、图）的测试用：
  * 任务移到写条目之后，先保存 pages 这一批（总体分析的几页主题，修订 1），再让用户看过这几页——写条目之前要有一页
  * 贴了标签、写了例子、用户看过的主题——然后照 makeTypedTask 写其余几批。主题的编号依次是 OA-001、OA-002……
  */
 export function makePagedTask(root: string, materials: Record<string, string>, pages: unknown[], batches: unknown[]): string {
   const ids = pages.map((_, i) => `OA-${String(i + 1).padStart(3, "0")}`);
-  return makeTypedTask(root, "srs-authoring", materials, [pages, { view: ids }, ...batches]);
+  return makeTypedTask(root, "requirements-engineering", materials, [pages, { view: ids }, ...batches]);
 }
 
 /** 把夹具目录复制一份，给要改库的测试用。 */

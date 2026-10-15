@@ -33,7 +33,7 @@ async function withTask(body: (service: Service, t: TaskOf) => Promise<void> | v
   const root = join(tmp, `case-${++n}`);
   const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1 });
   try {
-    await body(service, service.task(service.create({ task_type: "srs-authoring", task_name: "替换材料" }).task_id));
+    await body(service, service.task(service.create({ task_type: "requirements-engineering", task_name: "替换材料" }).task_id));
   } finally {
     await service.close();
   }

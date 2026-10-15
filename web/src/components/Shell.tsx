@@ -147,7 +147,7 @@ export function NewTaskModal({ open, onClose }: { open: boolean; onClose: () => 
           <Select options={types} placeholder={types.length ? undefined : "没有读到任务类型"} />
         </Form.Item>
         <Form.Item label="任务名" name="task_name" rules={[{ required: true, whitespace: true, message: "请写一个任务名" }]}>
-          <Input placeholder="例如：软件需求规格说明编制：跨境电商退款模块" />
+          <Input placeholder="例如：跨境电商退款模块" />
         </Form.Item>
         <Form.Item label="领域标签（可以不写）" name="domain_tag">
           <Input placeholder="例如：电商售后" />

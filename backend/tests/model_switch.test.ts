@@ -63,7 +63,7 @@ test("选定的模型在新建会话与切回旧会话时生效；换不过去�
     /** 假端点最近一次收到的请求里的模型名。 */
     const lastModel = () => fake.requests().at(-1)?.请求体?.model;
 
-    const taskId = (await call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "换模型" })).body.task_id;
+    const taskId = (await call("POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "换模型" })).body.task_id;
     const first = (await call("POST", `/api/v1/tasks/${taskId}/sessions`)).body.session_id;
     await say(taskId, first, "你好");
     assert.equal(lastModel(), "fake-model", "没有选过模型时用启动配置里的");

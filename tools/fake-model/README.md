@@ -29,7 +29,7 @@ pi 实测用的是流式请求（请求体里 `stream` 为真），假端点按 
     {"when": {"last_role": "tool", "last_contains": "被拒"}, "reply": {"text": "我改一下。"}, "max_uses": 1}
   ],
   "sequence": [
-    {"tool_calls": [{"name": "create_task", "arguments": {"definition_path": "docs/task-definitions/srs-authoring.json"}, "id": "call-create"}]},
+    {"tool_calls": [{"name": "create_task", "arguments": {"definition_path": "docs/task-definitions/requirements-engineering.json"}, "id": "call-create"}]},
     {"text": "任务已经建好了。"}
   ],
   "default": {"text": "好的。"}

@@ -29,7 +29,7 @@ const material = (path: string): Material => ({ path, bytes: 2048, modified_at: 
 
 function detail(over: Partial<TaskDetail> = {}): TaskDetail {
   return {
-    task_id: "TASK-P", task_name: "图书借阅", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "2026-10-13T08:00:00",
+    task_id: "TASK-P", task_name: "图书借阅", task_type: "需求工程", domain_tag: null, started_at: "2026-10-13T08:00:00",
     definition: { collections: [] }, items: [], completion: null, latest_revision: 0, sessions: [], materials: [], knowledge_libraries: ["general"], ...over,
   } as unknown as TaskDetail;
 }

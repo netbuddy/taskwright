@@ -10,7 +10,7 @@
  *                                                             在界面上把这个条目的第一个文字字段来回改这么多次，每次记下修订与确认两条库事件，
  *                                                             给事件流「差距太大发 resync」一步用
  *
- * 任务目录里要先有建好的任务（srs-authoring 类型）与三份材料：inputs/需求说明.md、inputs/会议纪要.txt、inputs/退款规则.docx（及其投影）。
+ * 任务目录里要先有建好的任务（requirements-engineering 类型）与三份材料：inputs/需求说明.md、inputs/会议纪要.txt、inputs/退款规则.docx（及其投影）。
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";

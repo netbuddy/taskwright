@@ -62,7 +62,7 @@ test("路由分派：没有的接口、没有的任务、pi 不在且没有给�
   const unknown = await go("GET", `/api/v1/tasks/${taskId}/snapshot`, "", { session: "没有这条会话" });
   assert.deepEqual([unknown.status, unknown.body.error.code], [404, "not_found"]);
   assert.equal((await go("POST", "/api/v1/task-types")).body.error.code, "not_found", "方法对不上也是 not_found");
-  assert.deepEqual((await go("GET", "/api/v1/task-types")).body.task_types.map((t: any) => t.task_type), ["srs-authoring"]);
+  assert.deepEqual((await go("GET", "/api/v1/task-types")).body.task_types.map((t: any) => t.task_type), ["requirements-engineering"]);
 });
 
 test("请求体：不是 JSON、不是对象都是 bad_request；空请求体按空对象", async () => {

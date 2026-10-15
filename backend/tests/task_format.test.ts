@@ -52,19 +52,19 @@ test("建任务：任务目录里写 task.json，任务库是现在的格式版�
   const root = fresh();
   const service = serviceOn(root);
   try {
-    const id = service.create({ task_type: "srs-authoring", task_name: "借阅系统" }).task_id as string;
+    const id = service.create({ task_type: "requirements-engineering", task_name: "借阅系统" }).task_id as string;
     const dir = join(root, "tasks", id);
     const meta = readTaskJson(dir)!;
-    assert.deepEqual({ ...meta, created_at: "T" }, { created_by_version: appVersion(), task_type: "srs-authoring", task_type_version: taskTypeVersion("srs-authoring"),
+    assert.deepEqual({ ...meta, created_at: "T" }, { created_by_version: appVersion(), task_type: "requirements-engineering", task_type_version: taskTypeVersion("requirements-engineering"),
       owner: "local", created_at: "T", upgraded_by_version: null, upgraded_at: null });
     assert.ok(meta.created_at, "建立时刻写了");
     assert.equal(library.taskDbVersion(dir), TASK_DB_VERSION);
     const row = service.registry!.task(id)!;
-    assert.deepEqual([row.name, row.owner, row.status, row.task_type, row.dir, row.upgrade_error], ["借阅系统", "local", null, "srs-authoring", id, null]);
+    assert.deepEqual([row.name, row.owner, row.status, row.task_type, row.dir, row.upgrade_error], ["借阅系统", "local", null, "requirements-engineering", id, null]);
     assert.ok(row.created_at);
     // 任务页给出任务类型说明的两个版本：建任务时复制进来的与产品自带的现在这一版。
     assert.deepEqual((service.taskPage(service.task(id)) as Record<string, any>).task_type_versions, { copied: 4, current: 4 });
-    assert.equal(taskTypeVersion("srs-authoring"), 4);
+    assert.equal(taskTypeVersion("requirements-engineering"), 4);
     assert.equal(taskTypeVersion("没有这种类型"), null);
   } finally {
     await service.close();
@@ -74,7 +74,7 @@ test("建任务：任务目录里写 task.json，任务库是现在的格式版�
 test("接手已有的任务时补记进登记表；没有服务级库的服务照常工作、不记", async () => {
   const root = fresh();
   const plain = serviceOn(root, { registry: false });
-  const id = plain.create({ task_type: "srs-authoring", task_name: "先建的" }).task_id as string;
+  const id = plain.create({ task_type: "requirements-engineering", task_name: "先建的" }).task_id as string;
   assert.equal(plain.registry, null);
   assert.deepEqual(plain.listTasks().map((t) => t.task_id), [id]);
   await plain.close();
@@ -82,7 +82,7 @@ test("接手已有的任务时补记进登记表；没有服务级库的服务�
   try {
     assert.equal(service.registry!.task(id), null, "还没有扫描");
     assert.deepEqual(service.listTasks().map((t) => t.task_id), [id]);
-    assert.deepEqual([service.registry!.task(id)?.name, service.registry!.task(id)?.task_type], ["先建的", "srs-authoring"]);
+    assert.deepEqual([service.registry!.task(id)?.name, service.registry!.task(id)?.task_type], ["先建的", "requirements-engineering"]);
   } finally {
     await service.close();
   }
@@ -91,7 +91,7 @@ test("接手已有的任务时补记进登记表；没有服务级库的服务�
 test("格式早于 8 的任务：不接手、不升级，列表里是「旧格式」并写明格式号，打开被拒，库没有被改", async () => {
   const root = fresh();
   const first = serviceOn(root);
-  const id = first.create({ task_type: "srs-authoring", task_name: "太早的任务" }).task_id as string;
+  const id = first.create({ task_type: "requirements-engineering", task_name: "太早的任务" }).task_id as string;
   await first.close();
   const dir = join(root, "tasks", id);
   setVersion(dir, 5);
@@ -110,7 +110,7 @@ test("格式早于 8 的任务：不接手、不升级，列表里是「旧格�
 test("上一版建的任务（库是格式 8）：不接手、不占用，列表里是「需要升级」并写明怎样做，打开被拒；升级失败过的是「需要处理」并写原因", async () => {
   const root = fresh();
   const first = serviceOn(root);
-  const id = first.create({ task_type: "srs-authoring", task_name: "旧任务" }).task_id as string;
+  const id = first.create({ task_type: "requirements-engineering", task_name: "旧任务" }).task_id as string;
   await first.close();
   const dir = join(root, "tasks", id);
   setVersion(dir, 8);
@@ -146,7 +146,7 @@ test("上一版建的任务（库是格式 8）：不接手、不占用，列表
 test("更新的版本写的任务：不接手，列表里是「需要更新的程序」，话里写出是哪个版本写的；task.json 读不到时不写版本", async () => {
   const root = fresh();
   const first = serviceOn(root);
-  const id = first.create({ task_type: "srs-authoring", task_name: "新任务" }).task_id as string;
+  const id = first.create({ task_type: "requirements-engineering", task_name: "新任务" }).task_id as string;
   await first.close();
   const dir = join(root, "tasks", id);
   setVersion(dir, TASK_DB_VERSION + 1);

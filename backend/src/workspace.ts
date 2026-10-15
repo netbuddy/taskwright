@@ -15,7 +15,7 @@ import { ACTOR_USER } from "../../agent/src/lib/db.ts";
 import { byCodePoint } from "./library.ts";
 import { TASK_TYPES_DIR } from "./paths.ts";
 
-export const DEFAULT_TYPE = "srs-authoring";
+export const DEFAULT_TYPE = "requirements-engineering";
 /** 后端给用户操作生成的编号的前缀。 */
 export const OPERATION_PREFIX = "ui-op-";
 /** 起始文件目录顶层这几个文件是给人看的说明，不复制进任务目录。 */

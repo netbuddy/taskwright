@@ -1,5 +1,5 @@
 /**
- * 卡片同意类集成测试共用的验证栈：起真的后端进程与真的 pi，模型换成进程内的假端点；建一个 srs-authoring 任务与一条会话，
+ * 卡片同意类集成测试共用的验证栈：起真的后端进程与真的 pi，模型换成进程内的假端点；建一个 requirements-engineering 任务与一条会话，
  * 材料是 inputs/材料.md 里的一句话。complete_consent.test.ts 与 problem_consent.test.ts 共用。
  */
 
@@ -92,7 +92,7 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
       req.on("timeout", () => req.destroy(new Error("超时")));
       req.end(data);
     });
-    const taskId: string = (await call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: name })).body.task_id;
+    const taskId: string = (await call("POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: name })).body.task_id;
     writeFileSync(join(dir, "tasks", taskId, "inputs", "材料.md"), `${MATERIAL}\n`, "utf-8");
     if (seed) seedWriting(join(dir, "tasks", taskId));
     else if (launch) launchFlow(join(dir, "tasks", taskId));

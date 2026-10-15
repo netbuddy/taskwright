@@ -33,7 +33,7 @@ async function dataWith(names: string[]): Promise<Data & { ids: string[] }> {
   const dataDir = join(tmp, `data-${++n}`);
   const where = { dataDir, tasksDir: join(dataDir, "tasks"), knowledgeDir: join(dataDir, "knowledge") };
   const service = new Service(where.tasksDir, join(dataDir, "runs"), {}, { port: 1, knowledgeDir: where.knowledgeDir });
-  const ids = names.map((name) => service.create({ task_type: "srs-authoring", task_name: name }).task_id as string);
+  const ids = names.map((name) => service.create({ task_type: "requirements-engineering", task_name: name }).task_id as string);
   await service.close();
   return { ...where, ids };
 }
@@ -94,9 +94,9 @@ test("升级：每个任务升到现在的格式并补写 task.json、记进登�
     for (const [i, id] of where.ids.entries()) {
       assert.equal(version(where, id), TASK_DB_VERSION);
       const meta = readTaskJson(join(where.tasksDir, id))!;
-      assert.deepEqual([meta.created_by_version, meta.task_type, meta.owner, meta.upgraded_by_version], [null, "srs-authoring", "local", "0.5.0"]);
+      assert.deepEqual([meta.created_by_version, meta.task_type, meta.owner, meta.upgraded_by_version], [null, "requirements-engineering", "local", "0.5.0"]);
       assert.ok(meta.created_at && meta.upgraded_at, "建立时刻取自任务库，升级时刻是这一次");
-      assert.deepEqual([registry!.task(id)?.name, registry!.task(id)?.status, registry!.task(id)?.task_type, registry!.task(id)?.upgrade_error], [["借阅系统", "退货流程"][i], null, "srs-authoring", null]);
+      assert.deepEqual([registry!.task(id)?.name, registry!.task(id)?.status, registry!.task(id)?.task_type, registry!.task(id)?.upgrade_error], [["借阅系统", "退货流程"][i], null, "requirements-engineering", null]);
     }
     assert.deepEqual([registry!.meta("data_format"), registry!.meta("last_written_by")], [String(DATA_FORMAT), "0.5.0"]);
     // 备份：目录名是时刻加旧产品版本（上一版没有服务级库，写 pre-0.5）。

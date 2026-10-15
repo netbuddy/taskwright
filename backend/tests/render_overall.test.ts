@@ -118,7 +118,7 @@ test("产品的任务类型：新建的任务按模板生成文档——前七�
   const material = "被借走的书可以预约。书还回来以后，系统通知预约的读者，这本书为他保留 3 天。读者凭借书证借书。";
   const source = (excerpt: string, supports?: unknown[]) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt, ...(supports ? { supports } : {}) });
   const topic = (fields: Record<string, unknown>, sources: unknown[]) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources });
-  const typed = makeTypedTask(join(tmp, "typed"), "srs-authoring", { "材料.md": material }, [
+  const typed = makeTypedTask(join(tmp, "typed"), "requirements-engineering", { "材料.md": material }, [
     [
       topic({ 标题: "预约", 别名: ["预约取书"], 标签: ["概念", "流程"], 它是什么: "被借走的书可以预约。", 例子: ["书还回来以后，系统通知预约的读者"],
         已经定下的: ["这本书为他保留 3 天。"] }, [source("被借走的书可以预约。", [{ field: "它是什么" }]), source("书还回来以后，系统通知预约的读者", [{ field: "例子", index: 0 }]),
@@ -157,7 +157,7 @@ test("产品的任务类型：各章的导语页写在它那一章的开头，�
   const material = "被借走的书可以预约。读者凭借书证借书。";
   const source = (excerpt: string) => ({ kind: "文档原文", locator: "inputs/材料.md", excerpt });
   const topic = (fields: Record<string, unknown>) => ({ op: "add", collection: "总体分析", fields: { 状态: "在用", ...fields }, sources: [source("读者凭借书证借书。")] });
-  const typed = makeTypedTask(join(tmp, "intros"), "srs-authoring", { "材料.md": material }, [
+  const typed = makeTypedTask(join(tmp, "intros"), "requirements-engineering", { "材料.md": material }, [
     [
       topic({ 标题: "预约", 标签: ["概念", "流程"], 它是什么: "被借走的书可以预约。", 例子: ["读者凭借书证借书。"] }),
       topic({ 标题: "读者", 标签: ["角色"], 它是什么: "读者凭借书证借书。" }),
@@ -186,7 +186,7 @@ test("产品的任务类型：各章的导语页写在它那一章的开头，�
 test("早先建的任务：任务目录里的模板副本没有业务说明这个占位时，改用产品现在自带的模板；副本有占位、或者产品里没有这个任务类型时用副本", () => {
   const topic = { op: "add", collection: "总体分析", fields: { 状态: "在用", 标题: "读者", 标签: ["角色"], 它是什么: "读者凭借书证借书。" },
     sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭借书证借书。" }] };
-  const old = makeTypedTask(join(tmp, "old-copy"), "srs-authoring", { "材料.md": "读者凭借书证借书。" }, [[topic]]);
+  const old = makeTypedTask(join(tmp, "old-copy"), "requirements-engineering", { "材料.md": "读者凭借书证借书。" }, [[topic]]);
   // 早先的副本：没有占位。
   writeFileSync(join(old, "docs", "templates", "srs.md"), "# 旧模板\n\n{{#每个 总体分析}}- {{标题}}\n{{/每个}}", "utf-8");
   const fresh = render.render(old, library.libraryOf(old));

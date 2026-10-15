@@ -13,7 +13,7 @@
  * 因为设计里把它列为这两张表的主要列。
  */
 
-import { existsSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { databasePath, inImmediateTransaction } from "./db.ts";
@@ -525,11 +525,11 @@ export function taskWrittenBy(workspaceDir: string): string | null {
  * 中途出错整体回退，库与版本号都还是升级之前的样子。
  */
 const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync, ctx: UpgradeContext) => void }[] = [
-  { from: 8, to: 9, run: addRejectionReasons },
+  { from: 8, to: 9, run: (db, ctx) => { addRejectionReasons(db); renameTaskType(db, ctx); } },
 ];
 
 /**
- * 升级时步骤用得着、库里又没有的东西：workspaceDir 是任务目录（助手写库时不给）；notes 由步骤往里写这次做了的、值得写进升级报告的事。
+ * 升级时步骤用得着、库里又没有的东西：workspaceDir 是任务目录（只测库的单元测试可以不给，这时步骤只改库）；notes 由步骤往里写这次做了的、值得写进升级报告的事。
  */
 export interface UpgradeContext {
   workspaceDir?: string;
@@ -547,11 +547,79 @@ function refuseOlder(db: DatabaseSync): void {
   if (version < MIN_TASK_DB_VERSION && !isEmptyDatabase(db)) throw new OlderTaskDatabase(olderDataText(version));
 }
 
-/** 第 8 到 9 步：工具拒绝表加原因码两列。只加列，不动已有的行（它们的原因码是空的）；新建的库建表时就有这两列，这里什么都不做。 */
+/** 第 8 到 9 步之一：工具拒绝表加原因码两列。只加列，不动已有的行（它们的原因码是空的）；新建的库建表时就有这两列，这里什么都不做。 */
 function addRejectionReasons(db: DatabaseSync): void {
   const columns = (db.prepare("PRAGMA table_info(tool_rejection)").all() as { name: string }[]).map((row) => row.name);
   if (!columns.includes("reason_code")) db.exec("ALTER TABLE tool_rejection ADD COLUMN reason_code TEXT");
   if (!columns.includes("reason_codes")) db.exec("ALTER TABLE tool_rejection ADD COLUMN reason_codes TEXT");
+}
+
+/** 任务类型改名（格式 9 起）：键与中文名。 */
+const OLD_TASK_TYPE = "srs-authoring";
+export const TASK_TYPE_KEY = "requirements-engineering";
+const OLD_TASK_TYPE_NAME = "软件需求规格说明编制";
+const TASK_TYPE_NAME = "需求工程";
+
+/** 任务定义的原文里改名：执行方法的路径与任务名。只换这两处，别的一个字节都不动；已经改过的原样返回。 */
+function renamedDefinition(text: string): string {
+  return text.replace(`".pi/skills/${OLD_TASK_TYPE}/SKILL.md"`, `".pi/skills/${TASK_TYPE_KEY}/SKILL.md"`)
+    .replace(new RegExp(`("任务名"\\s*:\\s*)"${OLD_TASK_TYPE_NAME}"`), `$1"${TASK_TYPE_NAME}"`);
+}
+
+/**
+ * 第 8 到 9 步之二：任务类型「软件需求规格说明编制」（键 srs-authoring）改名「需求工程」（键 requirements-engineering）。
+ * 库里：任务表的定义路径与定义原文快照。任务目录里（有 ctx.workspaceDir 时）：任务定义文件与 skill 目录改名，定义文件的
+ * 执行方法与任务名、skill 的名字与标题随改，task.json 的类型名随改。每一样都先看是不是还是旧的，重复做不出错；任务目录里没有的文件跳过。
+ */
+function renameTaskType(db: DatabaseSync, ctx: UpgradeContext): void {
+  const oldPath = `docs/task-definitions/${OLD_TASK_TYPE}.json`;
+  const newPath = `docs/task-definitions/${TASK_TYPE_KEY}.json`;
+  const row = db.prepare("SELECT task_id, definition_path, definition_text FROM task LIMIT 1").get() as
+    { task_id: string; definition_path: string; definition_text: string } | undefined;
+  if (row) {
+    const path = row.definition_path === oldPath ? newPath : row.definition_path;
+    const text = renamedDefinition(row.definition_text);
+    if (path !== row.definition_path || text !== row.definition_text) {
+      db.prepare("UPDATE task SET definition_path = ?, definition_text = ? WHERE task_id = ?").run(path, text, row.task_id);
+    }
+  }
+  const dir = ctx.workspaceDir;
+  if (!dir) return;
+  const moved: string[] = [];
+  const oldFile = join(dir, oldPath);
+  const newFile = join(dir, newPath);
+  if (existsSync(oldFile) && !existsSync(newFile)) {
+    renameSync(oldFile, newFile);
+    moved.push(newPath);
+  }
+  if (existsSync(newFile)) {
+    const text = readFileSync(newFile, "utf-8");
+    const now = renamedDefinition(text);
+    if (now !== text) writeFileSync(newFile, now, "utf-8");
+  }
+  const oldSkill = join(dir, ".pi", "skills", OLD_TASK_TYPE);
+  const newSkill = join(dir, ".pi", "skills", TASK_TYPE_KEY);
+  if (existsSync(oldSkill) && !existsSync(newSkill)) {
+    renameSync(oldSkill, newSkill);
+    moved.push(`.pi/skills/${TASK_TYPE_KEY}/`);
+  }
+  const skill = join(newSkill, "SKILL.md");
+  if (existsSync(skill)) {
+    const text = readFileSync(skill, "utf-8");
+    const now = text.replace(new RegExp(`^name: ${OLD_TASK_TYPE}$`, "m"), `name: ${TASK_TYPE_KEY}`)
+      .replace(new RegExp(`^# ${OLD_TASK_TYPE_NAME}$`, "m"), `# ${TASK_TYPE_NAME}`);
+    if (now !== text) writeFileSync(skill, now, "utf-8");
+  }
+  const meta = join(dir, TASK_JSON);
+  if (existsSync(meta)) {
+    try {
+      const raw = JSON.parse(readFileSync(meta, "utf-8")) as Record<string, unknown>;
+      if (raw.task_type === OLD_TASK_TYPE) writeFileSync(meta, JSON.stringify({ ...raw, task_type: TASK_TYPE_KEY }, null, 2) + "\n", "utf-8");
+    } catch {
+      // task.json 读不懂：不动它（后端读它时也当作没有）。
+    }
+  }
+  if (moved.length) ctx.notes.push(`任务类型改名为「${TASK_TYPE_NAME}」：${moved.join("、")}`);
 }
 
 /**
@@ -654,7 +722,7 @@ export function withTaskDatabase<T>(
     refuseOlder(db);
     useWriteAheadLog(db);
     const result = inImmediateTransaction(db, () => {
-      ensureSchema(db);
+      ensureSchema(db, { workspaceDir, notes: [] });
       return body(db);
     });
     succeeded = true;

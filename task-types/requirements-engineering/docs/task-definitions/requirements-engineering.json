@@ -1,5 +1,5 @@
 {
-  "任务名": "软件需求规格说明编制",
+  "任务名": "需求工程",
   "版本": 4,
   "交付物": {
     "名称": "软件需求规格说明",
@@ -85,7 +85,7 @@
     "问题": ["没有状态为未解决的条目"],
     "总体分析": ["每个条目用户确认"]
   },
-  "执行方法": ".pi/skills/srs-authoring/SKILL.md",
+  "执行方法": ".pi/skills/requirements-engineering/SKILL.md",
   "材料目录": "inputs/",
   "领域规矩": [
     "docs/domain-knowledge/use-case-writing.md",

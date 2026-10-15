@@ -66,7 +66,7 @@ async function until(what: string, ok: () => boolean | Promise<boolean>, ms = 30
 test("两个任务同时各开一个助手：各自的事件连接只收到本任务的事件，各自的库只有本任务的写入", { skip: NO_PI, timeout: 180000 }, () =>
   withStack(tmp, "two-tasks", { sequence: [save("call-a", "借书"), reply("存好了。", "call-a-done"), save("call-b", "还书"), reply("存好了。", "call-b-done")] },
     async ({ call, taskId, session, port, pid, db, send }) => {
-      const other: string = (await call("POST", "/api/v1/tasks", { task_type: "srs-authoring", task_name: "另一个任务" })).body.task_id;
+      const other: string = (await call("POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: "另一个任务" })).body.task_id;
       writeFileSync(join(tmp, "two-tasks", "tasks", other, "inputs", "材料.md"), `${MATERIAL}\n`, "utf-8");
       seedWriting(join(tmp, "two-tasks", "tasks", other));
       // 另一个任务的会话接着做夹具启动的那个工作项：助手在这条会话里才能写用例。

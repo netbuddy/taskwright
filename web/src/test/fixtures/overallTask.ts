@@ -7,7 +7,7 @@ import data from "./overall-analysis.json";
 export function overallTask(over: Partial<Task> = {}): Task {
   const copy = structuredClone(data) as unknown as { definition: Task["definition"]; items: Item[] };
   return {
-    task_id: "TASK-001", task_name: "图书馆借阅系统", task_type: "软件需求规格说明编制", domain_tag: null, started_at: "",
+    task_id: "TASK-001", task_name: "图书馆借阅系统", task_type: "需求工程", domain_tag: null, started_at: "",
     definition: copy.definition, completion: null, items: copy.items, latest_revision: 12, diagrams: [], ...over,
   };
 }

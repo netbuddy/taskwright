@@ -322,7 +322,7 @@ test("共用部分第五节新加的那个反例标明了它是错的写法", ()
 
 // ───────────── 任务类型一级：需求规格任务 ─────────────
 
-const SRS_SKILL = join(ROOT, "task-types", "srs-authoring", ".pi", "skills", "srs-authoring");
+const SRS_SKILL = join(ROOT, "task-types", "requirements-engineering", ".pi", "skills", "requirements-engineering");
 
 test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都要用的，核读材料、写条目与编写文档各有一段，别的阶段没有文件", () => {
   const common = body(readFileSync(join(SRS_SKILL, "SKILL.md"), "utf-8"));
@@ -351,7 +351,7 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   // 从图到条目的对应：五种图都说到了，功能用例的八个字段都有着落（字段名与任务定义里的相同）。
   const mapping = writing.slice(writing.indexOf("1. **照图写条目。**"), writing.indexOf("2. **每条功能用例的来源写两张图。**"));
   for (const kind of ["用例图", "流程图", "状态图", "对象关系图", "系统边界图"]) assert.ok(mapping.includes(kind), kind);
-  const definition = JSON.parse(readFileSync(join(ROOT, "task-types", "srs-authoring", "docs", "task-definitions", "srs-authoring.json"), "utf-8"));
+  const definition = JSON.parse(readFileSync(join(ROOT, "task-types", "requirements-engineering", "docs", "task-definitions", "requirements-engineering.json"), "utf-8"));
   const useCase = definition.交付物.条目集合.find((one: { 名称: string }) => one.名称 === "功能用例");
   assert.equal(useCase.字段.length, 8);
   for (const field of useCase.字段 as { 名: string }[]) assert.ok(mapping.includes(`「${field.名}」`), field.名);

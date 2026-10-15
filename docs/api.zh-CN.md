@@ -106,7 +106,7 @@ data: {
 { "ok": true, "seq": 12, "generated_at": "…",
   "executor": { "state": "idle", "text": "…", "active_session": "…" },
   "session": { "session_id": "…", "name": "…", "started_at": "…", "last_active_at": "…" },
-  "task": { "task_id": "…", "task_name": "…", "task_type": "srs-authoring", "domain_tag": null,
+  "task": { "task_id": "…", "task_name": "…", "task_type": "requirements-engineering", "domain_tag": null,
             "started_at": "…",
             "definition": { "collections": [ { "name": "功能用例", "prefix": "UC",
                             "fields": [ { "name": "用例名称", "type": "文本", "required": true, "values": null }, … ],   // 条目引用字段另带 "same_collection"（只许指向本集合的条目）与 "single"（至多一个编号）；写了取值的文本列表字段的 values 是取值

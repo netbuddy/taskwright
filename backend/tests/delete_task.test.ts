@@ -23,7 +23,7 @@ function setup() {
   const root = join(tmp, `case-${++n}`);
   const registry = ServiceDb.open(root, appVersion());
   const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, registry });
-  const taskId = service.create({ task_type: "srs-authoring", task_name: "一次性的任务" }).task_id;
+  const taskId = service.create({ task_type: "requirements-engineering", task_name: "一次性的任务" }).task_id;
   const t = service.task(taskId);
   // 会话归档目录：runs 下以任务编号命名的目录（这里放一份假的会话文件就够）。
   mkdirSync(join(root, "runs", taskId, "pi-sessions"), { recursive: true });
@@ -53,7 +53,7 @@ test("助手正在工作：拒绝，写明请先停止助手；任务目录、�
 
 test("成功：删掉任务目录与会话归档，列表与登记表里都没有它，再打开说没有这个任务；日志记时刻、任务编号、任务名与来源；别的任务不受影响", async () => {
   const { root, registry, service, taskId, t, remove } = setup();
-  const other = service.create({ task_type: "srs-authoring", task_name: "留着的任务" }).task_id;
+  const other = service.create({ task_type: "requirements-engineering", task_name: "留着的任务" }).task_id;
   try {
     const done = await remove();
     assert.deepEqual([done.status, done.body], [200, { ok: true, task_id: taskId }]);

@@ -238,7 +238,7 @@ test("上传之后自动换算：文档依次是换算中、等待换算、已�
   assert.deepEqual(filesOf(service).filter((name) => name.includes(".embeddings.")).length, 8);
 
   // 任务这一侧：按任务选用的知识库算。
-  const task = service.task(service.create({ task_type: "srs-authoring", task_name: "任务" }).task_id);
+  const task = service.task(service.create({ task_type: "requirements-engineering", task_name: "任务" }).task_id);
   assert.deepEqual((await call(service, "GET", `/api/v1/tasks/${task.taskId}/knowledge`)).json, { ok: true, libraries: [GENERAL], embedding: { model: MODEL, ready: true, pending: 0 } });
   await service.close();
 });
@@ -252,7 +252,7 @@ test("没有选嵌入模型：上传的文档是未换算，不发请求；开�
   assert.deepEqual((await overview(service)).embedding, { model: null, running: false, ready: false, pending: 1, total: 1, stopped_reason: null });
   const refused = await call(service, "POST", "/api/v1/knowledge/embed", {});
   assert.deepEqual([refused.status, refused.json.error.code, refused.json.error.message], [422, "rejected", NOT_SELECTED_TEXT]);
-  const task = service.task(service.create({ task_type: "srs-authoring", task_name: "任务" }).task_id);
+  const task = service.task(service.create({ task_type: "requirements-engineering", task_name: "任务" }).task_id);
   assert.deepEqual((await call(service, "GET", `/api/v1/tasks/${task.taskId}/knowledge`)).json.embedding, { model: null, ready: false, pending: 1 });
   assert.equal(fake.hits.length, 0);
   // 选了之后，这份文档经开始换算的接口算出来；范围写错的请求被拒绝。

@@ -58,7 +58,7 @@ test("平台说明只用修订号，不用版本号", () => {
 test("平台说明不写需求规格任务的专名", () => {
   const body = bodyOf(PLATFORM);
   // 需求规格任务的问题集合现在叫「问题」，这是个日常词，平台说明也用它说问题条目，所以只拦旧名。
-  for (const word of ["功能用例", "非功能需求", "待定与范围外事项", "UC-", "NFR-", "CON-", "TBD-", "srs-authoring",
+  for (const word of ["功能用例", "非功能需求", "待定与范围外事项", "UC-", "NFR-", "CON-", "TBD-", "requirements-engineering",
     "use-case-writing", "ears-writing", "基本流程", "前置条件"]) assert.ok(!body.includes(word), word);
 });
 
@@ -214,7 +214,7 @@ test("任务 skill 指向平台说明，不再提早先的平台说明", () => {
 });
 
 test("需求规格任务的 skill 用新的集合名「问题」", () => {
-  const body = readFileSync(join(ROOT, "task-types", "srs-authoring", ".pi", "skills", "srs-authoring", "SKILL.md"), "utf-8");
+  const body = readFileSync(join(ROOT, "task-types", "requirements-engineering", ".pi", "skills", "requirements-engineering", "SKILL.md"), "utf-8");
   assert.ok(!body.includes("待定与范围外事项"));
   assert.ok(!body.includes("待定事项"));
   assert.ok(body.includes("「问题」集合里的条目叫问题条目，编号前缀是 TBD"));
