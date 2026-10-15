@@ -13,6 +13,7 @@ import { SettingOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
 import type { ActionRequest, AssistantReply, DiagramRow, Item, KnowledgeLibrary, MessageRequest, SessionListEntry, Task, UiActionNoted } from "../api/types";
 import { useWorkView } from "../state/useWorkView";
+import { STARTING_WAIT_TEXT, snapshotRetryText } from "../state/snapshotRetry";
 import { Conversation } from "../components/work/Conversation";
 import { ItemsPanel } from "../components/work/ItemsPanel";
 import { DIAGRAM_HOLD_TEXT } from "../components/work/ReplyCard";
@@ -452,7 +453,9 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     );
   }
   if (loadError && state.phase === "waiting_snapshot" && !task) {
-    return <div className="wv-page"><div className="app"><div className="empty">读不到这条会话的数据：{loadError}</div></div></div>;
+    // 助手正在启动、或者正在另一条会话里工作：过几秒自动再读（useWorkView），这里只说正在等。
+    const waiting = snapshotRetryText(loadErrorCode);
+    return <div className="wv-page"><div className="app"><div className="empty" data-testid="snapshot-load-error">{waiting ?? `读不到这条会话的数据：${loadError}`}</div></div></div>;
   }
 
   return (
@@ -487,7 +490,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
 
           <div className="chat">
             <div className="chat-h"><b>{sessionName}</b><span className="chip">本任务共 {sessions.length} 条会话</span></div>
-            {!task && state.phase === "waiting_snapshot" ? <div className="msgs"><div className="selfnote">正在读这条会话。</div></div> : (
+            {!task && state.phase === "waiting_snapshot" ? <div className="msgs"><div className="selfnote" data-testid="snapshot-waiting">{executor?.state === "starting" ? STARTING_WAIT_TEXT : "正在读这条会话。"}</div></div> : (
               <Conversation
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}
                 disabled={!!disabledReason} disabledReason={disabledReason} handlers={cardHandlers}
