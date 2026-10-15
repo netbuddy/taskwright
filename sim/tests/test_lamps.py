@@ -172,6 +172,11 @@ class LampTest(unittest.TestCase):
                                     "CON-001": {"pending_verification": False, "basis_pending": {"item_id": "OA-001", "reason": "pending", "see": None}}}}
         self.assertEqual(one("no_pending_items", items, pending), ("未通过", ["UC-001", "CON-001"]))
         self.assertEqual(one("no_pending_items", [page(1, "借书")], clear)[0], "不适用")
+        # 问题条目有助手补写的来源也不算待核实；只有问题条目时不适用。
+        asked = {"verification": {"UC-001": {"pending_verification": False, "basis_pending": None},
+                                  "TBD-001": {"pending_verification": True, "basis_pending": None}}}
+        self.assertEqual(one("no_pending_items", items, asked), ("通过", []))
+        self.assertEqual(one("no_pending_items", [page(1, "借书"), question(1)], asked)[0], "不适用")
 
     def test_评审没有未处理的发现(self):
         ok, bad = [{"结论": "合规"}], [{"结论": "合规"}, {"结论": "不合规"}]

@@ -3,7 +3,7 @@
 // 页怎样归章、排先后与编节号在 chapters.test.ts 与助手一侧的测试里核对。
 import { describe, expect, it } from "vitest";
 import {
-  STORY_KEYS, addedQuotes, confirmAction, countsText, sideLine, dependents, factsKey, exampleKind, firstParagraph, glossary, isStoryOptions, markPassage, materialQuotes, openQuestions,
+  STORY_KEYS, addedQuotes, confirmAction, dependents, factsKey, exampleKind, firstParagraph, glossary, isStoryOptions, markPassage, materialQuotes, openQuestions,
   overallDef, pagesOf, pendingCount, questionReason, retellText, sectionLead, settledCount, sourcesFor, storyPlace, supplemented, topicState, totals, viewOnOpen, wholeSources,
 } from "../model/overall";
 import { change, itemOf, overallTask } from "./fixtures/overallTask";
@@ -27,32 +27,6 @@ describe("总体分析：各页与目录每行的计数", () => {
     expect(state("OA-002")).toBe("settled");
     change(task, "OA-003", (p) => { p.fields.状态 = "已废弃"; });
     expect(state("OA-003")).toBe("deprecated");
-  });
-
-  it("每行的计数：已定几条、待问几条，没有的那一半不写；两样都没有时写待核实或未归类，说清了的不写", () => {
-    const task = overallTask();
-    const text = (id: string) => countsText(task, itemOf(task, id));
-    expect(text("OA-002")).toBe("5 定");
-    expect(text("OA-003")).toBe("3 定 · 1 问"); // 四条已定里一条是助手补的，不算
-    expect(text("OA-004")).toBe("1 问");
-    expect(text("OA-005")).toBe("1 问");
-    expect(text("OA-008")).toBe("未归类");
-    expect(text("OA-001")).toBe("");
-    change(task, "OA-005", (p) => { p.fields.别名 = []; });
-    task.items = task.items.filter((i) => i.item_id !== "TBD-003");
-    expect(text("OA-005")).toBe("待核实");
-  });
-
-  it("已废弃的页只写「已废弃」，不数已定与待问；右侧栏那行小字也只写「已废弃」，不接「待核实」", () => {
-    const task = overallTask();
-    const page = itemOf(task, "OA-003");
-    expect([countsText(task, page), sideLine(task, page)]).toEqual(["3 定 · 1 问", "3 定 · 1 问 · 待核实"]);
-    change(task, "OA-003", (p) => { p.fields.状态 = "已废弃"; });
-    expect([countsText(task, itemOf(task, "OA-003")), sideLine(task, itemOf(task, "OA-003"))]).toEqual(["已废弃", "已废弃"]);
-    // 没有计数的页废弃之后照旧写「已废弃」；别的页不受影响。
-    change(task, "OA-001", (p) => { p.fields.状态 = "已废弃"; });
-    expect(countsText(task, itemOf(task, "OA-001"))).toBe("已废弃");
-    expect(countsText(task, itemOf(task, "OA-002"))).toBe("5 定");
   });
 
   it("底部总计：11 个主题、14 条已定、3 条待问、2 处待核实；已废弃的页不算", () => {

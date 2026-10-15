@@ -8,15 +8,45 @@ import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, StartPag
 import { START_ARROW, flowInProgress, flowPositionLine, flowTag, producedLine, workItemMeta, workItemPosition, workItemSessionsLine } from "../../model/startPage";
 import { go, href } from "../../router";
 
-/** 「三步开始」：只在六类资产都空着、又没有工作项时显示。主按钮与三种常见起点都进推荐的那条工作流程的输入页。 */
-export function StartGuide({ taskId, flow, texts }: {
+/** 三步的一行写法：任务已有资产时「启动需求分析」框里的副标题。 */
+export const STEPS_LINE = "三步：选择工作流程、提供输入、由助手推进";
+
+/**
+ * 「三步开始」：任务里没有流程工作项时显示，是启动推荐的那条工作流程的入口。主按钮与三种常见起点都进它的输入页。
+ * 六类资产都空着时排在页头之下：黑边的一张卡，标题「三步开始」，三步逐条写，右边主按钮。任务已有资产时（compact）排在「工作项」之后、
+ * 六格之前，写成与其他各节同款的一节：标题「启动某流程」，一行灰字写三步，下面是主按钮与三种常见起点。
+ * 任务里已有材料时，三种起点各多一句：已上传的材料启动后一并核读。
+ */
+export function StartGuide({ taskId, flow, texts, compact = false, materials = 0 }: {
   taskId: string;
   /** 推荐的工作流程；没有、或者现在不能启动时主按钮是灰的，三种起点不可点。 */
   flow: CatalogFlow | null;
   texts: StartPageTexts | undefined;
+  /** 任务已有资产：写成一节，标题「启动某流程」，三步收成一行。 */
+  compact?: boolean;
+  /** 任务里已上传几份材料。 */
+  materials?: number;
 }) {
   const name = flow?.name ?? "工作流程";
   const open = flow?.enabled ? flow : null;
+  const carried = materials > 0 ? <em data-testid="start-case-materials">已上传 {materials} 份材料，启动后一并核读</em> : null;
+  const button = <button className="btn pri tp-lg" disabled={!open} onClick={() => open && go(href.start(taskId, open.key))} data-testid="guide-start">启动{name}</button>;
+  const cases = texts && texts.cases.length > 0 && (
+    <div className="tp-cases" data-testid="start-cases">
+      {texts.cases.map((one, index) => (open
+        ? <a key={one.title} className="tp-case go" href={href.start(taskId, open.key, index)} data-testid={`start-case-${index}`}><b>{one.title}</b><span>{one.text}</span>{carried}</a>
+        : <div key={one.title} className="tp-case"><b>{one.title}</b><span>{one.text}</span>{carried}</div>))}
+    </div>
+  );
+  if (compact) {
+    return (
+      <section className="tp-sec" data-testid="start-guide">
+        <div className="tp-sec-h"><h2>启动{name}</h2><span className="tp-sec-note" data-testid="start-steps-line">{STEPS_LINE}</span></div>
+        <div className="tp-guide-go">{button}{texts?.guide_note && <small>{texts.guide_note}</small>}</div>
+        {cases}
+      </section>
+    );
+  }
   return (
     <>
       <section className="tp-guide" data-testid="start-guide">
@@ -29,17 +59,11 @@ export function StartGuide({ taskId, flow, texts }: {
           </ol>
         </div>
         <div className="tp-cta">
-          <button className="btn pri tp-lg" disabled={!open} onClick={() => open && go(href.start(taskId, open.key))} data-testid="guide-start">启动{name}</button>
+          {button}
           {texts?.guide_note && <small>{texts.guide_note}</small>}
         </div>
       </section>
-      {texts && texts.cases.length > 0 && (
-        <div className="tp-cases" data-testid="start-cases">
-          {texts.cases.map((one, index) => (open
-            ? <a key={one.title} className="tp-case go" href={href.start(taskId, open.key, index)} data-testid={`start-case-${index}`}><b>{one.title}</b><span>{one.text}</span></a>
-            : <div key={one.title} className="tp-case"><b>{one.title}</b><span>{one.text}</span></div>))}
-        </div>
-      )}
+      {cases}
     </>
   );
 }

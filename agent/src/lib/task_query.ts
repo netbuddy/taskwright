@@ -20,7 +20,7 @@ import { checkCompletion, completionHints, currentItems, unreadItems, unreadList
 import { REVIEW_CONDITION, findingText } from "./review.ts";
 import { batchNumber, currentRulesHash, verdictAt } from "./review_state.ts";
 import { databasePath, load } from "./db.ts";
-import { type TaskDefinition, validateDefinition } from "./definition.ts";
+import { type TaskDefinition, keepPendingField, validateDefinition } from "./definition.ts";
 import { mentionLines, overallState, pendingSummary, verificationLines } from "./overall_read.ts";
 import { stageLines, stageSummary } from "./stage_read.ts";
 import { cardsOpenInStage, openCardsLine, openProposal, proposalLine } from "./stage_proposal.ts";
@@ -251,8 +251,9 @@ export function getTaskStatus(workspaceDir: string, sessionId?: string, knowledg
         ? "未读的条目：没有，每个条目用户都看过。"
         : `未读的条目 ${unread.length} 条（用户从没打开看过它们；问用户要不要发布版本之前，先告诉用户还有几条没看）：${unreadList(unread)}。`,
     );
-    // 待核实的条目：有助手补充而用户还没有确认的，或者依据的主题待核实、已废弃的。一个都没有时不写。
-    const pending = pendingSummary(overallState(db, task.task_id, definition));
+    // 待核实的条目：有助手补充而用户还没有确认的，或者依据的主题待核实、已废弃的；问题条目不列。一个都没有时不写。
+    const questions = new Set(definition.collections.filter((one) => keepPendingField(one) !== null).map((one) => one.name));
+    const pending = pendingSummary(overallState(db, task.task_id, definition), questions);
     if (pending) lines.push(pending);
     // 完成条件之外的提示，不挡发布版本，例如还没有贴标签的主题。
     const hints = completionHints(db, task.task_id, definition.completion);

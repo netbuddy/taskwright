@@ -12,7 +12,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createTask } from "../src/lib/create_task.ts";
 import { databasePath } from "../src/lib/db.ts";
 import { validateDefinition } from "../src/lib/definition.ts";
-import { overallState, verificationLines } from "../src/lib/overall_read.ts";
+import { type OverallState, overallState, pendingSummary, verificationLines } from "../src/lib/overall_read.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { getItem, getTaskStatus } from "../src/lib/task_query.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
@@ -184,4 +184,15 @@ test("命令行入口：给库文件与任务编号，打印的待核实、提�
   const missing = spawnSync(process.execPath, [cli, databasePath(dir), "TASK-不存在"], { encoding: "utf-8" });
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /库里没有任务 TASK-不存在。/);
+});
+
+test("pendingSummary：问题集合里的条目不列，与写条目阶段那盏灯同一条规则", () => {
+  const mine = { pending_verification: true, pending_sources: 1, pending_places: [], basis_pending: null };
+  const state = {
+    items: [{ item_id: "UC-001", collection: "功能用例", revision_no: 1, fields: {} }, { item_id: "TBD-001", collection: "问题", revision_no: 1, fields: {} }],
+    verification: new Map([["UC-001", mine], ["TBD-001", mine]]), mentions: new Map(), pages: [], viewed: new Map(), sources: new Map(),
+  } as unknown as OverallState;
+  assert.equal(pendingSummary(state), "待核实的条目：有助手补充而用户还没有确认的 2 个：UC-001、TBD-001。");
+  assert.equal(pendingSummary(state, new Set(["问题"])), "待核实的条目：有助手补充而用户还没有确认的 1 个：UC-001。");
+  assert.equal(pendingSummary(state, new Set(["问题", "功能用例"])), null);
 });

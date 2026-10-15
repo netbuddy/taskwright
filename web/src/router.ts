@@ -5,8 +5,8 @@
 //                                            是从起点页三种常见起点里的第几种进来的（从 0 起），输入页据此先看那一块；
 //                                            澄清的输入页还可以带 ?pick=编号,编号，是从起点页「待处理事项」进来时预先勾好的问题与待决定事项
 //   #/tasks/{task_id}/sessions/{session_id}  工作视图；后面可以带 ?collection=集合名，条目区一打开就停在这个集合的页签；
-//                                            ?tab=diagrams 去看图，?diagram=D-001 直接打开那张图（图不是集合，不借用 collection）：
-//                                            有总体分析集合的任务，图在业务说明里，打开它所在的节或章首；别的任务停在图表页签
+//                                            ?tab=diagrams 停在「分析模型」页签（全部图的索引），?diagram=D-001 打开那张图在业务说明里
+//                                            所在的节或章首（图不是集合，不借用 collection）
 //   #/knowledge 与 #/knowledge/{库编号}       知识库页面（带库编号时选中那个库）
 //   #/settings、#/settings/models            设置页面的「模型」一栏（设置页面现在只有这一栏）
 import { useEffect, useState } from "react";

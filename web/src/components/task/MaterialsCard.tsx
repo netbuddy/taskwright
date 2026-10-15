@@ -3,18 +3,13 @@
 // 后端在任务详情里给每份材料标了 deletable，这里只按它决定：为真时「替换」与「删除」都可以点；为假时没有「删除」，
 // 「替换」是灰的、点不动，鼠标停在上面说明为什么。任务已结束时这两样都没有，也没有上传区。
 
-import { useRef, useState, type ReactNode } from "react";
-import { Modal, Upload } from "antd";
+import type { ReactNode } from "react";
+import { Upload } from "antd";
 import { FileTextOutlined, FilePdfOutlined, FileWordOutlined, UploadOutlined } from "@ant-design/icons";
-import { api, ApiError } from "../../api/client";
 import type { Material, ServiceInfo } from "../../api/types";
 import { formatBytes, formatTimeShort } from "../../model/format";
-import { pdfUploadingText, tooLargeText, unsupportedTypeText, uploadAccept, uploadLimitText, uploadTypesText } from "../../model/upload";
-import { forgetDocx } from "../../state/docxStore";
-import { forgetPdf } from "../../state/pdfStore";
-import { useToast } from "../Toasts";
-
-const fileName = (path: string) => path.split("/").pop() ?? path;
+import { uploadAccept, uploadLimitText, uploadTypesText } from "../../model/upload";
+import { fileName, useMaterialOps } from "./materialOps";
 
 /** 已经进入对话的材料不能替换：灰色的「替换」上鼠标悬停时写的说明（与后端拒绝时的原话相同）。 */
 export const ENTERED_REPLACE_HINT = "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。";
@@ -47,75 +42,7 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
   /** 这张卡是不是页面现在要用户先看的那一块：是的话描黑边。 */
   marked?: boolean;
 }) {
-  const toast = useToast();
-  const [deleting, setDeleting] = useState<string | null>(null);
-  // 删除请求发出去、还没有回来：确认框的「删除」转圈、「取消」不可点，再点不会发第二次。
-  const [removing, setRemoving] = useState(false);
-
-  const remove = async () => {
-    const path = deleting;
-    if (!path || removing) return;
-    setRemoving(true);
-    try {
-      await api.deleteMaterial(taskId, path);
-      forgetDocx(taskId, path);
-      forgetPdf(taskId, path);
-      toast.success(`已删除材料《${fileName(path)}》。`);
-      onChanged();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "删除没有成功。");
-      // 被拒绝多半是它刚进入了对话：重读一次，让「删除」按新的情况显示。
-      onChanged();
-    } finally {
-      setRemoving(false);
-      setDeleting(null);
-    }
-  };
-
-  // 替换：点「替换」先记下是哪份材料、打开文件选择框；选好文件（类型与大小照上传的规矩先查）才弹确认框。
-  const picker = useRef<HTMLInputElement>(null);
-  const pickFor = useRef<string | null>(null);
-  const [replacing, setReplacing] = useState<{ path: string; file: File } | null>(null);
-  // 替换请求发出去、还没有回来：确认框的「替换」转圈、「取消」不可点，再点不会发第二次。
-  const [swapping, setSwapping] = useState(false);
-
-  const pick = (path: string) => {
-    pickFor.current = path;
-    if (picker.current) {
-      picker.current.value = ""; // 连着两次选同一个文件也要触发
-      picker.current.click();
-    }
-  };
-  const picked = (file: File | undefined) => {
-    const path = pickFor.current;
-    pickFor.current = null;
-    if (!file || !path) return;
-    const refused = unsupportedTypeText(info, file) ?? tooLargeText(info, file);
-    if (refused) toast.error(refused);
-    else setReplacing({ path, file });
-  };
-  const replace = async () => {
-    if (!replacing || swapping) return;
-    const { path, file } = replacing;
-    setSwapping(true);
-    try {
-      const r = await api.replaceMaterial(taskId, path, file);
-      forgetDocx(taskId, path);
-      forgetDocx(taskId, r.path);
-      forgetPdf(taskId, path);
-      forgetPdf(taskId, r.path);
-      const [was, now] = [fileName(path), fileName(r.path)];
-      toast.success(was === now ? `已替换材料《${was}》。` : `已把材料《${was}》替换成《${now}》。`);
-      onChanged();
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "替换没有成功。");
-      // 被拒绝多半是它刚进入了对话：重读一次，让「替换」按新的情况显示。
-      onChanged();
-    } finally {
-      setSwapping(false);
-      setReplacing(null);
-    }
-  };
+  const ops = useMaterialOps(taskId, info, onChanged);
 
   return (
     <section className={`tp-pane${marked ? " marked" : ""}`} aria-label={title} data-testid="materials-card">
@@ -138,9 +65,9 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
                 <td className="num">{formatTimeShort(m.modified_at)}</td>
                 <td>
                   <a className="tp-lnk" role="button" onClick={() => onView(m)} data-testid="material-view">查看</a>
-                  {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => pick(m.path)} data-testid="material-replace">替换</a>}
+                  {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.replace(m.path)} data-testid="material-replace">替换</a>}
                   {!m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
-                  {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => setDeleting(m.path)} data-testid="material-delete">删除</a>}
+                  {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.remove(m.path)} data-testid="material-delete">删除</a>}
                 </td>
               </tr>
             ))}
@@ -151,46 +78,13 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
         <Upload.Dragger
           accept={uploadAccept(info)}
           showUploadList={false}
-          customRequest={async ({ file, onSuccess, onError }) => {
-            // 类型不符或超过上限的文件不发请求，直接报后端给的那句话（先查类型，与后端的先后相同）。
-            // 拖进来的文件与在选择框里选了「所有文件」时选中的文件都不经过滤，所以类型也要在这里查。
-            const refused = unsupportedTypeText(info, file as File) ?? tooLargeText(info, file as File);
-            if (refused) {
-              toast.error(refused);
-              onError?.(new Error(refused));
-              return;
-            }
-            // PDF 要等一会儿：先说一句，结果出来时原地换成结果（同一个 key）。
-            const waiting = pdfUploadingText((file as File).name);
-            const same = waiting ? { key: `upload:${(file as File).name}` } : undefined;
-            if (waiting && same) toast.running(same.key, waiting);
-            try {
-              const r = await api.uploadMaterial(taskId, file as File);
-              toast.success(`已上传：${r.path}`, same);
-              onSuccess?.({});
-              onChanged();
-            } catch (e) {
-              toast.error(e instanceof ApiError ? e.message : "上传没有成功。", same);
-              onError?.(e as Error);
-            }
-          }}
+          customRequest={ops.upload}
         >
           <UploadOutlined className="up" />
           <span data-testid="upload-hint">{uploadHintText(info)}</span>
         </Upload.Dragger>
       </div>
-      {/* 替换用的文件选择框：放在上传区之后，看不见，由「替换」打开。 */}
-      <input ref={picker} type="file" accept={uploadAccept(info)} hidden onChange={(e) => picked(e.target.files?.[0])} data-testid="material-replace-input" />
-      <Modal title={replacing ? `用《${replacing.file.name}》替换材料《${fileName(replacing.path)}》？` : ""} open={!!replacing}
-        onCancel={() => { if (!swapping) setReplacing(null); }} onOk={() => void replace()} okText="替换" cancelText="取消" confirmLoading={swapping}
-        cancelButtonProps={{ disabled: swapping }} closable={!swapping} maskClosable={!swapping} keyboard={!swapping} destroyOnHidden>
-        <p>用新文件替换这份材料，旧文件就没有了；助手下次开始会话时看到的是新文件。</p>
-      </Modal>
-      <Modal title={deleting ? `删除材料《${fileName(deleting)}》？` : ""} open={!!deleting} onCancel={() => { if (!removing) setDeleting(null); }}
-        onOk={() => void remove()} okText="删除" cancelText="取消" confirmLoading={removing} cancelButtonProps={{ disabled: removing }}
-        closable={!removing} maskClosable={!removing} keyboard={!removing} destroyOnHidden>
-        <p>删除之后这份材料就没有了，助手下次开始会话时不会再看到它。</p>
-      </Modal>
+      {ops.elements}
     </section>
   );
 }

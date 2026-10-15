@@ -139,11 +139,15 @@ export function verificationLines(itemId: string, state: ItemVerification): stri
   return lines;
 }
 
-/** 任务里待核实的条目合成的一句；一个都没有时是 null。 */
-export function pendingSummary(state: OverallState): string | null {
-  const own = state.items.filter((one) => state.verification.get(one.item_id)!.pending_verification).map((one) => one.item_id);
+/**
+ * 任务里待核实的条目合成的一句；一个都没有时是 null。questions 是问题条目所在的集合：问题条目不列（与写条目阶段
+ * 「没有待核实的条目」那盏灯同一条规则，问题条目记的是没定的事，助手补写的来源不让它成为待核实的需求）。
+ */
+export function pendingSummary(state: OverallState, questions: ReadonlySet<string> = new Set()): string | null {
+  const listed = state.items.filter((one) => !questions.has(one.collection));
+  const own = listed.filter((one) => state.verification.get(one.item_id)!.pending_verification).map((one) => one.item_id);
   const basisOf = (itemId: string) => state.verification.get(itemId)!.basis_pending;
-  const waiting = state.items.filter((one) => !own.includes(one.item_id) && basisOf(one.item_id)).map((one) => one.item_id);
+  const waiting = listed.filter((one) => !own.includes(one.item_id) && basisOf(one.item_id)).map((one) => one.item_id);
   // 因依据而待核实的分两种说：依据的是一页主题，依据的是一张图。
   const byFigure = waiting.filter((id) => DIAGRAM_ID.test(basisOf(id)!.item_id));
   const byBasis = waiting.filter((id) => !byFigure.includes(id));

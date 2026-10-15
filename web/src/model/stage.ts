@@ -91,7 +91,7 @@ export function lampGroups(stage: StageView): { failing: StageLamp[]; passed: nu
   return { failing, passed, applicable: failing.length + passed };
 }
 
-/** 点一盏灯去哪里：清单里的第一个。是任务里的条目就打开它；否则当作材料的路径，去右侧栏的材料页签。清单是空的时候哪里也不去。 */
+/** 点一盏灯去哪里：清单里的第一个。是任务里的条目就打开它；否则当作材料的路径，去右侧栏的原文定位页签。清单是空的时候哪里也不去。 */
 export function lampTarget(lamp: StageLamp, items: readonly Item[]): { kind: "item"; itemId: string } | { kind: "material"; path: string } | null {
   const first = lamp.items[0];
   if (!first) return null;

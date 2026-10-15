@@ -39,7 +39,7 @@ export interface FigureHost {
   onViewed?: (row: DiagramRow) => void;
   /** 这张图有没有没保存的改动。 */
   onDirty?: (diagramId: string, dirty: boolean) => void;
-  /** 要看的那张图（从地址、条目的依据点过来的）：它在哪一处，那一处就显示它并滚到它；seq 每次加一。 */
+  /** 要看的那张图（从地址、条目的依据、「分析模型」页签点过来的）：它在哪一处，那一处就显示它并滚到它；seq 每次加一。 */
   focus?: { diagramId: string; seq: number } | null;
 }
 

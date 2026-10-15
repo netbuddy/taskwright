@@ -862,9 +862,11 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
         `有 ${unlooked.length} 个条目依据的图用户还没有看过：${list(unlooked.map((one) => one.item_id))}（没看过的图是 ${list([...new Set(unlooked.flatMap(unseenOf))])}）。`,
         unlooked.map((one) => one.item_id));
 
-  // 写条目：没有待核实的条目。
-  const pending = others.filter((one) => one.pending);
-  const noPending = others.length === 0 ? lamp("no_pending_items", null, "总体分析以外还没有条目。")
+  // 写条目：没有待核实的需求条目。问题条目不算：它记的是没定的事，助手补写的来源不让它成为待核实的需求。
+  const questionIds = new Set(input.questions.map((one) => one.item_id));
+  const requirements = others.filter((one) => !questionIds.has(one.item_id));
+  const pending = requirements.filter((one) => one.pending);
+  const noPending = requirements.length === 0 ? lamp("no_pending_items", null, "还没有需求条目。")
     : pending.length === 0 ? lamp("no_pending_items", true, "没有待核实的条目。")
       : lamp("no_pending_items", false, `有 ${pending.length} 个条目待核实：${list(pending.map((one) => one.item_id))}。`, pending.map((one) => one.item_id));
 

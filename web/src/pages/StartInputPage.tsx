@@ -242,7 +242,7 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
             : target.kind === "flow"
               ? <li>助手从「{startNode?.name ?? ""}」开始，每站完成后在对话区汇报并提议下一站，由你确认后进入。</li>
               : <li>助手进行「{name}」，完成后在对话区汇报结果，不提议下一站。</li>}
-          <li>页面切换为工作台：左侧对话区、中间业务说明与需求条目、右侧材料与修订。</li>
+          <li>页面切换为工作台：左侧对话区，中间是六类需求资产的页签，右侧是原文定位与修订。</li>
         </ol>
       </section>
 

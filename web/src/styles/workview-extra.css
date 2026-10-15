@@ -149,8 +149,6 @@
 .app .sw-rev .rfoot { display: flex; gap: .35rem; margin-top: .35rem; flex-wrap: wrap; align-items: center; }
 /* 字段级修订标识（方案第 2A 节第 6 条）：自上次确认的修订以来助手改过的字段，整块加琥珀色左边线与浅底，不加文字；确认后消失 */
 .app .fld.sw-revmark .v { border-color: var(--amber-line); border-left: .22rem solid var(--amber); background: var(--amber-bg); }
-.app .sw-docempty { padding: 1rem .9rem; color: var(--mut); font-size: 0.929rem; line-height: 1.7; }
-.app .sw-docempty .btn { margin-top: .5rem; }
 /* 助手的话底部的修订指针「产生了修订 N」：绿底、没有边线的小圆标，表示这一次确实存下了东西 */
 .app .sw-revtag { display: inline-block; margin-top: .4rem; font-size: 0.857rem; color: var(--ok); border-radius: 71rem;
   padding: 0 .55rem; cursor: pointer; background: var(--ok-bg); }
@@ -335,15 +333,6 @@
 .app .citedby .how { color: var(--mut); margin-left: .4rem; }
 .app .citedby .q { color: var(--ink); }
 .app .citedby-empty { color: var(--mut); font-size: .93rem; margin: .3rem 0; }
-.app .dn-side { padding: .6rem .9rem; overflow: auto; height: 100%; }
-.app .dn-side .dn-lead { margin: 0 0 .4rem; }
-.app .dn-side .grp { font-weight: 600; margin: .8rem 0 .3rem; color: var(--note); }
-.app .dn-side .ent { border: 1px solid var(--line); border-radius: .6rem; padding: .45rem .7rem; margin: .3rem 0; background: var(--card); cursor: pointer; }
-.app .dn-side .ent:hover { border-color: var(--note-line); }
-.app .dn-side .ent .t { font-weight: 600; }
-.app .dn-side .ent .c { color: var(--text1); margin-top: .15rem; }
-.app .dn-side .ent .m { color: var(--mut); font-size: .857rem; margin-top: .15rem; }
-.app .dn-side .ent.unl .m { color: var(--amber); }
 /* 材料区 Word 材料的「按章节看引用」：默认收起；展开后的列表在自己的框里滚动，不把原文挤没 */
 .app .sec { border-bottom: 1px solid var(--line); background: var(--card); flex: none; }
 .app .sec-head { display: flex; align-items: center; gap: .5rem; padding: .35rem .8rem; cursor: pointer; font-size: 0.901rem; user-select: none; color: var(--text2); }
@@ -384,19 +373,12 @@
   font-size: .897rem; padding: .12rem .6rem; cursor: pointer; white-space: nowrap; }
 .app .topbar .set-btn:hover { border-color: var(--ink); }
 
-/* 图表页签（components/work/DiagramsPane.tsx）：图的列表与详情。 */
-.app .lrow .dg-rev { margin-left: auto; font-size: 0.881rem; color: var(--mut); font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* 详情占满条目区的高度：顶上两行，下面图在左、文本与来源一栏在右；这一栏可以收起。 */
-.app .dg-detail { height: 100%; max-width: none; padding-bottom: .6rem; }
-.app .dg-sub { display: flex; min-width: 0; margin-bottom: .4rem; white-space: nowrap; }
-.app .dg-sub .dg-note { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.app .dg-body { flex: 1 1 auto; min-height: 0; display: flex; gap: .8rem; }
+/* 业务说明里的图（components/work/overall/Figure.tsx）：画图的那一块、改图时的预览提示、图下展开的「文本」「来源」两个页签。 */
 .app .dg-figure { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .app .dg-figure .diagram-view { flex: 1 1 auto; }
 .app .dg-figure .diagram-stage { border: 1px solid var(--line); border-radius: .5rem; background: var(--card); }
 .app .dg-figure .diagram-stage svg { display: block; }
 .app .dg-preview { margin-bottom: .3rem; font-size: 0.889rem; color: var(--amber); }
-.app .dg-side { flex: 0 0 clamp(15rem, 34%, 22rem); min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line); padding-left: .8rem; }
 .app .dg-tabs { flex: 0 0 auto; border-bottom: 1px solid var(--line); margin-bottom: .5rem; }
 .app .dg-tabs .dg-dot { margin-left: .25rem; font-size: .6rem; color: var(--amber); vertical-align: middle; }
 .app .dg-side-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
@@ -409,12 +391,9 @@
 .app .dg-none { font-size: 0.921rem; color: var(--mut); }
 .app .dg-drawn { font-size: 0.93rem; line-height: 1.9; }
 .app .dg-drawn .gone { color: var(--mut); }
-/* 条目区窄：右边一栏排到图的下面，页面自己滚。 */
+/* 条目区窄：图的那一块留够高度，图下的页签内容跟着页面滚。 */
 @container items (max-width: 40rem) {
-  .app .dg-detail { height: auto; }
-  .app .dg-body { flex-direction: column; }
   .app .dg-figure .diagram-stage { min-height: 20rem; }
-  .app .dg-side { flex: 0 0 auto; border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: .5rem; }
   .app .dg-side-body { overflow: visible; }
 }
 /* 图表组件里的按钮是 antd 的：工作视图的全局清零把它们的内边距清掉了，这里补回来。 */

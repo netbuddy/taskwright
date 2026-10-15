@@ -185,6 +185,12 @@ test("basis_pages_viewed 与 no_pending_items：条目依据的页用户都看�
   const pending = lampOf("no_pending_items", { pages, items: bad });
   assert.deepEqual(brief(pending), [false, ["UC-001", "CON-001"]]);
   assert.equal(pending.summary, "有 2 个条目待核实：UC-001、CON-001。");
+  // 问题条目即使有助手补写的来源也不算待核实；只有问题条目时不适用。
+  const questions = [{ item_id: "TBD-001", open: true, related: [], unresolved: true, blocking: false }];
+  const asked = lampOf("no_pending_items", { pages, items: [item("UC-001"), item("TBD-001", { collection: "问题", pending: true })], questions });
+  assert.deepEqual(brief(asked), [true, []]);
+  const onlyQuestions = lampOf("no_pending_items", { pages, items: [item("TBD-001", { collection: "问题", pending: true })], questions });
+  assert.deepEqual([onlyQuestions.ok, onlyQuestions.summary], [null, "还没有需求条目。"]);
   // 没有条目依据主题页、总体分析以外没有条目：不适用。
   assert.deepEqual([lampOf("basis_pages_viewed", { pages, items: [item("UC-001")] }).ok, lampOf("no_pending_items", { pages }).ok], [null, null]);
 });

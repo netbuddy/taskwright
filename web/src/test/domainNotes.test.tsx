@@ -1,12 +1,12 @@
 // 领域说明一类的集合（任务定义「界面」一项）：分组与排序、谁引用了它、与条目的联系；不评审的集合不显示评审状态；
-// 条目行的分组小标签与来源数；「领域说明」来源标签点一下打开那条说明；详情的「被哪些条目引用」；右侧栏页签；完成条件面板的提示行。
+// 条目行的分组小标签与来源数；「领域说明」来源标签点一下打开那条说明；详情的「被哪些条目引用」；完成条件面板的提示行。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { useState, type ReactNode } from "react";
 import type { Completion, Item, Task } from "../api/types";
-import { citationsOf, groupItems, linkPhrase, unlinkedIds } from "../model/domainNotes";
+import { citationsOf, unlinkedIds } from "../model/domainNotes";
 import { ItemsPanel } from "../components/work/ItemsPanel";
 import { ItemStatus } from "../components/work/ItemStatus";
 import { SidePanel } from "../components/work/SidePanel";
@@ -64,18 +64,9 @@ function task(over: Partial<Task> = {}): Task {
 }
 
 describe("领域说明的派生", () => {
-  it("按分组字段分组：靠前的组在前，其余按每组第一个条目的先后", () => {
-    expect(groupItems(task(), "领域说明").map((g) => [g.name, g.items.map((i) => i.item_id)])).toEqual([
-      ["术语", ["DN-003"]], ["背景", ["DN-001", "DN-004"]], ["角色", ["DN-002"]],
-    ]);
-  });
-
-  it("谁引用了它：来源里写了它的（附支持的字段与摘录），关联条目里写了它的；联系的说法；未关联的编号取自完成条件的提示", () => {
+  it("谁引用了它：来源里写了它的（附支持的字段与摘录）；未关联的编号取自完成条件的提示", () => {
     const t = task();
     expect(citationsOf(t, "DN-002").map((c) => [c.item.item_id, c.how, c.where, c.excerpt])).toEqual([["UC-001", "source", "参与者第 2 条", "借还台管理员的解释"]]);
-    expect(linkPhrase(t, t.items.find((i) => i.item_id === "DN-002")!)).toEqual({ text: "被 UC-001 的参与者引用", unlinked: false });
-    expect(linkPhrase(t, t.items.find((i) => i.item_id === "DN-001")!)).toEqual({ text: "关联了 UC-002", unlinked: false });
-    expect(linkPhrase(t, t.items.find((i) => i.item_id === "DN-004")!)).toEqual({ text: "还没有和任何条目关联", unlinked: true });
     expect(unlinkedIds(t, "领域说明")).toEqual(["DN-004"]);
   });
 });
@@ -128,27 +119,6 @@ describe("条目区与详情", () => {
     fireEvent.click(screen.getByText("领域说明", { selector: ".itab" }));
     fireEvent.click(screen.getByTestId("item-DN-001"));
     expect(screen.getByTestId("cited-by-none").textContent).toContain("它自己关联了 UC-002，所以不算「没有和任何条目关联」");
-  });
-});
-
-describe("右侧栏的领域说明页签", () => {
-  it("在材料之后；按类别分组，术语在前；未关联的那条写明；点一条打开它", () => {
-    const t = task();
-    const open = vi.fn();
-    const props = {
-      onSide: () => {}, onCollapse: () => {}, onExpand: () => {}, taskId: "TASK-001", materials: [], focusPath: null, items: t.items, locate: null,
-      currentItem: null, disabled: false, onOpenItem: open, onSend: () => {}, log: [], messages: [], selectedRevision: null, onSelectRevision: () => {},
-      scrollNonce: 0, onDiff: () => {}, onUndo: () => {}, onGenerate: () => {}, writesOff: false, readOnly: false, task: t,
-    };
-    render(<Wrap><div className="app"><SidePanel side="coll:领域说明" {...props} /></div></Wrap>);
-    const tabs = [...document.querySelectorAll(".sw-stab")].map((e) => e.textContent);
-    expect(tabs).toEqual(["材料", "领域说明4", "文档", "修订"]);
-    const side = screen.getByTestId("side-collection-领域说明");
-    expect([...side.querySelectorAll(".grp")].map((e) => e.textContent)).toEqual(["术语", "背景", "角色"]);
-    expect(screen.getByTestId("side-entry-DN-004").className).toContain("unl");
-    expect(screen.getByTestId("side-entry-DN-004").textContent).toContain("还没有和任何条目关联");
-    fireEvent.click(screen.getByTestId("side-entry-DN-002"));
-    expect(open).toHaveBeenCalledWith("DN-002");
   });
 });
 

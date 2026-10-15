@@ -1,6 +1,8 @@
 // 任务起点页：任务一级的家，也是活动的目录。自上而下：面包屑、任务头（任务类型与时刻一行、任务名与一句状态、一段定位的话）、
-// 「三步开始」指引与三种常见起点（只在六类需求资产都空着、又没有工作项时显示）、待处理事项（有需求资产时显示，model/pendingWork.ts）、工作项（有工作项时显示）、需求资产现状六格、
+// 待处理事项（有需求资产时显示，model/pendingWork.ts）、工作项（有工作项时显示）、需求资产现状六格、
 // 工作流程两张卡、单项活动七张卡与「自由讨论」一行、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
+// 「三步开始」指引与三种常见起点是推荐流程的入口，任务里没有流程工作项时才显示：六类资产都空着时在页头之下，
+// 已有资产时在「工作项」之后、六格之前，标题改「启动需求分析」。
 // 外框是工作视图的顶栏加导航条（components/TaskFrame.tsx）；各块的组件在 components/task/，样式在 styles/task-page.css。
 // 数据是两次普通读取：任务详情（GET …/tasks/{task_id}，带材料与会话）与任务状况（GET …/status，带资产现状、活动目录与这一页的几段话）。
 // 另开一条不带会话的事件连接，只听执行者状态：助手做完一轮时两样都重读一次。
@@ -99,8 +101,11 @@ export function TaskPage({ taskId }: { taskId: string }) {
   const versionNote = taskTypeVersionNote(task.task_type_versions);
   const catalog = status?.catalog ?? null;
   const workItems = status?.work_items ?? [];
-  // 「三步开始」只给还没有开始的任务：六类资产都空着，而且一个工作项都没有（刚启动了一个、还没有记下内容时不再指引怎样开始）。
-  const empty = allAssetsEmpty(status?.assets) && workItems.length === 0;
+  // 「三步开始」是推荐流程的入口：任务里没有流程工作项时显示（流程工作项每个任务至多一条，有了就从它的卡片接着做）。
+  // 六类资产都空着时排在页头之下；已有资产时排在「工作项」之后、六格之前。任务状况读回来之前不画，免得一闪。
+  const guide = !!status && !workItems.some((one) => one.kind === "flow");
+  const guideFirst = guide && allAssetsEmpty(status?.assets);
+  const materialCount = ownMaterials(task.materials).length;
   const recommended = catalog?.flows.find((one) => one.recommended) ?? null;
 
   const changeKnowledge = async (ids: string[]) => {
@@ -212,7 +217,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
             </div>
           )}
         </header>
-        {empty && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} />}
+        {guideFirst && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} materials={materialCount} />}
 
         {showsPendingWork(task, status) && (
           <section className="tp-sec">
@@ -227,6 +232,8 @@ export function TaskPage({ taskId }: { taskId: string }) {
             <WorkItemCards items={workItems} busy={itemBusy} onOpen={openWorkItem} onContinue={(item) => void continueWorkItem(item)} onDelete={deleteWorkItem} />
           </section>
         )}
+
+        {guide && !guideFirst && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} materials={materialCount} compact />}
 
         {status?.assets && (
           <section className="tp-sec">

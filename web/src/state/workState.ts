@@ -146,7 +146,7 @@ export type WorkAction =
   | { type: "sse"; event: string; data: unknown }
   | { type: "resync" }
   | { type: "facts"; items: Item[]; overall_views?: OverallViews | null }
-  /** 让右侧栏的材料页签选中这份材料（阶段条上点了一盏说它还没有被引用的灯）。 */
+  /** 让右侧栏的原文定位页签选中这份材料（阶段条上点了一盏说它还没有被引用的灯）。 */
   | { type: "focus_material"; path: string }
   | { type: "outgoing"; message: OutgoingMessage }
   | { type: "outgoing_update"; client_id: string; patch: Partial<OutgoingMessage> }

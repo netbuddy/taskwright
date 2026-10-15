@@ -1,4 +1,4 @@
-// 图表页签里几处文字的算法：列表里「最近修订」一栏、详情顶上那一句、图里画了谁的说明、改图没有保存成时的话。
+// 业务说明里的图（components/work/overall/Figure.tsx）几处文字的算法：修订的写法、图下那一行修订信息、图里画了谁的说明、改图没有保存成时的话。
 
 import type { ApiError } from "../api/client";
 import type { DiagramRow, DrawnItem } from "../api/types";
@@ -8,8 +8,6 @@ import { formatTime } from "./format";
 /** 停止打字多久之后图按改后的文本重画（毫秒）。测试里改小。 */
 export const diagramPreview = { delayMs: 400 };
 
-/** 一张图都没有时的引导。 */
-export const DIAGRAMS_EMPTY_TEXT = "在对话里让助手画一张图，例如『把这几个用例画成用例图』";
 /** 文本有没保存的改动时，「导出 PNG」灰掉的原因。 */
 export const EXPORT_NEEDS_SAVE_TEXT = "文本有没保存的改动，先保存或者放弃改动再导出。";
 /** 改图时右边那张图上方的提示。 */
@@ -25,14 +23,14 @@ export const otherSourcesText = (count: number): string => `另有 ${count} 条�
 /** 谁改的：助手或者用户。 */
 export const byName = (by: string): string => (by === "user" ? "用户" : "助手");
 
-/** 列表里「最近修订」一栏：修订 2 · 助手 · 10-08 14:03（今年之内不写年份）。 */
+/** 一张图最近的修订：修订 2 · 助手 · 10-08 14:03（今年之内不写年份）。图名的悬停说明与「另有 N 张」的清单用它。 */
 export function revisionText(row: Pick<DiagramRow, "revision_no" | "revision_by" | "revision_at">, now: Date = new Date()): string {
   const full = formatTime(row.revision_at);
   const when = full.startsWith(`${now.getFullYear()}-`) ? full.slice(5) : full;
   return `修订 ${row.revision_no} · ${byName(row.revision_by)} · ${when}`;
 }
 
-/** 详情顶上那一句：现在是修订几、谁在什么时候改的。修订 1 是画出来的那一次。 */
+/** 图下那一行：现在是修订几、谁在什么时候改的。修订 1 是画出来的那一次。 */
 export function revisionLine(row: Pick<DiagramRow, "revision_no" | "revision_by" | "revision_at">): string {
   const who = row.revision_by === "user" ? "由你改的" : row.revision_no === 1 ? "由助手画的" : "由助手改的";
   return `现在是修订 ${row.revision_no}，${who} · ${formatTime(row.revision_at)}`;

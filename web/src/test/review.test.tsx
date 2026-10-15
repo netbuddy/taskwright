@@ -1,6 +1,8 @@
 // 评审门禁的界面：条目区的评审按钮与灰化、进度与结果（全站提示条）、字段旁的问题与建议两色和条文展开、
 // 徽标写法、完成条件面板里评审一条的两组与按钮，以及工作视图状态对三种评审事件的消费。
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ReviewTab } from "../components/work/ReviewTab";
+import { batchRows, confirmRows, findingsLine, publishCondition } from "../model/reviewPage";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { ReactNode } from "react";
@@ -17,7 +19,7 @@ import { failedReview, pendingReview } from "../model/items";
 const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
 );
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); window.localStorage.clear(); });
 const noop = () => {};
 
 const RULES = [
@@ -63,9 +65,10 @@ function panel(props: Partial<Parameters<typeof ItemsPanel>[0]> = {}) {
   return onReview;
 }
 
-describe("条目区顶部的评审动作", () => {
+describe("「评审与确认」页签页头的评审动作", () => {
   it("按钮写待评审的条数，点了发空列表（评全部待评审的）；汇总行写待评审与评审不通过各几条；问题集合不算", () => {
     const onReview = panel();
+    fireEvent.click(screen.getByTestId("pane-review"));
     const button = screen.getByTestId("review-all");
     expect(button).toHaveTextContent("评审 2 条待评审的条目");
     expect(button).toBeEnabled();
@@ -88,14 +91,17 @@ describe("条目区顶部的评审动作", () => {
   it("没有待评审的条目、助手工作中、上一批还在评时灰化，悬停写明原因", () => {
     render(<Wrap><ItemsPanel task={task([FAILED])} readOnly={false} recentlyChanged={[]} pendingItems={new Set()} selected={null}
       onSelect={noop} submit={vi.fn(async () => null)} onGenerateDoc={noop} onReview={vi.fn()} /></Wrap>);
+    fireEvent.click(screen.getByTestId("pane-review"));
     expect(screen.getByTestId("review-all")).toBeDisabled();
     expect(screen.getByTestId("review-all")).toHaveAttribute("title", "没有待评审的条目。");
     cleanup();
     panel({ writesOff: true });
+    fireEvent.click(screen.getByTestId("pane-review"));
     expect(screen.getByTestId("review-all")).toBeDisabled();
     expect(screen.getByTestId("review-all").getAttribute("title")).toContain("助手正在工作");
     cleanup();
     panel({ review: { op_id: "ui-op-1", done: 1, total: 4, current: ["UC-004"], finished: null } });
+    fireEvent.click(screen.getByTestId("pane-review"));
     expect(screen.getByTestId("review-all").getAttribute("title")).toContain("上一批评审还在进行");
   });
 
@@ -244,5 +250,45 @@ describe("工作视图状态消费评审事件", () => {
     expect(s.review?.finished).toEqual({ passed: 1, failed: 0, unfinished: 1, error: null });
     expect(pendingReview(s.task!).map((i) => i.item_id)).toEqual(["UC-005"]);
     expect(failedReview(s.task!)).toEqual([]);
+  });
+});
+
+describe("「评审与确认」页签的内容", () => {
+  const batch = (no: number, items: string[], over: Record<string, unknown> = {}) => ({
+    no, batch_id: `b${no}`, at: `2026-10-1${no}T10:00:00+08:00`, started_by: "user", scope: "pending", items: items.map((id) => ({ item_id: id, revision_no: 3 })),
+    total: items.length, passed: items.length, failed: 0, unfinished: 0, problems: 0, advice: 0, ...over,
+  });
+
+  it("没有评审过：一句「还没有发起过评审」，历史表写尚无评审记录；确认记录表四行照样有", () => {
+    const t = task([PENDING_A, TBD]);
+    render(<Wrap><ReviewTab task={t} /></Wrap>);
+    expect(screen.getByTestId("review-findings")).toHaveTextContent("还没有发起过评审。");
+    expect(screen.getByTestId("review-history-empty")).toHaveTextContent("尚无评审记录。");
+    expect([...screen.getByTestId("confirm-table").querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent)))
+      .toEqual([["需求条目", "1 / 1", "—"], ["分析模型", "0 / 0", "—"], ["助手补写待核实", "0 / 0", "—"], ["待澄清问题", "0 / 1", "TBD-001 未解决"]]);
+  });
+
+  it("评审过：一句汇总待处理的发现；历史表最近的一轮在上，处理情况写全部通过、或不通过的现在还有几条没有处理；末尾一句发布的前置条件", () => {
+    const t = task([FAILED, PASSED_WITH_ADVICE, PENDING_A, TBD], {
+      review_batches: [batch(1, ["UC-003", "UC-002"], { passed: 1, failed: 1, problems: 1, advice: 2 }), batch(2, ["UC-002"], { advice: 1 })],
+      completion: { all_met: false, unmet_count: 1, hints: [], conditions: [
+        { collection: "功能用例", name: "a", met: true, state: "met", done: 0, total: 0, missing: [], note: "" },
+        { collection: "功能用例", name: "b", met: false, state: "unmet", done: 0, total: 0, missing: [], note: "" }] },
+    } as unknown as Partial<Task>);
+    render(<Wrap><ReviewTab task={t} reviewButton={<button type="button">评审</button>} /></Wrap>);
+    expect(findingsLine(t)).toBe("有 1 处发现待处理，在 1 个条目上。");
+    expect(batchRows(t).map((one) => [one.no, one.total, one.findings, one.handled])).toEqual([[2, 1, 1, "全部通过"], [1, 2, 3, "1 条不通过，还有 1 条待处理"]]);
+    expect(screen.getByTestId("review-batch-1")).toHaveTextContent("第 1 轮");
+    expect(publishCondition(t)).toContain("现在满足 1 / 2 条");
+    expect(screen.getByTestId("publish-condition")).toHaveTextContent("发布的前置条件：完成条件全部满足");
+    expect(screen.getByText("评审", { selector: "button" })).toBeInTheDocument();
+  });
+
+  it("确认记录：需求条目不算问题条目，没看过当前修订的算未确认并点名；助手补写的数有助手补充来源的条目与页，待核实的点名", () => {
+    const fresh = item({ item_id: "UC-007", confirmations: [] });
+    const added = item({ item_id: "UC-008", sources: [{ kind: "助手补充", locator: "", excerpt: "推出来的" }], pending_verification: true });
+    const rows = confirmRows(task([PENDING_A, fresh, added, TBD]));
+    expect(rows[0]).toEqual({ name: "需求条目", done: 2, total: 3, pending: "1 条未确认（UC-007），1 条待核实" });
+    expect(rows[2]).toEqual({ name: "助手补写待核实", done: 0, total: 1, pending: "UC-008 待核实" });
   });
 });

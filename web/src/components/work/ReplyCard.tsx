@@ -34,7 +34,7 @@ import { isKnowledgeLocator } from "../../model/knowledge";
 
 /** 有未保存的条目编辑时，对话区与卡片上会发话或写库的按钮为什么不能用。 */
 export const HOLD_TEXT = "先保存或取消正在编辑的条目";
-/** 没保存的是对一张图的改动时的说法（图表页签里改 Mermaid 文本）。 */
+/** 没保存的是对一张图的改动时的说法（业务说明里改图的 Mermaid 文本）。 */
 export const DIAGRAM_HOLD_TEXT = "先保存或放弃对图的改动";
 
 /** 在卡片的文本框里发话时，卡片标识里 choice 写的固定值。 */

@@ -1,0 +1,59 @@
+/*
+ * 工作台中栏按需求资产六类分的页签里，不是集合的四页：材料与证据、分析模型、评审与确认、文档与版本。
+ * 版式沿用业务说明的节页（overall.css 的 .oa-page、.oa-blk、.oa-table、.oa-tablebox），这里只补页头一行、页上的一句说明、
+ * 表格里的链接与几处小字；颜色一律引用 styles.css 里的变量。
+ */
+.app .ap-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .35rem; }
+.app .ap-head h2 { font-family: var(--font-title); font-weight: 600; font-size: 1.35rem; margin: 0; }
+.app .ap-head .ant-upload-wrapper, .app .ap-head > .btn:first-of-type { margin-left: auto; }
+.app .ap-lead { font-size: 0.873rem; color: var(--text3); margin: 0 0 1.4rem; max-width: 46rem; }
+.app .ap-table tbody tr { cursor: default; }
+.app .ap-table tbody tr:hover { background: transparent; }
+.app .ap-table td.nm { font-weight: 500; }
+.app .ap-table td.nm .fic { color: var(--text3); margin-right: .4rem; }
+.app .ap-table td.mut { color: var(--text3); }
+.app .ap-table td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.app .ap-table td.acts { white-space: nowrap; text-align: right; }
+.app .ap-lnk { color: var(--blue); cursor: pointer; }
+.app .ap-lnk + .ap-lnk { margin-left: .7rem; }
+.app .ap-lnk:hover { text-decoration: underline; }
+.app .ap-lnk.off { color: var(--text3); cursor: not-allowed; text-decoration: none; }
+.app .ap-note { margin-left: .5rem; font-size: 0.857rem; font-weight: 400; color: var(--text3); }
+.app .ap-foot { display: flex; align-items: center; gap: .7rem; margin-top: .6rem; font-size: 0.873rem; color: var(--text3); }
+
+/* 分析模型：表上一行计数；编号小字；同一种的几行只在第一行写种类，组与组之间的线加深；刚改的行淡黄底 */
+.app .ap-count { font-size: 0.873rem; color: var(--text2); margin-bottom: .5rem; }
+.app .ap-id { font-family: ui-monospace, Menlo, monospace; font-weight: 400; font-size: 0.857rem; color: var(--text3); margin-right: .5rem; }
+.app .ap-table tbody tr.ap-first:not(:first-child) td { border-top: 1px solid var(--line2); }
+.app .ap-table tbody tr.ap-fresh, .app .ap-table tbody tr.ap-fresh:hover { background: var(--amber-bg); }
+.app .ap-table td.ap-warn { color: var(--amber); }
+.app .ap-chip { margin-left: .4rem; padding: 0 .4rem; border-radius: 71rem; font-size: 0.786rem; border: 1px solid var(--line2); }
+.app .ap-chip.warn { color: var(--amber); border-color: var(--amber-line); background: var(--card); }
+
+/* 汇总行单独一行（六个页签都有），靠右；需求条目页签里筛选一行前面写「筛选：」 */
+.app .filters.sumrow { padding: .3rem .7rem; }
+.app .filters .flabel { font-size: 0.889rem; color: var(--mut); margin-right: .1rem; }
+
+/* 评审与确认：页头右边的评审按钮；一句汇总后面跟一句小字说明 */
+.app .ap-head .ap-act { margin-left: auto; }
+.app .ap-line { margin: 0; font-size: 0.943rem; }
+.app .ap-line .ap-note { display: block; margin: .2rem 0 0; }
+
+/* 文档与版本：出错的一句；页里展开的文档预览；表格里存档链接后面的小字另起一行 */
+.app .ap-err { margin: .4rem 0 0; font-size: 0.901rem; color: var(--gap); }
+.app .ap-preview { margin-top: .7rem; max-height: 32rem; overflow-y: auto; border: 1px solid var(--line); border-radius: .5rem; background: var(--card); padding: .6rem 1rem; }
+.app .ap-table td.acts .ap-note { display: block; margin: .15rem 0 0; }
+.app .ap-head .ap-act .btn + .btn { margin-left: .4rem; }
+.app .ap-btns { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.app .oa-tablebox + .ap-line { margin-top: .6rem; }
+
+/* 文档与版本：发布前检查下面的非阻断提示，一条一行，入口在句子后面 */
+.app .ap-hints { margin-top: .9rem; }
+.app .ap-hints-h { font-size: 0.943rem; font-weight: 600; margin-bottom: .3rem; }
+.app .ap-hints-h .ap-note { margin-left: .5rem; }
+.app .ap-hints ul { list-style: none; margin: 0; padding: 0; max-width: 52rem; }
+.app .ap-hints li { display: flex; align-items: baseline; gap: .8rem; padding: .3rem 0; border-top: 1px solid var(--line); font-size: 0.929rem; }
+.app .ap-hints li:first-child { border-top: 0; }
+.app .ap-hints li .ap-lnk { margin-left: auto; white-space: nowrap; }
+.app .ap-table.ap-check td.nm { white-space: nowrap; }
+.app .ap-head .ap-sub { font-size: 0.873rem; color: var(--text3); }

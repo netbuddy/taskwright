@@ -8,15 +8,20 @@ import type { KnowledgeLibrary } from "../api/types";
 import { href } from "../router";
 import { GENERAL, docCountText, sortedLibraries, usageText } from "../model/knowledge";
 
-export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
+/**
+ * 「选用别的知识库」按钮与它弹出的勾选框：确定之后整体改选用（通用知识库总在里面，不能去掉）。
+ * 任务起点页的知识库卡与工作台「材料与证据」页签共用。
+ */
+export function KnowledgePickButton({ libraries, selected, onChange, placement = "topLeft", plain = false }: {
   libraries: KnowledgeLibrary[];
   selected: string[];
-  readOnly: boolean;
-  /** 改选用：给出改完之后的整个列表。 */
+  /** 改选用：给出改完之后的整个列表；改成了返回真。 */
   onChange: (ids: string[]) => Promise<boolean>;
+  placement?: "topLeft" | "bottomLeft";
+  /** 工作台里用工作视图的按钮样式（.btn），任务起点页用 antd 的小按钮。 */
+  plain?: boolean;
 }) {
   const libs = sortedLibraries(libraries);
-  const chosen = libs.filter((l) => selected.includes(l.id));
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>(selected);
   const openPicker = (next: boolean) => {
@@ -26,7 +31,6 @@ export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
   const confirm = async () => {
     if (await onChange([GENERAL, ...libs.filter((l) => l.id !== GENERAL && draft.includes(l.id)).map((l) => l.id)])) setOpen(false);
   };
-
   const picker = (
     <div className="kbpick" data-testid="kb-picker">
       <div className="ph">勾上的知识库这个任务会用到。改完之后，下一次会话开始时助手按新的选择查找。</div>
@@ -41,6 +45,22 @@ export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
       <div className="pf"><Button size="small" onClick={() => setOpen(false)}>取消</Button><Button size="small" type="primary" onClick={confirm} data-testid="kb-pick-ok">确定</Button></div>
     </div>
   );
+  return (
+    <Popover content={picker} trigger="click" open={open} onOpenChange={openPicker} placement={placement}>
+      {plain ? <button type="button" className="btn sm" data-testid="kb-pick">选用别的知识库</button> : <Button size="small" data-testid="kb-pick">选用别的知识库</Button>}
+    </Popover>
+  );
+}
+
+export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
+  libraries: KnowledgeLibrary[];
+  selected: string[];
+  readOnly: boolean;
+  /** 改选用：给出改完之后的整个列表。 */
+  onChange: (ids: string[]) => Promise<boolean>;
+}) {
+  const libs = sortedLibraries(libraries);
+  const chosen = libs.filter((l) => selected.includes(l.id));
 
   return (
     <section className="tp-pane" aria-label="选用的知识库" data-testid="task-knowledge">
@@ -59,11 +79,7 @@ export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
         </div>
       ))}
       <div className="tp-kbfoot">
-        {!readOnly && (
-          <Popover content={picker} trigger="click" open={open} onOpenChange={openPicker} placement="topLeft">
-            <Button size="small" data-testid="kb-pick">选用别的知识库</Button>
-          </Popover>
-        )}
+        {!readOnly && <KnowledgePickButton libraries={libraries} selected={selected} onChange={onChange} />}
         <span className="note">助手只在这几个知识库里查找。</span>
       </div>
     </section>

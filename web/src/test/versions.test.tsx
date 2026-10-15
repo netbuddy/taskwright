@@ -1,5 +1,5 @@
 // 发布过的版本在页面上（model/versions.ts）：最近一版、哪些条目与图在它之后改过；条目上的「第 N 版后有改动」、条目区顶部「有 M 处改动在第 N 版之后」
-// 与它列出的条目、业务说明目录里节旁的记号；修订页签顶上的「版本」一节（下载两种存档，没有存档的灰着说明原因）；页面状态收到发布事件时加一版。
+// 与它列出的条目、业务说明目录里节旁的记号；「文档与版本」页签的版本表（下载两种存档，没有存档的灰着说明原因）；页面状态收到发布事件时加一版。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { api } from "../api/client";
 import type { DiagramRow, Item, Task, VersionView } from "../api/types";
 import { ItemsPanel } from "../components/work/ItemsPanel";
-import { SidePanel } from "../components/work/SidePanel";
+import { DocsTab } from "../components/work/DocsTab";
 import { initialWorkState, workReducer } from "../state/workState";
 import {
   changedAfter, changesAfter, changesLine, diagramChangedAfter, figuresOf, latestVersion, figuresText, missingArchiveText, nextVersionNo, somethingToPublish, versionMeta,
@@ -105,25 +105,21 @@ describe("条目区的「第 N 版后有改动」", () => {
   });
 });
 
-describe("修订页签顶上的「版本」一节", () => {
-  function side(t: Task, fetched: VersionView[] = t.versions ?? []) {
+describe("「文档与版本」页签的版本表", () => {
+  function docs(t: Task, fetched: VersionView[] = t.versions ?? []) {
     const list = vi.spyOn(api, "listVersions").mockResolvedValue(fetched);
-    const onSelectRevision = vi.fn();
-    render(<Wrap><SidePanel side="rev" onSide={noop} onCollapse={noop} onExpand={noop} taskId="TASK-001" materials={[]} focusPath={null}
-      items={t.items} locate={null} currentItem={null} disabled={false} onOpenItem={noop} onSend={noop} log={[]} messages={[]}
-      selectedRevision={null} onSelectRevision={onSelectRevision} scrollNonce={0} onDiff={noop} onUndo={noop} onGenerate={noop} writesOff={false} readOnly={false} task={t} /></Wrap>);
-    return { list, onSelectRevision };
+    const onShowRevision = vi.fn();
+    render(<Wrap><div className="app"><DocsTab task={t} readOnly={false} writesOff={false} onGenerate={noop} onShowRevision={onShowRevision} onGo={noop} /></div></Wrap>);
+    return { list, onShowRevision };
   }
 
-  it("各版最新的在上：版本号、时刻、谁、发布说明、两种下载；点「修订 N」选中那次修订；存档情况以版本接口为准", async () => {
-    const { list, onSelectRevision } = side(task(), [version(1, 3, { has_markdown: false, has_docx: false }), version(2, 5, { actor: "executor", note: "加了续借", figure_count: 3, figure_pictures: 0 })]);
+  it("各版最新的在上：版本号、时刻与谁、修订、发布说明、两种存档；点「修订 N」交给工作视图；存档情况以版本接口为准", async () => {
+    const { list, onShowRevision } = docs(task(), [version(1, 3, { has_markdown: false, has_docx: false }), version(2, 5, { actor: "executor", note: "加了续借", figure_count: 3, figure_pictures: 0 })]);
     await waitFor(() => expect(list).toHaveBeenCalledWith("TASK-001"));
-    const block = screen.getByTestId("versions");
-    expect(block.querySelector(".vh")).toHaveTextContent("版本已发布 2 版");
-    const rows = [...block.querySelectorAll(".sw-ver")].map((one) => one.getAttribute("data-testid"));
+    const rows = [...screen.getByTestId("versions").querySelectorAll("tbody tr")].map((one) => one.getAttribute("data-testid"));
     expect(rows).toEqual(["version-2", "version-1"]);
     const second = screen.getByTestId("version-2");
-    expect(second).toHaveTextContent("第 2 版10-13 09:00 · 助手发布的修订 5加了续借");
+    expect([...second.querySelectorAll("td")].slice(0, 4).map((td) => td.textContent)).toEqual(["第 2 版", "10-13 09:00 · 助手发布的", "修订 5", "加了续借"]);
     expect(screen.getByTestId("version-2-md")).toHaveAttribute("href", "/api/v1/tasks/TASK-001/versions/2/document?format=md");
     expect(screen.getByTestId("version-2-docx")).toHaveAttribute("href", "/api/v1/tasks/TASK-001/versions/2/document?format=docx");
     expect(screen.getByTestId("version-2-figures")).toHaveTextContent("Word 里 3 张图是 Mermaid 文本");
@@ -131,12 +127,14 @@ describe("修订页签顶上的「版本」一节", () => {
     await waitFor(() => expect(screen.queryByTestId("version-1-md")).toBeNull());
     expect(screen.getByTestId("version-1")).toHaveTextContent("这一版是升级之前完成的，当时的文档没有存下来");
     fireEvent.click(within(second).getByText("修订 5"));
-    expect(onSelectRevision).toHaveBeenCalledWith(5);
+    expect(onShowRevision).toHaveBeenCalledWith(5);
+    expect(screen.getByTestId("docs-difference")).toHaveTextContent("有 2 处改动在第 2 版之后（1 个条目、1 张图）。");
   });
 
-  it("还没有发布过：写一句怎样发布，不去取版本接口", () => {
-    const { list } = side(task({ versions: [] }));
-    expect(screen.getByTestId("versions")).toHaveTextContent("版本还没有发布过完成条件都满足之后，条目区上方会出现发布的提示");
+  it("还没有发布过：写一句怎样发布，不去取版本接口，也没有差异那一句", () => {
+    const { list } = docs(task({ versions: [] }));
+    expect(screen.getByTestId("versions-empty")).toHaveTextContent("还没有发布过。完成条件都满足之后，可以在上方「发布第 1 版」。");
+    expect(screen.queryByTestId("docs-difference")).toBeNull();
     expect(list).not.toHaveBeenCalled();
   });
 });
