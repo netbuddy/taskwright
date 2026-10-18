@@ -51,7 +51,7 @@
  * 就不再核对也不再写入，原样交回第一次的结果并注明「之前已经保存过」（savedBefore）；修订表上另有唯一索引兜底（schema.ts）。
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, databasePath, dump, emit, load, wallClockText } from "./db.ts";
@@ -1042,7 +1042,16 @@ function checkFields(
  * 按出处读文件全文；knowledgeProblem 说明一条知识库出处为什么读不到：返回一条带键的错误（where 与 locator 是拒绝语里的两个值），
  * 读得到或不是知识库出处时为 null。
  */
-type MaterialReader = ((locator: string) => string | null) & { knowledgeProblem: (locator: string, where: string, shown: string) => string | null };
+type MaterialReader = ((locator: string) => string | null) & {
+  knowledgeProblem: (locator: string, where: string, shown: string) => string | null;
+  /** 材料目录第一层里除 path 所指那份之外的材料原件（Word、PDF、文本；派生的文字版与分段清单不算），按文件名排；出处写法是「材料目录/文件名」。 */
+  others?: (path: string) => { name: string; locator: string }[];
+};
+
+/** 材料目录第一层里算作材料原件的文件：Word、PDF、文本。 */
+const MATERIAL_FILE = /\.(docx|pdf|md|txt)$/i;
+/** 材料旁边派生的文字版（Word 的 .docx.md、旧的 .docx.txt，PDF 的 .pdf.md），不算一份材料。 */
+const DERIVED_FILE = /\.(docx\.(md|txt)|pdf\.md)$/i;
 
 /** 知识库出处读不到时「怎么办」一层常用的一句。 */
 const copyKnowledgeLocator = () => fillText("part.copy_kb_locator");
@@ -1108,6 +1117,21 @@ function materialReader(workspaceDir: string, materialsDir: string, knowledgeRoo
     const parsed = parseKnowledgeLocator(locator)!;
     return problem(refusalText("source.knowledge_locator_unreadable", { where, locator: shown, document: parsed.name, name: knowledge().names.get(parsed.library)!, copy: copyKnowledgeLocator() }));
   };
+  // 材料目录的清单，用到时读一次；各份的文字版经上面的 reader 读，同一次保存里每份只读一遍。
+  const dir = materialsDir.replace(/\/+$/, "");
+  let listing: string[] | null = null;
+  reader.others = (path) => {
+    if (listing === null) {
+      try {
+        listing = readdirSync(join(base, dir), { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => entry.name)
+          .filter((name) => MATERIAL_FILE.test(name) && !DERIVED_FILE.test(name)).sort();
+      } catch {
+        listing = [];
+      }
+    }
+    const self = basename(path);
+    return listing.filter((name) => name !== self).map((name) => ({ name, locator: `${dir}/${name}` }));
+  };
   return reader;
 }
 
@@ -1144,6 +1168,54 @@ const EXCERPT_QUOTE_LIMIT = 30;
 function quoteOf(excerpt: string): string {
   const flat = excerpt.replace(/\s*\n\s*/g, " ");
   return flat.length > EXCERPT_QUOTE_LIMIT ? `${flat.slice(0, EXCERPT_QUOTE_LIMIT)}…` : flat;
+}
+
+/** 摘录在出处那一份材料里找不到、在另一份材料里找到的一处：哪份、第几段或第几页第几块（文本材料没有位置）、出处的写法。 */
+interface OtherPlace {
+  name: string;
+  label: string;
+  locator: string;
+}
+
+/** 摘录在另一份材料里找到时，拒绝文字里最多列出这么多处。 */
+const OTHER_FILE_LIMIT = 3;
+
+/**
+ * 出处那一份材料里找不到摘录时，到材料目录第一层的其余材料里逐字找：Word 材料按段（与 checkDocxSource 同一个比法），
+ * PDF 材料按页与块（与 checkPdfSource 同一个比法），文本材料在全文里找。知识库的出处不调用它：不跨库找。
+ */
+function otherFilePlaces(materialText: MaterialReader, path: string, raw: string): OtherPlace[] {
+  const excerpt = raw.replace(/\r\n/g, "\n").trim();
+  const places: OtherPlace[] = [];
+  for (const other of materialText.others?.(path) ?? []) {
+    if (/\.docx$/i.test(other.name)) {
+      const suffix = PROJECTION_SUFFIXES.find((s) => materialText(`${other.locator}${s}`) !== null);
+      if (!suffix) continue;
+      for (const n of paragraphsWith(projectionParagraphs(materialText(`${other.locator}${suffix}`)!), excerpt)) {
+        places.push({ name: other.name, label: fillText("part.docx_label", { n }), locator: `${other.locator}#p${n}` });
+      }
+    } else if (/\.pdf$/i.test(other.name)) {
+      const projection = materialText(`${other.locator}.md`);
+      if (projection === null) continue;
+      for (const one of pdfUnitsWith(pdfProjectionUnits(projection), excerpt)) {
+        places.push({ name: other.name, label: fillText("part.pdf_label", one), locator: `${other.locator}#p${one.page}-${one.block}` });
+      }
+    } else {
+      const text = materialText(other.locator);
+      if (text !== null && lineEndsOnly(text).includes(lineEndsOnly(excerpt).trim())) places.push({ name: other.name, label: "", locator: other.locator });
+    }
+  }
+  return places;
+}
+
+/** 摘录在另一份材料里找到时拒绝文字要的几个值：列出前几处，指引写第一处的出处，有好几处时请执行者按上下文确认。 */
+function otherFileValues(places: OtherPlace[]): { places: string; more: string; locator: string; confirm: string } {
+  return {
+    places: places.slice(0, OTHER_FILE_LIMIT).map((one) => fillText("part.other_file_place", { name: one.name, label: one.label })).join("、"),
+    more: places.length > OTHER_FILE_LIMIT ? fillText("part.more_places", { count: places.length }) : "",
+    locator: places[0].locator,
+    confirm: places.length > 1 ? fillText("part.other_file_confirm") : "",
+  };
 }
 
 /**
@@ -1356,7 +1428,10 @@ function checkSources(
       }
       if (!lineEndsOnly(text).includes(excerpt)) {
         const how = { noun, exact: exactExcerpt(noun), several: severalPlaces(noun) };
-        errors.push(BLANK_LINE.test(excerpt)
+        const others = inKnowledge ? [] : otherFilePlaces(materialText, locator, excerpt);
+        errors.push(others.length > 0
+          ? problem(refusalText("source.material_excerpt_in_other_file", { where, excerpt: quoteOf(excerpt), file: basename(locator), ...otherFileValues(others) }))
+          : BLANK_LINE.test(excerpt)
           ? problem(refusalText("source.material_excerpt_not_contiguous", { where, file: basename(locator), ...how }))
           : problem(refusalText("source.material_excerpt_not_found", { where, excerpt: quoteOf(excerpt), file: basename(locator), ...how })));
         ok = false;
@@ -1379,7 +1454,7 @@ function checkDocxSource(
   n: number | null,
   raw: string,
   where: string,
-  materialText: (locator: string) => string | null,
+  materialText: MaterialReader,
   errors: string[],
   noun: Noun = "材料",
 ): string | null {
@@ -1412,12 +1487,15 @@ function checkDocxSource(
   const labelOf = (m: number) => `${fillText("part.docx_label", { n: m })}${positions.has(m) ? `·${positions.get(m)}` : ""}`;
   const elsewhere = paragraphsWith(paragraphs, excerpt).filter((m) => m !== n);
   const head = fillText("part.docx_head", { where, excerpt: quoteOf(excerpt), name, label: labelOf(n) });
+  let others: OtherPlace[] | undefined;
   if (elsewhere.length === 1) {
     errors.push(problem(refusalText("source.docx_excerpt_elsewhere_one", { head, label: labelOf(elsewhere[0]), path, n: elsewhere[0] })));
   } else if (elsewhere.length > 1) {
     const near = [...elsewhere].sort((a, b) => Math.abs(a - n) - Math.abs(b - n) || a - b).slice(0, NEARBY_LIMIT).sort((a, b) => a - b);
     const more = elsewhere.length > near.length ? fillText("part.more_places", { count: elsewhere.length }) : "";
     errors.push(problem(refusalText("source.docx_excerpt_elsewhere_many", { head, labels: near.map(labelOf).join("、"), more })));
+  } else if (noun === "材料" && (others ??= otherFilePlaces(materialText, path, excerpt)).length > 0) {
+    errors.push(problem(refusalText("source.docx_excerpt_in_other_file", { head, ...otherFileValues(others) })));
   } else if (BLANK_LINE.test(excerpt)) {
     // 摘录里有空行、整段在材料里哪儿都不是连续的一段：多半是把不相邻的几处写进了一条来源。
     errors.push(problem(refusalText("source.docx_excerpt_not_contiguous", { where, name, n, span: SPAN_LIMIT, several: severalPlaces(noun) })));
@@ -1442,7 +1520,7 @@ function checkPdfSource(
   path: string,
   raw: string,
   where: string,
-  materialText: (locator: string) => string | null,
+  materialText: MaterialReader,
   errors: string[],
   noun: Noun = "材料",
 ): string | null {
@@ -1491,6 +1569,7 @@ function checkPdfSource(
   // 摘录在别处：只有一处时指给它；有好几处时不替模型挑，按离出处那一块的远近列出几处，请它按上下文确认。
   const here = pdfUnitIndex(units, page, block);
   const elsewhere = pdfUnitsWith(units, excerpt).filter((one) => !(one.page === page && one.block === block));
+  let others: OtherPlace[] | undefined;
   if (elsewhere.length === 1) {
     errors.push(problem(refusalText("source.pdf_excerpt_elsewhere_one", { head, label: labelOf(elsewhere[0]), path, page: elsewhere[0].page, block: elsewhere[0].block })));
   } else if (elsewhere.length > 1) {
@@ -1499,6 +1578,8 @@ function checkPdfSource(
       .sort((a, b) => pdfUnitIndex(units, a.page, a.block) - pdfUnitIndex(units, b.page, b.block));
     const more = elsewhere.length > near.length ? fillText("part.more_places", { count: elsewhere.length }) : "";
     errors.push(problem(refusalText("source.pdf_excerpt_elsewhere_many", { head, labels: near.map(labelOf).join("、"), more })));
+  } else if (noun === "材料" && (others ??= otherFilePlaces(materialText, path, excerpt)).length > 0) {
+    errors.push(problem(refusalText("source.pdf_excerpt_in_other_file", { head, ...otherFileValues(others) })));
   } else if (BLANK_LINE.test(excerpt)) {
     errors.push(problem(refusalText("source.pdf_excerpt_not_contiguous", { where, name, label: labelOf({ page, block }), span: PDF_SPAN_LIMIT, several: severalPlaces(noun) })));
   } else {
