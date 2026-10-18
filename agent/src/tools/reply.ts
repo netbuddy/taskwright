@@ -143,6 +143,7 @@ export function registerReply(pi: ExtensionAPI): void {
             callsThisTurn: turn.calls,
             revisionFact: lookup.revisionFact,
             currentRevisionOf: lookup.currentRevisionOf,
+            problemItem: lookup.problemItem,
             priorRejections: consecutiveReplyRejections(branch),
             resendFact: resend.resendFact,
             // 回复里写了 activity_done 时：这条会话正在做一个单项活动的工作项才行。

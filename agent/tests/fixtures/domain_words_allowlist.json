@@ -53,7 +53,7 @@
   },
   "agent/prompts/runtime/rejections_reply.md": {
     "种类": 2,
-    "问题": 6
+    "问题": 8
   },
   "agent/prompts/runtime/rejections_request_review.md": {
     "问题": 4
@@ -216,7 +216,7 @@
     "约束": 1,
     "落实到": 4,
     "角色": 2,
-    "问题": 47,
+    "问题": 46,
     "阻断下游": 4
   },
   "agent/prompts/stages/document.md": {
@@ -315,7 +315,7 @@
     "状态": 1,
     "种类": 2,
     "约束": 1,
-    "问题": 5,
+    "问题": 6,
     "阻断下游": 1,
     "非功能需求": 1
   },
@@ -646,7 +646,7 @@
     "流程": 2,
     "状态": 1,
     "种类": 5,
-    "问题": 2
+    "问题": 7
   },
   "agent/src/lib/review.ts": {
     "业务说明": 4,
