@@ -28,6 +28,7 @@ export const OPERATIONS = [
   { name: "write_diagram", initiator: "assistant", acts_on: "diagram", record: "revision", place: "activity-bound" },
   { name: "write_item", initiator: "assistant", acts_on: "item", record: "revision", place: "activity-bound" },
   { name: "write_review", initiator: "assistant", acts_on: "review", record: "revision", place: "activity-bound" },
+  // reply 与 write_understanding 落下的是对话行为与理解，不在三类之内，暂记为 event；过程记录一类待补。
   { name: "reply", initiator: "assistant", acts_on: "session", record: "event", place: "anywhere" },
   { name: "write_understanding", initiator: "assistant", acts_on: "session", record: "event", place: "anywhere" },
   // 新增、修改、删除与撤销修订都是这一行。

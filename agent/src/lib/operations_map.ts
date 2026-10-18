@@ -1,6 +1,7 @@
 /**
  * 工具、界面操作的 kind 与后端写接口各自对应到操作名单（operations.ts）的哪一行。
- * 每个工具文件（tools/*.ts）、USER_OP_KINDS 的每个值、后端每个 POST 接口，要么在 OPERATION_MAP 里对应恰好一行，
+ * 每个工具文件（tools/*.ts）、USER_OP_KINDS 的每个值、不在 USER_OP_KINDS 里的另几个界面操作的 kind（定义在 user_ops.ts、
+ * user_stage.ts 与 user_diagram.ts 里，名字以 _KIND 结尾的常量）、后端每个 POST 接口，要么在 OPERATION_MAP 里对应恰好一行，
  * 要么在 NOT_IN_TABLE 里写明为什么不对应任何一行；两边不重复。后端的 GET 接口都只读，不列。
  * 后端接口按 backend/src/http.ts 路由表里的名字写，数据包导入不在路由表里，按它的路径写。
  *
@@ -17,7 +18,7 @@ export interface Mapped {
 
 /**
  * 不对应任何一行的理由：
- * - read_only：只读，不产生记录；
+ * - read_only：只读或不产生记录；
  * - outside_task：不写任务库，在任务世界之外；
  * - pending：写任务目录，但名单里还没有对应的行，待定；
  * - dispatch：按请求体里的 kind 分派，各个 kind 的归属见 USER_OP_KINDS 那一组。
@@ -32,6 +33,7 @@ export interface Unmapped {
 export const OPERATION_MAP: {
   tools: Record<string, Mapped>;
   user_op_kinds: Partial<Record<UserOpKind, Mapped>>;
+  other_user_op_kinds: Record<string, Mapped>;
   backend: Record<string, Mapped>;
 } = {
   tools: {
@@ -54,6 +56,13 @@ export const OPERATION_MAP: {
     start_activity: { operation: "start" },
     continue_activity: { operation: "start", note: "换一条会话接着做进行中的工作项" },
   },
+  other_user_op_kinds: {
+    request_review: { operation: "write_review", note: "发起者是用户：在界面上点评审；与工具 request_review 那一行并存" },
+    stop_run: { operation: "stop" },
+    continue_stage: { operation: "transition" },
+    edit_diagram: { operation: "edit_content" },
+    mark_diagram_viewed: { operation: "confirm" },
+  },
   backend: {
     publish_version: { operation: "publish" },
     archive_version: { operation: "publish", note: "待撤：助手的发布工具先调它存下文档，随那个工具一起撤" },
@@ -64,6 +73,7 @@ export const OPERATION_MAP: {
 export const NOT_IN_TABLE: {
   tools: Record<string, Unmapped>;
   user_op_kinds: Partial<Record<UserOpKind, Unmapped>>;
+  other_user_op_kinds: Record<string, Unmapped>;
   backend: Record<string, Unmapped>;
 } = {
   tools: {
@@ -75,8 +85,10 @@ export const NOT_IN_TABLE: {
     set_review_rules: { reason: "pending", note: "改这个任务的评审规矩" },
     delete_work_item: { reason: "pending", note: "删除即归档这个工作项" },
   },
+  other_user_op_kinds: {},
   backend: {
     search_knowledge: { reason: "read_only" },
+    messages: { reason: "read_only", note: "用户发话是运行的输入，进会话历史不进任务库，不产生记录" },
     service_exit: { reason: "outside_task" },
     service_upgrade_start: { reason: "outside_task" },
     model_provider_add: { reason: "outside_task" },
@@ -106,7 +118,6 @@ export const NOT_IN_TABLE: {
     replace_material: { reason: "pending" },
     set_task_knowledge: { reason: "pending" },
     "/api/v1/tasks/import": { reason: "pending", note: "导入任务的数据包" },
-    messages: { reason: "pending", note: "用户发的话：本身只进会话，随后引出助手的一次运行" },
     actions: { reason: "dispatch" },
   },
 };

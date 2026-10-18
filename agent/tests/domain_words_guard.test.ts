@@ -7,8 +7,9 @@
  * 一个词是另一个词的一部分时（「约束」与「约束规则」）两个词各计一次。
  *
  * 现状记在 fixtures/domain_words_allowlist.json（文件 → 词 → 次数），只许减不许增：
- * 某个文件里某个词的次数超过名单、或者名单里没有，测试失败；次数减少时测试照样通过，但名单里有、代码里已经一次都没有的词
- * 也算失败，免得名单留着死条目。减量之后用 UPDATE_DOMAIN_WORDS_ALLOWLIST=1 跑一次本测试，按现状重写名单。
+ * 命中的文件、词与次数必须与名单完全一致。某个文件里某个词的次数超过名单、或者名单里没有，测试失败；次数比名单少
+ * （包括一次都没有了）同样失败，要同步缩小名单，免得减下去的次数以后又涨回来。减量之后用 UPDATE_DOMAIN_WORDS_ALLOWLIST=1
+ * 跑一次本测试，按现状重写名单。
  */
 
 import assert from "node:assert/strict";
@@ -97,10 +98,13 @@ test("no file uses a task-type word more often than the allowlist says", () => {
   assert.deepEqual(over, [], "平台代码与提示词里的任务类型词只许减不许增；这些超出了 fixtures/domain_words_allowlist.json");
 });
 
-test("every allowlist entry is still used", () => {
+test("the allowlist shrinks together with the code", () => {
   const stale: string[] = [];
   for (const [file, hits] of Object.entries(ALLOWED)) {
-    for (const word of Object.keys(hits)) if (!ACTUAL[file]?.[word]) stale.push(`${file}「${word}」`);
+    for (const [word, allowed] of Object.entries(hits)) {
+      const n = ACTUAL[file]?.[word] ?? 0;
+      if (n < allowed) stale.push(`${file}「${word}」${n} 次，名单写的是 ${allowed} 次`);
+    }
   }
-  assert.deepEqual(stale, [], "这些条目在代码里已经没有了；用 UPDATE_DOMAIN_WORDS_ALLOWLIST=1 跑一次本测试重写名单");
+  assert.deepEqual(stale, [], "这些次数比名单少了；用 UPDATE_DOMAIN_WORDS_ALLOWLIST=1 跑一次本测试重写名单");
 });

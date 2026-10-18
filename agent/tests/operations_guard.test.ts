@@ -1,10 +1,12 @@
 /**
  * 操作名单的守护：lib/operations.ts 是一张数据表，lib/operations_map.ts 把工具、界面操作的种类与后端的写接口对应到表里的行。
  * 核对：表里的名字不重复、各列取值合法；每个工具文件（agent/src/tools/*.ts）、USER_OP_KINDS 的每个值、
- * 后端每个 POST 接口，在 OPERATION_MAP 与 NOT_IN_TABLE 两边合起来恰好出现一次；映射的目标都在表里；两边都没有多出来的名字。
+ * 不在 USER_OP_KINDS 里的另几个界面操作的 kind、后端每个 POST 接口，在 OPERATION_MAP 与 NOT_IN_TABLE 两边合起来恰好出现一次；映射的目标都在表里；两边都没有多出来的名字。
  *
  * 后端的写接口靠静态扫描 backend/src/http.ts：路由表 ROUTES 里方法为 "POST" 的每一行取它的名字，
  * 另加数据包导入（PACK_IMPORTS，不经路由表）的两条路径。路由只认 GET 与 POST 两种方法，GET 都只读，不列。
+ * 另几个界面操作的 kind 也靠静态扫描：lib/user_ops.ts、lib/user_stage.ts 与 lib/user_diagram.ts 里
+ * 名字以 _KIND 结尾、值是字面字符串的导出常量（export const XXX_KIND = "…"），每个取它的值。
  */
 
 import assert from "node:assert/strict";
@@ -28,11 +30,20 @@ function scanBackend(src: string): { posts: string[]; methods: string[] } {
   };
 }
 
+const KIND_FILES = ["user_ops.ts", "user_stage.ts", "user_diagram.ts"];
+
+/** 一段源码里名字以 _KIND 结尾的导出常量的值。 */
+function scanKinds(src: string): string[] {
+  return [...src.matchAll(/^export const \w+_KIND\s*=\s*"([\w-]+)"/gm)].map((m) => m[1]);
+}
+
+const OTHER_KINDS = KIND_FILES.flatMap((file) => scanKinds(readFileSync(join(ROOT, "agent", "src", "lib", file), "utf-8")));
 const BACKEND = scanBackend(readFileSync(join(ROOT, "backend", "src", "http.ts"), "utf-8"));
 const TOOLS = readdirSync(join(ROOT, "agent", "src", "tools")).filter((name) => name.endsWith(".ts")).map((name) => name.replace(/\.ts$/, ""));
 const GROUPS = {
   tools: TOOLS,
   user_op_kinds: [...USER_OP_KINDS] as string[],
+  other_user_op_kinds: OTHER_KINDS,
   backend: BACKEND.posts,
 } as const;
 
@@ -70,6 +81,12 @@ test("every mapping target is a row of the operation table", () => {
   const names = new Set<string>(OPERATIONS.map((one) => one.name));
   const wrong = Object.values(OPERATION_MAP).flatMap((map) => Object.entries(map).filter(([, one]) => !names.has(one!.operation)).map(([key]) => key));
   assert.deepEqual(wrong, []);
+});
+
+test("the kind scanner reads exported constants named *_KIND and finds the ones outside USER_OP_KINDS", () => {
+  assert.deepEqual(scanKinds('export const A_KIND = "a";\nconst B_KIND = "b";\nexport const C_KIND = c;\nexport const D_KIND = "d";'), ["a", "d"]);
+  assert.ok(OTHER_KINDS.length > 0, "三个定义文件里扫不出 _KIND 常量了，扫描规则要跟着改");
+  assert.deepEqual(OTHER_KINDS.filter((kind) => (USER_OP_KINDS as readonly string[]).includes(kind)), [], "这些 kind 已经在 USER_OP_KINDS 里了");
 });
 
 test("the backend scanner reads both route forms and the pack imports", () => {
