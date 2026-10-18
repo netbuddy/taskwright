@@ -47,13 +47,15 @@ function Panel({ t, libraries = LIBS }: { t: Task; libraries?: KnowledgeLibrary[
   );
 }
 
-describe("顶上一排六个页签", () => {
-  it("名字照需求资产六类；数：材料几份（文字版不算）、业务说明几节、分析模型几张、需求条目几条（问题条目不算）、发布过几版；评审与确认不写数", () => {
+describe("顶上一排页签", () => {
+  it("名字照需求资产六类，任务定义有问题集合时需求条目后面多一个问题；数：材料几份（文字版不算）、业务说明几节、分析模型几张、需求条目几条（问题条目不算）、问题几条未解决（已解决的不算）、发布过几版；评审与确认不写数", () => {
     const t = overallTask();
     vi.spyOn(api, "getTask").mockResolvedValue(detailOf(t));
     render(<Panel t={t} />);
     expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((one) => one.textContent))
-      .toEqual(["材料与证据2", "业务说明11", "分析模型0", "需求条目3", "评审与确认", "文档与版本0"]);
+      .toEqual(["材料与证据2", "业务说明11", "分析模型0", "需求条目3", "问题3", "评审与确认", "文档与版本0"]);
+    expect(t.items.filter((one) => one.collection === "问题").length).toBe(4);
+    expect(screen.getByTestId("pane-issues").querySelector(".cnt")).toHaveClass("open");
     const published = overallTask({ versions: [{ version_no: 2 }, { version_no: 1 }] as unknown as Task["versions"] });
     expect(paneCount("docs", published, [])).toBe("2");
   });

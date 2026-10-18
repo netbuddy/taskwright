@@ -167,6 +167,8 @@
 .app .itab:hover{background:var(--sel)}
 .app .itab.on{background:var(--dark3);color:var(--ink);font-weight:600}
 .app .itab .cnt{font-size:0.881rem;font-variant-numeric:tabular-nums}
+/* 「问题」页签上的数是未解决的条数：不是 0 时用提醒色。 */
+.app .itab .cnt.open{color:var(--amber);font-weight:600}
 .app .itabs .spacer{flex:1}
 .app .filters{display:flex;gap:.3rem;align-items:center;flex-wrap:wrap;padding:.4rem .7rem;
   border-bottom:1px solid var(--line);flex:none}
