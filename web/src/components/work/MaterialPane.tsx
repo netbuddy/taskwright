@@ -1,6 +1,6 @@
 // 右侧栏「原文定位」页签：一份材料的原文（按需读取 GET …/materials/content）。只读。样式照设计原型：
-// 页签行（SidePanel）下面一行写文件名与引用计数（.sw-subh），再下面是原文（.paper）。材料清单在中栏「材料与证据」页签，
-// 在那里点「查看」、或者点条目上的来源，这里换成那份材料并定位；这一栏不另列材料清单。
+// 页签行（SidePanel）下面一行写文件名与引用计数（.sw-subh），再下面是原文（.paper）。材料不止一份时文件名换成下拉框，
+// 用户可以自己选一份来读；在中栏「材料与证据」页签点「查看」、或者点条目上的来源，这里同样换成那份材料并定位。
 //
 // 原文里被条目引用的句子画浅蓝底线（按各条目「文档原文」来源的摘录找，见 findExcerpt），点一下打开引用它的条目；
 // 条目那边点来源小标签时，这里切到那份材料、滚到那句并高亮（locate）；一段都找不到时在顶部提示两秒。
@@ -176,7 +176,11 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   return (
     <>
       <div className="sw-subh">
-        <b data-testid="material-name">{name}</b>
+        {materials.length > 1 ? (
+          <select value={path ?? ""} onChange={(e) => setPath(e.target.value)} aria-label="选一份材料阅读" data-testid="material-select">
+            {materials.map((m) => <option key={m.path} value={m.path}>{m.path.split("/").pop()}</option>)}
+          </select>
+        ) : <b data-testid="material-name">{name}</b>}
         <span className="chip">外来 · 只读</span>
         {text != null && <span className="chip">{citedItems.size ? `被 ${citedItems.size} 个条目引用过` : "还没有被条目引用"}</span>}
         {isPdf && pdfPages > 0 && <span className="chip" data-testid="pdf-pages-chip">{pdfPages} 页</span>}
