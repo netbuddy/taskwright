@@ -39,7 +39,7 @@ function definitionWithNotes(): Record<string, any> {
 const note = (标题: string, 类别 = "术语", 关联条目?: string[]) => ({
   op: "add", collection: "领域说明",
   fields: { 标题, 内容: `${标题}是登录时输入的一串字符，区分大小写。`, 类别, ...(关联条目 ? { 关联条目 } : {}) },
-  sources: [{ kind: "助手补充", locator: "助手补充", excerpt: `${标题}是这个意思` }],
+  sources: [{ kind: "助手补充", locator: "助手补充", excerpt: `${标题}是这个意思`, supports: [{ field: "内容", inserted: ["区分大小写"] }] }],
 });
 
 /** 建任务：UC-001、UC-002（修订 1），DN-001、DN-002（修订 2）。 */

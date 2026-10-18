@@ -21,6 +21,8 @@ export type SourceKind = "文档原文" | "用户的话" | "助手补充" | "条
 export interface SourceSupport {
   field: string;
   index?: number | null;
+  /** 只有助手补充的来源有：这一处补进正文的字串（逐字）。旧数据里可能没有。 */
+  inserted?: string[];
 }
 
 export interface Source {

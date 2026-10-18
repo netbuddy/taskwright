@@ -514,29 +514,29 @@ fields 应当是一个对象，只写要改的字段
 
 字段「{{field}}」是枚举类型，写的是 {{given}}，只能是{{values}}之一
 
-## `save_revision.supplement_quote_not_in_text`
+## `save_revision.supplement_inserted_not_in_text`
 
-用途：助手补充的理由里用直角引号引出的字不在正文里（quotedProblems）。source 是 part.quote_label，where 是 part.where_item_text 或 part.where_supported_text。
+用途：助手补充的来源在 supports 一处的 inserted 里写的字串不在那一处的正文里（insertedProblems）。source 是 part.quote_label，place 是 result.save_revision.field_place 或 result.save_revision.field_item_place。
 
-{{source}}的理由里用直角引号引出的「{{quoted}}」不在{{where}}里
+{{source}}写的补进正文的「{{inserted}}」不在{{place}}的正文里
 
-## `save_revision.supplement_quote_not_in_text.guide`
+## `save_revision.supplement_inserted_not_in_text.guide`
 
 用途：上一条的指引。
 
-理由里的直角引号只用来逐字引出你补进正文的那几个字：照正文一字不差地引，并在 supports 里写对是哪个字段的第几项；理由里要提到别的词时不要用直角引号
+inserted 里每一段都要照那一处的正文一字不差地抄出你补进去的字，并在 supports 里写对是哪个字段的第几项；理由里怎样写都可以，不必用引号
 
-## `part.where_item_text`
+## `save_revision.supplement_inserted_missing`
 
-用途：助手补充没有写支持哪几处时，引号里的字要在哪里。
+用途：助手补充的来源在 supports 里没有一处写了 inserted（insertedProblems）。source 是 part.quote_label。
 
-这个条目的正文
+{{source}}没有写补进了正文的哪些字
 
-## `part.where_supported_text`
+## `save_revision.supplement_inserted_missing.guide`
 
-用途：助手补充写了支持哪几处时，引号里的字要在哪里。
+用途：上一条的指引。
 
-它支持的那几处正文
+在 supports 里写明支持哪个字段（列表型字段写第几项），并用 inserted 逐字列出你补进那一处正文的字，例如 { "field": "字段名", "inserted": ["补进去的字"] }
 
 ## `part.quote_label`
 

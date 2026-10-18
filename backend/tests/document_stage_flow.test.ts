@@ -50,7 +50,8 @@ const INTROS: [string, string][] = [
   ["决策记录与待澄清事项", "这一章按时间列出问过的问题与它们的去向。"],
 ];
 const intro = ([chapter, text]: [string, string]) => ({ op: "add", collection: "业务说明",
-  sources: [{ kind: "助手补充", excerpt: "据 OA-001、TBD-001 与 UC-001 概括。" }], fields: { 标题: `${chapter}导语`, 导语所属章: chapter, 它是什么: text, 状态: "在用" } });
+  sources: [{ kind: "助手补充", excerpt: "据 OA-001、TBD-001 与 UC-001 概括。", supports: [{ field: "它是什么", inserted: [text] }] }],
+  fields: { 标题: `${chapter}导语`, 导语所属章: chapter, 它是什么: text, 状态: "在用" } });
 
 const SCRIPT = {
   sequence: [
@@ -65,7 +66,7 @@ const SCRIPT = {
         fields: { 事项: "借书证丢失的读者能不能借书？", 种类: "待澄清", 是否阻断下游: "阻断下游", 建议的处理: "流程里「借书证无效」这个分叉画不出，用例的扩展流程也写不出。",
           状态: "未解决", 关联条目: ["OA-001"] } },
       { op: "update", item: "OA-001", base_revision: 1, fields: { 已经定下的: [MARK] },
-        sources: [{ kind: "助手补充", excerpt: "这一条还没有定下来，见问题 TBD-001。", supports: [{ field: "已经定下的", index: 0 }] }] },
+        sources: [{ kind: "助手补充", excerpt: "这一条还没有定下来，见问题 TBD-001。", supports: [{ field: "已经定下的", index: 0, inserted: [MARK] }] }] },
     ]),
     reply("主题页理好了，还有一个问题要你答。", "call-start-blocked", START_BLOCKED),
     // 用户答了：把答案写进那一页（去掉待定标记），问是否已解决。

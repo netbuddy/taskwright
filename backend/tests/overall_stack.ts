@@ -13,7 +13,9 @@ const BUILD = join(ROOT, "agent", "tests", "fixtures", "build_task_db.mts");
 const USER_OPS = join(ROOT, "agent", "tests", "fixtures", "user_ops.mts");
 export const MATERIAL = "读者对在架的书办预约。只有在架的书才能预约取书。\n";
 export const SOURCE = { kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者对在架的书办预约。" };
-export const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
+/** 助手补充的来源：补进正文的字串写在第一处支持上。 */
+export const SUPPLEMENT = (supports: Record<string, unknown>[], inserted = "保留期") =>
+  ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports: supports.map((one, i) => (i === 0 ? { ...one, inserted: [inserted] } : one)) });
 
 /** 演示任务定义加一个业务说明集合（字段照产品的任务类型）。 */
 export const DEFINITION = {

@@ -129,6 +129,18 @@ excerpt（摘录的原文）
 
 {{at}}的 index 应当是从 0 起的整数，现在写的是 {{given}}
 
+## `source.supports_inserted_invalid`
+
+用途：supports 一项的 inserted 不是字符串数组，或者里面有空的字符串。
+
+{{at}}的 inserted 应当是字符串数组，每一项写一段补进正文的字，不能是空的
+
+## `source.inserted_not_supplement`
+
+用途：不是助手补充的来源在 supports 里写了 inserted。
+
+{{where}}的 supports 写了 inserted；只有「{{kind}}」的来源写 inserted，别的来源不写
+
 ## `source.supports_in_figure`
 
 用途：图的来源写了 supports。

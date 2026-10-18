@@ -158,8 +158,8 @@
           "路径": "clarifying.md"
          },
          {
-          "字节数": 65859,
-          "摘要值": "ed106dbd4edfc2f9",
+          "字节数": 65933,
+          "摘要值": "8712019969e0d88b",
           "路径": "common.md"
          },
          {
@@ -467,7 +467,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"623aece780d3a45f\",\"bytes\":79753,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65858,\"lines\":238,\"digest\":\"29e003fe8789cf10\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/requirements-engineering/SKILL.md\",\"bytes\":7626,\"lines\":30,\"digest\":\"bb84eb46c4bb206d\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"4427c36421f90d90\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"8f86ce0352f96cd8\",\"bytes\":79827,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65932,\"lines\":238,\"digest\":\"500b9967f8923e40\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/requirements-engineering/SKILL.md\",\"bytes\":7626,\"lines\":30,\"digest\":\"bb84eb46c4bb206d\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"4427c36421f90d90\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

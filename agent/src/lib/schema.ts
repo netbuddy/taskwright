@@ -351,6 +351,7 @@ export function itemSourceSql(name: string): string {
   event_seq    INTEGER NOT NULL,       -- 记下这次修订的那条事件的序号
   normalized_value TEXT,               -- 种类为用户的话、写入的值与原话不同时，写入的值；摘录仍是逐字的原话
   depends_revision INTEGER,            -- 种类为条目或图时，引用那一刻对方的修订号；别的种类为空
+  inserted     TEXT,                   -- 助手补充的来源：这一处补进正文的字串（JSON 字符串数组，逐字出现在这一处的正文里）；别的来源、旧库里抽不出的为空（格式 10 加的列）
   PRIMARY KEY (task_id, element_kind, item_id, revision_no, position, support_no)
 );
 `;
@@ -475,10 +476,10 @@ export function existingTables(db: DatabaseSync): string[] {
 /**
  * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。
  * 本程序只认格式 8 起的库：8 是 0.6 开发期间定下的样子（工作项、工作项的会话、版本记录）；9 给工具拒绝表加了原因码两列
- * （reason_code、reason_codes）。更早的格式（没有编过版本号的 0.4 的库，与 0.5 建的格式 1 到 7 的库）不再升级，打开时拒绝
+ * （reason_code、reason_codes）；10 给来源表加了助手补充补进正文的字串一列（inserted）。更早的格式（没有编过版本号的 0.4 的库，与 0.5 建的格式 1 到 7 的库）不再升级，打开时拒绝
  * （OlderTaskDatabase），库原样不动。一张表都没有的空库（版本也是 0）照现在的建表语句建齐，直接记成现在的版本。
  */
-export const TASK_DB_VERSION = 9;
+export const TASK_DB_VERSION = 10;
 
 /** 本程序还能升级的最早格式：比它早的库打开时拒绝。 */
 export const MIN_TASK_DB_VERSION = 8;
@@ -527,6 +528,7 @@ export function taskWrittenBy(workspaceDir: string): string | null {
  */
 const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync, ctx: UpgradeContext) => void }[] = [
   { from: 8, to: 9, run: (db, ctx) => { addRejectionReasons(db); renameTaskType(db, ctx); renameOverallCollection(db, ctx); dropSideTab(db, ctx); } },
+  { from: 9, to: 10, run: (db, ctx) => addInsertedColumn(db, ctx) },
 ];
 
 /**
@@ -553,6 +555,49 @@ function addRejectionReasons(db: DatabaseSync): void {
   const columns = (db.prepare("PRAGMA table_info(tool_rejection)").all() as { name: string }[]).map((row) => row.name);
   if (!columns.includes("reason_code")) db.exec("ALTER TABLE tool_rejection ADD COLUMN reason_code TEXT");
   if (!columns.includes("reason_codes")) db.exec("ALTER TABLE tool_rejection ADD COLUMN reason_codes TEXT");
+}
+
+/** 理由里用直角引号引出的各段字；空的不算。格式 10 之前助手补充靠它标出补进正文的字，升级时由它抽出 inserted。 */
+export const QUOTED_IN_REASON = /「([^「」]+)」/g;
+
+/** 来源表里的一行支持处还原成一处支持：inserted 列是 JSON 字符串数组，为空时没有这一项。 */
+export function supportOf(field: string, index: number | null, inserted: string | null): { field: string; index?: number; inserted?: string[] } {
+  const one: { field: string; index?: number; inserted?: string[] } = index === null ? { field } : { field, index };
+  if (inserted) one.inserted = JSON.parse(inserted) as string[];
+  return one;
+}
+
+/** 一处支持所指的正文：某个字段，列表型字段的某一项；没有字段时是条目全部字段的文字。 */
+export function supportedTexts(fields: Record<string, unknown>, field: string | null, index: number | null | undefined): string[] {
+  const textsOf = (value: unknown): string[] =>
+    typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : [];
+  if (field === null) return Object.values(fields).flatMap(textsOf);
+  const value = fields[field];
+  return index === null || index === undefined || !Array.isArray(value) ? textsOf(value) : textsOf(value[index]);
+}
+
+/**
+ * 第 9 到 10 步：来源表加 inserted 一列，助手补充的旧行由理由里的直角引号一次性抽出填入：取这一处正文里逐字出现的那几段，
+ * 一段也抽不出的留空（照旧可以读，页面退回按理由里的引号显示）。重复做不出错：已经填过的行不再动。
+ */
+function addInsertedColumn(db: DatabaseSync, ctx: UpgradeContext): void {
+  const columns = (db.prepare("PRAGMA table_info(item_source)").all() as { name: string }[]).map((row) => row.name);
+  if (!columns.includes("inserted")) db.exec("ALTER TABLE item_source ADD COLUMN inserted TEXT");
+  const rows = db.prepare(
+    "SELECT s.rowid AS id, s.excerpt, s.field, s.field_index, v.fields FROM item_source s " +
+    "LEFT JOIN item_version v ON v.task_id = s.task_id AND v.item_id = s.item_id AND v.revision_no = s.revision_no " +
+    `WHERE s.kind = ? AND s.element_kind = ? AND s.inserted IS NULL`,
+  ).all(SOURCE_SUPPLEMENT, ELEMENT_ITEM) as { id: number; excerpt: string; field: string | null; field_index: number | null; fields: string | null }[];
+  const update = db.prepare("UPDATE item_source SET inserted = ? WHERE rowid = ?");
+  let filled = 0;
+  for (const row of rows) {
+    const texts = row.fields ? supportedTexts(JSON.parse(row.fields) as Record<string, unknown>, row.field, row.field_index) : [];
+    const quoted = [...new Set([...row.excerpt.matchAll(QUOTED_IN_REASON)].map((m) => m[1]))].filter((one) => texts.some((text) => text.includes(one)));
+    if (quoted.length === 0) continue;
+    update.run(JSON.stringify(quoted), row.id);
+    filled += 1;
+  }
+  if (filled) ctx.notes.push(`助手补充的来源里 ${filled} 处由理由里的直角引号抽出了补进正文的字串`);
 }
 
 /** 任务类型改名（格式 9 起）：键与中文名。 */

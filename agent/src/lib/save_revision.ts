@@ -78,7 +78,7 @@ import {
 import { DIAGRAM_ID, type DiagramRecord, latestVersion as latestDiagramVersion, readDiagrams } from "./diagram.ts";
 import { parsePdfLocator } from "./pdf_locations.ts";
 import { PDF_SPAN_LIMIT, pdfProjectionUnits, pdfUnitIndex, pdfUnitsWith, placePdfExcerpt } from "./pdf_source.ts";
-import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, supportOf, supportedTexts, withTaskDatabase } from "./schema.ts";
 import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
@@ -95,6 +95,8 @@ import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 export interface Support {
   field: string;
   index?: number;
+  /** 只有种类为「助手补充」时有：这一处补进正文的字串，每个都逐字出现在这一处的正文里；页面据此标出哪里是助手补的。 */
+  inserted?: string[];
 }
 
 /** 一条来源：种类、出处、摘录，以及它支持哪几处。supports 为空列表表示支持整个条目。 */
@@ -154,6 +156,7 @@ interface SourceRow {
   field_index: number | null;
   normalized_value: string | null;
   depends_revision?: number | null;
+  inserted?: string | null;
 }
 
 /** 发起方写成中文。拒绝原因的事实一层也给人看，所以执行者写作「助手」。 */
@@ -324,7 +327,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const sourcesOf = (itemId: string, revisionNo: number): Source[] => {
     const rows = db
       .prepare(
-        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision FROM item_source " +
+        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision, inserted FROM item_source " +
           "WHERE task_id = ? AND item_id = ? AND revision_no = ? AND element_kind = ? ORDER BY position, support_no",
       )
       .all(taskId, itemId, revisionNo, ELEMENT_ITEM) as unknown as SourceRow[];
@@ -337,9 +340,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         if (row.depends_revision !== null && row.depends_revision !== undefined) source.depends_revision = row.depends_revision;
         byPosition.set(row.position, source);
       }
-      if (row.field !== null) {
-        source.supports.push(row.field_index === null ? { field: row.field } : { field: row.field, index: row.field_index });
-      }
+      if (row.field !== null) source.supports.push(supportOf(row.field, row.field_index, row.inserted ?? null));
     }
     return [...byPosition.values()];
   };
@@ -505,7 +506,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         for (const one of pageProblems(fields, sources)) errors.push(problemText(one));
       }
       if (sources && call.actor !== ACTOR_USER && keepPendingField(collection) === null) {
-        for (const one of quotedProblems(fields, sources)) errors.push(problemText(one));
+        for (const one of insertedProblems(fields, sources)) errors.push(problemText(one));
       }
       if (errors.length > 0) {
         problems.push(reasonOf(label, fillText("part.subject_add", { collection: collection.name }), errors));
@@ -631,7 +632,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     }
     // 只核对这次新给的来源；沿用下来的不重新核对。
     if (given && call.actor !== ACTOR_USER && op !== "restore" && keepPendingField(collection) === null) {
-      for (const one of quotedProblems(merged, given)) errors.push(problemText(one));
+      for (const one of insertedProblems(merged, given)) errors.push(problemText(one));
     }
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
       errors.push(problem(refusalText("save_revision.update_noop", { item: itemId, revision: current.revision_no })));
@@ -834,35 +835,30 @@ function listFieldsOf(collection: CollectionDef): Set<string> {
   return new Set(collection.fields.filter((one) => one.type === FIELD_TEXT_LIST || one.type === FIELD_ITEM_REF).map((one) => one.name));
 }
 
-/** 理由里用直角引号引出的各段字；空的不算。 */
-const QUOTED = /「([^「」]+)」/g;
-
 /**
- * 助手补充的来源，理由里用直角引号引出的字要逐字出现在它支持的那几处正文里（没有写支持哪几处时，在这个条目任何一个字段的文字里）：
- * 页面靠这几个字在正文里标出哪里是助手补的，引的与正文不一样就标不出来。理由里没有直角引号的不核对。
- * 问题条目不核对（那里的助手补充写的是发现了什么，不是补进正文的字），由调用方跳过。返回不对的地方，每处是原因码与两层文字。
+ * 助手补充的来源要说清它往正文里补了什么：supports 里至少一处带非空的 inserted，每个字串逐字出现在那一处的正文里
+ * （字段，或列表型字段的那一项）。页面靠 inserted 在正文里标出哪里是助手补的。理由是随意写的话，不再从里面解析引号。
  */
-export function quotedProblems(fields: Fields, sources: readonly Source[]): RefusalText[] {
-  const textsOf = (value: unknown): string[] =>
-    typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : [];
+export function insertedProblems(fields: Fields, sources: readonly Source[]): RefusalText[] {
   const out: RefusalText[] = [];
   for (const source of sources) {
     if (source.kind !== SOURCE_SUPPLEMENT) continue;
-    const places = source.supports.length === 0 ? Object.values(fields).flatMap(textsOf)
-      : source.supports.flatMap((at) => {
-        const value = fields[at.field];
-        return at.index === undefined || !Array.isArray(value) ? textsOf(value) : textsOf(value[at.index]);
-      });
-    const where = source.supports.length === 0 ? fillText("part.where_item_text") : fillText("part.where_supported_text");
-    for (const [, quoted] of source.excerpt.matchAll(QUOTED)) {
-      if (places.some((text) => text.includes(quoted))) continue;
-      out.push(refusalText("save_revision.supplement_quote_not_in_text", { source: quoteLabel(source), quoted, where }));
+    if (!source.supports.some((at) => at.inserted?.length)) {
+      out.push(refusalText("save_revision.supplement_inserted_missing", { source: quoteLabel(source) }));
+      continue;
+    }
+    for (const at of source.supports) {
+      const texts = supportedTexts(fields, at.field, at.index);
+      const place = at.index === undefined ? fillText("result.save_revision.field_place", { field: at.field })
+        : fillText("result.save_revision.field_item_place", { field: at.field, no: at.index + 1 });
+      for (const one of at.inserted ?? []) {
+        if (!texts.some((text) => text.includes(one))) out.push(refusalText("save_revision.supplement_inserted_not_in_text", { source: quoteLabel(source), inserted: one, place }));
+      }
     }
   }
   return out;
 }
 
-/** 结果里说到一条来源：摘录（长的只引前 30 字）加种类。 */
 function quoteLabel(source: Source): string {
   return fillText("part.quote_label", { excerpt: quoteOf(source.excerpt), kind: source.kind });
 }
@@ -1329,6 +1325,11 @@ function checkSources(
       ok = false;
       return;
     }
+    if (!supplement && supports.some((at) => at.inserted)) {
+      errors.push(problem(refusalText("source.inserted_not_supplement", { where, kind: SOURCE_SUPPLEMENT })));
+      ok = false;
+      return;
+    }
     // 助手补充的出处由这里填；用户的操作交回的旧来源照它原来的出处。
     let locator = supplement && (actor !== ACTOR_USER || typeof one.locator !== "string" || one.locator.trim() === "") ? SOURCE_SUPPLEMENT : (one.locator as string);
     // 依据条目时引用那一刻对方的修订号。用户的操作（直接修改、撤销）交回的旧来源保留它原来记的号。
@@ -1632,16 +1633,24 @@ function checkSupportShape(raw: unknown, where: string, errors: string[]): Suppo
       ok = false;
       return;
     }
+    const support: Support = { field: one.field };
     if (one.index !== undefined && one.index !== null) {
       if (typeof one.index !== "number" || !Number.isInteger(one.index) || one.index < 0) {
         errors.push(problem(refusalText("source.supports_index_invalid", { at, given: String(JSON.stringify(one.index)) })));
         ok = false;
         return;
       }
-      kept.push({ field: one.field, index: one.index });
-    } else {
-      kept.push({ field: one.field });
+      support.index = one.index;
     }
+    if (one.inserted !== undefined && one.inserted !== null) {
+      if (!Array.isArray(one.inserted) || one.inserted.some((text) => typeof text !== "string" || text.trim() === "")) {
+        errors.push(problem(refusalText("source.supports_inserted_invalid", { at })));
+        ok = false;
+        return;
+      }
+      if (one.inserted.length > 0) support.inserted = one.inserted as string[];
+    }
+    kept.push(support);
   });
   return ok ? kept : null;
 }
@@ -1774,8 +1783,8 @@ function write(
     "INSERT INTO item_version (task_id, item_id, revision_no, fields, event_seq) VALUES (?, ?, ?, ?, ?)",
   );
   const insertSource = db.prepare(
-    "INSERT INTO item_source (task_id, element_kind, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value, depends_revision) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO item_source (task_id, element_kind, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value, depends_revision, inserted) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const markDeleted = db.prepare(
     "UPDATE item SET deleted_in_revision = ?, deleted_event_seq = ? WHERE task_id = ? AND item_id = ?",
@@ -1804,6 +1813,7 @@ function write(
           source.kind, source.locator, source.excerpt, support?.field ?? null, support?.index ?? null, seq, source.normalized_value ?? null,
           // 依据的条目在这一次保存里才新增或修改：它的修订号就是这一次的。
           source.depends_revision === THIS_REVISION ? revisionNo : source.depends_revision ?? null,
+          support?.inserted ? JSON.stringify(support.inserted) : null,
         );
       });
     });

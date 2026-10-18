@@ -18,7 +18,9 @@ import { getItem, getTaskStatus } from "../src/lib/task_query.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, demoDefinition, makeWorkspace, overallDefinition, query, startWriting, viewReadyPage } from "./helpers.ts";
 
-const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
+/** 助手补充的来源：补进正文的字串写在第一处支持上。 */
+const SUPPLEMENT = (supports: Record<string, unknown>[], inserted = "保留期") =>
+  ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports: supports.map((one, i) => (i === 0 ? { ...one, inserted: [inserted] } : one)) });
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
   ({ op: "add", collection: "业务说明", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
 
@@ -57,7 +59,7 @@ test("待核实：助手补充未确认；用户看过之后；助手再改之�
   assert.deepEqual(pendingOf(dir, "OA-001"), [false, 0]);
   // 助手之后又改：新修订上没有确认，沿用下来的那一处助手补充又待核实。
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-001", base_revision: 1, fields: { 例子: ["小王周六预约了《算法导论》，周二来取。"] },
-    sources: [{ kind: "助手补充", excerpt: "为了说明流程编的一个例子，等用户确认。", supports: [{ field: "例子", index: 0 }] }] }] });
+    sources: [{ kind: "助手补充", excerpt: "为了说明流程编的一个例子，等用户确认。", supports: [{ field: "例子", index: 0, inserted: ["周二来取"] }] }] }] });
   assert.deepEqual(pendingOf(dir, "OA-001"), [true, 2]);
   // 用户亲手改了「它是什么」：助手补的两处（已经定下的第 2 条、例子）他没有改到，仍待核实。
   ui(dir, { kind: "edit_fields", targets: [{ item_id: "OA-001", base_revision: 2 }], fields: { 它是什么: "读者对一本在架的书办预约，馆员把书放到预留架。" } });
@@ -157,7 +159,7 @@ test("助手读到的说法：查看条目写待核实与提到它的地方，�
 test("没有业务说明集合的任务（0.4 建的）：待核实照样算，没有提到，查看条目照旧", () => {
   const dir = workspace(demoDefinition() as Record<string, any>);
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面", "输入口令"] },
-    sources: [{ ...SOURCE, supports: [{ field: "名称" }] }, SUPPLEMENT([{ field: "步骤" }])] }] });
+    sources: [{ ...SOURCE, supports: [{ field: "名称" }] }, SUPPLEMENT([{ field: "步骤" }], "输入口令")] }] });
   const state = stateOf(dir, demoDefinition() as Record<string, any>);
   assert.deepEqual([state.verification.get("UC-001"), state.mentions.size, state.pages], [{ pending_verification: true, pending_sources: 1, pending_places: [{ field: "步骤", index: null }], basis_pending: null }, 0, []]);
   assert.match(getItem(dir, { item_id: "UC-001" }).text, /待核实：UC-001 有 1 处是助手补充的/);

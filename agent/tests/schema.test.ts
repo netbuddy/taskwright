@@ -9,7 +9,7 @@ import { databasePath } from "../src/lib/db.ts";
 import { MIN_TASK_DB_VERSION, NewerTaskDatabase, NoDatabaseYet, OlderTaskDatabase, TABLE_NAMES, TASK_DB_VERSION, TASK_JSON, upgradeTaskDatabase, withTaskDatabase } from "../src/lib/schema.ts";
 import { createTask } from "../src/lib/create_task.ts";
 import { reviewSpecOf, rulesHash } from "../src/lib/review_state.ts";
-import { asFormat8, callIn, makeWorkspace, query } from "./helpers.ts";
+import { asFormat8, asFormat9, callIn, makeWorkspace, query } from "./helpers.ts";
 
 /** 库里记的格式版本（PRAGMA user_version）。 */
 const version = (dir: string) => query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version;
@@ -130,11 +130,34 @@ test("格式版本：新建的库里活动记录表不检查活动的取值，�
 
 const columnsOf = (dir: string, table: string) => query<{ name: string }>(dir, `PRAGMA table_info(${table})`).map((one) => one.name);
 
-test("格式 9：新建的库照现在的建表语句建齐，格式号是 9，工具拒绝表带原因码两列；本程序还能升级的最早格式是 8", () => {
+test("格式 10：新建的库照现在的建表语句建齐，格式号是 10，工具拒绝表带原因码两列，来源表带 inserted 一列；本程序还能升级的最早格式是 8", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, () => null);
-  assert.deepEqual([TASK_DB_VERSION, MIN_TASK_DB_VERSION, version(dir)], [9, 8, 9]);
+  assert.deepEqual([TASK_DB_VERSION, MIN_TASK_DB_VERSION, version(dir)], [10, 8, 10]);
   assert.deepEqual(columnsOf(dir, "tool_rejection").slice(-2), ["reason_code", "reason_codes"]);
+  assert.equal(columnsOf(dir, "item_source").at(-1), "inserted");
+});
+
+test("格式 9 升到 10：来源表补上 inserted 一列，助手补充的旧行由理由里的直角引号抽出这一处正文里有的那几段，抽不出的留空；再升一次不出错", () => {
+  const dir = makeWorkspace();
+  createTask(callIn(dir), { definition_path: "docs/task-definitions/demo.json" });
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
+    db.prepare("INSERT INTO item_version (task_id, item_id, revision_no, fields, event_seq) VALUES ('TASK-001', 'UC-001', 1, ?, 1)")
+      .run(JSON.stringify({ 名称: "登录", 步骤: ["打开页面", "输入口令"] }));
+    const add = db.prepare("INSERT INTO item_source (task_id, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq) " +
+      "VALUES ('TASK-001', 'UC-001', 1, ?, ?, ?, ?, ?, ?, ?, 1)");
+    // 引出的两段：一段在那一项正文里，一段在别处。
+    add.run(1, 1, "助手补充", "助手补充", "「输入口令」是按常识补的，「打开页面」照例在前。", "步骤", 1);
+    // 没有引号：抽不出，留空。
+    add.run(2, 1, "助手补充", "助手补充", "按常识补的。", "名称", null);
+    // 别的来源：不动。
+    add.run(3, 1, "文档原文", "inputs/材料.md", "「用户可以登录。」", "名称", null);
+  });
+  asFormat9(dir);
+  assert.ok(!columnsOf(dir, "item_source").includes("inserted"));
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 9, to: 10, notes: ["助手补充的来源里 1 处由理由里的直角引号抽出了补进正文的字串"] });
+  assert.deepEqual(query<{ inserted: string | null }>(dir, "SELECT inserted FROM item_source ORDER BY position").map((one) => one.inserted), [JSON.stringify(["输入口令"]), null, null]);
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 10, to: 10, notes: [] });
 });
 
 test("格式 8 升到 9：写入一侧第一次打开时给工具拒绝表补上原因码两列，原有的拒绝记录还在、原因码为空；再打开不重做", () => {
@@ -145,7 +168,7 @@ test("格式 8 升到 9：写入一侧第一次打开时给工具拒绝表补上
   assert.equal(version(dir), 8);
   assert.ok(!columnsOf(dir, "tool_rejection").includes("reason_code"));
   withTaskDatabase(dir, { createIfMissing: false }, () => null);
-  assert.equal(version(dir), 9);
+  assert.equal(version(dir), TASK_DB_VERSION);
   assert.deepEqual(query(dir, "SELECT fact, reason_code, reason_codes FROM tool_rejection").map((one) => ({ ...one })), [{ fact: "旧的一条", reason_code: null, reason_codes: null }]);
   withTaskDatabase(dir, { createIfMissing: false }, () => null);
   assert.deepEqual(columnsOf(dir, "tool_rejection").filter((name) => name.startsWith("reason_code")), ["reason_code", "reason_codes"]);
@@ -182,7 +205,7 @@ test("格式 8 升到 9：任务类型「软件需求规格说明编制」改名
   writeFileSync(join(dir, TASK_JSON), JSON.stringify({ task_type: "srs-authoring", owner: "local" }, null, 2) + "\n", "utf-8");
   createTask(callIn(dir), { definition_path: "docs/task-definitions/srs-authoring.json" });
   asFormat8(dir);
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 8, to: 9, notes: ["任务类型改名为「需求工程」：docs/task-definitions/requirements-engineering.json、.pi/skills/requirements-engineering/"] });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 8, to: TASK_DB_VERSION, notes: ["任务类型改名为「需求工程」：docs/task-definitions/requirements-engineering.json、.pi/skills/requirements-engineering/"] });
   const definition = readFileSync(join(dir, "docs", "task-definitions", "requirements-engineering.json"), "utf-8");
   assert.equal(existsSync(join(dir, "docs", "task-definitions", "srs-authoring.json")), false);
   assert.match(definition, /"任务名": "需求工程"/);
@@ -194,7 +217,7 @@ test("格式 8 升到 9：任务类型「软件需求规格说明编制」改名
   assert.deepEqual(query<any>(dir, "SELECT definition_path, definition_text FROM task").map((row) => [row.definition_path, row.definition_text]),
     [["docs/task-definitions/requirements-engineering.json", definition]]);
   // 再升一次：已经是 9，什么都不动。
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 9, to: 9, notes: [] });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
 });
 
 test("格式 8 升到 9：集合「总体分析」改名「业务说明」——定义、条目、事件、随任务类型复制来的文件一起改，材料不动；评审规则文件改了字，评审记录的规则指纹换成新的", () => {
@@ -239,12 +262,12 @@ test("格式 8 升到 9：集合「总体分析」改名「业务说明」——
   assert.deepEqual(query<any>(dir, "SELECT rules_hash FROM review").map((r) => r.rules_hash), [newHash]);
 });
 
-test("数据升级用的入口：格式 8 升到 9 并说出升级前后的版本；已经是 9 的原样返回；没有库文件时不建", () => {
+test("数据升级用的入口：格式 8 升到现在的格式并说出升级前后的版本；已经是现在格式的原样返回；没有库文件时不建", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, () => null);
   asFormat8(dir);
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 8, to: 9, notes: [] });
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 9, to: 9, notes: [] });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 8, to: TASK_DB_VERSION, notes: [] });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
   const empty = makeWorkspace();
   assert.throws(() => upgradeTaskDatabase(empty), NoDatabaseYet);
   assert.equal(existsSync(databasePath(empty)), false);

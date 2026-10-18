@@ -132,7 +132,7 @@ test("阶段与最低门都过不去时两条原因都报；守门按调用那�
 test("新建的任务里会话是空闲的，有没有材料都一样：页可以写，用例被拦，原话说本会话不属于任何工作项", () => {
   for (const material of [false, true]) {
     const dir = workspace(overallDefinition(), material);
-    const said = [{ kind: "助手补充", excerpt: "先立一页占位。" }];
+    const said = [{ kind: "助手补充", excerpt: "先立一页占位。", supports: [{ field: "标题", inserted: ["预约"] }] }];
     assert.equal(refusal(dir, [{ ...page("预约"), sources: said }]), null);
     assert.match(refusal(dir, [{ ...useCase("预约图书"), sources: said }])!, /本会话不属于任何工作项，这时不能新增「用例」的条目/);
     assert.equal(count(dir, "activity_record"), 0, "空闲不落库：一个工作项都没有");
