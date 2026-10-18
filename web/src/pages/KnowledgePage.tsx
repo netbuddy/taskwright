@@ -153,7 +153,8 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
                 </label>
               ))}
             </div>
-            <Upload.Dragger accept={extensions?.join(",")} showUploadList={false} style={{ marginTop: "0.6rem" }} multiple
+            {/* filter: "native" 见任务页的材料卡：拖进来的类型不符的文件也报那句话，不被悄悄丢掉。 */}
+            <Upload.Dragger accept={{ format: extensions?.join(",") ?? "", filter: "native" }} showUploadList={false} style={{ marginTop: "0.6rem" }} multiple
               customRequest={async ({ file, onSuccess, onError }) => {
                 const f = file as File;
                 const ok = !extensions || extensions.some((ext) => f.name.toLowerCase().endsWith(ext));

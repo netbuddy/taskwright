@@ -29,9 +29,10 @@ import * as debugPrompt from "./debug_prompt.ts";
 import * as modelConfig from "./model_config.ts";
 import * as modelTest from "./model_test.ts";
 import { probeModel } from "./model_probe.ts";
-import { MAX_UPLOAD, type Service, TOO_LARGE_TEXT, UPLOAD_TYPES, taskTypes, unsupportedTypeText, uploadTypesText, wordsLocator } from "./service.ts";
+import { type Service, UPLOAD_TYPES, maxUpload, taskTypes, tooLargeText, unsupportedTypeText, uploadTypesText, wordsLocator } from "./service.ts";
 import { isWebPath, webFile } from "./web.ts";
-import { KNOWLEDGE_MAX_UPLOAD, KNOWLEDGE_TOO_LARGE_TEXT, KIND_NAMES } from "./knowledge.ts";
+import { KIND_NAMES, knowledgeMaxUpload, knowledgeTooLargeText } from "./knowledge.ts";
+import { UPLOAD_CAP_MB, UPLOAD_DEFAULT_MB, readUploadLimits, validUploadMb, writeUploadLimits } from "./product_settings.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
 export const RAW_TYPES: Record<string, string> = {
@@ -340,13 +341,14 @@ export function serviceInfo(service: Service, remote: string | null = null) {
     // 上传上限与超过时的那句话：前端在发送之前按它拦下过大的文件（经开发服务器的代理上传过大文件时，代理可能回 502）。
     // extensions 是允许上传的扩展名，前端据此过滤可选的文件、在发送之前拦下类型不符的文件；types_text 是这些类型给人看的一串，
     // 前端写上传框的说明用；unsupported_type_text 是类型不符时的那句话。叫法只在后端有一份。
-    upload: { max_bytes: MAX_UPLOAD, too_large_text: TOO_LARGE_TEXT, extensions: [...UPLOAD_TYPES], types_text: uploadTypesText(), unsupported_type_text: unsupportedTypeText() },
+    upload: { max_bytes: maxUpload(), too_large_text: tooLargeText(), extensions: [...UPLOAD_TYPES], types_text: uploadTypesText(), unsupported_type_text: unsupportedTypeText() },
     // 在页面上导入数据包时的上限与超过时的那句话（更大的包用命令行导入）。
     pack_upload: { max_bytes: PACK_MAX_UPLOAD, too_large_text: PACK_UPLOAD_TOO_LARGE_TEXT },
-    // 知识库文档的上传：类型与材料相同，上限另算（20 MB）；kinds 是文档种类的取值与中文叫法。没有知识库时不给。
+    // 知识库文档的上传：类型与材料相同，上限另算；kinds 是文档种类的取值与中文叫法。没有知识库时不给。
+    // 两种上限都按设置文件现读，设置页改了之后页面重新取一次服务信息就是新的。
     ...(service.knowledge !== null ? {
       knowledge_upload: {
-        max_bytes: KNOWLEDGE_MAX_UPLOAD, too_large_text: KNOWLEDGE_TOO_LARGE_TEXT, extensions: [...UPLOAD_TYPES], types_text: uploadTypesText(),
+        max_bytes: knowledgeMaxUpload(), too_large_text: knowledgeTooLargeText(), extensions: [...UPLOAD_TYPES], types_text: uploadTypesText(),
         unsupported_type_text: unsupportedTypeText(), kinds: Object.entries(KIND_NAMES).map(([kind, name]) => ({ kind, name })),
       },
     } : {}),
@@ -417,6 +419,16 @@ const handlers: Record<string, Handler> = {
   // 调试模式的三个接口（debug_prompt.ts）；不是调试模式时都答 not_found。
   debug_prompt_dir: (service) => json(200, debugPrompt.promptDirView(service)),
   debug_prompt_dir_set: async (service, req) => json(200, await debugPrompt.setPromptDir(service, bodyJson(req))),
+  // 上传上限（设置页的「上传」一栏）：任务材料与知识库文档单个文件的上限，MB，存在设置文件里，下一次上传就按新的算。
+  upload_limits: () => json(200, uploadLimitsView()),
+  upload_limits_set: async (_service, req) => {
+    const body = bodyJson(req);
+    for (const field of ["material_mb", "knowledge_mb"]) {
+      if (!validUploadMb(body[field])) throw new ApiError("bad_request", `${field} 要写 1 到 ${UPLOAD_CAP_MB} 的整数。`, { field });
+    }
+    await writeUploadLimits({ material_mb: body.material_mb, knowledge_mb: body.knowledge_mb });
+    return json(200, uploadLimitsView());
+  },
   debug_system_prompt: (service, req) => json(200, debugPrompt.lastSystemPrompt(service, req.params.task)),
   debug_stage: (service, req) => json(200, debugPrompt.stageDebug(service, req.params.task)),
   // 任务状况：现在的阶段、各章的节数、图与条目的计数、这一段还差什么、开着的提议。程序算出来的，不经助手；没有阶段的任务 status 为 null。
@@ -778,6 +790,8 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", "/api/v1/model-config/test", "model_test"],
   ["GET", "/api/v1/debug/prompt-dir", "debug_prompt_dir"],
   ["POST", "/api/v1/debug/prompt-dir", "debug_prompt_dir_set"],
+  ["GET", "/api/v1/settings/uploads", "upload_limits"],
+  ["POST", "/api/v1/settings/uploads", "upload_limits_set"],
   ["GET", "/api/v1/tasks", "list_tasks"],
   ["GET", "/api/v1/task-types", "list_task_types"],
   ["POST", "/api/v1/tasks", "create_task"],
@@ -870,10 +884,78 @@ function send(res: ServerResponse, reply: Reply, head = false): void {
   res.end(head ? undefined : reply.body);
 }
 
-/** 上传请求体的上限：文件 5 MB 加 multipart 的包装。更大的请求不读，直接以 too_large 拒绝。 */
-const MAX_BODY = MAX_UPLOAD + 64 * 1024;
-/** 知识库文档上传请求体的上限：文件 20 MB 加 multipart 的包装。 */
-const KNOWLEDGE_MAX_BODY = KNOWLEDGE_MAX_UPLOAD + 64 * 1024;
+/** 上传上限接口的回答：现在的两个上限、能设到多大与没有设过时的值，都是 MB。 */
+function uploadLimitsView() {
+  return { ok: true, ...readUploadLimits(), cap_mb: UPLOAD_CAP_MB, defaults: { material_mb: UPLOAD_DEFAULT_MB.material, knowledge_mb: UPLOAD_DEFAULT_MB.knowledge } };
+}
+
+/** multipart 的包装（分隔行与各部分的头）最多算多少字节：上传请求体的上限是文件的上限加上它。 */
+const MULTIPART_WRAPPING = 64 * 1024;
+
+/** 收文件的三个接口（上传与替换材料、上传知识库文档）各自的上限，与超过时先认的那一样（任务或知识库，不在时照常报 not_found）。 */
+interface UploadTarget {
+  limit: number;
+  text: string;
+  owner: () => unknown;
+}
+
+/**
+ * 收文件的请求体：边收边写进临时目录里的一个文件，收到的超过「文件的上限加包装」就停下；请求头里写的长度已经超过时一字不收。
+ * 这两种都先认任务或知识库，再以 too_large 拒绝并关掉连接。收完从临时文件读出来交回，内存里最多是一个上限大小的请求体；
+ * 临时目录随即删掉。上限按设置文件现读（设置页可改），文件本身的大小由处理函数再按同一个上限查一次。拒绝了或者出了错时交回 null。
+ */
+async function receiveUpload(incoming: IncomingMessage, res: ServerResponse, length: number, target: UploadTarget): Promise<Buffer | null> {
+  const tooLarge = (): Reply => {
+    try {
+      target.owner();
+      return json(413, new ApiError("too_large", target.text).body());
+    } catch (error) {
+      return error instanceof ApiError ? json(error.status, error.body()) : json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String(error) } } });
+    }
+  };
+  const max = target.limit + MULTIPART_WRAPPING;
+  if (length > max) {
+    send(res, { ...tooLarge(), close: true });
+    incoming.resume();
+    return null;
+  }
+  const dir = mkdtempSync(join(tmpdir(), "taskwright-upload-"));
+  const file = join(dir, "body");
+  try {
+    const out = createWriteStream(file);
+    let received = 0;
+    const over = await new Promise<boolean>((done, fail) => {
+      incoming.on("data", (chunk: Buffer) => {
+        received += chunk.length;
+        if (received > max) {
+          // 超过上限：后面的不再写，照常读完丢掉。
+          incoming.removeAllListeners("data");
+          incoming.resume();
+          out.destroy();
+          done(true);
+        } else if (!out.write(chunk)) {
+          incoming.pause();
+          out.once("drain", () => incoming.resume());
+        }
+      });
+      incoming.on("end", () => out.end(() => done(false)));
+      incoming.on("error", fail);
+      out.on("error", fail);
+    });
+    if (over) {
+      send(res, { ...tooLarge(), close: true });
+      return null;
+    }
+    return readFileSync(file);
+  } catch (error) {
+    console.error(error);
+    if (!res.destroyed && !res.headersSent) send(res, json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String((error as Error)?.message ?? error) } } }));
+    else res.destroy();
+    return null;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /** 导入数据包的两个接口与各自只收哪种范围的包。它们的请求体不经下面「整个读进内存」的那一套，见 receivePack。 */
 const PACK_IMPORTS: Record<string, "task" | "library"> = { "/api/v1/tasks/import": "task", "/api/v1/knowledge/import": "library" };
@@ -969,38 +1051,7 @@ export function makeServer(service: Service, options: ServerOptions = {}) {
       void receivePack(service, incoming, res, PACK_IMPORTS[path], query, length, options.packMaxUpload ?? PACK_MAX_UPLOAD);
       return;
     }
-    const upload = /^\/api\/v1\/tasks\/([^/]+)\/materials(?:\/replace)?$/s.exec(path);
-    if (method === "POST" && length > MAX_BODY && upload) {
-      // 与大文件有关的只有上传与替换材料：先认任务（任务不在时照常报 not_found），再不读请求体就以 too_large 拒绝，并关掉这条连接。
-      let reply: Reply;
-      try {
-        service.task(upload[1]);
-        reply = json(413, new ApiError("too_large", TOO_LARGE_TEXT).body());
-      } catch (error) {
-        reply = error instanceof ApiError ? json(error.status, error.body()) : json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String(error) } } });
-      }
-      send(res, { ...reply, close: true });
-      incoming.resume();
-      return;
-    }
-    const knowledgeUpload = /^\/api\/v1\/knowledge\/libraries\/([^/]+)\/documents$/s.exec(path);
-    if (method === "POST" && length > KNOWLEDGE_MAX_BODY && knowledgeUpload) {
-      // 知识库文档的上传同样不读过大的请求体：先认库（没有知识库或没有这个库时照常报 not_found），再以 too_large 拒绝并关掉连接。
-      let reply: Reply;
-      try {
-        service.requireKnowledge().library(knowledgeUpload[1]);
-        reply = json(413, new ApiError("too_large", KNOWLEDGE_TOO_LARGE_TEXT).body());
-      } catch (error) {
-        reply = error instanceof ApiError ? json(error.status, error.body()) : json(500, { ok: false, error: { code: "internal", message: "后端出错了。", data: { detail: String(error) } } });
-      }
-      send(res, { ...reply, close: true });
-      incoming.resume();
-      return;
-    }
-    const chunks: Buffer[] = [];
-    incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
-    incoming.on("end", async () => {
-      const body = Buffer.concat(chunks).subarray(0, length);
+    const answer = async (body: Buffer) => {
       // 对方在回答发完之前断开：把这件事交给处理函数（查找知识库据此不再往下算）。
       const gone = new AbortController();
       res.once("close", () => {
@@ -1013,7 +1064,20 @@ export function makeServer(service: Service, options: ServerOptions = {}) {
       }
       if (reply.after) res.once("finish", reply.after);
       if (!res.destroyed) send(res, reply);
-    });
+    };
+    // 收文件的三个接口：请求体边收边写临时文件，超过上限就停下拒绝（receiveUpload）。
+    const upload = /^\/api\/v1\/tasks\/([^/]+)\/materials(?:\/replace)?$/s.exec(path);
+    const knowledgeUpload = /^\/api\/v1\/knowledge\/libraries\/([^/]+)\/documents$/s.exec(path);
+    if (method === "POST" && (upload || knowledgeUpload)) {
+      const target: UploadTarget = upload
+        ? { limit: maxUpload(), text: tooLargeText(), owner: () => service.task(upload[1]) }
+        : { limit: knowledgeMaxUpload(), text: knowledgeTooLargeText(), owner: () => service.requireKnowledge().library(knowledgeUpload![1]) };
+      void receiveUpload(incoming, res, length, target).then((body) => (body ? answer(body) : undefined));
+      return;
+    }
+    const chunks: Buffer[] = [];
+    incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+    incoming.on("end", () => void answer(Buffer.concat(chunks).subarray(0, length)));
     incoming.on("error", () => res.destroy());
   });
 }

@@ -27,6 +27,7 @@ import { PDF_DERIVED_SUFFIXES, ProjectionError, isReserved, projectionPath, proj
 import { SEGMENT_DEFAULTS, type SegmentParams } from "../../agent/src/lib/segments.ts";
 import { SELECTION_FILE } from "../../agent/src/lib/knowledge.ts";
 import { GENERAL, KINDS, KIND_NAMES, type Kind, knowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
+import { MB, UPLOAD_DEFAULT_MB, readUploadLimits } from "./product_settings.ts";
 import { UPLOADING_DIR, UPLOAD_TYPES, resolvePath, sameMaterialName, unsupportedTypeText } from "./service.ts";
 
 // 编号、种类与任务目录里记选用的文件名，助手一侧也要用，定义在 agent/src/lib 下，这里原样交出去。
@@ -35,9 +36,11 @@ export { GENERAL, KINDS, KIND_NAMES, SELECTION_FILE, type Kind };
 export const GENERAL_NAME = "通用知识库";
 export const LEGACY_GENERAL_NAME = "通用库";
 
-/** 知识库文档的上传上限（材料的 5 MB 上限不变）。 */
-export const KNOWLEDGE_MAX_UPLOAD = 20 * 1024 * 1024;
-export const KNOWLEDGE_TOO_LARGE_TEXT = `单个文件不能超过 ${KNOWLEDGE_MAX_UPLOAD / 1024 / 1024} MB。`;
+/** 知识库文档单个文件的上限没有设过时的缺省值（字节）。 */
+export const KNOWLEDGE_MAX_UPLOAD = UPLOAD_DEFAULT_MB.knowledge * MB;
+/** 知识库文档单个文件现在的上限（字节）：按设置文件现读，设置页可改。 */
+export const knowledgeMaxUpload = (): number => readUploadLimits().knowledge_mb * MB;
+export const knowledgeTooLargeText = (): string => `单个文件不能超过 ${readUploadLimits().knowledge_mb} MB。`;
 
 /** 上传的内容与这个库里已有的某份文档完全相同时的那句话（错误码 duplicate_content）。 */
 export const docDuplicateText = (name: string) => `这份文件与这个知识库里已有的文档《${name}》内容完全相同，没有重复保存。`;
@@ -252,7 +255,7 @@ export class KnowledgeStore {
     }
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", unsupportedTypeText());
     if (isReserved(filename)) throw new ApiError("bad_request", reservedNameText("文档"));
-    if (data.length > KNOWLEDGE_MAX_UPLOAD) throw new ApiError("too_large", KNOWLEDGE_TOO_LARGE_TEXT);
+    if (data.length > knowledgeMaxUpload()) throw new ApiError("too_large", knowledgeTooLargeText());
     if (typeof kind !== "string" || !(KINDS as readonly string[]).includes(kind)) {
       throw new ApiError("bad_request", `资料的种类只能是${KINDS.map((k) => `「${KIND_NAMES[k]}」`).join("、")}之一。`);
     }

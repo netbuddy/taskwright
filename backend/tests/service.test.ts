@@ -164,7 +164,7 @@ test("上传材料：只收三种文本，同名不同内容拒绝（不再自�
     for (const [name, code] of [["图.png", "unsupported_type"], ["a/b.md", "bad_request"], ["a\\b.md", "bad_request"], ["", "bad_request"], ["x.DOCX.txt", "bad_request"], ["x.docx.MD", "bad_request"]]) {
       assert.equal(codeOf(() => service.upload(t, name, Buffer.from("x"))), code, name);
     }
-    assert.equal(codeOf(() => service.upload(t, "大.txt", Buffer.alloc(5 * 1024 * 1024 + 1, 0x78))), "too_large");
+    assert.equal(codeOf(() => service.upload(t, "大.txt", Buffer.alloc(10 * 1024 * 1024 + 1, 0x78))), "too_large");
     assert.equal(readFileSync(service.materialPath(t, "inputs/需求二.md"), "utf-8"), "乙");
     for (const bad of ["inputs/../task.sqlite", "docs/task-definitions/requirements-engineering.json", "/etc/passwd", ""]) {
       assert.equal(codeOf(() => service.materialPath(t, bad)), "bad_request", bad);

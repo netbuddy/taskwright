@@ -1303,6 +1303,14 @@ export interface DebugStage {
   latest_work_id: string | null;
 }
 
+/** 上传上限（GET 与 POST /api/v1/settings/uploads 的回答）：任务材料与知识库文档单个文件的上限，cap_mb 是最大能设多少，defaults 是没有改过时的值，都是 MB。 */
+export interface UploadLimitsView {
+  material_mb: number;
+  knowledge_mb: number;
+  cap_mb: number;
+  defaults: { material_mb: number; knowledge_mb: number };
+}
+
 /** 调试模式的提示词目录：现在设的是什么，以及固定的十五个文件名各自在目录里的情形。 */
 export interface PromptDirView {
   /** 设置里写的目录；没有设时是 null。 */

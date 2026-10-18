@@ -16,6 +16,7 @@ import type {
   ModelTestResult,
   ModelType,
   PromptDirView,
+  UploadLimitsView,
   DebugStage,
   DebugSystemPrompt,
   Provider,
@@ -173,6 +174,9 @@ export const api = {
     "GET", `/tasks/${encodeURIComponent(taskId)}/debug/persona-draft`),
   /** 设提示词目录；path 写空串是清掉。 */
   setPromptDir: (path: string) => request<PromptDirView>("POST", "/debug/prompt-dir", { path }),
+  /** 上传上限（设置页的「上传」一栏）：两种上传单个文件的上限，MB。 */
+  uploadLimits: () => request<UploadLimitsView>("GET", "/settings/uploads"),
+  setUploadLimits: (material_mb: number, knowledge_mb: number) => request<UploadLimitsView>("POST", "/settings/uploads", { material_mb, knowledge_mb }),
 
   // 模型配置（接口文档第 10 节）：从哪台电脑打开页面都可以读、可以改。
   modelConfig: () => request<ModelConfig>("GET", "/model-config"),
