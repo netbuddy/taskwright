@@ -1,0 +1,881 @@
+{
+  "agent/prompts/README.md": {
+    "业务说明": 1,
+    "未解决": 1,
+    "标签": 2,
+    "标题": 8,
+    "流程": 6,
+    "状态": 4,
+    "种类": 4,
+    "范围": 6,
+    "问题": 3
+  },
+  "agent/prompts/flows/analysis.md": {
+    "不阻断": 1,
+    "已经定下的": 1,
+    "改看": 1,
+    "流程": 5,
+    "状态": 3,
+    "目标": 2,
+    "约束": 4,
+    "问题": 15,
+    "阻断下游": 4
+  },
+  "agent/prompts/flows/change.md": {
+    "决定": 2,
+    "流程": 3
+  },
+  "agent/prompts/review.md": {
+    "业务说明": 4,
+    "别名": 2,
+    "标题": 2,
+    "流程": 1,
+    "问题": 7
+  },
+  "agent/prompts/runtime/rejections_gate.md": {
+    "决定": 1,
+    "已解决": 8,
+    "未解决": 2,
+    "状态": 11,
+    "用户决定保留": 1,
+    "问题": 13
+  },
+  "agent/prompts/runtime/rejections_get_item.md": {
+    "状态": 1,
+    "问题": 3
+  },
+  "agent/prompts/runtime/rejections_publish_version.md": {
+    "功能用例": 1,
+    "未解决": 1,
+    "约束": 1,
+    "问题": 8,
+    "非功能需求": 1
+  },
+  "agent/prompts/runtime/rejections_reply.md": {
+    "种类": 2,
+    "问题": 6
+  },
+  "agent/prompts/runtime/rejections_request_review.md": {
+    "问题": 4
+  },
+  "agent/prompts/runtime/rejections_save_diagram.md": {
+    "决定": 1,
+    "种类": 7,
+    "问题": 5
+  },
+  "agent/prompts/runtime/rejections_save_revision.md": {
+    "不阻断": 2,
+    "业务说明": 1,
+    "何时回看": 1,
+    "关联条目": 1,
+    "在用": 2,
+    "已经定下的": 1,
+    "已解决": 2,
+    "标签": 3,
+    "状态": 1,
+    "种类": 4,
+    "落实到": 1,
+    "问题": 13
+  },
+  "agent/prompts/runtime/rejections_shared.md": {
+    "业务说明": 8,
+    "例子": 5,
+    "决定": 2,
+    "已废弃": 1,
+    "已经定下的": 2,
+    "改看": 2,
+    "标签": 4,
+    "流程": 4,
+    "状态": 1,
+    "问题": 3
+  },
+  "agent/prompts/runtime/rejections_source.md": {
+    "在用": 1,
+    "已废弃": 4,
+    "改看": 3,
+    "状态": 2,
+    "种类": 15
+  },
+  "agent/prompts/runtime/results.md": {
+    "状态": 1,
+    "问题": 1
+  },
+  "agent/prompts/runtime/results_search_knowledge.md": {
+    "标题": 3,
+    "范围": 2,
+    "问题": 3
+  },
+  "agent/prompts/runtime/shared.md": {
+    "流程": 7,
+    "范围": 3
+  },
+  "agent/prompts/runtime/stage_prompt.md": {
+    "标题": 2,
+    "流程": 2,
+    "范围": 6
+  },
+  "agent/prompts/runtime/status.md": {
+    "未解决": 2,
+    "种类": 3,
+    "问题": 2
+  },
+  "agent/prompts/runtime/status_page.md": {
+    "业务对象": 1,
+    "业务流程": 2,
+    "业务规则": 1,
+    "业务说明": 2,
+    "待澄清": 2,
+    "标题": 3,
+    "流程": 2,
+    "目标": 7,
+    "范围": 1,
+    "角色": 1,
+    "问题": 6
+  },
+  "agent/prompts/runtime/task_query.md": {
+    "决定": 1,
+    "未解决": 5,
+    "标题": 8,
+    "状态": 19,
+    "种类": 2,
+    "问题": 6
+  },
+  "agent/prompts/runtime/ui_ops.md": {
+    "决定": 2,
+    "流程": 2,
+    "状态": 3,
+    "目标": 1,
+    "种类": 1,
+    "问题": 3
+  },
+  "agent/prompts/stages/README.md": {
+    "业务说明": 2,
+    "例子": 1,
+    "决定": 1,
+    "前置条件": 2,
+    "标题": 1,
+    "流程": 5
+  },
+  "agent/prompts/stages/clarifying.md": {
+    "上级主题": 2,
+    "不阻断": 1,
+    "业务说明": 2,
+    "事项": 2,
+    "何时回看": 1,
+    "例子": 3,
+    "假设": 2,
+    "关联条目": 1,
+    "决定": 5,
+    "功能用例": 1,
+    "场景": 1,
+    "它是什么": 5,
+    "已经定下的": 2,
+    "已解决": 1,
+    "待澄清": 1,
+    "标签": 7,
+    "标题": 1,
+    "状态": 1,
+    "目标": 5,
+    "约束": 1,
+    "问题": 3,
+    "阻断下游": 1,
+    "非功能需求": 1
+  },
+  "agent/prompts/stages/common.md": {
+    "上级主题": 2,
+    "不阻断": 2,
+    "业务说明": 5,
+    "事项": 2,
+    "何时回看": 1,
+    "例子": 13,
+    "假设": 1,
+    "关联条目": 4,
+    "决定": 17,
+    "别名": 3,
+    "参与者": 2,
+    "在用": 2,
+    "场景": 1,
+    "处理结果": 4,
+    "它是什么": 2,
+    "已废弃": 3,
+    "已经定下的": 5,
+    "已解决": 8,
+    "建议的处理": 1,
+    "待澄清": 1,
+    "改看": 3,
+    "是否阻断下游": 1,
+    "未解决": 2,
+    "标签": 2,
+    "标题": 6,
+    "概念": 2,
+    "流程": 10,
+    "状态": 28,
+    "用户决定保留": 3,
+    "目标": 3,
+    "种类": 13,
+    "约束": 1,
+    "落实到": 4,
+    "角色": 2,
+    "问题": 47,
+    "阻断下游": 4
+  },
+  "agent/prompts/stages/document.md": {
+    "业务对象": 2,
+    "业务流程": 1,
+    "业务目标": 1,
+    "业务规则": 1,
+    "业务说明": 2,
+    "事项": 1,
+    "例子": 1,
+    "决定": 1,
+    "决策记录与待澄清事项": 1,
+    "在用": 2,
+    "它是什么": 5,
+    "导语所属章": 2,
+    "已经定下的": 1,
+    "待澄清": 1,
+    "标签": 3,
+    "标题": 1,
+    "概念": 2,
+    "概述与范围": 2,
+    "流程": 2,
+    "状态": 2,
+    "目标": 1,
+    "种类": 1,
+    "范围": 2,
+    "角色": 2,
+    "问题": 2,
+    "阻断下游": 1
+  },
+  "agent/prompts/stages/modeling.md": {
+    "上级主题": 2,
+    "业务说明": 2,
+    "事项": 1,
+    "例子": 1,
+    "关联条目": 1,
+    "别名": 2,
+    "功能用例": 1,
+    "在用": 3,
+    "它是什么": 1,
+    "已经定下的": 3,
+    "标签": 5,
+    "标题": 2,
+    "概念": 8,
+    "流程": 10,
+    "状态": 9,
+    "种类": 1,
+    "约束": 1,
+    "角色": 6,
+    "问题": 6,
+    "非功能需求": 1
+  },
+  "agent/prompts/stages/publish.md": {
+    "流程": 1
+  },
+  "agent/prompts/stages/reading.md": {
+    "业务对象": 1,
+    "业务流程": 1,
+    "例子": 1,
+    "功能用例": 1,
+    "它是什么": 1,
+    "已经定下的": 2,
+    "待澄清": 1,
+    "标签": 1,
+    "标题": 1,
+    "流程": 2,
+    "状态": 1,
+    "目标": 1,
+    "种类": 1,
+    "约束": 1,
+    "角色": 2,
+    "问题": 5,
+    "阻断下游": 1,
+    "非功能需求": 1
+  },
+  "agent/prompts/stages/reviewing.md": {
+    "改看": 1,
+    "状态": 3,
+    "问题": 1
+  },
+  "agent/prompts/stages/system.md": {
+    "决定": 1
+  },
+  "agent/prompts/stages/writing.md": {
+    "业务说明": 3,
+    "例子": 2,
+    "决定": 1,
+    "功能用例": 1,
+    "在用": 1,
+    "场景": 1,
+    "已废弃": 1,
+    "已经定下的": 2,
+    "改看": 1,
+    "标签": 4,
+    "流程": 2,
+    "状态": 1,
+    "种类": 2,
+    "约束": 1,
+    "问题": 4,
+    "阻断下游": 1,
+    "非功能需求": 1
+  },
+  "agent/prompts/tools/get_item.md": {
+    "状态": 1,
+    "种类": 2
+  },
+  "agent/prompts/tools/get_task_status.md": {
+    "未解决": 1,
+    "状态": 2,
+    "问题": 1
+  },
+  "agent/prompts/tools/publish_version.md": {
+    "未解决": 1,
+    "流程": 1,
+    "状态": 1,
+    "问题": 1
+  },
+  "agent/prompts/tools/reply.md": {
+    "决定": 1,
+    "流程": 3,
+    "状态": 1,
+    "问题": 5
+  },
+  "agent/prompts/tools/request_review.md": {
+    "在用": 1,
+    "问题": 2
+  },
+  "agent/prompts/tools/save_diagram.md": {
+    "流程": 4,
+    "状态": 1,
+    "种类": 7
+  },
+  "agent/prompts/tools/save_revision.md": {
+    "功能用例": 1,
+    "种类": 5
+  },
+  "agent/prompts/tools/search_knowledge.md": {
+    "标题": 1,
+    "问题": 1
+  },
+  "agent/src/cli/create_task.mts": {
+    "标签": 1
+  },
+  "agent/src/cli/overall_state.mts": {
+    "业务说明": 3,
+    "是否阻断下游": 1,
+    "问题": 2,
+    "阻断下游": 1
+  },
+  "agent/src/extension.ts": {
+    "状态": 1
+  },
+  "agent/src/hooks/intent_record.ts": {
+    "状态": 2
+  },
+  "agent/src/hooks/reply_fallback.ts": {
+    "状态": 2,
+    "问题": 1
+  },
+  "agent/src/hooks/report_to_backend.ts": {
+    "状态": 3
+  },
+  "agent/src/hooks/stage_prompt.ts": {
+    "流程": 1,
+    "状态": 2
+  },
+  "agent/src/hooks/task_status.ts": {
+    "在用": 1,
+    "状态": 4,
+    "种类": 1
+  },
+  "agent/src/hooks/tool_limits.ts": {
+    "状态": 1
+  },
+  "agent/src/hooks/tui_render.ts": {
+    "标题": 2,
+    "状态": 1
+  },
+  "agent/src/hooks/user_commands.ts": {
+    "在用": 1,
+    "流程": 2,
+    "状态": 8,
+    "问题": 1
+  },
+  "agent/src/lib/activity_catalog.ts": {
+    "业务说明": 4,
+    "事项": 1,
+    "前置条件": 6,
+    "在用": 2,
+    "待澄清": 3,
+    "流程": 22,
+    "状态": 3,
+    "问题": 3
+  },
+  "agent/src/lib/activity_def.ts": {
+    "业务说明": 3,
+    "例子": 1,
+    "前置条件": 9,
+    "流程": 5
+  },
+  "agent/src/lib/activity_def_read.ts": {
+    "流程": 5
+  },
+  "agent/src/lib/board.ts": {
+    "标题": 2,
+    "状态": 10,
+    "种类": 1
+  },
+  "agent/src/lib/completion_consent.ts": {
+    "已解决": 1,
+    "目标": 1,
+    "问题": 1
+  },
+  "agent/src/lib/conditions.ts": {
+    "业务说明": 3,
+    "决定": 1,
+    "功能用例": 1,
+    "在用": 2,
+    "未解决": 6,
+    "标签": 7,
+    "状态": 12
+  },
+  "agent/src/lib/create_task.ts": {
+    "决定": 1,
+    "基本流程": 2,
+    "已解决": 2,
+    "标签": 2,
+    "流程": 2,
+    "状态": 2,
+    "用户决定保留": 1,
+    "种类": 3,
+    "角色": 1,
+    "问题": 2
+  },
+  "agent/src/lib/definition.ts": {
+    "不阻断": 3,
+    "事项": 1,
+    "何时回看": 3,
+    "关联条目": 1,
+    "决定": 2,
+    "处理结果": 2,
+    "它是什么": 1,
+    "是否阻断下游": 3,
+    "未解决": 4,
+    "标签": 7,
+    "状态": 7,
+    "用户决定保留": 2,
+    "目标": 1,
+    "种类": 2,
+    "落实到": 3,
+    "问题": 10,
+    "阻断下游": 5
+  },
+  "agent/src/lib/diagram.ts": {
+    "流程": 1,
+    "状态": 1,
+    "种类": 4,
+    "角色": 1
+  },
+  "agent/src/lib/diagram_check.ts": {
+    "种类": 2,
+    "问题": 1
+  },
+  "agent/src/lib/diagram_scan.ts": {
+    "流程": 8,
+    "状态": 1,
+    "角色": 2
+  },
+  "agent/src/lib/dialogue_acts.ts": {
+    "决定": 2,
+    "状态": 1,
+    "问题": 5
+  },
+  "agent/src/lib/document_blocks.ts": {
+    "标题": 3
+  },
+  "agent/src/lib/docx_heading.ts": {
+    "标题": 14
+  },
+  "agent/src/lib/docx_location_input.ts": {
+    "标题": 2
+  },
+  "agent/src/lib/docx_locations.ts": {
+    "标签": 4,
+    "标题": 24
+  },
+  "agent/src/lib/docx_markdown.ts": {
+    "标题": 25
+  },
+  "agent/src/lib/docx_numbering.ts": {
+    "标题": 2
+  },
+  "agent/src/lib/intent_schema.ts": {
+    "问题": 1
+  },
+  "agent/src/lib/knowledge.ts": {
+    "种类": 1
+  },
+  "agent/src/lib/knowledge_locator.ts": {
+    "决定": 1,
+    "标签": 1,
+    "种类": 3
+  },
+  "agent/src/lib/knowledge_search.ts": {
+    "范围": 1,
+    "问题": 1
+  },
+  "agent/src/lib/model_call.ts": {
+    "角色": 1
+  },
+  "agent/src/lib/overall_analysis.ts": {
+    "上级主题": 3,
+    "业务说明": 13,
+    "例子": 7,
+    "别名": 7,
+    "在用": 11,
+    "它是什么": 2,
+    "导语所属章": 1,
+    "已废弃": 10,
+    "已经定下的": 3,
+    "改看": 6,
+    "标签": 15,
+    "标题": 7,
+    "流程": 1,
+    "状态": 3,
+    "种类": 6
+  },
+  "agent/src/lib/overall_chapters.ts": {
+    "上级主题": 4,
+    "业务对象": 2,
+    "业务流程": 2,
+    "业务目标": 2,
+    "业务规则": 2,
+    "业务说明": 4,
+    "事项": 2,
+    "假设": 1,
+    "决定": 3,
+    "决策记录与待澄清事项": 2,
+    "在用": 6,
+    "场景": 1,
+    "导语所属章": 2,
+    "已废弃": 7,
+    "待澄清": 2,
+    "标签": 16,
+    "概念": 3,
+    "概述与范围": 2,
+    "流程": 3,
+    "目标": 5,
+    "范围": 3,
+    "角色": 3,
+    "问题": 1
+  },
+  "agent/src/lib/overall_figures.ts": {
+    "业务对象": 1,
+    "业务说明": 1,
+    "在用": 1,
+    "标题": 2,
+    "流程": 4,
+    "状态": 4,
+    "种类": 2,
+    "角色": 13
+  },
+  "agent/src/lib/overall_read.ts": {
+    "业务说明": 3,
+    "在用": 1,
+    "已废弃": 2,
+    "改看": 1,
+    "状态": 1,
+    "种类": 1,
+    "问题": 3
+  },
+  "agent/src/lib/overall_views.ts": {
+    "上级主题": 8,
+    "业务目标": 4,
+    "业务说明": 2,
+    "事项": 6,
+    "决定": 14,
+    "决策记录与待澄清事项": 5,
+    "在用": 5,
+    "它是什么": 1,
+    "已经定下的": 5,
+    "建议的处理": 2,
+    "待澄清": 6,
+    "未解决": 1,
+    "标签": 7,
+    "标题": 2,
+    "状态": 1,
+    "目标": 20,
+    "种类": 3,
+    "范围": 1,
+    "范围外": 1,
+    "问题": 18
+  },
+  "agent/src/lib/pdf_locations.ts": {
+    "标签": 1,
+    "标题": 3
+  },
+  "agent/src/lib/pdf_normalize.ts": {
+    "范围": 1
+  },
+  "agent/src/lib/pdf_segments.ts": {
+    "标题": 7
+  },
+  "agent/src/lib/problem_consent.ts": {
+    "决定": 2,
+    "在用": 1,
+    "已解决": 10,
+    "未解决": 3,
+    "状态": 7,
+    "用户决定保留": 2,
+    "问题": 13
+  },
+  "agent/src/lib/publish_version.ts": {
+    "状态": 1,
+    "问题": 2
+  },
+  "agent/src/lib/rejection_limit.ts": {
+    "状态": 2
+  },
+  "agent/src/lib/renumber_task.ts": {
+    "目标": 1,
+    "约束": 1
+  },
+  "agent/src/lib/reply.ts": {
+    "关联条目": 1,
+    "决定": 1,
+    "流程": 2,
+    "状态": 1,
+    "种类": 5,
+    "问题": 2
+  },
+  "agent/src/lib/review.ts": {
+    "业务说明": 4,
+    "决定": 1,
+    "别名": 2,
+    "在用": 2,
+    "标签": 2,
+    "标题": 2,
+    "状态": 1,
+    "用户决定保留": 1,
+    "类别": 1,
+    "范围": 1,
+    "问题": 14
+  },
+  "agent/src/lib/review_run.ts": {
+    "流程": 1,
+    "范围": 1,
+    "问题": 3
+  },
+  "agent/src/lib/review_state.ts": {
+    "状态": 2
+  },
+  "agent/src/lib/review_ui.ts": {
+    "状态": 1,
+    "问题": 1
+  },
+  "agent/src/lib/review_verdict.ts": {
+    "状态": 1
+  },
+  "agent/src/lib/save_diagram.ts": {
+    "种类": 10,
+    "问题": 2
+  },
+  "agent/src/lib/save_revision.ts": {
+    "不阻断": 1,
+    "业务说明": 8,
+    "何时回看": 2,
+    "例子": 1,
+    "决定": 4,
+    "在用": 5,
+    "处理结果": 1,
+    "导语所属章": 2,
+    "已废弃": 3,
+    "已解决": 5,
+    "改看": 3,
+    "是否阻断下游": 2,
+    "标签": 1,
+    "状态": 11,
+    "用户决定保留": 4,
+    "种类": 19,
+    "范围": 1,
+    "落实到": 2,
+    "问题": 13,
+    "阻断下游": 2
+  },
+  "agent/src/lib/schema.ts": {
+    "业务说明": 4,
+    "别名": 1,
+    "功能用例": 1,
+    "在用": 1,
+    "标签": 1,
+    "标题": 1,
+    "流程": 10,
+    "状态": 2,
+    "种类": 12,
+    "范围": 2,
+    "软件需求规格说明": 2,
+    "问题": 5,
+    "需求工程": 2
+  },
+  "agent/src/lib/segments.ts": {
+    "标题": 14,
+    "状态": 3,
+    "种类": 2,
+    "范围": 1
+  },
+  "agent/src/lib/shared_texts.gen.ts": {
+    "业务说明": 8,
+    "例子": 5,
+    "决定": 2,
+    "已废弃": 1,
+    "已经定下的": 2,
+    "改看": 2,
+    "标签": 4,
+    "流程": 11,
+    "状态": 1,
+    "范围": 3,
+    "问题": 3
+  },
+  "agent/src/lib/source_carry.ts": {
+    "种类": 1,
+    "范围": 2
+  },
+  "agent/src/lib/stage.ts": {
+    "上级主题": 4,
+    "不阻断": 1,
+    "业务说明": 17,
+    "关联条目": 1,
+    "决定": 11,
+    "别名": 3,
+    "功能用例": 2,
+    "在用": 2,
+    "场景": 2,
+    "它是什么": 6,
+    "导语所属章": 3,
+    "已废弃": 1,
+    "已经定下的": 6,
+    "建议的处理": 1,
+    "待澄清": 8,
+    "改看": 1,
+    "是否阻断下游": 5,
+    "未解决": 6,
+    "标签": 30,
+    "标题": 3,
+    "概念": 7,
+    "流程": 48,
+    "状态": 29,
+    "用户决定保留": 2,
+    "目标": 5,
+    "种类": 11,
+    "约束": 1,
+    "范围": 4,
+    "角色": 3,
+    "问题": 36,
+    "阻断下游": 10,
+    "非功能需求": 1
+  },
+  "agent/src/lib/stage_prompt.ts": {
+    "业务说明": 1,
+    "标题": 10,
+    "流程": 24,
+    "范围": 7
+  },
+  "agent/src/lib/stage_proposal.ts": {
+    "业务说明": 2,
+    "决定": 5,
+    "是否阻断下游": 1,
+    "状态": 2,
+    "种类": 3,
+    "问题": 2,
+    "阻断下游": 1
+  },
+  "agent/src/lib/stage_read.ts": {
+    "业务说明": 4,
+    "事项": 1,
+    "决定": 6,
+    "流程": 52,
+    "状态": 2,
+    "目标": 2,
+    "范围": 8,
+    "问题": 4
+  },
+  "agent/src/lib/structured_outputs.ts": {
+    "问题": 8
+  },
+  "agent/src/lib/task_query.ts": {
+    "业务说明": 2,
+    "决定": 1,
+    "已废弃": 1,
+    "未解决": 3,
+    "标签": 1,
+    "标题": 1,
+    "状态": 9,
+    "种类": 2,
+    "问题": 2
+  },
+  "agent/src/lib/task_read.ts": {
+    "种类": 3
+  },
+  "agent/src/lib/task_status.ts": {
+    "决定": 1,
+    "未解决": 6,
+    "标签": 1,
+    "状态": 5,
+    "种类": 3,
+    "问题": 2
+  },
+  "agent/src/lib/texts_core.ts": {
+    "标题": 8,
+    "类别": 1
+  },
+  "agent/src/lib/tool_limits.ts": {
+    "状态": 2
+  },
+  "agent/src/lib/tool_rejection.ts": {
+    "种类": 1,
+    "问题": 2
+  },
+  "agent/src/lib/tool_render.ts": {
+    "标题": 11,
+    "种类": 1
+  },
+  "agent/src/lib/user_diagram.ts": {
+    "种类": 3
+  },
+  "agent/src/lib/user_ops.ts": {
+    "流程": 15,
+    "状态": 7,
+    "目标": 8,
+    "种类": 3,
+    "范围": 6,
+    "问题": 1
+  },
+  "agent/src/lib/user_stage.ts": {
+    "决定": 1,
+    "种类": 1
+  },
+  "agent/src/lib/versions.ts": {
+    "决定": 1,
+    "状态": 1
+  },
+  "agent/src/tools/get_item.ts": {
+    "状态": 1,
+    "问题": 1
+  },
+  "agent/src/tools/get_task_status.ts": {
+    "未解决": 1,
+    "状态": 2,
+    "问题": 1
+  },
+  "agent/src/tools/request_review.ts": {
+    "在用": 1,
+    "问题": 1
+  },
+  "agent/src/tools/save_diagram.ts": {
+    "在用": 1,
+    "种类": 1
+  },
+  "agent/src/tools/save_revision.ts": {
+    "角色": 1
+  }
+}
