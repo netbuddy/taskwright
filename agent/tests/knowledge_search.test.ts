@@ -183,7 +183,7 @@ test("排版的几处细节：没有标题的片段不写标题；只占一行�
   // 两路的名次。
   const how = (hit: Dict, keywordOnly = false) => lines(hit, keywordOnly)[2].split(" · ").at(-1);
   assert.equal(how({ ...MD_HIT, rank_semantic: 3, rank_keyword: null }), "按意思排第 3，按字面没有命中");
-  assert.equal(how({ ...MD_HIT, rank_semantic: null, rank_keyword: 1, score_kind: "keyword" }), "按字面排第 1，按意思没有比（这份文档还没有换算好）");
+  assert.equal(how({ ...MD_HIT, rank_semantic: null, rank_keyword: 1, score_kind: "keyword" }), "按字面排第 1，按意思没有比（这份文档还没有向量化）");
   assert.equal(how({ ...MD_HIT, rank_semantic: null, rank_keyword: 2, score_kind: "keyword" }, true), "按字面排第 2");
   // 表头行里没有段落号、表格里有空格。
   const odd = lines({ ...WORD_HIT, table: [["", [78, 79]]], header: { first_paragraph: null, last_paragraph: null, cells: ["（同左）"], paragraphs: [] } });
@@ -239,11 +239,11 @@ test("开头的一句写明这一次是怎样找的：两路都做；只按字�
     assert.ok(REASON_TEXT[reason].length > 4);
   }
   assert.ok(open({ mode: "keyword", reason: "没见过的原因" }).endsWith("只按字面找（按意思那一路没有做成）。"));
-  // 有的文档还没有换算好：写明对它只按字面找了；多于 5 份时只写前 5 份与一共几份。
+  // 有的文档还没有向量化：写明对它只按字面找了；多于 5 份时只写前 5 份与一共几份。
   const doc = (name: string) => ({ library: "general", library_name: "通用知识库", name });
-  assert.ok(open({ mode: "hybrid_partial", uncovered_semantic: [doc("甲.md")] }).endsWith("按意思与按字面两路找。《甲.md》还没有换算好，这一次对它只按字面找了。"));
+  assert.ok(open({ mode: "hybrid_partial", uncovered_semantic: [doc("甲.md")] }).endsWith("按意思与按字面两路找。《甲.md》还没有向量化，这一次对它只按字面找了。"));
   assert.ok(open({ mode: "hybrid_partial", uncovered_semantic: ["一", "二", "三", "四", "五", "六", "七"].map((n) => doc(`${n}.md`)) })
-    .endsWith("《一.md》《二.md》《三.md》《四.md》《五.md》等 7 份文档还没有换算好，这一次对它们只按字面找了。"));
+    .endsWith("《一.md》《二.md》《三.md》《四.md》《五.md》等 7 份文档还没有向量化，这一次对它们只按字面找了。"));
   // 文档读不出来：写明没有查到它，并且不把局部的结果说成全部。
   assert.ok(open({ uncovered: [{ ...doc("乙.txt"), reason: "source_unreadable" }] }).endsWith("《乙.txt》这一次没有查到，因为它的文件读不出来；没有找到不等于知识库里没有。"));
 
@@ -255,10 +255,10 @@ test("开头的一句写明这一次是怎样找的：两路都做；只按字�
   assert.equal(NOT_FOUND_TEXT, "没有找到相关的片段。换一种说法再查一次；换了说法仍然没有，才算知识库里没有。");
   assert.deepEqual(none.details, { ok: true, ready: false, query: "罚款", limit: 3, model: null, pending: 2, mode: "keyword", reason: "not_selected", uncovered_semantic: [], uncovered: [], candidates: CANDIDATES, hits: [],
     shown: 0, bytes: Buffer.byteLength(none.text, "utf-8"), truncated_chars: null });
-  // 文档没有都换算好不再是「不能查」：照样把结果给助手，开头写明哪一份只按字面找了。
+  // 文档没有都向量化不再是「不能查」：照样把结果给助手，开头写明哪一份只按字面找了。
   reply = () => found([MD_HIT], { mode: "hybrid_partial", ready: false, pending: 1, uncovered_semantic: [doc("需求说明.docx")] });
   const partial = await searchKnowledge(makeTask(), root, { query: "罚款" });
-  assert.ok(partial.text.startsWith("查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找。《需求说明.docx》还没有换算好，这一次对它只按字面找了。下面是最相关的 1 个片段。"));
+  assert.ok(partial.text.startsWith("查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找。《需求说明.docx》还没有向量化，这一次对它只按字面找了。下面是最相关的 1 个片段。"));
   assert.equal((partial.details.hits as unknown[]).length, 1);
 });
 
@@ -341,7 +341,8 @@ test("参数写错时抛异常：要找的话是空的，要几个不是 1 到 5
 
 test("给助手的每一句话都不请它改用 grep 去翻知识库，也不用写给开发者看的词；返回末尾写查到的片段就是逐字的原文", () => {
   const texts = [NO_KNOWLEDGE_TEXT, NO_DOCUMENTS_TEXT, NOT_FOUND_TEXT, CANCELLED_TEXT, UNREACHABLE_TEXT, CLOSING_TEXT, failedText("到时间没有回答"), ...Object.values(REASON_TEXT)];
-  for (const text of texts) assert.doesNotMatch(text, /grep|find|检索|向量|进程|项目/, text);
+  // 「向量化」除外：它是界面上给用户看的正式说法（知识库页面的列名与按钮），助手转述时要与界面一致。
+  for (const text of texts) assert.doesNotMatch(text, /grep|find|检索|向量(?!化)|进程|项目/, text);
   assert.equal(CLOSING_TEXT, "查到的片段就是逐字的原文：摘录从片段逐字抄，出处照片段给的写法写；不必再读知识库文件核对，保存时系统会逐字核对，对不上会退回并说明原因。");
 });
 
@@ -358,7 +359,7 @@ test("工具的说明：什么时候查、一次查一件事、不用写 limit�
     "查到的片段就是逐字的原文，摘录从片段逐字抄，不必再读知识库文件核对。",
     "不要用 grep 去翻知识库，命中太多也拿不全。",
   ]) assert.ok(description.includes(words), words);
-  // 不写「最多 5 个」（写了模型就照着写 5），不再提读原文核对、换算好之前不能查、别的工具不能用。
+  // 不写「最多 5 个」（写了模型就照着写 5），不再提读原文核对、向量化好之前不能查、别的工具不能用。
   assert.doesNotMatch(description, /最多|用 read|还不能查|不能用 grep|也不能用 ls|检索|向量/);
   assert.doesNotMatch(templates().get("search_knowledge.param.limit")!.body, /最多/);
 });

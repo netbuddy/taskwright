@@ -30,10 +30,10 @@ export const embeddingPolling = { intervalMs: 2000 };
 
 /** 一份文档的换算状态给人看的写法。换算中带「算完了几个片段 / 一共几个」；没有文字的文档不用换算。 */
 export function embeddingStatusText(e: DocumentEmbedding): string {
-  if (e.status === "queued") return "等待换算";
-  if (e.status === "running") return e.total === null ? "换算中" : `换算中（${e.done ?? 0} / ${e.total}）`;
-  if (e.status === "done") return e.total === 0 ? "没有文字，不用换算" : "已换算";
-  return e.status === "failed" ? "换算失败" : "未换算";
+  if (e.status === "queued") return "等待向量化";
+  if (e.status === "running") return e.total === null ? "向量化中" : `向量化中（${e.done ?? 0} / ${e.total}）`;
+  if (e.status === "done") return e.total === 0 ? "没有文字，不用向量化" : "已向量化";
+  return e.status === "failed" ? "向量化失败" : "未向量化";
 }
 
 /** 嵌入模型「服务名/型号」里给人看的那一半：型号。 */

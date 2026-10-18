@@ -1,8 +1,8 @@
 // 知识库页面（#/knowledge，带库编号时选中那个库）：左边是库的清单（新建、改名、删除），右边是选中的库里的文档表格与上传框。
 // 通用知识库每个任务都会用到，不能改名、不能删除。文档没有版本：一份文档改了，就当作一份新文件上传。
 // 上传前先选「这是什么资料」（五种种类，只是标签）；类型与大小按服务信息里知识库那一项先查，不符的不发请求。
-// 文档要换算成数字串之后才能按意思查找：文档表格里每份文档有换算状态，表格上面一行是这个知识库「已换算几份 / 一共几份」与进度条；
-// 选了嵌入模型而且有没换算的文档时给「开始换算」，换算失败的文档给「重试」。有文档在等待换算或者换算中时，隔两秒再取一次清单。
+// 文档要向量化成数字串之后才能按意思查找：文档表格里每份文档有向量化状态，表格上面一行是这个知识库「已向量化几份 / 一共几份」与进度条；
+// 选了嵌入模型而且有没向量化的文档时给「开始向量化」，向量化失败的文档给「重试」。有文档在等待向量化或者向量化中时，隔两秒再取一次清单。
 // 文档表格下面是「试一试按意思查找」（components/KnowledgeSearchBox.tsx），只查选中的这一个知识库。
 
 import { Fragment, useEffect, useState } from "react";
@@ -100,16 +100,16 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
     }
   };
 
-  /** 开始换算：不给文档名是这个知识库里还没有换算好的全部，给了是那一份（换算失败之后重试）。 */
+  /** 开始向量化：不给文档名是这个知识库里还没有向量化的全部，给了是那一份（向量化失败之后重试）。 */
   const embed = async (library: string, name?: string) => {
     try {
       await api.embedKnowledge(name === undefined ? { library } : { library, name });
       void load();
     } catch (e) {
-      fail(e, "没能开始换算。");
+      fail(e, "没能开始向量化。");
     }
   };
-  /** 「开始换算」在什么时候给：选了嵌入模型，这个知识库里有没换算好的文档，而且没有文档正在算或者等着算。 */
+  /** 「开始向量化」在什么时候给：选了嵌入模型，这个知识库里有没向量化好的文档，而且没有文档正在算或者等着算。 */
   const canStart = (lib: EmbeddedLibrary) => embedding.model !== null && lib.embedding.done < lib.embedding.total && !embeddingBusy(lib);
 
   const typesText = service.info?.knowledge_upload?.types_text;
@@ -181,16 +181,16 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
             {current.documents.length > 0 && (
               <div className="kbembed" data-testid="kb-embedding">
                 {embedding.model === null ? (
-                  <span>还没有选嵌入模型，这些文档没有换算：助手查知识库只按字面找，用词不同的找不到。<a href={href.settings()}>去设置里选</a></span>
+                  <span>还没有选嵌入模型，这些文档没有向量化：助手查知识库只按字面找，用词不同的找不到。<a href={href.settings()}>去设置里选</a></span>
                 ) : (
                   <>
-                    <span className="en" data-testid="kb-embedding-count">已换算 {current.embedding.done} / {current.embedding.total}</span>
+                    <span className="en" data-testid="kb-embedding-count">已向量化 {current.embedding.done} / {current.embedding.total}</span>
                     <span className="kbbar" role="progressbar" aria-valuemin={0} aria-valuemax={current.embedding.total} aria-valuenow={current.embedding.done}>
                       <span style={{ width: `${(current.embedding.done / current.embedding.total) * 100}%` }} />
                     </span>
                     <span className="em">嵌入模型：{embeddingModelName(embedding.model)}</span>
-                    {canStart(current) && <Button size="small" onClick={() => void embed(current.id)} data-testid="kb-embed-start">开始换算</Button>}
-                    {embedding.stopped_reason && <span className="es" data-testid="kb-embedding-stopped">换算停下了：{embedding.stopped_reason}</span>}
+                    {canStart(current) && <Button size="small" onClick={() => void embed(current.id)} data-testid="kb-embed-start">开始向量化</Button>}
+                    {embedding.stopped_reason && <span className="es" data-testid="kb-embedding-stopped">向量化停下了：{embedding.stopped_reason}</span>}
                   </>
                 )}
               </div>
@@ -199,10 +199,10 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
               ? <Empty description="这个知识库里还没有文档。" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               : (
                 <table className="kbtable" data-testid="kb-documents">
-                  <thead><tr><th>文档名</th><th>种类</th><th>大小</th><th>上传时间</th><th>换算</th><th>操作</th></tr></thead>
+                  <thead><tr><th>文档名</th><th>种类</th><th>大小</th><th>上传时间</th><th>向量化</th><th>操作</th></tr></thead>
                   <tbody>
                     {current.documents.map((d) => {
-                      // 换算失败的原因可能很长：写在这份文档下面单独的一行里，横跨整张表，不把「换算」那一列撑宽。
+                      // 向量化失败的原因可能很长：写在这份文档下面单独的一行里，横跨整张表，不把「向量化」那一列撑宽。
                       const failed = d.embedding.status === "failed";
                       return (
                         <Fragment key={d.name}>

@@ -1,8 +1,8 @@
 // 知识库页面：知识库的清单与选中的知识库的文档表格；通用知识库不能改名、不能删除；新建与改名；删除知识库、删除文档先确认；
 // 上传时带上先选好的种类；类型不符或超过 20 MB 不发请求；左侧栏在服务有知识库时有「知识库」入口。
-// 文档的换算：每份文档的换算状态、这个知识库「已换算几份 / 一共几份」与进度条、「开始换算」与「重试」、停下的原因、
-// 没有选嵌入模型时的提示；有文档在等待换算或者换算中时隔一会儿自动再取一次清单。
-// 试一试按意思查找：只查选中的这一个知识库；文档没有都换算好或者没有选嵌入模型时不能查；查到的片段怎样列。
+// 文档的向量化：每份文档的向量化状态、这个知识库「已向量化几份 / 一共几份」与进度条、「开始向量化」与「重试」、停下的原因、
+// 没有选嵌入模型时的提示；有文档在等待向量化或者向量化中时隔一会儿自动再取一次清单。
+// 试一试按意思查找：只查选中的这一个知识库；文档没有都向量化或者没有选嵌入模型时不能查；查到的片段怎样列。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -25,7 +25,7 @@ const info: ServiceInfo = {
     kinds: [{ kind: "standard", name: "规范" }, { kind: "glossary", name: "术语表" }, { kind: "template", name: "模板" }, { kind: "past_work", name: "以往的成果" }, { kind: "other", name: "其他" }] },
 };
 const MODEL = "taskwright-ollama-embedding/bge-m3";
-/** 一份文档的换算状态：只写与「未换算」不同的项。 */
+/** 一份文档的向量化状态：只写与「未向量化」不同的项。 */
 const state = (given: Partial<DocumentEmbedding> = {}): DocumentEmbedding => ({ status: "none", model: null, error: null, done: null, total: null, ...given });
 const NONE: KnowledgeEmbedding = { model: null, running: false, ready: false, pending: 1, total: 1, stopped_reason: null };
 const LIBS: EmbeddedLibrary[] = [
@@ -34,7 +34,7 @@ const LIBS: EmbeddedLibrary[] = [
   { id: "lib-hy", name: "行业规范", created_at: "", used_by_tasks: 2, embedding: { done: 0, total: 0 }, documents: [] },
 ];
 
-/** 通用知识库里放这几份文档的清单；done 是其中换算好了几份。 */
+/** 通用知识库里放这几份文档的清单；done 是其中向量化完成几份。 */
 function overviewOf(documents: [string, DocumentEmbedding][], embedding: Partial<KnowledgeEmbedding> = {}): KnowledgeOverview {
   const done = documents.filter(([, e]) => e.status === "done").length;
   return {
@@ -164,23 +164,23 @@ describe("知识库页面", () => {
     expect(screen.getByTestId("nav-tasks").className).not.toContain("on");
   });
 
-  it("没有选嵌入模型：表格上面写明这些文档没有换算、助手查知识库只按字面找，给去设置的链接；文档都是「未换算」；没有「开始换算」", async () => {
+  it("没有选嵌入模型：表格上面写明这些文档没有向量化、助手查知识库只按字面找，给去设置的链接；文档都是「未向量化」；没有「开始向量化」", async () => {
     page();
     const line = await screen.findByTestId("kb-embedding");
-    expect(line.textContent).toBe("还没有选嵌入模型，这些文档没有换算：助手查知识库只按字面找，用词不同的找不到。去设置里选");
+    expect(line.textContent).toBe("还没有选嵌入模型，这些文档没有向量化：助手查知识库只按字面找，用词不同的找不到。去设置里选");
     expect(within(line).getByText("去设置里选").getAttribute("href")).toBe("#/settings/models");
-    expect(screen.getByTestId("kb-doc-embedding-公司术语表.md").textContent).toBe("未换算");
+    expect(screen.getByTestId("kb-doc-embedding-公司术语表.md").textContent).toBe("未向量化");
     expect(screen.queryByTestId("kb-embed-start")).toBeNull();
-    expect([...within(screen.getByTestId("kb-documents")).getAllByRole("columnheader")].map((c) => c.textContent)).toEqual(["文档名", "种类", "大小", "上传时间", "换算", "操作"]);
+    expect([...within(screen.getByTestId("kb-documents")).getAllByRole("columnheader")].map((c) => c.textContent)).toEqual(["文档名", "种类", "大小", "上传时间", "向量化", "操作"]);
   });
 
-  it("没有文档的知识库不写换算的那一行", async () => {
+  it("没有文档的知识库不写向量化的那一行", async () => {
     page("lib-hy");
     await screen.findByTestId("kb-pane");
     expect(screen.queryByTestId("kb-embedding")).toBeNull();
   });
 
-  it("选了嵌入模型：写「已换算 N / M」、进度条与嵌入模型的型号；文档各写各的状态，换算失败的带原因；「开始换算」只换算这个知识库，之后重新取清单", async () => {
+  it("选了嵌入模型：写「已向量化 N / M」、进度条与嵌入模型的型号；文档各写各的状态，向量化失败的带原因；「开始向量化」只向量化这个知识库，之后重新取清单", async () => {
     const calls = page(null, overviewOf([
       ["规则.md", state({ status: "done", model: MODEL, done: 5, total: 5 })],
       ["长文.txt", state({ status: "failed", model: MODEL, error: "模型服务回答了错误（HTTP 500）：the input length exceeds the context length" })],
@@ -188,18 +188,18 @@ describe("知识库页面", () => {
       ["空白.txt", state({ status: "done", model: MODEL, done: 0, total: 0 })],
     ]));
     const line = await screen.findByTestId("kb-embedding");
-    expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已换算 2 / 4");
+    expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已向量化 2 / 4");
     const bar = within(line).getByRole("progressbar");
     expect([bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax"), (bar.firstElementChild as HTMLElement).style.width]).toEqual(["2", "4", "50%"]);
-    expect(line.textContent).toBe("已换算 2 / 4嵌入模型：bge-m3开始换算");
-    expect(screen.getByTestId("kb-doc-embedding-规则.md").textContent).toBe("已换算");
-    expect(screen.getByTestId("kb-doc-embedding-长文.txt").textContent).toBe("换算失败重试");
+    expect(line.textContent).toBe("已向量化 2 / 4嵌入模型：bge-m3开始向量化");
+    expect(screen.getByTestId("kb-doc-embedding-规则.md").textContent).toBe("已向量化");
+    expect(screen.getByTestId("kb-doc-embedding-长文.txt").textContent).toBe("向量化失败重试");
     // 原因写在这份文档下面单独的一行里，横跨整张表的六列。
     const why = screen.getByTestId("kb-doc-embedding-error-长文.txt");
     expect([why.textContent, why.getAttribute("colspan")]).toEqual(["模型服务回答了错误（HTTP 500）：the input length exceeds the context length", "6"]);
     expect(screen.queryByTestId("kb-doc-embedding-error-规则.md")).toBeNull();
-    expect(screen.getByTestId("kb-doc-embedding-说明.txt").textContent).toBe("未换算");
-    expect(screen.getByTestId("kb-doc-embedding-空白.txt").textContent).toBe("没有文字，不用换算");
+    expect(screen.getByTestId("kb-doc-embedding-说明.txt").textContent).toBe("未向量化");
+    expect(screen.getByTestId("kb-doc-embedding-空白.txt").textContent).toBe("没有文字，不用向量化");
     expect(screen.queryByTestId("kb-embedding-stopped")).toBeNull();
 
     fireEvent.click(screen.getByTestId("kb-embed-start"));
@@ -207,22 +207,22 @@ describe("知识库页面", () => {
     await waitFor(() => expect(calls.overview).toHaveBeenCalledTimes(2));
   });
 
-  it("换算失败的文档：「重试」只换算这一份", async () => {
+  it("向量化失败的文档：「重试」只向量化这一份", async () => {
     const calls = page(null, overviewOf([["长文.txt", state({ status: "failed", model: MODEL, error: "模型服务回答的数字串全是 0，没法用。" })]]));
     fireEvent.click(within(await screen.findByTestId("kb-doc-embedding-长文.txt")).getByText("重试"));
     await waitFor(() => expect(calls.embed).toHaveBeenCalledWith({ library: "general", name: "长文.txt" }));
   });
 
-  it("换算中：文档写「换算中（算完几个 / 一共几个）」与「等待换算」，没有「开始换算」；隔一会儿自动再取清单，都换算好了就不再取", async () => {
+  it("向量化中：文档写「向量化中（算完几个 / 一共几个）」与「等待向量化」，没有「开始向量化」；隔一会儿自动再取清单，都向量化完成就不再取", async () => {
     embeddingPolling.intervalMs = 20;
     const during = overviewOf([["长文.txt", state({ status: "running", model: MODEL, done: 32, total: 40 })], ["规则.md", state({ status: "queued" })]], { running: true });
     const after = overviewOf([["长文.txt", state({ status: "done", model: MODEL, done: 40, total: 40 })], ["规则.md", state({ status: "done", model: MODEL, done: 5, total: 5 })]]);
     const calls = page(null, [during, during, after]);
-    expect((await screen.findByTestId("kb-doc-embedding-长文.txt")).textContent).toBe("换算中（32 / 40）");
-    expect(screen.getByTestId("kb-doc-embedding-规则.md").textContent).toBe("等待换算");
-    expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已换算 0 / 2");
+    expect((await screen.findByTestId("kb-doc-embedding-长文.txt")).textContent).toBe("向量化中（32 / 40）");
+    expect(screen.getByTestId("kb-doc-embedding-规则.md").textContent).toBe("等待向量化");
+    expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已向量化 0 / 2");
     expect(screen.queryByTestId("kb-embed-start")).toBeNull();
-    await waitFor(() => expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已换算 2 / 2"));
+    await waitFor(() => expect(screen.getByTestId("kb-embedding-count").textContent).toBe("已向量化 2 / 2"));
     expect(screen.queryByTestId("kb-embed-start")).toBeNull();
     // 算完的那次回答到了之后，定时器要等页面渲染完、清理执行了才停，机器忙时这之间可能多响一次，所以不断言「恰好 3 次」：
     // 先等一段时间让清理做完，再确认次数不再增加。
@@ -233,30 +233,30 @@ describe("知识库页面", () => {
     expect(calls.overview).toHaveBeenCalledTimes(settled);
   });
 
-  it("还没有切好片段时只写「换算中」；自动取的那一次没取到时页面照旧，不换成报错", async () => {
+  it("还没有切好片段时只写「向量化中」；自动取的那一次没取到时页面照旧，不换成报错", async () => {
     embeddingPolling.intervalMs = 20;
     const during = overviewOf([["长文.txt", state({ status: "running", model: MODEL, done: 0, total: null })]], { running: true });
     const calls = page(null, during);
-    expect((await screen.findByTestId("kb-doc-embedding-长文.txt")).textContent).toBe("换算中");
+    expect((await screen.findByTestId("kb-doc-embedding-长文.txt")).textContent).toBe("向量化中");
     calls.overview.mockRejectedValue(new Error("网络断了"));
     await waitFor(() => expect(calls.overview.mock.calls.length).toBeGreaterThanOrEqual(3));
-    expect(screen.getByTestId("kb-doc-embedding-长文.txt").textContent).toBe("换算中");
+    expect(screen.getByTestId("kb-doc-embedding-长文.txt").textContent).toBe("向量化中");
   });
 
-  it("整个换算停下了：写明停下的原因，「开始换算」还在", async () => {
+  it("整个向量化停下了：写明停下的原因，「开始向量化」还在", async () => {
     page(null, overviewOf([["规则.md", state()]], { stopped_reason: "连不上这个模型服务。请确认它已经启动，地址与端口没有写错。" }));
-    expect((await screen.findByTestId("kb-embedding-stopped")).textContent).toBe("换算停下了：连不上这个模型服务。请确认它已经启动，地址与端口没有写错。");
+    expect((await screen.findByTestId("kb-embedding-stopped")).textContent).toBe("向量化停下了：连不上这个模型服务。请确认它已经启动，地址与端口没有写错。");
     expect(screen.getByTestId("kb-embed-start")).toBeTruthy();
   });
 
-  it("开始换算没有做成：给出后端的那句话", async () => {
+  it("开始向量化没有做成：给出后端的那句话", async () => {
     const calls = page(null, overviewOf([["规则.md", state()]]));
     calls.embed.mockRejectedValue(new ApiError("rejected", "还没有选嵌入模型。", 422));
     fireEvent.click(await screen.findByTestId("kb-embed-start"));
     expect(await screen.findByText("还没有选嵌入模型。")).toBeTruthy();
   });
 
-  it("试一试按意思查找：这个知识库换算好了就能查，只查这一个知识库；空着不发请求；查到的片段写相近程度、文档名、标题、位置与正文", async () => {
+  it("试一试按意思查找：这个知识库向量化完成就能查，只查这一个知识库；空着不发请求；查到的片段写相近程度、文档名、标题、位置与正文", async () => {
     const calls = page(null, EMBEDDED());
     const box = await screen.findByTestId("kb-search");
     expect(within(box).getByText("试一试按意思查找")).toBeTruthy();
@@ -285,7 +285,7 @@ describe("知识库页面", () => {
     await waitFor(() => expect(calls.search).toHaveBeenLastCalledWith("预约", ["general"]));
   });
 
-  it("试一试按意思查找不能用的时候：没有选嵌入模型，或者这个知识库里的文档没有都换算好，输入框是灰的并写明原因；没有文档的知识库没有这一块", async () => {
+  it("试一试按意思查找不能用的时候：没有选嵌入模型，或者这个知识库里的文档没有都向量化，输入框是灰的并写明原因；没有文档的知识库没有这一块", async () => {
     page();
     expect(((await screen.findByTestId("kb-search-input")) as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByTestId("kb-search-hint").textContent).toBe("还没有选嵌入模型，不能按意思查找。");
@@ -293,7 +293,7 @@ describe("知识库页面", () => {
     vi.restoreAllMocks();
     page(null, overviewOf([["借阅规范.md", state({ status: "done", model: MODEL, done: 12, total: 12 })], ["说明.txt", state()]]));
     expect(((await screen.findByTestId("kb-search-input")) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByTestId("kb-search-hint").textContent).toBe("这个知识库里的文档都换算好之后，才能按意思查找。");
+    expect(screen.getByTestId("kb-search-hint").textContent).toBe("这个知识库里的文档都向量化之后，才能按意思查找。");
     expect((screen.getByTestId("kb-search-button") as HTMLButtonElement).disabled).toBe(true);
     cleanup();
     vi.restoreAllMocks();
@@ -302,7 +302,7 @@ describe("知识库页面", () => {
     expect(screen.queryByTestId("kb-search")).toBeNull();
   });
 
-  it("试一试按意思查找没有结果的几种：后端说还有文档没换算好、文档没有可比较的文字，各写一句；这一次没有查成时给出后端的那句话", async () => {
+  it("试一试按意思查找没有结果的几种：后端说还有文档没有向量化、文档没有可比较的文字，各写一句；这一次没有查成时给出后端的那句话", async () => {
     const calls = page(null, EMBEDDED());
     const ask = async (text: string) => {
       fireEvent.change(await screen.findByTestId("kb-search-input"), { target: { value: text } });
@@ -310,7 +310,7 @@ describe("知识库页面", () => {
     };
     calls.search.mockResolvedValue({ ...FOUND, ready: false, pending: 2, chunks: 0, hits: [] });
     await ask("罚款");
-    expect((await screen.findByTestId("kb-search-result")).textContent).toBe("这个知识库里还有 2 份文档没有换算好，换算完成后才能按意思查找。");
+    expect((await screen.findByTestId("kb-search-result")).textContent).toBe("这个知识库里还有 2 份文档没有向量化，向量化完成后才能按意思查找。");
     calls.search.mockResolvedValue({ ...FOUND, chunks: 0, hits: [] });
     await ask("预约");
     await waitFor(() => expect(screen.getByTestId("kb-search-result").textContent).toBe("这个知识库里的文档没有可比较的文字。"));

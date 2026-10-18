@@ -1,5 +1,5 @@
 /**
- * 调嵌入模型：把若干段文字各换算成一串数字（数字串的长度由模型定）。知识库按意思查找、文档换算都建在这一个函数上。
+ * 调嵌入模型：把若干段文字各向量化成一串数字（数字串的长度由模型定）。知识库按意思查找、文档向量化都建在这一个函数上。
  *
  * 用途分两种。查询（query）：送去的文字是设置里的查询前缀直接接上原文，中间不添任何字符。指令感知的嵌入模型要在查询前面加一句
  * 任务说明，这句话以什么结尾（换行、冒号）由用户在前缀里自己写全。文档（document）：原样送去，不加前缀。
@@ -33,7 +33,7 @@ export const NOT_SELECTED_TEXT = "还没有选嵌入模型。";
 export const NOT_OFFERED_TEXT = "这个模型服务没有嵌入模型。";
 export const UNREACHABLE_TEXT = "连不上这个模型服务。请确认它已经启动，地址与端口没有写错。";
 export const KEY_REJECTED_TEXT = "模型服务拒绝了这个密钥。";
-export const CANCELLED_TEXT = "这一次换算中途取消了。";
+export const CANCELLED_TEXT = "这一次向量化中途取消了。";
 
 /**
  * 没有做成的几种：not_selected 没有选嵌入模型；provider_gone 选定的模型所在的模型服务不在了；not_offered 这种模型服务没有嵌入模型；
@@ -66,7 +66,7 @@ export interface Embedded {
 export interface EmbedOptions {
   /** 最多等多久；不给时是 EMBED_TIMEOUT_MS。 */
   timeoutMs?: number;
-  /** 给了时，它一中止，这一次请求就放下，抛种类为 cancelled 的 EmbeddingError（后台换算在服务停止、文档被删除时用）。 */
+  /** 给了时，它一中止，这一次请求就放下，抛种类为 cancelled 的 EmbeddingError（后台向量化在服务停止、文档被删除时用）。 */
   signal?: AbortSignal;
 }
 
@@ -96,7 +96,7 @@ function isVector(value: unknown): value is number[] {
 }
 
 /**
- * 用选定的嵌入模型把 texts 各换算成一串数字。purpose 是 query 时每段前面加上设置里的查询前缀，是 document 时原样送去。
+ * 用选定的嵌入模型把 texts 各向量化成一串数字。purpose 是 query 时每段前面加上设置里的查询前缀，是 document 时原样送去。
  * texts 至少要有一段。
  */
 export async function embed(ctx: Context, texts: string[], purpose: Purpose, options: EmbedOptions = {}): Promise<Embedded> {
@@ -107,7 +107,7 @@ export async function embed(ctx: Context, texts: string[], purpose: Purpose, opt
   if (target.kind === "codex" || target.url === null) throw new EmbeddingError("not_offered", NOT_OFFERED_TEXT);
   const kind = target.kind;
   const limit = BATCH_LIMIT[kind];
-  if (texts.length > limit) throw new EmbeddingError("too_many", `一次最多换算 ${limit} 段文字，这一次送来了 ${texts.length} 段。`);
+  if (texts.length > limit) throw new EmbeddingError("too_many", `一次最多向量化 ${limit} 段文字，这一次送来了 ${texts.length} 段。`);
   const inputs = purpose === "query" ? texts.map((text) => target.query_prefix + text) : [...texts];
   const timeoutMs = options.timeoutMs ?? EMBED_TIMEOUT_MS;
 
