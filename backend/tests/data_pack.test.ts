@@ -16,7 +16,7 @@ import { MANIFEST_NAME, PACK_FORMAT, PACK_LIBRARIES, PACK_REGISTER, PackError, R
 import { KnowledgeStore } from "../src/knowledge.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { DATA_FORMAT } from "../src/service_db.ts";
-import { ROOT, captureConsole, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, keepGeneral, tempDir } from "./helpers.ts";
 import { dataWith, facts, locations, put, putArchive, readPack, sha256 } from "./pack_stack.ts";
 
 captureConsole();
@@ -44,6 +44,7 @@ async function sampleData() {
   put(join(where.tasksDir, a, "inputs", "售后退款 业务说明.md"), "退款须在七天内处理完毕。\n".repeat(40), materialAt);
   put(join(where.tasksDir, a, "inputs", "图.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), materialAt);
   const archive = putArchive(where, a);
+  keepGeneral(where.knowledgeDir);
   const store = new KnowledgeStore(where.knowledgeDir);
   const lib = store.create("售后规范");
   await store.upload(lib.id, "退款处理规范.md", Buffer.from("退款处理规范全文\n".repeat(30), "utf-8"), "standard");

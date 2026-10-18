@@ -2,7 +2,7 @@
 //   · 项目材料一张表：名称、类型、大小、上传时刻、被几节几处引用（model/assetTabs.ts 的 materialCitations）、「查看」「替换」「删除」。
 //     「查看」在右侧栏「原文定位」里打开这份材料；替换与删除只对还没有进入对话的材料可用（任务详情里的 deletable），
 //     操作与任务起点页的材料卡相同（components/task/materialOps.tsx）。右上角「上传材料」。
-//   · 选用的知识库一张表：名称、文档份数、本项目的条目引用了几处、「查看」「取消选用」（通用知识库不能取消）；表下「选用别的知识库」。
+//   · 选用的知识库一张表：名称、文档份数、本项目的条目引用了几处、「查看」「取消选用」；一个都没选时写一句；表下「选用别的知识库」。
 //     服务没有知识库这一功能时整块不显示。
 // 材料清单与选用的知识库都取自任务详情（GET …/tasks/{task_id}）：打开这一页时取一次，材料增删（事件流推来的材料清单变了）与改选用之后再取。
 
@@ -14,7 +14,7 @@ import type { KnowledgeLibrary, Material, ServiceInfo, Task, TaskDetail } from "
 import { citationText, libraryCitations, materialCitations, materialKind } from "../../model/assetTabs";
 import { ownMaterials } from "../../model/docx";
 import { formatBytes, formatTimeShort } from "../../model/format";
-import { GENERAL, docCountText, sortedLibraries } from "../../model/knowledge";
+import { docCountText } from "../../model/knowledge";
 import { uploadAccept } from "../../model/upload";
 import { href } from "../../router";
 import { KnowledgePickButton } from "../TaskKnowledgeCard";
@@ -45,8 +45,8 @@ export function MaterialsTab({ task, materials, info, libraries, readOnly, onVie
   const ops = useMaterialOps(taskId, info, load);
   const all = detail?.materials ?? materials;
   const own = ownMaterials(all);
-  const selected = detail?.knowledge_libraries ?? [GENERAL];
-  const chosen = libraries ? sortedLibraries(libraries).filter((one) => selected.includes(one.id)) : [];
+  const selected = detail?.knowledge_libraries ?? [];
+  const chosen = libraries ? libraries.filter((one) => selected.includes(one.id)) : [];
 
   const changeKnowledge = async (ids: string[]) => {
     try {
@@ -113,16 +113,17 @@ export function MaterialsTab({ task, materials, info, libraries, readOnly, onVie
               <table className="oa-table ap-table" data-testid="knowledge-table">
                 <thead><tr><th>知识库</th><th>文档</th><th>本项目引用</th><th /></tr></thead>
                 <tbody>
+                  {chosen.length === 0 && <tr><td colSpan={4} className="mut" data-testid="knowledge-none">这个任务还没有选用知识库，助手查不到参考资料。</td></tr>}
                   {chosen.map((l) => {
                     const cited = libraryCitations(task, libraries, l.id);
                     return (
                       <tr key={l.id} data-testid={`knowledge-row-${l.id}`}>
-                        <td className="nm">{l.name}{l.id === GENERAL && <span className="ap-note">每个任务都会用到</span>}</td>
+                        <td className="nm">{l.name}</td>
                         <td className="mut">{docCountText(l)}</td>
                         <td className={cited ? undefined : "mut"}>{cited ? `${cited} 处` : "还没有被引用"}</td>
                         <td className="acts">
                           <a className="ap-lnk" href={href.knowledge(l.id)}>查看</a>
-                          {l.id !== GENERAL && !readOnly && (
+                          {!readOnly && (
                             <a className="ap-lnk" role="button" onClick={() => void changeKnowledge(selected.filter((x) => x !== l.id))} data-testid={`knowledge-drop-${l.id}`}>取消选用</a>
                           )}
                         </td>

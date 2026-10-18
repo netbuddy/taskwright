@@ -115,17 +115,17 @@ describe("「材料与证据」页签", () => {
     expect(screen.getByTestId("materials-upload")).toHaveTextContent("上传材料");
   });
 
-  it("选用的知识库一张表：文档份数、本项目引用几处、「取消选用」（通用知识库不能取消）；表下「选用别的知识库」；没有知识库这一功能时整块不显示", async () => {
+  it("选用的知识库一张表：文档份数、本项目引用几处、每个都可以「取消选用」；表下「选用别的知识库」；没有知识库这一功能时整块不显示", async () => {
     const t = withKnowledgeSource(overallTask());
     vi.spyOn(api, "getTask").mockResolvedValue(detailOf(t));
     const select = vi.spyOn(api, "setTaskKnowledge").mockImplementation(async (_t, ids) => ids);
     const view = render(<Wrap><div className="app"><MaterialsTab task={t} materials={MATERIALS} info={null} libraries={LIBS} readOnly={false} onView={vi.fn()} /></div></Wrap>);
     await screen.findByTestId("knowledge-row-lib-hy");
     const cells = (id: string) => [...screen.getByTestId(`knowledge-row-${id}`).querySelectorAll("td")].slice(0, 3).map((td) => td.textContent);
-    expect(cells("general")).toEqual(["通用知识库每个任务都会用到", "12 份文档", "还没有被引用"]);
+    expect(cells("general")).toEqual(["通用知识库", "12 份文档", "还没有被引用"]);
     expect(cells("lib-hy")).toEqual(["图书馆行业规范", "5 份文档", "1 处"]);
     expect(screen.queryByTestId("knowledge-row-lib-x")).toBeNull();
-    expect(screen.queryByTestId("knowledge-drop-general")).toBeNull();
+    expect(screen.getByTestId("knowledge-drop-general")).toBeTruthy();
     fireEvent.click(screen.getByTestId("knowledge-drop-lib-hy"));
     await waitFor(() => expect(select).toHaveBeenCalledWith(t.task_id, ["general"]));
     expect(screen.getByTestId("kb-pick")).toHaveClass("btn");

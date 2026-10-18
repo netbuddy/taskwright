@@ -17,7 +17,7 @@ import { rebaseSessionCwd } from "../src/pi_session.ts";
 import { Service } from "../src/service.ts";
 import { DATA_FORMAT, ServiceDb } from "../src/service_db.ts";
 import { startService } from "../src/start.ts";
-import { ROOT, captureConsole, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, keepGeneral, tempDir } from "./helpers.ts";
 import { dataWith, facts, locations, put, putArchive, repack, sha256, tree } from "./pack_stack.ts";
 
 const logged = captureConsole();
@@ -68,6 +68,7 @@ async function sampleData() {
   assert.deepEqual(saveMore(where, a), [1, 2]);
   putArchive(where, a);
   mkdirSync(join(where.tasksDir, b, "inputs", "空目录"), { recursive: true });
+  keepGeneral(where.knowledgeDir);
   const store = new KnowledgeStore(where.knowledgeDir);
   await store.upload("general", "术语表.md", Buffer.from("借书证：读者在本馆借书的凭证。\n", "utf-8"), "glossary");
   const lib = store.create("售后规范");
@@ -207,10 +208,10 @@ test("知识库不改编号：没有同编号的照常导入；同编号而空�
   const file = packFile("all");
   await exportPack(where, { scope: "all", to: file });
 
-  // 目标里：通用知识库有一份文档；有一个与包里的库重名的库；包里那个库的编号在目标里是一个空库。
+  // 目标里：升级留下的通用知识库有一份文档；有一个与包里的库重名的库；包里那个库的编号在目标里是一个空库。
   const target = locations(fresh("target"));
+  keepGeneral(target.knowledgeDir);
   const store = new KnowledgeStore(target.knowledgeDir);
-  store.ensure();
   await store.upload("general", "本地的.md", Buffer.from("本地的文档\n", "utf-8"), "other");
   const same = store.create("售后规范");
   mkdirSync(join(target.knowledgeDir, lib.id, "files"), { recursive: true });
@@ -218,11 +219,11 @@ test("知识库不改编号：没有同编号的照常导入；同编号而空�
 
   const report = await importPack(target, { file, onConflict: "renumber" });
   assert.deepEqual(report.libraries.map((x) => [x.id, x.outcome, x.new_name]).sort(), [["general", "skipped", null], [lib.id, "imported", "售后规范（导入）"]].sort());
-  assert.equal(report.libraries.find((x) => x.id === "general")!.reason, "通用知识库已经存在而且里面有文档，包里通用知识库的 1 份文档没有导入；需要的话请在知识库页面把这些文档另行上传");
+  assert.equal(report.libraries.find((x) => x.id === "general")!.reason, "已经有编号是 general 的知识库而且里面有文档，包里这个库的 1 份文档没有导入");
   assert.deepEqual(store.libraries().map((x) => [x.id, x.name]), [["general", "通用知识库"], [same.id, "售后规范"], [lib.id, "售后规范（导入）"]]);
   assert.deepEqual(tree(join(target.knowledgeDir, lib.id)), tree(join(where.knowledgeDir, lib.id)));
   assert.deepEqual(Object.keys(tree(join(target.knowledgeDir, "general"))).sort(), ["documents.json", "files/本地的.md"], "已有文档的通用知识库原样");
-  assert.match(importText(report), /知识库 general「通用知识库」：没有导入（通用知识库已经存在而且里面有文档/);
+  assert.match(importText(report), /知识库 general「通用知识库」：没有导入（已经有编号是 general 的知识库而且里面有文档/);
   assert.match(importText(report), new RegExp(`知识库 ${lib.id}「售后规范」：已导入，名字与已有的知识库相同，改成了「售后规范（导入）」`));
   assert.match(importText(report), /「改编号导入」只对任务起作用。/);
 
@@ -238,17 +239,18 @@ test("知识库不改编号：没有同编号的照常导入；同编号而空�
   const numbered = await importPack(third, { file: await libraryPack(where, lib.id) });
   assert.deepEqual(numbered.libraries.map((x) => [x.id, x.outcome, x.new_name]), [[lib.id, "imported", "售后规范（导入）2"]]);
   // 包里的库是空的、目标里同编号的库也是空的：没有要导入的，报告照实写，不说「已导入」。
-  const emptyBoth = await importPack(third, { file: await libraryPack(third, "general") });
-  assert.deepEqual(emptyBoth.libraries.map((x) => [x.id, x.outcome, x.reason]), [["general", "skipped", "两边都是空的，没有要导入的"]]);
-  assert.match(importText(emptyBoth), /知识库 general「通用知识库」：没有导入（两边都是空的，没有要导入的）/);
-  // 包里是空的库而目标里没有这个编号：照常导入（建出一个空库）。
+  const made = other.create("还没有文档的库");
+  const emptyPack = await libraryPack(third, made.id);
+  const emptyBoth = await importPack(third, { file: emptyPack });
+  assert.deepEqual(emptyBoth.libraries.map((x) => [x.id, x.outcome, x.reason]), [[made.id, "skipped", "两边都是空的，没有要导入的"]]);
+  assert.match(importText(emptyBoth), new RegExp(`知识库 ${made.id}「还没有文档的库」：没有导入（两边都是空的，没有要导入的）`));
+  // 包里是空的库而目标里没有这个编号：照常导入（建出一个空库）。全新的数据目录里一个库都没有。
   const emptyNew = locations(fresh("target"));
   new KnowledgeStore(emptyNew.knowledgeDir).ensure();
-  const made = other.create("还没有文档的库");
-  assert.deepEqual((await importPack(emptyNew, { file: await libraryPack(third, made.id) })).libraries.map((x) => [x.id, x.outcome]), [[made.id, "imported"]]);
-  assert.deepEqual(new KnowledgeStore(emptyNew.knowledgeDir).libraries().map((x) => x.name), ["通用知识库", "还没有文档的库"]);
-  // 全新的数据目录：通用知识库是空的，包里的通用知识库导入到它的位置上，名字不变。
-  assert.deepEqual(Object.keys(tree(join(third.knowledgeDir, "general"))), []);
+  assert.deepEqual(new KnowledgeStore(emptyNew.knowledgeDir).libraries(), []);
+  assert.deepEqual((await importPack(emptyNew, { file: emptyPack })).libraries.map((x) => [x.id, x.outcome]), [[made.id, "imported"]]);
+  assert.deepEqual(new KnowledgeStore(emptyNew.knowledgeDir).libraries().map((x) => x.name), ["还没有文档的库"]);
+  // 全新的数据目录：先前版本导出的包里带着有文档的通用知识库，照常导入，编号与名字不变。
   const whole = await importPack(locations(fresh("target")), { file });
   assert.deepEqual(whole.libraries.map((x) => [x.id, x.outcome, x.new_name]).sort(), [["general", "imported", null], [lib.id, "imported", null]].sort());
   assert.deepEqual(Object.keys(tree(join(whole.data_dir, "knowledge", "general"))).sort(), ["documents.json", "files/术语表.md"]);

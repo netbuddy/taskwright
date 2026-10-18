@@ -12,6 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { format } from "node:util";
+import { GENERAL, GENERAL_NAME, KnowledgeStore } from "../src/knowledge.ts";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 /** 后端的入口。 */
@@ -258,4 +259,14 @@ export function asFormat8(taskDir: string): void {
     db.close();
   }
   rmSync(join(taskDir, "task.json"), { force: true });
+}
+
+/**
+ * 先前版本的通用知识库升级之后留下的样子：清单里编号 general、名字「通用知识库」的一个普通的库（有文档的通用知识库升级时就是这样留下的）。
+ * 许多知识库的测试往这个库里传文档，建服务或知识库之后调一次。清单还没有时先建出来。
+ */
+export function keepGeneral(root: string): void {
+  const store = new KnowledgeStore(root);
+  store.ensure();
+  if (!store.has(GENERAL)) store.adopt({ id: GENERAL, name: GENERAL_NAME, created_at: "2026-01-01T00:00:00" });
 }

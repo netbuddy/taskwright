@@ -95,17 +95,18 @@ describe("知识库页面", () => {
     expect(parseRoute("#/knowledge/lib-hy")).toEqual({ page: "knowledge", libraryId: "lib-hy" });
   });
 
-  it("左边列出知识库，通用知识库排第一并标「默认选用」；缺省选中通用知识库，表格列出文档名、种类、大小、上传时间；通用知识库没有改名与删除", async () => {
+  it("左边列出知识库，照后端给的先后，没有「默认选用」；缺省选中第一个，表格列出文档名、种类、大小、上传时间；升级留下的通用知识库与别的库一样可以改名、删除", async () => {
     page();
     const list = await screen.findByTestId("kb-libraries");
-    expect(within(list).getByTestId("kb-lib-general").textContent).toBe("通用知识库默认选用1 份文档 · 每个任务都会用到");
+    expect(within(list).getByTestId("kb-lib-general").textContent).toBe("通用知识库1 份文档 · 3 个任务在用");
     expect(within(list).getByTestId("kb-lib-lib-hy").textContent).toBe("行业规范0 份文档 · 2 个任务在用");
+    expect(screen.queryByText("默认选用")).toBeNull();
     const pane = screen.getByTestId("kb-pane");
-    expect(within(pane).getByText("1 份文档。每个任务都会用到。新建的任务会自动选用它，也不能去掉。")).toBeTruthy();
+    expect(within(pane).getByText("1 份文档。3 个任务在用。")).toBeTruthy();
     const cells = [...within(screen.getByTestId("kb-documents")).getAllByRole("cell")].map((c) => c.textContent);
     expect(cells.slice(0, 3)).toEqual(["公司术语表.md", "术语表", "2.0 KB"]);
-    expect(within(pane).queryByText("改名")).toBeNull();
-    expect(screen.queryByTestId("kb-delete-library")).toBeNull();
+    expect(within(pane).getByText("改名")).toBeTruthy();
+    expect(screen.getByTestId("kb-delete-library")).toBeTruthy();
     expect(screen.getByTestId("kb-upload-hint").textContent).toBe("把文件拖到这里，或者点这里选择文件，放进「通用知识库」（只接受 .md、.txt 与 Word 的 .docx，单个文件不超过 20 MB）。");
     expect(screen.getByText(/^文档没有版本：一份文档改了，就当作一份新文件上传。/)).toBeTruthy();
   });

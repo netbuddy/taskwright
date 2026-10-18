@@ -16,7 +16,7 @@ import { EMBEDDINGS_SUFFIX, VECTORS_SUFFIX } from "../src/knowledge_embeddings.t
 import { CANCELLED_TEXT, KEYWORD_KEEP, LIBRARIES_SHAPE_TEXT, LIMIT_RANGE_TEXT, QUERY_REQUIRED_TEXT, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, combine } from "../src/knowledge_search.ts";
 import { Service } from "../src/service.ts";
 import { type Dict, FakeEmbedder, MODEL, RULES, call, chooseEmbedding, isolateSettings, upload } from "./embedding_stack.ts";
-import { ROOT, captureConsole, tempDir, within } from "./helpers.ts";
+import { ROOT, captureConsole, keepGeneral, tempDir, within } from "./helpers.ts";
 
 captureConsole();
 
@@ -44,7 +44,9 @@ after(async () => {
 
 function fresh(): Service {
   const root = join(tmp, `case-${++n}`);
-  return new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: join(root, "knowledge") });
+  const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: join(root, "knowledge") });
+  keepGeneral(service.knowledge!.root);
+  return service;
 }
 const idle = (service: Service) => within("后台换算收住", 20_000, service.embedder!.idle());
 const search = (service: Service, body: Dict) => call(service, "POST", "/api/v1/knowledge/search", body);

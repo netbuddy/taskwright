@@ -25,7 +25,6 @@ import { formatTime, formatTimeShort } from "../model/format";
 import { ownMaterials } from "../model/docx";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
-import { GENERAL } from "../model/knowledge";
 import { allAssetsEmpty, deleteConfirmText, stateLine } from "../model/startPage";
 import { TaskKnowledgeCard } from "../components/TaskKnowledgeCard";
 import { SessionList } from "../components/task/SessionList";
@@ -96,7 +95,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
   if (error) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Alert type="error" showIcon message={error} /></div></TaskFrame>;
   if (!task) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Spin /></div></TaskFrame>;
 
-  const selected = task.knowledge_libraries ?? [GENERAL];
+  const selected = task.knowledge_libraries ?? [];
   const lastActive = task.sessions.map((s) => s.last_active_at).filter(Boolean).sort().pop();
   const versionNote = taskTypeVersionNote(task.task_type_versions);
   const catalog = status?.catalog ?? null;

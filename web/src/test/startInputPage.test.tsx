@@ -225,13 +225,15 @@ describe("活动输入页：需求分析", () => {
     expect(screen.getByTestId("start-open-flow-session")).toHaveAttribute("href", "#/tasks/TASK-P/sessions/S-flow");
   });
 
-  it("勾选一个知识库：当场改这个任务选用的知识库；通用知识库勾着、不能去掉；服务没有知识库时没有这一块", async () => {
+  it("勾选一个知识库：当场改这个任务选用的知识库；每个知识库都可以勾上或去掉；服务没有知识库时没有这一块", async () => {
     const calls = page("analysis");
     await submit();
     const general = await screen.findByTestId("kb-check-general");
-    expect([(general as HTMLInputElement).checked, (general as HTMLInputElement).disabled]).toEqual([true, true]);
+    expect([(general as HTMLInputElement).checked, (general as HTMLInputElement).disabled]).toEqual([true, false]);
     fireEvent.click(screen.getByTestId("kb-check-lib-hy"));
     await waitFor(() => expect(calls.select).toHaveBeenCalledWith("TASK-P", ["general", "lib-hy"]));
+    fireEvent.click(general);
+    await waitFor(() => expect(calls.select).toHaveBeenLastCalledWith("TASK-P", []));
     cleanup(); vi.restoreAllMocks();
     page("analysis", detail(), statusOf(), { knowledge: false });
     await submit();

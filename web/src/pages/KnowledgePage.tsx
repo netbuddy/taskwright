@@ -1,5 +1,5 @@
 // 知识库页面（#/knowledge，带库编号时选中那个库）：左边是库的清单（新建、改名、删除），右边是选中的库里的文档表格与上传框。
-// 通用知识库每个任务都会用到，不能改名、不能删除。文档没有版本：一份文档改了，就当作一份新文件上传。
+// 所有的知识库一样对待，都可以改名、可以删除。文档没有版本：一份文档改了，就当作一份新文件上传。
 // 上传前先选「这是什么资料」（五种种类，只是标签）；类型与大小按服务信息里知识库那一项先查，不符的不发请求。
 // 文档要向量化成数字串之后才能按意思查找：文档表格里每份文档有向量化状态，表格上面一行是这个知识库「已向量化几份 / 一共几份」与进度条；
 // 选了嵌入模型而且有没向量化的文档时给「开始向量化」，向量化失败的文档给「重试」。有文档在等待向量化或者向量化中时，隔两秒再取一次清单。
@@ -16,8 +16,8 @@ import { useToast } from "../components/Toasts";
 import { useService } from "../components/ServiceControls";
 import { formatBytes, formatTime } from "../model/format";
 import {
-  GENERAL, docCountText, embeddingBusy, embeddingModelName, embeddingPolling, embeddingStatusText, kindName, knowledgeLimitText, knowledgeTooLargeText,
-  sortedLibraries, usageText,
+  docCountText, embeddingBusy, embeddingModelName, embeddingPolling, embeddingStatusText, kindName, knowledgeLimitText, knowledgeTooLargeText,
+  usageText,
 } from "../model/knowledge";
 import { go, href } from "../router";
 
@@ -52,7 +52,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
   if (!overview) return <Shell nav="knowledge"><Spin /></Shell>;
 
   const embedding = overview.embedding;
-  const libs = sortedLibraries(overview.libraries);
+  const libs = overview.libraries;
   const current = libs.find((l) => l.id === libraryId) ?? libs[0] ?? null;
   const fail = (e: unknown, text: string) => toast.error(e instanceof ApiError ? e.message : text);
 
@@ -126,9 +126,10 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
       <div className="kbgrid">
         <div className="card kblibs" data-testid="kb-libraries">
           <div className="cap">一共 {libs.length} 个知识库</div>
+          {libs.length === 0 && <div className="lm" data-testid="kb-no-library">还没有知识库。点右上角「新建一个知识库」建一个，再往里上传参考资料，然后在任务页上选用它。</div>}
           {libs.map((l) => (
             <div key={l.id} className={`kblib${l.id === current?.id ? " on" : ""}`} onClick={() => go(href.knowledge(l.id))} data-testid={`kb-lib-${l.id}`}>
-              <div className="ln">{l.name}{l.id === GENERAL && <span className="chip def">默认选用</span>}</div>
+              <div className="ln">{l.name}</div>
               <div className="lm">{docCountText(l)} · {usageText(l)}</div>
             </div>
           ))}
@@ -137,13 +138,12 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
           <div className="card" data-testid="kb-pane">
             <div className="kbhead">
               <h2>{current.name}</h2>
-              {current.id === GENERAL && <span className="chip def">默认选用</span>}
               <span className="sp" />
-              {current.id !== GENERAL && <Button size="small" onClick={() => { setName(current.name); setDialog({ mode: "rename", id: current.id, name: current.name }); }}>改名</Button>}
-              {current.id !== GENERAL && <Button size="small" onClick={() => setRemovingLib(current)} data-testid="kb-delete-library">删除这个知识库</Button>}
+              <Button size="small" onClick={() => { setName(current.name); setDialog({ mode: "rename", id: current.id, name: current.name }); }}>改名</Button>
+              <Button size="small" onClick={() => setRemovingLib(current)} data-testid="kb-delete-library">删除这个知识库</Button>
             </div>
             <div className="kbmeta">
-              {current.documents.length} 份文档。{current.id === GENERAL ? "每个任务都会用到。新建的任务会自动选用它，也不能去掉。" : `${usageText(current)}。`}
+              {current.documents.length} 份文档。{usageText(current)}。
             </div>
             <div className="flabel">这是什么资料（上传之前先选好）</div>
             <div className="updest-seg" data-testid="kb-kind">

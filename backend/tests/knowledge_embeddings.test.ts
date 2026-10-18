@@ -13,7 +13,7 @@ import {
 } from "../src/knowledge_embeddings.ts";
 import { GENERAL } from "../src/knowledge.ts";
 import { Service } from "../src/service.ts";
-import { captureConsole, tempDir } from "./helpers.ts";
+import { captureConsole, keepGeneral, tempDir } from "./helpers.ts";
 
 captureConsole();
 
@@ -132,6 +132,7 @@ test("重写时旧成品先作废：数字串写完、概况还没写时停下�
 test("清半成品：临时文件与没有 .json 的 .bin 删掉，完整的成品、文档本体与别的派生文件不动；目录不在时什么也不做", () => {
   const dir = join(tmp, "files");
   const service = new Service(join(tmp, "sweep", "tasks"), join(tmp, "sweep", "runs"), {}, { port: 1, knowledgeDir: dir });
+  keepGeneral(dir);
   const files = service.knowledge!.filesDir(GENERAL);
   const whole = join(files, "完整.md");
   writeFileSync(whole, "正文");
@@ -150,6 +151,7 @@ test("清半成品：临时文件与没有 .json 的 .bin 删掉，完整的成�
 test("知识库这一侧：服务启动时清各库的半成品；删除文档连同它的数字串一起删；重新上传同名文档时不沿用旧的；删除知识库整个目录都没了", async () => {
   const root = join(tmp, "store");
   const first = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: join(root, "knowledge") });
+  keepGeneral(join(root, "knowledge"));
   const store = first.knowledge!;
   const lib = store.create("城北区图书馆的资料");
   const row = store.upload(lib.id, "规则.md", Buffer.from("# 退款\n七天之内可以退款。"), "standard");

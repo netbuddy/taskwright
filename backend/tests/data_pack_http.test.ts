@@ -17,7 +17,7 @@ import { KnowledgeStore } from "../src/knowledge.ts";
 import { Service } from "../src/service.ts";
 import { ServiceDb } from "../src/service_db.ts";
 import { startService } from "../src/start.ts";
-import { ROOT, captureConsole, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, keepGeneral, tempDir } from "./helpers.ts";
 import { dataWith, facts, locations, put, putArchive, readPack, tree, withoutEvents } from "./pack_stack.ts";
 
 captureConsole();
@@ -49,6 +49,7 @@ async function sampleData() {
   const [a] = where.ids;
   put(join(where.tasksDir, a, "inputs", "材料.md"), "读者凭借书证借书。\n");
   putArchive(where, a);
+  keepGeneral(where.knowledgeDir);
   const store = new KnowledgeStore(where.knowledgeDir);
   const lib = store.create("售后规范");
   await store.upload(lib.id, "退款处理规范.md", Buffer.from("退款处理规范全文\n".repeat(30), "utf-8"), "standard");

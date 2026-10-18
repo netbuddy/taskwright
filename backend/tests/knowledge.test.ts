@@ -14,7 +14,7 @@ import { dispatch, makeServer, serviceInfo } from "../src/http.ts";
 import { GENERAL, KNOWLEDGE_MAX_UPLOAD, docDuplicateText, docNameTakenText } from "../src/knowledge.ts";
 import { Service } from "../src/service.ts";
 import { parseKnowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
-import { ROOT, captureConsole, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, keepGeneral, tempDir } from "./helpers.ts";
 
 captureConsole();
 
@@ -26,7 +26,9 @@ let n = 0;
 
 function fresh(withKnowledge = true): Service {
   const root = join(tmp, `case-${++n}`);
-  return new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, ...(withKnowledge ? { knowledgeDir: join(root, "knowledge") } : {}) });
+  const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, ...(withKnowledge ? { knowledgeDir: join(root, "knowledge") } : {}) });
+  if (withKnowledge) keepGeneral(service.knowledge!.root);
+  return service;
 }
 
 function rejected(fn: () => unknown): ApiError {
@@ -60,33 +62,13 @@ function multipart(filename: string, data: Buffer, fields: Dict = {}): [Buffer, 
 
 const newTask = (service: Service, name = "任务") => service.task(service.create({ task_type: "requirements-engineering", task_name: name }).task_id);
 
-test("服务第一次启动时建出通用知识库；再次启动不重建", async () => {
-  const service = fresh();
-  const libs = service.knowledge!.libraries();
-  assert.deepEqual(libs.map((l) => [l.id, l.name]), [[GENERAL, "通用知识库"]]);
-  assert.equal(existsSync(join(service.knowledge!.root, GENERAL, "files")), true);
-  const again = new Service(service.tasksDir, service.runsDir, {}, { knowledgeDir: service.knowledge!.root });
-  assert.deepEqual(again.knowledge!.libraries(), libs);
-  await service.close();
-});
-
-test("已有的清单里通用知识库还叫旧名「通用库」：服务启动时改成「通用知识库」并写回文件；用户自己起的名字不动；不留下临时文件", async () => {
+test("服务第一次启动时知识库清单是空的，不再建出通用知识库；再次启动不变", async () => {
   const root = join(tmp, `case-${++n}`);
-  const dir = join(root, "knowledge");
-  mkdirSync(dir, { recursive: true });
-  const file = join(dir, "libraries.json");
-  const rows = [{ id: GENERAL, name: "通用库", created_at: "2026-09-29T10:00:00+08:00" }, { id: "lib-a1", name: "通用库（旧项目）", created_at: "2026-09-29T11:00:00+08:00" }];
-  writeFileSync(file, JSON.stringify({ version: 1, libraries: rows }), "utf-8");
-  const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: dir });
-  const renamed = [{ ...rows[0], name: "通用知识库" }, rows[1]];
-  assert.deepEqual(service.knowledge!.libraries(), renamed);
-  assert.deepEqual(JSON.parse(readFileSync(file, "utf-8")), { version: 1, libraries: renamed });
-  assert.deepEqual(readdirSync(dir).filter((name) => name.endsWith(".tmp")), []);
-  // 用户把通用知识库以外的知识库叫作「通用库」不受影响；通用知识库的名字已经是新名时不再改写文件
-  const before = readFileSync(file, "utf-8");
-  const again = new Service(service.tasksDir, service.runsDir, {}, { knowledgeDir: dir });
-  assert.equal(readFileSync(file, "utf-8"), before);
-  assert.deepEqual(again.knowledge!.libraries(), renamed);
+  const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: join(root, "knowledge") });
+  assert.deepEqual(service.knowledge!.libraries(), []);
+  assert.equal(existsSync(join(service.knowledge!.root, GENERAL)), false);
+  const again = new Service(service.tasksDir, service.runsDir, {}, { knowledgeDir: service.knowledge!.root });
+  assert.deepEqual(again.knowledge!.libraries(), []);
   await service.close();
 });
 
@@ -98,10 +80,9 @@ test("已有的清单文件损坏（读不出来）：服务照常启动，不�
   writeFileSync(file, '{"version": 1, "libraries": [{"id": "general", "name": "通用库"', "utf-8");   // 写到一半的 JSON
   const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: dir });
   assert.equal(readFileSync(file, "utf-8"), '{"version": 1, "libraries": [{"id": "general", "name": "通用库"');
-  assert.equal(existsSync(join(dir, GENERAL, "files")), true);
   assert.throws(() => service.knowledge!.libraries(), SyntaxError);
-  // 任务的接口不受影响：照常新建任务，它选用通用知识库
-  assert.deepEqual(service.taskPage(newTask(service)).knowledge_libraries, [GENERAL]);
+  // 任务的接口不受影响：照常新建任务，它一个知识库都没有选用
+  assert.deepEqual(service.taskPage(newTask(service)).knowledge_libraries, []);
   await service.close();
 });
 
@@ -119,20 +100,19 @@ test("新建知识库：名字空或与已有的重名（只差大小写或首�
   await service.close();
 });
 
-test("改名：可以改成只差大小写的自己；通用知识库不能改名；与别的知识库重名拒绝", async () => {
+test("改名：可以改成只差大小写的自己；升级留下的通用知识库也可以改名；与别的知识库重名拒绝", async () => {
   const service = fresh();
   const store = service.knowledge!;
   const a = store.create("abc");
   store.create("甲");
   assert.equal(store.rename(a.id, "ABC").name, "ABC");
   assert.equal(rejected(() => store.rename(a.id, "甲")).message, "已经有一个叫「甲」的知识库了。");
-  const general = rejected(() => store.rename(GENERAL, "别的名字"));
-  assert.deepEqual([general.code, general.message], ["rejected", "通用知识库不能改名。"]);
+  assert.equal(store.rename(GENERAL, "别的名字").name, "别的名字");
   assert.equal(rejected(() => store.rename("lib-none", "x")).code, "not_found");
   await service.close();
 });
 
-test("删除知识库：文档一并删除，选用了它的任务自动不再选用并记一句说明；通用知识库不能删除", async () => {
+test("删除知识库：文档一并删除，选用了它的任务自动不再选用并记一句说明；升级留下的通用知识库也可以删除", async () => {
   const service = fresh();
   const store = service.knowledge!;
   const lib = store.create("行业规范");
@@ -146,8 +126,9 @@ test("删除知识库：文档一并删除，选用了它的任务自动不再�
   assert.deepEqual(saved.libraries, [GENERAL]);
   assert.equal(saved.notes.length, 1);
   assert.equal(saved.notes[0].text, "知识库「行业规范」已经删除，这个任务不再选用它。");
-  const general = rejected(() => service.removeLibrary(GENERAL));
-  assert.deepEqual([general.code, general.message], ["rejected", "通用知识库不能删除。"]);
+  assert.deepEqual(service.removeLibrary(GENERAL), { ok: true, id: GENERAL });
+  assert.deepEqual(store.libraries(), []);
+  assert.deepEqual(JSON.parse(readFileSync(join(t.dir, "knowledge.json"), "utf-8")).libraries, []);
   await service.close();
 });
 
@@ -226,17 +207,18 @@ test("不是合法 .docx 的 Word 文件：拒绝，文件与派生文件都不�
   await service.close();
 });
 
-test("任务选用的知识库：新任务写 [general]；没有文件的旧任务按通用知识库算；改选用时通用知识库总在最前；不存在的知识库返回 rejected", async () => {
+test("任务选用的知识库：新任务一个都不选；没有文件的旧任务按以前的通用知识库算；改选用照给的写，可以是空的；不存在的知识库返回 rejected", async () => {
   const service = fresh();
   const t = newTask(service);
-  assert.deepEqual(JSON.parse(readFileSync(join(t.dir, "knowledge.json"), "utf-8")), { version: 1, libraries: [GENERAL], notes: [] });
-  assert.deepEqual(service.taskPage(t).knowledge_libraries, [GENERAL]);
+  assert.deepEqual(JSON.parse(readFileSync(join(t.dir, "knowledge.json"), "utf-8")), { version: 1, libraries: [], notes: [] });
+  assert.deepEqual(service.taskPage(t).knowledge_libraries, []);
   unlinkSync(join(t.dir, "knowledge.json"));
   assert.deepEqual(service.taskPage(t).knowledge_libraries, [GENERAL]);
   assert.equal(existsSync(join(t.dir, "knowledge.json")), false, "只是读，不写文件");
   const lib = service.knowledge!.create("行业规范");
-  assert.deepEqual(service.setTaskKnowledge(t, { libraries: [lib.id] }), { ok: true, libraries: [GENERAL, lib.id] });
-  assert.deepEqual(service.taskPage(t).knowledge_libraries, [GENERAL, lib.id]);
+  assert.deepEqual(service.setTaskKnowledge(t, { libraries: [lib.id, lib.id] }), { ok: true, libraries: [lib.id] });
+  assert.deepEqual(service.taskPage(t).knowledge_libraries, [lib.id]);
+  assert.deepEqual(service.setTaskKnowledge(t, { libraries: [] }), { ok: true, libraries: [] });
   const unknown = rejected(() => service.setTaskKnowledge(t, { libraries: ["lib-none"] }));
   assert.deepEqual([unknown.code, unknown.message], ["rejected", "没有这个知识库：lib-none。"]);
   assert.equal(rejected(() => service.setTaskKnowledge(t, { libraries: "general" })).code, "bad_request");
@@ -248,8 +230,8 @@ test("used_by_tasks 数本服务接手的任务，库里状态一列写着什么
   const lib = service.knowledge!.create("行业规范");
   const a = newTask(service, "甲");
   const b = newTask(service, "乙");
-  service.setTaskKnowledge(a, { libraries: [lib.id] });
-  service.setTaskKnowledge(b, { libraries: [lib.id] });
+  service.setTaskKnowledge(a, { libraries: [GENERAL, lib.id] });
+  service.setTaskKnowledge(b, { libraries: [GENERAL, lib.id] });
   const count = () => Object.fromEntries(service.knowledgeOverview().map((l) => [l.id, l.used_by_tasks]));
   assert.deepEqual(count(), { [GENERAL]: 2, [lib.id]: 2 });
   // 把乙的状态一列改成早先的「已放弃」：这一列不再读，照样算。
@@ -318,7 +300,7 @@ test("经接口：新建、改名、上传（带种类）、清单、正文与�
   assert.deepEqual((await call(service, "POST", `/api/v1/knowledge/libraries/${id}/documents/delete`, { name: "评审检查单.md" })).json, { ok: true });
   assert.deepEqual((await call(service, "POST", `/api/v1/knowledge/libraries/${id}/delete`)).json, { ok: true, id });
   assert.deepEqual((await call(service, "GET", `/api/v1/tasks/${t.taskId}/knowledge`)).json.libraries, [GENERAL]);
-  assert.equal((await call(service, "POST", `/api/v1/knowledge/libraries/${GENERAL}/delete`)).status, 422);
+  assert.equal((await call(service, "POST", `/api/v1/knowledge/libraries/${GENERAL}/delete`)).status, 200, "升级留下的通用知识库也可以删除");
   await service.close();
 });
 

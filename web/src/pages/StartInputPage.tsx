@@ -23,7 +23,6 @@ import { KnowledgeChoice } from "../components/task/KnowledgeChoice";
 import { MaterialsCard } from "../components/task/MaterialsCard";
 import { useMaterialViewer } from "../components/task/MaterialViewer";
 import { ownMaterials } from "../model/docx";
-import { GENERAL } from "../model/knowledge";
 import {
   SCOPE_MAX_LENGTH, blockedLine, existingFlowItem, firstMessage, inputBlocks, missingInput, prerequisiteBody, startButton, startFields, startSubtitle, startTarget, targetName,
 } from "../model/startInput";
@@ -98,7 +97,7 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
   const fields = startFields(target);
   const blocked = blockedLine(target);
   const missing = missingInput(target, blocks, status?.assets, description);
-  const selected = task.knowledge_libraries ?? [GENERAL];
+  const selected = task.knowledge_libraries ?? [];
   const materials = ownMaterials(task.materials);
   // 已有流程工作项时「打开它的会话」进它最近有动静的那条会话（任务状况的工作项清单里有）。
   const flowItem = existingFlowItem(target);

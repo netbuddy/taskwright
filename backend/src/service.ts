@@ -33,7 +33,7 @@ import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
 import { readTaskJson, writeTaskJson } from "./task_json.ts";
 import type { PendingUpgrade } from "./data_upgrade.ts";
 import type { ServiceDb } from "./service_db.ts";
-import { GENERAL, KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
+import { KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
 import { KnowledgeEmbedder } from "./knowledge_embedder.ts";
 import { MB, readUploadLimits } from "./product_settings.ts";
 import { searchKnowledge, searchRequest } from "./knowledge_search.ts";
@@ -1015,7 +1015,7 @@ export class Service {
    */
   removeLibrary(id: string) {
     const store = this.requireKnowledge();
-    if (id !== GENERAL && store.has(id)) this.embedder!.forget(id);
+    if (store.has(id)) this.embedder!.forget(id);
     const row = store.remove(id);
     this.scan();
     for (const t of this.tasks.values()) {
@@ -1025,14 +1025,14 @@ export class Service {
     return { ok: true, id };
   }
 
-  /** 改任务选用的库：不存在的库以 rejected 拒绝；通用知识库每个任务都选用，没写时补在最前面。 */
+  /** 改任务选用的库：不存在的库以 rejected 拒绝；可以一个都不选。 */
   setTaskKnowledge(t: Task, body: Record<string, any>) {
     const store = this.requireKnowledge();
     const given = body.libraries;
     if (!Array.isArray(given) || !given.every((one) => typeof one === "string")) throw new ApiError("bad_request", "libraries 应当是知识库编号的列表。");
     const unknown = given.filter((one) => !store.has(one));
     if (unknown.length) throw new ApiError("rejected", `没有这个知识库：${unknown.join("、")}。`, { unknown });
-    const ids = [GENERAL, ...new Set(given.filter((one) => one !== GENERAL))];
+    const ids = [...new Set(given)];
     writeSelection(t.dir, ids);
     return { ok: true, libraries: ids };
   }
