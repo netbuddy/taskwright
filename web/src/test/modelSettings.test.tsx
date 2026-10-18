@@ -93,6 +93,10 @@ describe("设置页面的「模型」一栏", () => {
     page(config({ copied_from_pi: { from: "/u/.pi/agent", at: "2026-10-14T03:00:00Z" } }));
     expect(await screen.findByTestId("copied-from-pi")).toHaveTextContent(/^已从本机 pi 的配置复制（\/u\/\.pi\/agent，.+）。之后在这里的修改只写在 Taskwright 自己的目录里，不改本机 pi 的配置。$/);
     cleanup();
+    // 有没有复制的别的服务登记时，接着写出它们的服务名。
+    page(config({ copied_from_pi: { from: "/u/.pi/agent", at: "2026-10-14T03:00:00Z", skipped: ["other-llm", "my-llm"] } }));
+    expect(await screen.findByTestId("copied-from-pi")).toHaveTextContent(/不改本机 pi 的配置。本机 pi 里别的模型服务登记没有复制：other-llm、my-llm；要在这里用它们，请在下面添加。$/);
+    cleanup();
     page(config());
     await screen.findByTestId("model-settings");
     expect(screen.queryByTestId("copied-from-pi")).toBeNull();

@@ -15,7 +15,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSy
 import { join, resolve } from "node:path";
 import { updateJsonFile } from "./config_files.ts";
 import { expandUser } from "./launch.ts";
-import { settingsFile } from "./product_settings.ts";
+import { ID_PREFIX, settingsFile } from "./product_settings.ts";
 
 /** 根下两个子目录的名字。 */
 export const PI_SUBDIR = "pi";
@@ -51,6 +51,19 @@ export interface CopiedMark {
   /** 复制的时刻（ISO 写法）。 */
   at: string;
   files: string[];
+  /** models.json 里没有复制过来的模型服务登记（服务名）：用户本人在本机 pi 里登记的，不是产品登记的。 */
+  skipped: string[];
+}
+
+/** legacy 的 models.json 里哪几项是产品登记的：服务名带产品前缀，并且在产品设置里 legacy 名下的名单上。 */
+function productProviders(legacy: string, env: NodeJS.ProcessEnv | Record<string, string>): Set<string> {
+  const settings = settingsFile(env);
+  try {
+    const listed = JSON.parse(readFileSync(settings, "utf-8"))?.pi_dirs?.[resolve(legacy)]?.providers;
+    return new Set(Object.keys(listed && typeof listed === "object" ? listed : {}).filter((id) => id.startsWith(ID_PREFIX)));
+  } catch {
+    return new Set();
+  }
 }
 
 /**
@@ -58,6 +71,10 @@ export interface CopiedMark {
  * 有其中之一时，把 ADOPTED_FILES 里有的几个复制过来（是复制，不是链接；auth.json 保持只有本人能读），产品设置里为 legacy 记的
  * 那一份（登记过的模型服务、选定的模型）也照样记到 pi/ 名下，再留一个记号文件。别的情形什么都不做，返回 null。
  * 之后产品只读写 pi/，不再碰 legacy。
+ *
+ * 只复制必要的：auth.json（凭据）整份复制；models.json 只留产品自己登记的模型服务（productProviders），用户本人在本机 pi 里登记的
+ * 别的服务不复制，记在记号的 skipped 里，免得它们出现在设置页上；models.json 读不出来时不复制它。settings.json 照样复制，
+ * 但它的缺省服务（defaultProvider）是没有复制过来的服务时，去掉 defaultProvider 与 defaultModel 两项，免得启动时去找不在的服务。
  */
 export async function adoptPiConfig(piDir: string, legacy: string, env: NodeJS.ProcessEnv | Record<string, string> = process.env, now: () => Date = () => new Date()): Promise<CopiedMark | null> {
   const has = (dir: string, name: string) => existsSync(join(dir, name));
@@ -66,11 +83,42 @@ export async function adoptPiConfig(piDir: string, legacy: string, env: NodeJS.P
   if (!has(legacy, "models.json") && !has(legacy, "auth.json")) return null;
   mkdirSync(piDir, { recursive: true });
   const files: string[] = [];
+  const skipped: string[] = [];
+  const own = productProviders(legacy, env);
+  const writeJson = (to: string, value: unknown) => writeFileSync(to, JSON.stringify(value, null, 2) + "\n", "utf-8");
   for (const name of ADOPTED_FILES) {
     const from = join(legacy, name);
     if (!existsSync(from) || !statSync(from).isFile()) continue;
-    copyFileSync(from, join(piDir, name));
-    if (name === "auth.json") chmodSync(join(piDir, name), 0o600);
+    const to = join(piDir, name);
+    if (name === "models.json") {
+      let value: any;
+      try {
+        value = JSON.parse(readFileSync(from, "utf-8"));
+      } catch {
+        continue;
+      }
+      const providers = value?.providers && typeof value.providers === "object" && !Array.isArray(value.providers) ? value.providers : {};
+      for (const id of Object.keys(providers)) {
+        if (own.has(id)) continue;
+        skipped.push(id);
+        delete providers[id];
+      }
+      writeJson(to, value);
+    } else if (name === "settings.json") {
+      try {
+        const value = JSON.parse(readFileSync(from, "utf-8"));
+        if (value && typeof value === "object" && skipped.includes(value.defaultProvider)) {
+          delete value.defaultProvider;
+          delete value.defaultModel;
+        }
+        writeJson(to, value);
+      } catch {
+        copyFileSync(from, to);
+      }
+    } else {
+      copyFileSync(from, to);
+    }
+    if (name === "auth.json") chmodSync(to, 0o600);
     files.push(name);
   }
   // 产品设置按 pi 配置目录的绝对路径分开记：把 legacy 名下的那一份照样记到 pi/ 名下（pi/ 名下已经有的不动）。
@@ -84,7 +132,7 @@ export async function adoptPiConfig(piDir: string, legacy: string, env: NodeJS.P
       return true;
     });
   }
-  const mark: CopiedMark = { from: resolve(legacy), at: now().toISOString(), files };
+  const mark: CopiedMark = { from: resolve(legacy), at: now().toISOString(), files, skipped };
   writeFileSync(join(piDir, COPIED_MARK), JSON.stringify(mark, null, 2) + "\n", "utf-8");
   return mark;
 }
@@ -94,7 +142,8 @@ export function readCopiedMark(piDir: string): CopiedMark | null {
   try {
     const value = JSON.parse(readFileSync(join(piDir, COPIED_MARK), "utf-8"));
     if (typeof value?.from !== "string" || typeof value?.at !== "string") return null;
-    return { from: value.from, at: value.at, files: Array.isArray(value.files) ? value.files.filter((one: unknown) => typeof one === "string") : [] };
+    const strings = (list: unknown) => (Array.isArray(list) ? list.filter((one: unknown): one is string => typeof one === "string") : []);
+    return { from: value.from, at: value.at, files: strings(value.files), skipped: strings(value.skipped) };
   } catch {
     return null;
   }

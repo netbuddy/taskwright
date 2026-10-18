@@ -160,6 +160,7 @@ export function ModelSettings() {
       {config.copied_from_pi && (
         <p className="muted small" data-testid="copied-from-pi">
           已从本机 pi 的配置复制（{config.copied_from_pi.from}，{formatTime(config.copied_from_pi.at)}）。之后在这里的修改只写在 Taskwright 自己的目录里，不改本机 pi 的配置。
+          {!!config.copied_from_pi.skipped?.length && `本机 pi 里别的模型服务登记没有复制：${config.copied_from_pi.skipped.join("、")}；要在这里用它们，请在下面添加。`}
         </p>
       )}
 
