@@ -165,7 +165,7 @@ function actorText(actor: string): string {
 
 /** 核对通过之后，一个操作要写进库里的样子。 */
 type Planned =
-  | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[] }
+  | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[]; notes: string[] }
   | { op: "update"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes: string[] }
   | { op: "delete"; itemId: string; collection: string; fromRevision: number }
   | { op: "restore"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes: string[] };
@@ -496,7 +496,9 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         }
       }
       if (raw.base_revision !== undefined) errors.push(problem(refusalText("save_revision.add_base_revision_given")));
-      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, null));
+      const notes: string[] = [];
+      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, null), undefined, [], false,
+        relocatedNote(number, notes));
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER) {
@@ -509,7 +511,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         problems.push(reasonOf(label, fillText("part.subject_add", { collection: collection.name }), errors));
         return;
       }
-      planned.push({ op: "add", collection, fields, sources: sources! });
+      planned.push({ op: "add", collection, fields, sources: sources!, notes });
       const newId = [...addedAt].find(([, at]) => at === number)?.[0];
       if (newId) written.set(newId, { collection: collection.name, fields });
       return;
@@ -601,10 +603,11 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     // 旧的「用户直接修改」当作不存在（见文件开头）。用户的操作（直接修改、撤销）都交来完整的来源，不经这里沿用，撤销照原样恢复。
     const previousSources = sourcesOf(itemId, current.revision_no).filter((one) => one.kind !== SOURCE_USER_EDIT);
     const inherited = raw.sources === undefined;
-    const given = inherited ? null
-      : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, itemId), undefined, previousSources);
-    let sources = inherited ? previousSources : given;
     const notes: string[] = [];
+    const given = inherited ? null
+      : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, itemId), undefined, previousSources, false,
+        relocatedNote(number, notes));
+    let sources = inherited ? previousSources : given;
     const editsFields = isObject(raw.fields) && Object.keys(raw.fields).length > 0;
     if (call.actor !== ACTOR_USER && editsFields && (inherited || given)) {
       // 执行者修改字段：原来的来源按内容跟着走（lib/source_carry.ts），没改的内容来源一律保留，删掉的项上的去掉，
@@ -865,6 +868,11 @@ function quoteLabel(source: Source): string {
 }
 
 /** 执行者改写了的内容上还留着原来的来源时，写在保存结果末尾的一句提醒：哪几处、哪几条，以及怎样去掉。 */
+/** 第 no 个操作里一条 Word 来源的出处被代改到同一行另一格时，记进保存结果末尾的那句话。 */
+function relocatedNote(no: number, notes: string[]): Relocate {
+  return (where, from, n, excerpt) => notes.push(fillText("result.save_revision.locator_moved", { no, where, from, n, excerpt }));
+}
+
 function rewrittenNote(itemId: string, list: RewrittenSupport[]): string {
   const where = (one: Support) => (one.index === undefined
     ? fillText("result.save_revision.field_place", { field: one.field }) : fillText("result.save_revision.field_item_place", { field: one.field, no: one.index + 1 }));
@@ -1246,6 +1254,7 @@ function checkSources(
   whereOf: (index: number) => string = (index) => fillText("part.source_no", { no: index + 1 }),
   previous: readonly Source[] = [],
   figure = false,
+  relocate?: Relocate,
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push(problem(refusalText("source.missing")));
@@ -1405,7 +1414,8 @@ function checkSources(
       return;
     }
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && docx) {
-      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors, noun);
+      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors, noun,
+        relocate && ((from, n, excerpt) => relocate(where, from, n, excerpt)));
       if (found === null) {
         ok = false;
         return;
@@ -1445,6 +1455,16 @@ function checkSources(
 }
 
 /**
+ * 保存修订核对 Word 来源时，摘录不在写的那一段、只在同一表格行的另一格里（全文件只此一处）：不拒绝，把出处改到那一段，
+ * 并经这个函数在保存结果末尾说一句。where 是说到第几条来源的那几个字，from 是原来的出处，n 是改到的段落号，excerpt 是引给执行者看的摘录。
+ * 保存图与回复的依据不给它，照旧拒绝。
+ */
+type Relocate = (where: string, from: string, n: number, excerpt: string) => void;
+
+/** 表格里一段的位置「表 t 行 r 列 c」拆成行（表与行）与列。 */
+const TABLE_CELL = /^(表 \d+ 行 \d+) 列 (\d+)$/;
+
+/**
  * 核对一条出处是 Word 材料的来源：出处要带段落号，摘录要在那一段里（或从那一段起跨到其后相邻至多 5 段），比较时去掉全部空白。
  * 不在那里就拒绝：摘录是一段连续的原文时，指出它在别处的段落号（只有一处时）或按远近列几处请执行者确认；摘录里有空行、
  * 又不是连续的一段时，说明引几处要写几条来源。通过时返回规范写法的出处（x.docx#pN），不通过时把原因记进 errors 并返回 null。
@@ -1457,6 +1477,7 @@ function checkDocxSource(
   materialText: MaterialReader,
   errors: string[],
   noun: Noun = "材料",
+  relocate?: (from: string, n: number, excerpt: string) => void,
 ): string | null {
   const name = basename(path);
   const suffix = PROJECTION_SUFFIXES.find((s) => materialText(`${path}${s}`) !== null);
@@ -1488,6 +1509,13 @@ function checkDocxSource(
   const elsewhere = paragraphsWith(paragraphs, excerpt).filter((m) => m !== n);
   const head = fillText("part.docx_head", { where, excerpt: quoteOf(excerpt), name, label: labelOf(n) });
   let others: OtherPlace[] | undefined;
+  // 表格一行每格一个段落号，执行者隔几轮凭记忆回填常错到同一行的另一格：只此一处又在同一行时，替它改过来。
+  const cell = (m: number) => TABLE_CELL.exec(positions.get(m) ?? "");
+  const [here, there] = elsewhere.length === 1 ? [cell(n), cell(elsewhere[0])] : [null, null];
+  if (relocate && here && there && here[1] === there[1] && here[2] !== there[2]) {
+    relocate(`${path}#p${n}`, elsewhere[0], quoteOf(excerpt));
+    return `${path}#p${elsewhere[0]}`;
+  }
   if (elsewhere.length === 1) {
     errors.push(problem(refusalText("source.docx_excerpt_elsewhere_one", { head, label: labelOf(elsewhere[0]), path, n: elsewhere[0] })));
   } else if (elsewhere.length > 1) {
@@ -1781,7 +1809,7 @@ function write(
     });
   });
 
-  const notes = planned.flatMap((one) => (one.op === "update" || one.op === "restore" ? one.notes : []));
+  const notes = planned.flatMap((one) => (one.op === "delete" ? [] : one.notes));
   return {
     text: savedText(taskId, revisionNo, outcomes) + notes.map((one) => `\n${one}`).join(""),
     details: {
