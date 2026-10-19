@@ -13,8 +13,11 @@
  * 位置表文件头里记着它。一份文件的块号在上传时定下，以后不重算，规则改变只影响以后上传的文件。
  */
 
-/** 分块规则的版本；规则任何一条改变时加一（见开头的说明）。 */
-export const PDF_LOCATION_RULES_VERSION = 1;
+/**
+ * 分块规则的版本；规则任何一条改变时加一（见开头的说明）。2：表格行连同各格的折行是一块，等宽字体的行每行一块并保留缩进，
+ * 列表项按编号与悬挂缩进分块，两端对齐的英文正文不当作表格。
+ */
+export const PDF_LOCATION_RULES_VERSION = 2;
 /** 位置表文件的格式版本（字段怎样写）；与规则版本分开。 */
 export const PDF_LOCATIONS_FORMAT_VERSION = 1;
 export const PDF_LOCATIONS_SUFFIX = ".locations.json";

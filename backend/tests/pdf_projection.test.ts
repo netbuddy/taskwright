@@ -46,6 +46,8 @@ test("多页中文：投影开头的说明写明页数、块总数与出处的�
   assert.equal(lines[0], "<!--");
   assert.equal(lines[1], `由 multipage.pdf 生成，供助手阅读。页数：3。块总数：${units}。`);
   assert.ok(markdown.includes("出处写 inputs/multipage.pdf#p页-块（例如 inputs/multipage.pdf#p3-7）"));
+  assert.ok(markdown.includes("表格的一行是一块，一格里折成几行的文字接在一起，各格之间隔两个空格，不分列；"));
+  assert.ok(markdown.includes("代码（等宽字体排的行）一行是一块，行首的空格是原来的缩进。"));
   const end = lines.indexOf("-->");
   assert.ok(end > 1);
   const body = lines.slice(end + 1);
