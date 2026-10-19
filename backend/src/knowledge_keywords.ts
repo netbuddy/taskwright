@@ -12,6 +12,10 @@
  * 打分：BM25，k1 = 1.2，b = 0.75，idf = ln(1 + (N − df + 0.5) / (df + 0.5))，片段的长度按词数算。
  * 打分的对象是「标题 + 换行 + 正文」。索引每次查找现算，不存：几百个片段时是几十毫秒。
  *
+ * 整句命中排前（phraseFirst）：BM25 只看词，不看词的先后，「human in the loop」会排出只零散含这几个词的片段。所以排序时
+ * 先把标题或正文里整句原样出现这句话的片段提到最前（不分大小写，两边的连续空白都当作一个空格，这句话首尾的空白不算），
+ * 它们之间、其余的片段之间都仍按 BM25 的分数。
+ *
  * 本模块只做计算，不读写文件。
  */
 
@@ -59,6 +63,20 @@ export function keywordIndex(chunks: { heading: string | null; text: string }[])
     return one;
   });
   return { counts, lengths, df, average: lengths.reduce((a, b) => a + b, 0) / Math.max(1, lengths.length) };
+}
+
+/** 比较整句时两边都做：转小写，连续的空白换成一个空格，去掉首尾的空白。 */
+const phraseForm = (text: string) => text.toLowerCase().replace(/\s+/g, " ").trim();
+
+/**
+ * 整句命中的片段提到最前（见文件开头）：ranking 是 keywordRanking 的结果，chunks 是同一批片段。整句命中的之间、其余的之间先后不变。
+ * 这句话去掉空白后是空的时原样返回。
+ */
+export function phraseFirst(ranking: { i: number; score: number }[], chunks: { heading: string | null; text: string }[], query: string): { i: number; score: number }[] {
+  const phrase = phraseForm(query);
+  if (!phrase) return ranking;
+  const hit = (i: number) => phraseForm(chunks[i].heading ?? "").includes(phrase) || phraseForm(chunks[i].text).includes(phrase);
+  return [...ranking.filter((one) => hit(one.i)), ...ranking.filter((one) => !hit(one.i))];
 }
 
 /** 一句话对各片段的 BM25 得分：只给得分大于 0 的片段的下标与分数，分高的在前，同分的下标小的在前。 */

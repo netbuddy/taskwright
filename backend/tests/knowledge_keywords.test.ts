@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { BM25_B, BM25_K1, keywordIndex, keywordRanking, tokenize } from "../src/knowledge_keywords.ts";
+import { BM25_B, BM25_K1, keywordIndex, keywordRanking, phraseFirst, tokenize } from "../src/knowledge_keywords.ts";
 
 test("汉字切成相邻两个字一组，单独一个汉字自成一词；标点与空白只是分隔", () => {
   assert.deepEqual(tokenize("逾期罚款"), ["逾期", "期罚", "罚款"]);
@@ -78,4 +78,27 @@ test("BM25 的公式与参数：k1 是 1.2，b 是 0.75，idf 是 ln(1 + (N − 
   assert.ok(Math.abs(got[0].score - expected) < 1e-12, `${got[0].score} 与 ${expected}`);
   // 要找的话里同一个词写两遍不重复算分。
   assert.deepEqual(keywordRanking(index, "罚款 罚款"), got);
+});
+
+test("整句命中排前：正文或标题里整句原样出现这句话的片段排第一，不分大小写，连续空白当一个空格；其余的仍按 BM25", () => {
+  const chunks = [
+    { heading: null, text: "The human reviews the loop output. In the loop, a human checks each step; the human stays in control of the loop." },
+    { heading: null, text: "Keep a Human  in\nthe Loop for high-risk actions." },
+    { heading: "Human in the loop", text: "Approval before execution." },
+    { heading: null, text: "Logging of every call." },
+  ];
+  const query = "  human in the loop ";
+  const bm25 = keywordRanking(keywordIndex(chunks), query);
+  assert.equal(bm25[0].i, 0, "BM25 把零散含这几个词、词频高的片段排在第一");
+  const ranked = phraseFirst(bm25, chunks, query);
+  assert.deepEqual(ranked.slice(0, 2).map((one) => one.i).sort(), [1, 2]);
+  assert.deepEqual(ranked.map((one) => one.i), [...bm25.filter((one) => one.i !== 0), ...bm25.filter((one) => one.i === 0)].map((one) => one.i));
+});
+
+test("没有片段整句命中时，顺序与 BM25 的原样相同；这句话全是空白时也原样返回", () => {
+  const chunks = [{ heading: null, text: "逾期每册每天罚款 0.5 元。" }, { heading: "借期", text: "借期三十天，逾期要罚款。" }, { heading: null, text: "续借一次。" }];
+  const bm25 = keywordRanking(keywordIndex(chunks), "逾期罚款多少");
+  assert.ok(bm25.length >= 2);
+  assert.deepEqual(phraseFirst(bm25, chunks, "逾期罚款多少"), bm25);
+  assert.deepEqual(phraseFirst(bm25, chunks, "   "), bm25);
 });
