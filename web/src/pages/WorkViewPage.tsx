@@ -1,4 +1,4 @@
-// 工作视图：结构与样式照设计原型——顶栏（任务名 · 会话名、当前活动、字号三档），左边的导航栏（components/work/LeftNav.tsx：流程进度、会话、待处理事项、参考），
+// 工作视图：结构与样式照设计原型——顶栏（任务名 · 会话名、当前活动、字号三档；会话菜单、设置与本机用户都在左栏），左边的导航栏（components/work/LeftNav.tsx：流程进度、会话、待处理事项、参考），
 // 对话区、条目区、右侧栏三栏；视口不到 100rem 宽时右侧栏默认收起成竖排的把手，用户自己开合过之后就不再自动改。
 // 数据按接口约定：先连事件流、再读整份数据、之后只听事件；说话与直接操作的响应只当作接受或拒绝。
 //
@@ -42,7 +42,7 @@ import { figuresOf } from "../model/versions";
 import { figurePngs } from "../components/diagram/mermaid";
 import { go, href } from "../router";
 import { useToast } from "../components/Toasts";
-import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
+import { NoModelBanner, useService } from "../components/ServiceControls";
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
 import { pdfUploadingText, tooLargeText, unsupportedTypeText } from "../model/upload";
 import { executorHint } from "../components/work/executorHint";
@@ -451,7 +451,6 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
         <div className="app" data-testid="missing-session">
           <div className="topbar">
             <a className="tname" href={href.task(taskId)}>{missing.taskName}</a>
-            <UserMenu where="topbar" />
           </div>
           <div className="empty missing">
             <div>找不到这条会话。还没有说过话的会话，在你打开别的会话之后不会保留。</div>
@@ -482,7 +481,6 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
               <a key={t.key} className={fontTier === t.key ? "on" : undefined} role="button" onClick={() => chooseFont(t.key)} data-testid={`font-${t.key}`}>{t.label}</a>
             ))}
           </span>
-          <UserMenu where="topbar" />
         </div>
         <div className="app-body">
           <LeftNav taskId={taskId} taskName={task?.task_name} stage={task?.stage} task={task}

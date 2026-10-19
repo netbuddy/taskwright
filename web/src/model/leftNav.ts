@@ -2,7 +2,7 @@
 // 数据都是页面已经持有的：任务详情里的阶段与灯（task.stage）、会话清单、知识库清单，不另取。
 //   · 开合：用户点过开合之后记在浏览器本地，以记忆为准；没有记忆时视口宽度不到 1280px 默认收起，否则展开（按像素，不随字号档位变；右侧栏另按 fontScale.ts 的 narrowViewport）；
 //   · 流程进度：流程的工作项走到的那一站（会话清单里流程工作项的会话上记的 activity，不论打开的是哪条会话都相同）、那一站没通过的灯数、下一站；
-//   · 会话：未归档的会话按建立时间倒序，当前会话单列在前；多于 SESSION_ROWS 条时折起；
+//   · 会话：未归档的会话按建立时间倒序，当前会话在它的时间位置上高亮；多于 SESSION_ROWS 条时折起（当前会话总留着）；旁边写工作项的种类；
 //   · 待处理事项三行：取自 model/pendingWork.ts，与任务起点页「待处理事项」一节同一个口径。
 
 import type { KnowledgeLibrary, SessionListEntry, StageKey, StageView, Task } from "../api/types";
@@ -73,12 +73,22 @@ export function flowProgress(stage: StageView | null | undefined, sessions: read
 /** 左栏会话列表至多先列几条，多的折成「还有 N 条」。 */
 export const SESSION_ROWS = 8;
 
-/** 会话列表：当前会话在前，其余未归档的按建立时间倒序。 */
-export function sessionRows(sessions: readonly SessionListEntry[], currentId: string | null | undefined): { current: SessionListEntry | null; others: SessionListEntry[] } {
-  const live = sessions.filter((one) => !one.archived);
-  const current = live.find((one) => one.session_id === currentId) ?? null;
-  const others = live.filter((one) => one !== current).sort((a, b) => (b.started_at ?? "").localeCompare(a.started_at ?? ""));
-  return { current, others };
+/** 会话列表：未归档的按建立时间倒序，当前会话也在其中（在它的时间位置上）。 */
+export function sessionRows(sessions: readonly SessionListEntry[]): SessionListEntry[] {
+  return sessions.filter((one) => !one.archived).sort((a, b) => (b.started_at ?? "").localeCompare(a.started_at ?? ""));
+}
+
+/** 折起之后列哪几条：前 SESSION_ROWS 条，当前会话排在后面时也留着。 */
+export function foldSessions(rows: readonly SessionListEntry[], currentId: string | null | undefined): SessionListEntry[] {
+  return rows.filter((one, index) => index < SESSION_ROWS || one.session_id === currentId);
+}
+
+/** 会话旁写它属于哪种工作项：流程、单项活动、自由讨论；归档的写「已归档」；早先的后端不给 work_item 时不写。 */
+export function sessionKind(session: SessionListEntry): string | null {
+  if (session.archived) return "已归档";
+  if (session.work_item === undefined) return null;
+  if (!session.work_item) return "自由讨论";
+  return session.work_item.kind === "flow" ? "流程" : "单项活动";
 }
 
 /** 待处理事项的一行。ids 是这一行列出的编号（点击与悬停用）。 */
@@ -94,7 +104,7 @@ export const PENDING_LABELS = { decisions: "待决定", questions: "待澄清问
 export const NOTHING_PENDING = "没有要你处理的事";
 
 /**
- * 待处理事项三行，为零的那一行不列：待决定「N 项」；待澄清问题「N 条未了结」，有阻断下游的另写「阻断 K」；
+ * 待处理事项三行，为零的那一行不列：待决定「N 项」；待澄清问题「N 条」（都是还没有了结的），有阻断下游的另写「阻断 K」；
  * 请过目是待核实的条目加还没有看过的图，列前两个编号，多于两个写「等 N 项」。任务没有阶段时是空清单。
  */
 export function pendingLines(task: Task | null | undefined): PendingLine[] {
@@ -105,7 +115,7 @@ export function pendingLines(task: Task | null | undefined): PendingLine[] {
   const lines: PendingLine[] = [
     { key: "decisions", label: PENDING_LABELS.decisions, count: work.decisions.length, text: `${work.decisions.length} 项`, ids: work.decisions.map((one) => one.id) },
     { key: "questions", label: PENDING_LABELS.questions, count: questions,
-      text: `${questions} 条未了结${work.blocking ? ` · 阻断 ${work.blocking}` : ""}`, ids: work.questions.map((one) => one.id) },
+      text: `${questions} 条${work.blocking ? ` · 阻断 ${work.blocking}` : ""}`, ids: work.questions.map((one) => one.id) },
     { key: "review", label: PENDING_LABELS.review, count: review.length,
       text: review.length > 2 ? `${review.slice(0, 2).join("、")} 等 ${review.length} 项` : review.join("、"), ids: review },
   ];
@@ -113,7 +123,7 @@ export function pendingLines(task: Task | null | undefined): PendingLine[] {
 }
 
 /** 参考一段「知识库」那一行右边的字：「3 库 29 份」。服务没有知识库能力（libraries 为 undefined）时不显示这一行，还没取到时是 null。 */
-export function knowledgeText(libraries: readonly KnowledgeLibrary[] | null | undefined): string | null {
+export function knowledgeText(libraries: readonly Pick<KnowledgeLibrary, "documents">[] | null | undefined): string | null {
   if (!libraries) return null;
   return `${libraries.length} 库 ${libraries.reduce((n, one) => n + one.documents.length, 0)} 份`;
 }

@@ -1,4 +1,4 @@
-// 左边的导航栏：展开态五段（任务头、工作、待处理事项、参考、收起）、待处理事项三行为零与不为零、红点、
+// 左边的导航栏：展开态各段（任务、工作、待处理事项、参考、底部）、三种页面的形态、待处理事项三行为零与不为零、红点、
 // 开合按视口宽度（1280px）的默认与记忆优先、库事件带来的阶段让计数就地变化、各行点了去哪里。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -66,33 +66,61 @@ function nav(over: Partial<Parameters<typeof LeftNav>[0]> = {}) {
 const text = (el: Element | null) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
 
 describe("展开态五段", () => {
-  it("任务头：「‹」回任务列表，任务名回任务起点", () => {
+  it("任务一组：「任务列表」回列表，任务名去任务起点页；工作视图里两行都不高亮，没有单独的任务头", () => {
     nav();
-    expect(screen.getByTestId("nav-back")).toHaveAttribute("href", "#/tasks");
-    expect(screen.getByTestId("nav-back")).toHaveAttribute("title", "回任务列表");
+    expect(screen.getByTestId("nav-tasks")).toHaveAttribute("href", "#/tasks");
+    expect(text(screen.getByTestId("nav-tasks"))).toBe("任务列表");
     expect(screen.getByTestId("nav-task")).toHaveAttribute("href", "#/tasks/TASK-L");
     expect(text(screen.getByTestId("nav-task"))).toBe("图书借阅");
+    expect(screen.getByTestId("nav-tasks")).not.toHaveClass("on");
+    expect(screen.getByTestId("nav-task")).not.toHaveClass("on");
+    expect(screen.queryByTestId("nav-back")).toBeNull();
     expect(screen.getByTestId("left-nav")).toHaveClass("open");
   });
 
-  it("工作：流程名与第几站、还差几件；六格进度条；当前会话在前，其余按建立时间倒序带工作项标签与时刻；末尾新会话与归档开关", () => {
+  it("任务起点页高亮任务名一行；任务列表页只有「任务列表」一行并高亮，没有工作与待处理事项；知识库页高亮「知识库」", () => {
+    nav({ here: "task" });
+    expect(screen.getByTestId("nav-task")).toHaveClass("on");
+    cleanup();
+    render(<LeftNav here="tasks" libraries={LIBRARIES} />);
+    expect(screen.getByTestId("nav-tasks")).toHaveClass("on");
+    expect(screen.queryByTestId("nav-task")).toBeNull();
+    expect(screen.queryByTestId("nav-work")).toBeNull();
+    expect(screen.queryByTestId("nav-pending")).toBeNull();
+    expect(screen.getByTestId("nav-knowledge")).not.toHaveClass("on");
+    expect(screen.getByTestId("rail-settings")).toBeInTheDocument();
+    cleanup();
+    render(<LeftNav here="knowledge" libraries={LIBRARIES} />);
+    expect(screen.getByTestId("nav-knowledge")).toHaveClass("on");
+    expect(screen.getByTestId("nav-tasks")).not.toHaveClass("on");
+  });
+
+  it("底部「本机用户」：服务没有退出能力时是一行不能点的「本机用户」", () => {
+    nav();
+    expect(screen.getByTestId("user-row")).toHaveTextContent("本机用户");
+    expect(screen.queryByTestId("user-menu-button")).toBeNull();
+  });
+
+  it("工作：流程名与第几站、还差几件；六格进度条；会话按建立时间倒序，当前会话在它的位置上高亮，其余带工作项种类与时刻；末尾新会话与归档开关", () => {
     nav();
     const flow = screen.getByTestId("nav-flow");
     expect(flow).toHaveTextContent("需求分析");
     expect(text(screen.getByTestId("nav-flow-line"))).toBe("第 4 站 · 写条目 · 还差 3 件才能进评审确认");
     expect([...flow.querySelectorAll(".bar i")].map((one) => one.className)).toEqual(["done", "done", "done", "current", "ahead", "ahead"]);
     expect(text(screen.getByTestId("nav-current-session"))).toBe("当前会话 · 写条目");
-    expect(screen.getAllByTestId("nav-session").map(text)).toEqual(["核读与澄清澄清 · 10-15 19:22", "问几个问题自由讨论 · 10-14 09:00"]);
+    expect(screen.getAllByTestId("nav-session").map(text)).toEqual(["核读与澄清单项活动10-15 19:22", "问几个问题自由讨论10-14 09:00"]);
+    const order = [...screen.getByTestId("nav-work").querySelectorAll("[data-testid=nav-session], [data-testid=nav-current-session]")].map((one) => one.getAttribute("title"));
+    expect(order).toEqual(["核读与澄清", "当前会话 · 写条目", "问几个问题"]);
     expect(screen.getByTestId("nav-new-session")).toBeInTheDocument();
     expect(screen.getByTestId("nav-archived")).toHaveTextContent("显示已归档的会话");
   });
 
-  it("待处理事项：待决定「N 项」、待澄清问题「N 条未了结 · 阻断 K」、请过目列前两个编号；各带红点", () => {
+  it("待处理事项：待决定「N 项」、待澄清问题「N 条 · 阻断 K」、请过目列前两个编号；各带红点", () => {
     nav();
     const pending = screen.getByTestId("nav-pending");
     expect(within(pending).getByText("待处理事项")).toBeInTheDocument();
     expect(text(screen.getByTestId("nav-pending-decisions"))).toBe("待决定2 项");
-    expect(text(screen.getByTestId("nav-pending-questions"))).toBe("待澄清问题2 条未了结 · 阻断 1");
+    expect(text(screen.getByTestId("nav-pending-questions"))).toBe("待澄清问题2 条 · 阻断 1");
     expect(text(screen.getByTestId("nav-pending-review"))).toBe("请过目UC-001、D-001");
     expect(within(pending).getAllByTestId("nav-dot")).toHaveLength(3);
     expect(screen.queryByTestId("nav-nothing")).toBeNull();
@@ -158,7 +186,7 @@ describe("收起态", () => {
     nav();
     expect(screen.getByTestId("left-nav")).toHaveClass("closed");
     expect(screen.getAllByTestId("nav-dot")).toHaveLength(3);
-    expect(screen.getByTestId("nav-pending-questions")).toHaveAttribute("title", "待澄清问题 · 2 条未了结 · 阻断 1");
+    expect(screen.getByTestId("nav-pending-questions")).toHaveAttribute("title", "待澄清问题 · 2 条 · 阻断 1");
     expect(screen.getByTestId("nav-current-session")).toHaveAttribute("title", "当前会话 · 写条目");
     expect(screen.getByTestId("nav-toggle")).toHaveAttribute("title", "展开导航栏");
   });
@@ -245,8 +273,9 @@ describe("各行点了去哪里", () => {
     expect(window.location.hash).toBe("#/tasks/TASK-L/sessions/S2");
     fireEvent.click(screen.getByTestId("nav-pending-questions"));
     expect(onPending).toHaveBeenCalledWith(expect.objectContaining({ key: "questions", ids: ["TBD-001"] }));
-    expect(screen.getAllByTestId("nav-session")).toHaveLength(8);
-    expect(text(screen.getByTestId("nav-sessions-more"))).toBe("还有 4 条");
+    // 13 条会话，先列 8 条（当前会话是其中第 2 条），其余 5 条折起。
+    expect(screen.getAllByTestId("nav-session")).toHaveLength(7);
+    expect(text(screen.getByTestId("nav-sessions-more"))).toBe("还有 5 条");
     fireEvent.click(screen.getByTestId("nav-sessions-more"));
     expect(screen.getAllByTestId("nav-session")).toHaveLength(12);
   });
@@ -258,5 +287,15 @@ describe("任务起点页的待处理事项地址", () => {
     expect(parseRoute("#/tasks/TASK-L?focus=pending")).toEqual({ page: "task", taskId: "TASK-L", focus: "pending" });
     expect(parseRoute("#/tasks/TASK-L?focus=other")).toEqual({ page: "task", taskId: "TASK-L" });
     expect(href.task("TASK-L")).toBe("#/tasks/TASK-L");
+  });
+});
+
+describe("折起时当前会话总留着", () => {
+  it("当前会话排在第 8 条之后时，折起的列表里仍有它", () => {
+    const many = Array.from({ length: 10 }, (_, i) => session(`M${i}`, `会话${i}`, `2026-10-2${i}T10:00:00`));
+    nav({ sessions: [...many, session("OLD", "最早的一条", "2026-09-01T10:00:00")], currentSessionId: "OLD" });
+    expect(screen.getAllByTestId("nav-session")).toHaveLength(8);
+    expect(text(screen.getByTestId("nav-current-session"))).toBe("当前会话 · 最早的一条");
+    expect(text(screen.getByTestId("nav-sessions-more"))).toBe("还有 2 条");
   });
 });

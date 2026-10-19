@@ -5,7 +5,6 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { App as AntApp, ConfigProvider } from "antd";
 import { api, ApiError } from "../api/client";
 import type { TaskDetail, TaskListEntry } from "../api/types";
-import { TASKS_CHANGED } from "../components/Shell";
 import { TaskListPage } from "../pages/TaskListPage";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -95,16 +94,12 @@ describe("删除任务", () => {
     expect(screen.getByTestId("task-progress-T1")).toBeInTheDocument();
   });
 
-  it("点「删除」：请任务服务删除，这一行从列表里去掉，左侧栏收到任务清单变了的通知；不要求先导出", async () => {
+  it("点「删除」：请任务服务删除，这一行从列表里去掉；不要求先导出", async () => {
     await openDialog();
     const remove = vi.spyOn(api, "deleteTask").mockResolvedValue({ ok: true, task_id: "T1" });
-    const changed = vi.fn();
-    window.addEventListener(TASKS_CHANGED, changed);
     fireEvent.click(screen.getByTestId("delete-task-confirm"));
     await waitFor(() => expect(remove).toHaveBeenCalledWith("T1"));
     await waitFor(() => expect(screen.queryByTestId("task-progress-T1")).toBeNull());
-    expect(changed).toHaveBeenCalledTimes(1);
-    window.removeEventListener(TASKS_CHANGED, changed);
   });
 
   it("被拒（助手正在工作）：照任务服务的原话写在确认框里，这一行留着", async () => {

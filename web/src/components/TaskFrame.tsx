@@ -10,15 +10,17 @@ import type { KnowledgeLibrary, SessionListEntry, Task } from "../api/types";
 import { FONT_TIERS, readFontTier, saveFontTier, type FontTier } from "../model/fontScale";
 import { PENDING_SECTION_ID } from "../model/leftNav";
 import { go, href } from "../router";
-import { NoModelBanner, UserMenu, useService } from "./ServiceControls";
-import { LeftNav } from "./work/LeftNav";
+import { NoModelBanner, useService } from "./ServiceControls";
+import { LeftNav, type NavHere } from "./work/LeftNav";
 
-export function TaskFrame({ taskId, taskName, where, sessions, task = null, pending = false, children }: {
+export function TaskFrame({ taskId, taskName, where, here = null, sessions, task = null, pending = false, children }: {
   taskId: string;
   /** 任务名；还没有读到时不给。 */
   taskName?: string;
   /** 顶栏任务名后面写的这一页的名字，例如「任务起点」。 */
   where: string;
+  /** 这一页在导航栏里高亮哪一行：任务起点页是任务名那一行，活动输入页不高亮。 */
+  here?: NavHere;
   sessions: SessionListEntry[];
   /** 任务详情：给了才画导航栏的流程进度。 */
   task?: Task | null;
@@ -55,10 +57,9 @@ export function TaskFrame({ taskId, taskName, where, sessions, task = null, pend
               <a key={t.key} className={fontTier === t.key ? "on" : undefined} role="button" onClick={() => chooseFont(t.key)} data-testid={`font-${t.key}`}>{t.label}</a>
             ))}
           </span>
-          <UserMenu where="topbar" />
         </div>
         <div className="app-body">
-          <LeftNav taskId={taskId} taskName={taskName} stage={task?.stage} task={pending ? task : null} sessions={sessions}
+          <LeftNav here={here} taskId={taskId} taskName={taskName} stage={task?.stage} task={pending ? task : null} sessions={sessions}
             libraries={hasKnowledge === false ? undefined : libraries} onPending={onPending} />
           <div className="task-main unreset">{children}</div>
         </div>

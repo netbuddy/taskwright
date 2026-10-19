@@ -1,10 +1,11 @@
 // 数据升级页（UpgradeScreen.tsx）也挂在这里：服务信息里 upgrade_pending 为真时整屏换成它。
-// 与运行形态有关的三样界面：没有模型时页面顶部的白话提示（带「去配置模型」）、「本机用户」菜单里的「退出服务」、退出之后的整屏。
+// 与运行形态有关的三样界面：没有模型时页面顶部的白话提示（带「去配置模型」）、左边导航栏「本机用户」菜单里的「退出服务」、退出之后的整屏。
 // 都按服务信息接口（GET /api/v1/service）的能力清单显示：capabilities.model 为 false 才出提示，capabilities.exit 为 true
 // 才有「退出服务」（只有桌面形态有）。取不到服务信息时（例如开发时的假服务没有这个接口）两样都不显示，页面照旧。
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { Button, Modal } from "antd";
+import { UserOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { ServiceInfo } from "../api/types";
 import { openSettings } from "../router";
@@ -89,10 +90,10 @@ export function NoModelBanner() {
 }
 
 /**
- * 「本机用户」菜单。where 是放的位置：sider 是任务列表页与任务页侧栏底部，topbar 是工作视图顶栏右端。
- * 服务有退出能力时才是可点的菜单（服务地址与「退出服务」）；没有时侧栏底部照旧只写「本机用户」，顶栏不放这个按钮。
+ * 左边导航栏底部「设置」上面的「本机用户」一行（components/work/LeftNav.tsx）。服务有退出能力时（只有桌面形态有）点开是一个小菜单：
+ * 服务地址与「退出服务」；导航栏展开时菜单就地展开在这一行下面，收起时弹在这一枚图标右边。没有退出能力时只是一行不能点的「本机用户」。
  */
-export function UserMenu({ where }: { where: "sider" | "topbar" }) {
+export function UserMenu({ collapsed = false }: { collapsed?: boolean }) {
   const { info, markExited } = useService();
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -106,7 +107,9 @@ export function UserMenu({ where }: { where: "sider" | "topbar" }) {
   }, [open]);
 
   const canExit = Boolean(info?.capabilities.exit);
-  if (!canExit) return where === "sider" ? <>本机用户</> : null;
+  if (!canExit) {
+    return <div className="lnav-it svc-user plain" title="本机用户" data-testid="user-row"><span className="i"><UserOutlined /></span><span className="n">本机用户</span></div>;
+  }
 
   const leave = async () => {
     setLeaving(true);
@@ -121,10 +124,12 @@ export function UserMenu({ where }: { where: "sider" | "topbar" }) {
   };
 
   return (
-    <span className={`svc-user-wrap at-${where}`}>
-      <span className={`svc-user at-${where}`} role="button" onClick={() => setOpen(!open)} data-testid="user-menu-button">本机用户 ▾</span>
+    <div className={`svc-user-wrap${collapsed ? " pop" : ""}`}>
+      <a className={`lnav-it svc-user${open ? " opened" : ""}`} role="button" onClick={() => setOpen(!open)} title="本机用户" data-testid="user-menu-button">
+        <span className="i"><UserOutlined /></span><span className="n">本机用户</span><span className="c">{open ? "▴" : "▾"}</span>
+      </a>
       {open && (
-        <div className={`svc-menu at-${where}`} data-testid="user-menu">
+        <div className="svc-menu" data-testid="user-menu">
           <div className="svc-mh">服务在本机运行：{window.location.host}</div>
           <div className="svc-row danger" role="button" onClick={() => { setOpen(false); setConfirming(true); }} data-testid="exit-service">退出服务</div>
         </div>
@@ -133,6 +138,6 @@ export function UserMenu({ where }: { where: "sider" | "topbar" }) {
         confirmLoading={leaving} destroyOnHidden>
         退出后页面将无法使用，确定退出？
       </Modal>
-    </span>
+    </div>
   );
 }

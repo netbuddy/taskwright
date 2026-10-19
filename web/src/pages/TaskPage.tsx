@@ -103,8 +103,8 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
     section.scrollIntoView?.({ block: "start" });
   }, [focus, task, status]);
 
-  if (error) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Alert type="error" showIcon message={error} /></div></TaskFrame>;
-  if (!task) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Spin /></div></TaskFrame>;
+  if (error) return <TaskFrame taskId={taskId} where="任务起点" here="task" sessions={[]}><div className="tp-page"><Alert type="error" showIcon message={error} /></div></TaskFrame>;
+  if (!task) return <TaskFrame taskId={taskId} where="任务起点" here="task" sessions={[]}><div className="tp-page"><Spin /></div></TaskFrame>;
 
   const selected = task.knowledge_libraries ?? [];
   const lastActive = task.sessions.map((s) => s.last_active_at).filter(Boolean).sort().pop();
@@ -204,7 +204,7 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
   };
 
   return (
-    <TaskFrame taskId={taskId} taskName={task.task_name} where="任务起点" sessions={task.sessions} task={task} pending={showsPendingWork(task, status)}>
+    <TaskFrame taskId={taskId} taskName={task.task_name} where="任务起点" here="task" sessions={task.sessions} task={task} pending={showsPendingWork(task, status)}>
       <div className="tp-page" data-testid="task-page">
         <div className="tp-crumb"><a href={href.tasks()}>任务</a><span className="sep">›</span>{task.task_name}</div>
 

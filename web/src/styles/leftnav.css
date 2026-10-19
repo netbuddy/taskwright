@@ -2,14 +2,11 @@
  * 图标全用 @ant-design/icons 的 Outlined 一族、同一尺寸 1rem，放在同宽的一格里，各行的图标对齐在同一条竖线上。
  * 收起时只留图标：文字、计数、分段标题、流程进度与其余会话都不画，三组之间留分隔线，红点挪到图标右上角。 */
 .lnav{width:var(--w-nav);flex:none;background:var(--dark);border-right:1px solid var(--line);display:flex;flex-direction:column;
-  min-height:0;overflow-y:auto;overflow-x:hidden;transition:width .15s ease}
+  min-height:0;transition:width .15s ease;position:relative;z-index:5}
+/* 各段放在可以上下滚的一层里；底部三行在它外面，「本机用户」收起态弹出的菜单不被裁掉 */
+.lnav .lnav-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden}
 .lnav.closed{width:var(--w-nav-closed)}
 .lnav a{color:inherit;text-decoration:none}
-.lnav .lnav-hd{display:flex;align-items:center;gap:.6rem;padding:.7rem .95rem .55rem;border-bottom:1px solid var(--line);color:var(--ink);min-width:0}
-.lnav .lnav-hd .i{color:var(--mut);height:1.6rem;border-radius:.4rem}
-.lnav .lnav-hd .i:hover{color:var(--ink);background:var(--dark3)}
-.lnav .lnav-hd b{font-size:0.94rem}
-.lnav .lnav-hd .n:hover{text-decoration:underline}
 .lnav .lnav-sec{padding:.6rem .5rem .25rem;display:flex;flex-direction:column;gap:.1rem}
 .lnav .lnav-sec .t{font-size:0.78rem;letter-spacing:.06em;color:var(--mut);padding:0 .45rem .3rem}
 .lnav .lnav-it{display:flex;align-items:center;gap:.6rem;padding:.4rem .45rem;border-radius:.45rem;color:var(--ink);cursor:pointer;
@@ -34,6 +31,13 @@
 .lnav .lnav-dot{position:absolute;top:-.12rem;right:-.18rem;width:.42rem;height:.42rem;border-radius:50%;background:var(--gap);
   box-shadow:0 0 0 .1rem var(--dark)}
 .lnav .lnav-it.sub.archived .n{color:var(--mut)}
+/* 会话一行分两行写：会话名一行，下面小字写工作项的种类与建立时刻 */
+.lnav .lnav-it.sess{flex-wrap:wrap;row-gap:.05rem}
+.lnav .lnav-it.sess .n{flex-basis:100%}
+.lnav .lnav-it.sess .c{max-width:none;flex:1}
+.lnav .lnav-it.sub .c .kind{border:1px solid var(--line2);border-radius:.6rem;padding:0 .35rem;margin-right:.35rem;font-size:0.74rem}
+.lnav .svc-user.plain{cursor:default}
+.lnav .svc-user.plain:hover{background:none}
 .lnav .lnav-arch{display:flex;align-items:center;gap:.4rem;padding:.3rem .45rem .2rem 2.3rem;font-size:0.8rem;color:var(--mut);cursor:pointer}
 .lnav .lnav-arch input{margin:0}
 .lnav .lnav-none{font-size:0.86rem;color:var(--mut);padding:.3rem .45rem}
@@ -44,12 +48,10 @@
 .lnav .lnav-flow .bar i.done{background:var(--ok);border-color:var(--ok)}
 .lnav .lnav-flow .bar i.current{background:var(--blue);border-color:var(--blue)}
 .lnav .lnav-flow .lab{font-size:0.8rem;color:var(--mut);line-height:1.45}
-.lnav .sp{flex:1}
 .lnav .lnav-ft{border-top:1px solid var(--line);padding:.4rem .5rem;display:flex;flex-direction:column;gap:.1rem}
 
 /* 收起 */
 .lnav.closed .n,.lnav.closed .c,.lnav.closed .t,.lnav.closed .lnav-flow,.lnav.closed .lnav-it.sub,.lnav.closed .lnav-none,.lnav.closed .lnav-arch{display:none}
-.lnav.closed .lnav-hd{justify-content:center;padding:.8rem 0 .6rem}
 .lnav.closed .lnav-sec{padding:.45rem .5rem;border-bottom:1px solid var(--line)}
 .lnav.closed .lnav-sec:not(:has(.lnav-it:not(.sub))){display:none}
 .lnav.closed .lnav-it{justify-content:center;padding:.5rem 0}

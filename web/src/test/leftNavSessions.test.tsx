@@ -112,13 +112,13 @@ describe("导航栏会话按工作项标注，末尾可显示已归档的会话"
   ];
   const ARCHIVED = entry("S9", "澄清 · 续借规则", { work_item: null, archived: true, archived_at: "2026-10-13T13:14:00Z", archived_record_id: 4 });
 
-  it("当前会话单列在前，其余标所属工作项、按建立时间倒序；页面取的是带归档的清单，导航栏只列未归档的；新会话一行说明是自由讨论", async () => {
+  it("会话按建立时间倒序，当前会话在它的位置上高亮，其余标工作项的种类；页面取的是带归档的清单，导航栏只列未归档的；新会话一行说明是自由讨论", async () => {
     const list = vi.spyOn(api, "listSessions").mockResolvedValue([...LIVE.map((one, i) => ({ ...one, started_at: `2026-10-13T0${i + 1}:00:00Z` })), ARCHIVED]);
     render(view(IDLE));
     await waitFor(() => expect(within(work()).getAllByTestId("nav-session")).toHaveLength(2));
     expect(list).toHaveBeenCalledWith("TASK-001", true);
     expect(screen.getByTestId("nav-current-session")).toHaveTextContent("当前会话 · 需求分析");
-    expect(within(work()).getAllByTestId("nav-session-tag").map((one) => one.textContent)).toEqual(["自由讨论 · ", "整理建模 · "]);
+    expect(within(work()).getAllByTestId("nav-session-tag").map((one) => one.textContent)).toEqual(["自由讨论", "单项活动"]);
     expect(work().textContent).not.toMatch(/澄清 · 续借规则/);
     expect(screen.getByTestId("nav-new-session")).toHaveAttribute("title", "新建一条会话：自由讨论，不绑定活动；交付物还是这一份");
   });

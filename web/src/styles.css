@@ -97,23 +97,11 @@ body {
 .muted { color: var(--mut); }
 .small { font-size: 0.943rem; }
 
-/* ───── 任务列表页与任务页的外壳：左侧栏加主体 ───── */
+/* ───── 任务列表页、知识库页的外壳：左边导航栏（styles/leftnav.css）加主体；设置页面沿用 .sider 侧栏 ───── */
 .shell { display: flex; height: 100%; padding: 0.857rem; gap: 0; }
 .shell-card { display: flex; flex: 1; min-width: 0; background: var(--card); border: 1px solid var(--line2); border-radius: 0.857rem; overflow: hidden; }
 .sider { width: 18.286rem; flex: none; border-right: 1px solid var(--line); display: flex; flex-direction: column; background: var(--dark); }
 .sider-head { padding: 1rem 0.857rem 0.571rem; font-weight: 600; font-size: 1rem; }
-.sider-list { flex: 1; overflow: auto; padding: 0 0.571rem; }
-.sider-caption { color: var(--mut); font-size: 0.943rem; padding: 0.857rem 0.286rem 0.429rem; }
-.sider-task { display: flex; align-items: center; gap: 0.429rem; padding: 0.5rem 0.571rem; border-radius: 0.429rem; cursor: pointer; font-size: 0.972rem; }
-.sider-task:hover { background: var(--dark3); }
-.sider-task.on { background: var(--dark3); font-weight: 600; }
-.sider-task .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sider-session { display: flex; align-items: center; gap: 0.429rem; padding: 0.357rem 0.571rem 0.357rem 1.857rem; font-size: 0.972rem; color: var(--text2); cursor: pointer; border-radius: 0.429rem; }
-.sider-session:hover { background: var(--dark3); }
-.sider-foot { border-top: 1px solid var(--line); padding: 0.857rem; font-size: 0.972rem; color: var(--text2); display: flex; align-items: center; }
-/* 侧栏底部「本机用户」右边的「设置」入口 */
-.set-link { margin-left: auto; display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text2); cursor: pointer; font-size: 0.93rem; }
-.set-link:hover { color: var(--ink); }
 .main { flex: 1; min-width: 0; overflow: auto; padding: 1.429rem 2.571rem 2.286rem; }
 .page-title { display: flex; align-items: center; gap: 0.714rem; flex-wrap: wrap; }
 .page-title h1 { font-size: 1.357rem; margin: 0; }
@@ -146,14 +134,10 @@ body {
 .svc-banner a { color: var(--blue); cursor: pointer; }
 .svc-banner .why { flex-basis: 100%; color: var(--amber-mut); font-size: 0.86rem; }
 .svc-banner .sp { flex: 1; }
+/* 左边导航栏底部的「本机用户」菜单：导航栏展开时就地展开在那一行下面，收起时（.pop）弹在图标右边 */
 .svc-user-wrap { position: relative; }
-.svc-user { cursor: pointer; }
-.svc-user.at-topbar { border: 1px solid var(--line2); background: var(--card); white-space: nowrap; border-radius: 0.5rem; padding: 0.12rem 0.6rem; font-size: 0.897rem; }
-.svc-user.at-topbar:hover { border-color: var(--ink); }
-.svc-menu { position: absolute; z-index: 90; background: var(--card); border: 1px solid var(--line2); border-radius: 0.6rem; width: 15rem; padding: 0.35rem;
-  box-shadow: 0 0.714rem 1.857rem var(--shadow-3); }
-.svc-menu.at-sider { left: 0; bottom: calc(100% + 0.6rem); }
-.svc-menu.at-topbar { right: 0; top: calc(100% + 0.4rem); }
+.svc-menu { background: var(--card); border: 1px solid var(--line2); border-radius: 0.6rem; padding: 0.35rem; margin: 0.1rem 0 0.25rem; }
+.svc-user-wrap.pop .svc-menu { position: absolute; z-index: 90; left: calc(100% + 0.5rem); bottom: 0; width: 15rem; margin: 0; box-shadow: 0 0.714rem 1.857rem var(--shadow-3); }
 .svc-menu .svc-mh { color: var(--mut); padding: 0.2rem 0.5rem 0.3rem; font-size: 0.86rem; }
 .svc-menu .svc-row { cursor: pointer; border-radius: 0.45rem; padding: 0.35rem 0.5rem; font-size: 0.92rem; }
 .svc-menu .svc-row:hover { background: var(--sel); }
@@ -170,7 +154,6 @@ body {
 .upg .upg-err { color: var(--gap); }
 
 /* 左侧栏的「任务」「知识库」两个入口 */
-.sider-nav { padding: 0.6rem 0.571rem 0; display: flex; flex-direction: column; gap: 0.1rem; }
 .nav-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.42rem 0.571rem; border-radius: 0.429rem; font-size: 0.972rem; cursor: pointer; color: var(--text1); }
 .nav-item:hover { background: var(--dark3); }
 .nav-item.on { background: var(--dark3); font-weight: 600; color: var(--ink); }
