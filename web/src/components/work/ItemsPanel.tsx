@@ -1,6 +1,7 @@
-// 条目区（工作台中栏），照设计原型：顶上一排六个页签按需求资产分（model/assetTabs.ts），下面一行汇总（点开是完成条件）。
+// 条目区（工作台中栏），照设计原型：顶上一排页签按需求资产分，任务定义有问题集合时另有「问题」页签（model/assetTabs.ts），
+// 下面一行汇总（点开是完成条件）。
 // 材料与证据、分析模型、评审与确认、文档与版本四页各是一个组件（MaterialsTab、ModelsTab、ReviewTab、DocsTab）；业务说明页签是 overall/ 下的目录加一节。
-// 「需求条目」页签里：集合的子页签一行与「导出 Word」，下面一行筛选，
+// 「需求条目」与「问题」页签里：集合的子页签一行与「导出 Word」（问题页签只有一个集合时不排子页签），下面一行筛选，
 // 「还有 N 条未读」的提示与勾选后的批量标为已读，然后是列表；点一行，列表换成这个条目的详情（带「回到列表」）。
 // 打开详情就记为已读（由页面在打开时发 mark_viewed），已读就算确认；未读的行像邮件一样加粗。
 // 问题条目一类的集合（有取值「用户决定保留」的枚举字段）铺成一张张卡片，未解决的带「回答这个问题」「暂不处理」。
@@ -35,7 +36,7 @@ import { ItemStatus } from "./ItemStatus";
 import { submitQuestion, submitTitle } from "../../model/submit";
 import { changesAfter, changesLine, nextVersionNo } from "../../model/versions";
 import { initialTab, readTab, saveTab, tabOrder } from "../../model/itemsTab";
-import { ASSET_PANES, type AssetPane, paneCount, paneKey, paneOfCollection, paneOfKey } from "../../model/assetTabs";
+import { type AssetPane, assetPanes, issueCollections, itemCollections, paneCount, paneKey, paneOfCollection, paneOfKey, unresolvedIssues } from "../../model/assetTabs";
 import { MaterialsTab } from "./MaterialsTab";
 import { ReviewTab } from "./ReviewTab";
 import { DocsTab } from "./DocsTab";
@@ -132,14 +133,14 @@ export function ItemsPanel({
   // 任务里只有业务说明有内容就停在业务说明，否则停在它之外的第一个集合。
   const [opened] = useState(() => initialTab(task, { selected, collection: initialCollection, diagram: !!initialDiagram }));
   const [tab, setTab] = useState<string>(opened.tab);
-  // 顶上一排六个页签停在哪一个（model/assetTabs.ts）：业务说明与需求条目两个页签里是集合（tab 是哪个集合），另外四个不是。
+  // 顶上一排页签停在哪一个（model/assetTabs.ts）：业务说明、需求条目与问题三个页签里是集合（tab 是哪个集合），另外四个不是。
   // 一打开：地址里带了条目、集合或图，或者浏览器记着的是一个集合时，跟着那个集合走；记着的是另外四个页签之一时停在那里。
   const [pane, setPane] = useState<AssetPane>(() =>
     (!selected && initialDiagrams && !initialDiagram ? "models" : null)
-    || (!selected && !initialCollection && !initialDiagram && paneOfKey(readTab(task.task_id))) || paneOfCollection(opened.tab));
+    || (!selected && !initialCollection && !initialDiagram && paneOfKey(readTab(task.task_id))) || paneOfCollection(task, opened.tab));
   /** 需求条目页签里上次停的集合：从别的页签回来时回到它。 */
-  const lastItemsTab = useRef<string | null>(isOverall(opened.tab) ? null : opened.tab);
-  if (!isOverall(tab)) lastItemsTab.current = tab;
+  const lastItemsTab = useRef<string | null>(paneOfCollection(task, opened.tab) === "items" ? opened.tab : null);
+  if (paneOfCollection(task, tab) === "items") lastItemsTab.current = tab;
   // 业务说明里哪几张图有没保存的改动：有一张就算有。
   const dirtyFigures = useRef(new Set<string>());
   const figureDirty = (diagramId: string, dirty: boolean) => {
@@ -176,18 +177,19 @@ export function ItemsPanel({
   const [dirty, setDirty] = useState(false);
   const activeTab = selectedItem?.collection ?? tab;
   // 停在「业务说明」页签：主体不是列表，是目录加一节（overall/OverallPane.tsx）；筛选、未读提示、批量条都是给列表用的，不显示。
-  const onCollection = pane === "description" || pane === "items";
+  const onCollection = pane === "description" || pane === "items" || pane === "issues";
   const onOverall = pane === "description" && isOverall(activeTab);
-  // 停在需求条目页签的列表上才有筛选、未读提示与批量条。
-  const noList = pane !== "items" || onOverall;
+  // 停在需求条目或问题页签的列表上才有筛选、未读提示与批量条。
+  const noList = (pane !== "items" && pane !== "issues") || onOverall;
   // 记住这个任务停在哪个页签（存在浏览器本地），下次打开这个任务回到这里。
   useEffect(() => { saveTab(task.task_id, onCollection ? activeTab : paneKey(pane)); }, [task.task_id, pane, onCollection, activeTab]);
-  /** 点顶上一排的页签。离开集合页签时关掉打开着的条目；进需求条目回到上次停的集合。 */
+  /** 点顶上一排的页签。离开集合页签时关掉打开着的条目；进需求条目回到上次停的集合，进问题停在第一个问题集合。 */
   const openPane = (next: AssetPane) => {
     setPane(next);
     onSelect(null);
     if (next === "description") setTab(OVERALL_COLLECTION);
-    if (next === "items") setTab(lastItemsTab.current ?? collections.find((c) => !isOverall(c.name))?.name ?? tab);
+    if (next === "items") setTab(lastItemsTab.current ?? itemCollections(task)[0]?.name ?? tab);
+    if (next === "issues") setTab(issueCollections(task)[0]?.name ?? tab);
   };
   const [headRequest, setHeadRequest] = useState<{ view: HeadView | null; seq: number } | null>(null);
   const [figureFocus, setFigureFocus] = useState<{ diagramId: string; seq: number } | null>(null);
@@ -213,7 +215,7 @@ export function ItemsPanel({
       setHeadRequest({ view: { kind: "chapter", no: target.no }, seq: (requests.current += 1) });
       return;
     }
-    openPane("items"); setTab(target.collection); setFilter(target.filter ?? "all");
+    openPane(paneOfCollection(task, target.collection)); setTab(target.collection); setFilter(target.filter ?? "all");
   };
   /** 打开一张图：去业务说明里它所在的地方。 */
   const openDiagram = (diagramId: string) => goFigure(diagramId);
@@ -226,7 +228,7 @@ export function ItemsPanel({
   useEffect(() => {
     if (!selected) return;
     const item = task.items.find((i) => i.item_id === selected);
-    if (item) { setTab(item.collection); setPane(paneOfCollection(item.collection)); if (!matchesFilter(item, filter, task)) setFilter("all"); }
+    if (item) { setTab(item.collection); setPane(paneOfCollection(task, item.collection)); if (!matchesFilter(item, filter, task)) setFilter("all"); }
     document.querySelector(".app .items-body")?.scrollTo({ top: 0 });
   }, [selected]);
   // 换到别的条目或回到列表：不再是从问题跳来的。
@@ -252,10 +254,7 @@ export function ItemsPanel({
   const statusField = keepPendingField(task, activeTab);
   const items = useMemo(() => task.items.filter((i) => i.collection === activeTab && matchesFilter(i, filter, task)), [task, activeTab, filter]);
   const unread = unreadItems(task);
-  const unresolved = task.items.filter((i) => {
-    const f = keepPendingField(task, i.collection);
-    return f && i.fields[f.name] === (f.values ?? [])[0];
-  }).length;
+  const unresolved = unresolvedIssues(task).length;
   const checkedItems = items.filter((i) => checked.has(i.item_id));
   // 导出 Word 用的：全部页签里勾中的条目（已经不在的编号不算）。
   const exportItems = task.items.filter((i) => checked.has(i.item_id));
@@ -267,6 +266,11 @@ export function ItemsPanel({
   const [rawTopic, setRawTopic] = useState(false);
   useEffect(() => { setRawTopic(false); }, [selected]);
   const hitsIn = (collection: string) => task.items.filter((i) => i.collection === collection && hitIds.includes(i.item_id)).length;
+  /** 需求条目与问题两个页签各自的集合，照页签的次序。 */
+  const subCollections = (one: "items" | "issues") => {
+    const names = new Set((one === "items" ? itemCollections(task) : issueCollections(task)).map((c) => c.name));
+    return collections.filter((c) => names.has(c.name));
+  };
   const toReview = pendingReview(task);
   const failed = failedReview(task);
   const kept = keptReview(task);
@@ -289,7 +293,7 @@ export function ItemsPanel({
   const backToIssue = (issueId: string) => {
     const issue = task.items.find((i) => i.item_id === issueId);
     setFromIssue(null);
-    if (issue) { setTab(issue.collection); setPane(paneOfCollection(issue.collection)); if (!matchesFilter(issue, filter)) setFilter("all"); }
+    if (issue) { setTab(issue.collection); setPane(paneOfCollection(task, issue.collection)); if (!matchesFilter(issue, filter)) setFilter("all"); }
     onSelect(null);
     setScrollTo((s) => ({ id: issueId, n: (s?.n ?? 0) + 1 }));
   };
@@ -326,12 +330,14 @@ export function ItemsPanel({
     <div className="pane-items" data-testid="items-panel">
       {writesOff && <div className="sw-busy-banner" data-testid="busy-banner"><span className="spin" />{BUSY_TEXT}</div>}
       <div className="itabs" role="tablist" data-testid="asset-tabs">
-        {ASSET_PANES.map((one) => {
+        {assetPanes(task).map((one) => {
           const count = paneCount(one.key, task, materials);
-          const hits = one.key === "description" ? hitsIn(OVERALL_COLLECTION) : one.key === "items" ? collections.filter((c) => !isOverall(c.name)).reduce((n, c) => n + hitsIn(c.name), 0) : 0;
+          const hits = one.key === "description" ? hitsIn(OVERALL_COLLECTION)
+            : one.key === "items" || one.key === "issues" ? subCollections(one.key).reduce((n, c) => n + hitsIn(c.name), 0) : 0;
           return (
-            <span key={one.key} className={`itab${pane === one.key ? " on" : ""}`} role="tab" onClick={() => openPane(one.key)} data-testid={`pane-${one.key}`}>
-              {one.label}{count !== null && <span className="cnt">{count}</span>}
+            <span key={one.key} className={`itab${pane === one.key ? " on" : ""}`} role="tab" onClick={() => openPane(one.key)} data-testid={`pane-${one.key}`}
+              title={one.key === "issues" ? `${count} 条未解决` : undefined}>
+              {one.label}{count !== null && <span className={`cnt${one.key === "issues" && count !== "0" ? " open" : ""}`}>{count}</span>}
               {hit && hits > 0 && <span className="sw-hitn" title={`修订 ${hit.revision} 碰到这个页签里 ${hits} 个条目`} data-testid={`hit-count-${one.key}`}>{hits}</span>}
             </span>
           );
@@ -350,9 +356,10 @@ export function ItemsPanel({
           onReview={onReview ? (list) => reviewItems(list, `评审 ${list.map((i) => i.item_id).join("、")}`) : undefined}
           onOpen={(id) => { setShowProgress(false); onSelect(id); }} />}
       </div>
-      {pane === "items" && (<>
+      {(pane === "items" || pane === "issues") && (<>
         <div className="itabs" role="tablist" data-testid="item-tabs">
-          {collections.filter((c) => !isOverall(c.name)).map((c) => (
+          {/* 问题页签里只有一个集合时不排子页签，这一行只留「导出 Word」。 */}
+          {(pane === "issues" && subCollections(pane).length === 1 ? [] : subCollections(pane)).map((c) => (
             <span key={c.name} className={`itab${c.name === activeTab ? " on" : ""}`} role="tab"
               onClick={() => { setTab(c.name); onSelect(null); }}>
               {c.name}<span className="cnt">{task.items.filter((i) => i.collection === c.name).length}</span>

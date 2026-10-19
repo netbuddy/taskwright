@@ -100,22 +100,22 @@ export const LOGIN_INSTRUCTION_HINT = "输入后在列表里选 OpenAI，按提�
 export const RELOGIN_TEXT = "这一版改用新的登录入口，请重新登录一次。";
 /**
  * 更换或者第一次选定嵌入模型之前确认框的标题、里面的话与确定按钮上的字：知识库里已经有文档时才问。changing 为真是更换（原来选着一个），
- * 为假是第一次选定；documents 是知识库里文档的份数。换算要向模型服务发请求，所以两种情形末尾都写明可能的费用，说法与「测试」的确认框一致。
+ * 为假是第一次选定；documents 是知识库里文档的份数。向量化要向模型服务发请求，所以两种情形末尾都写明可能的费用，说法与「测试」的确认框一致。
  */
 export function embedConfirmTitle(changing: boolean): string {
   return changing ? "更换嵌入模型？" : "选定嵌入模型？";
 }
 export function embedConfirmText(documents: number, changing: boolean): string {
   return changing
-    ? `换了嵌入模型后，知识库里的 ${documents} 份文档要重新换算，换算完成前按意思查找暂时不可用。商业接口可能产生费用。`
-    : `选定嵌入模型后，知识库里的 ${documents} 份文档要先换算，换算完成后才能按意思查找。商业接口可能产生费用。`;
+    ? `换了嵌入模型后，知识库里的 ${documents} 份文档要重新向量化，向量化完成前按意思查找暂时不可用。商业接口可能产生费用。`
+    : `选定嵌入模型后，知识库里的 ${documents} 份文档要先向量化，向量化完成后才能按意思查找。商业接口可能产生费用。`;
 }
 export function embedConfirmOk(changing: boolean): string {
-  return changing ? "更换并重新换算" : "选定并开始换算";
+  return changing ? "更换并重新向量化" : "选定并开始向量化";
 }
-/** 选定之后已经让后台开始换算时的那句提示。 */
+/** 选定之后已经让后台开始向量化时的那句提示。 */
 export function embedStartedText(documents: number): string {
-  return `已开始换算知识库里的 ${documents} 份文档，进度在知识库页面上看。`;
+  return `已开始向量化知识库里的 ${documents} 份文档，进度在知识库页面上看。`;
 }
 /** Codex 订阅的「更新模型目录」：平时不访问外网，点了才访问一次。按钮的字、确认框里的那句、更新好之后的提示。 */
 export const REFRESH_CATALOG_LABEL = "更新模型目录";
@@ -126,7 +126,7 @@ export function testConfirmTitle(type: ModelType): string {
   return `测试${TYPE_NAME[type]}`;
 }
 export function testConfirmText(type: ModelType, model: string): string {
-  const what = type === "language" ? "让模型读一个小文件并回一句话" : "把一句话换算成一串数字";
+  const what = type === "language" ? "让模型读一个小文件并回一句话" : "把一句话向量化，得到一串数字";
   return `会用「${model}」发一次真实的请求：${what}。商业接口可能产生很少的费用。`;
 }
 /** 测试结果的头一行。只说这一次，不说这个模型以后都可以用。 */
@@ -140,9 +140,9 @@ export function testQuestionText(result: ModelTestResult): string {
 export function testReplyText(result: ModelTestResult): string {
   return result.reply ? `模型回答：${result.reply}` : "模型没有回答";
 }
-/** 嵌入模型通过时的结果，头一行下面的两行：送去换算的是哪句话（前面带着查询前缀），算出来的数字串有多长。没有通过时只有头一行。 */
+/** 嵌入模型通过时的结果，头一行下面的两行：送去向量化的是哪句话（前面带着查询前缀），算出来的数字串有多长。没有通过时只有头一行。 */
 export function testSentText(result: ModelTestResult): string {
-  return `送去换算的话：${result.question}`;
+  return `送去向量化的话：${result.question}`;
 }
 export function testDimensionsText(result: ModelTestResult): string {
   return `算出来的数字串长度：${result.dimensions ?? ""}`;

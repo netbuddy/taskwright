@@ -1,4 +1,4 @@
-// 任务页「选用的知识库」一栏：列出这个任务选用的知识库（通用知识库注明每个任务都会用到，不能去掉），每个知识库可以查看、不再选用；
+// 任务页「选用的知识库」一栏：列出这个任务选用的知识库（可以一个都没有），每个知识库可以查看、不再选用；
 // 「选用别的知识库」弹出勾选框列表，确定之后整体改选用。任务已结束时只列出，不能改。
 
 import { useState } from "react";
@@ -6,10 +6,10 @@ import { Button, Checkbox, Popover } from "antd";
 import { BookOutlined } from "@ant-design/icons";
 import type { KnowledgeLibrary } from "../api/types";
 import { href } from "../router";
-import { GENERAL, docCountText, sortedLibraries, usageText } from "../model/knowledge";
+import { docCountText, usageText } from "../model/knowledge";
 
 /**
- * 「选用别的知识库」按钮与它弹出的勾选框：确定之后整体改选用（通用知识库总在里面，不能去掉）。
+ * 「选用别的知识库」按钮与它弹出的勾选框：确定之后整体改选用。
  * 任务起点页的知识库卡与工作台「材料与证据」页签共用。
  */
 export function KnowledgePickButton({ libraries, selected, onChange, placement = "topLeft", plain = false }: {
@@ -21,7 +21,7 @@ export function KnowledgePickButton({ libraries, selected, onChange, placement =
   /** 工作台里用工作视图的按钮样式（.btn），任务起点页用 antd 的小按钮。 */
   plain?: boolean;
 }) {
-  const libs = sortedLibraries(libraries);
+  const libs = libraries;
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>(selected);
   const openPicker = (next: boolean) => {
@@ -29,16 +29,16 @@ export function KnowledgePickButton({ libraries, selected, onChange, placement =
     setOpen(next);
   };
   const confirm = async () => {
-    if (await onChange([GENERAL, ...libs.filter((l) => l.id !== GENERAL && draft.includes(l.id)).map((l) => l.id)])) setOpen(false);
+    if (await onChange(libs.filter((l) => draft.includes(l.id)).map((l) => l.id))) setOpen(false);
   };
   const picker = (
     <div className="kbpick" data-testid="kb-picker">
       <div className="ph">勾上的知识库这个任务会用到。改完之后，下一次会话开始时助手按新的选择查找。</div>
       {libs.map((l) => (
         <div key={l.id} className="kbpick-row">
-          <Checkbox checked={l.id === GENERAL || draft.includes(l.id)} disabled={l.id === GENERAL}
+          <Checkbox checked={draft.includes(l.id)}
             onChange={(e) => setDraft((d) => (e.target.checked ? [...d, l.id] : d.filter((x) => x !== l.id)))}>
-            {l.name}<span className="pm">{docCountText(l)} · {l.id === GENERAL ? "每个任务都会用到，不能去掉" : usageText(l, { selected: selected.includes(l.id) })}</span>
+            {l.name}<span className="pm">{docCountText(l)} · {usageText(l, { selected: selected.includes(l.id) })}</span>
           </Checkbox>
         </div>
       ))}
@@ -59,20 +59,20 @@ export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
   /** 改选用：给出改完之后的整个列表。 */
   onChange: (ids: string[]) => Promise<boolean>;
 }) {
-  const libs = sortedLibraries(libraries);
-  const chosen = libs.filter((l) => selected.includes(l.id));
+  const chosen = libraries.filter((l) => selected.includes(l.id));
 
   return (
     <section className="tp-pane" aria-label="选用的知识库" data-testid="task-knowledge">
       <div className="tp-sec-h"><h2><BookOutlined className="tp-hic" />选用的知识库</h2><span className="cnt" data-testid="kb-count">{chosen.length} 个</span></div>
+      {chosen.length === 0 && <div className="tp-none" data-testid="kb-none">这个任务还没有选用知识库，助手查不到参考资料。</div>}
       {chosen.map((l) => (
-        <div key={l.id} className={`tp-kbrow${l.id === GENERAL ? " general" : ""}`} data-testid={`kb-row-${l.id}`}>
+        <div key={l.id} className="tp-kbrow" data-testid={`kb-row-${l.id}`}>
           <span className="nm"><BookOutlined className="kic" />{l.name}</span>
           <span className="dc">{docCountText(l)}</span>
-          <span className="ds">{l.id === GENERAL ? "每个任务都会用到。" : ""}</span>
+          <span className="ds" />
           <span className="acts">
             <a className="tp-lnk" href={href.knowledge(l.id)}>查看</a>
-            {l.id !== GENERAL && !readOnly && (
+            {!readOnly && (
               <a className="tp-lnk quiet" role="button" onClick={() => void onChange(selected.filter((x) => x !== l.id))}>不再选用</a>
             )}
           </span>

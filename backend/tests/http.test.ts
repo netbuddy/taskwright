@@ -109,9 +109,9 @@ test("经 HTTP：超大上传不读请求体就以 too_large 拒绝；没有的�
   });
   try {
     const { task_id: taskId } = service.create({});
-    const big = await send("POST", `/api/v1/tasks/${taskId}/materials`, { "Content-Length": String(6 * 1024 * 1024), "Content-Type": "multipart/form-data; boundary=B" });
+    const big = await send("POST", `/api/v1/tasks/${taskId}/materials`, { "Content-Length": String(11 * 1024 * 1024), "Content-Type": "multipart/form-data; boundary=B" });
     assert.deepEqual([big.status, JSON.parse(big.body).error.code], [413, "too_large"]);
-    const missing = await send("POST", "/api/v1/tasks/TASK-NONE/materials", { "Content-Length": String(6 * 1024 * 1024) });
+    const missing = await send("POST", "/api/v1/tasks/TASK-NONE/materials", { "Content-Length": String(11 * 1024 * 1024) });
     assert.deepEqual([missing.status, JSON.parse(missing.body).error.code], [404, "not_found"]);
     const put = await send("PUT", "/api/v1/tasks");
     assert.equal(put.status, 501);

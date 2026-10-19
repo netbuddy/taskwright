@@ -47,13 +47,15 @@ function Panel({ t, libraries = LIBS }: { t: Task; libraries?: KnowledgeLibrary[
   );
 }
 
-describe("顶上一排六个页签", () => {
-  it("名字照需求资产六类；数：材料几份（文字版不算）、业务说明几节、分析模型几张、需求条目几条（问题条目不算）、发布过几版；评审与确认不写数", () => {
+describe("顶上一排页签", () => {
+  it("名字照需求资产六类，任务定义有问题集合时需求条目后面多一个问题；数：材料几份（文字版不算）、业务说明几节、分析模型几张、需求条目几条（问题条目不算）、问题几条未解决（已解决的不算）、发布过几版；评审与确认不写数", () => {
     const t = overallTask();
     vi.spyOn(api, "getTask").mockResolvedValue(detailOf(t));
     render(<Panel t={t} />);
     expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((one) => one.textContent))
-      .toEqual(["材料与证据2", "业务说明11", "分析模型0", "需求条目3", "评审与确认", "文档与版本0"]);
+      .toEqual(["材料与证据2", "业务说明11", "分析模型0", "需求条目3", "问题3", "评审与确认", "文档与版本0"]);
+    expect(t.items.filter((one) => one.collection === "问题").length).toBe(4);
+    expect(screen.getByTestId("pane-issues").querySelector(".cnt")).toHaveClass("open");
     const published = overallTask({ versions: [{ version_no: 2 }, { version_no: 1 }] as unknown as Task["versions"] });
     expect(paneCount("docs", published, [])).toBe("2");
   });
@@ -113,17 +115,17 @@ describe("「材料与证据」页签", () => {
     expect(screen.getByTestId("materials-upload")).toHaveTextContent("上传材料");
   });
 
-  it("选用的知识库一张表：文档份数、本项目引用几处、「取消选用」（通用知识库不能取消）；表下「选用别的知识库」；没有知识库这一功能时整块不显示", async () => {
+  it("选用的知识库一张表：文档份数、本项目引用几处、每个都可以「取消选用」；表下「选用别的知识库」；没有知识库这一功能时整块不显示", async () => {
     const t = withKnowledgeSource(overallTask());
     vi.spyOn(api, "getTask").mockResolvedValue(detailOf(t));
     const select = vi.spyOn(api, "setTaskKnowledge").mockImplementation(async (_t, ids) => ids);
     const view = render(<Wrap><div className="app"><MaterialsTab task={t} materials={MATERIALS} info={null} libraries={LIBS} readOnly={false} onView={vi.fn()} /></div></Wrap>);
     await screen.findByTestId("knowledge-row-lib-hy");
     const cells = (id: string) => [...screen.getByTestId(`knowledge-row-${id}`).querySelectorAll("td")].slice(0, 3).map((td) => td.textContent);
-    expect(cells("general")).toEqual(["通用知识库每个任务都会用到", "12 份文档", "还没有被引用"]);
+    expect(cells("general")).toEqual(["通用知识库", "12 份文档", "还没有被引用"]);
     expect(cells("lib-hy")).toEqual(["图书馆行业规范", "5 份文档", "1 处"]);
     expect(screen.queryByTestId("knowledge-row-lib-x")).toBeNull();
-    expect(screen.queryByTestId("knowledge-drop-general")).toBeNull();
+    expect(screen.getByTestId("knowledge-drop-general")).toBeTruthy();
     fireEvent.click(screen.getByTestId("knowledge-drop-lib-hy"));
     await waitFor(() => expect(select).toHaveBeenCalledWith(t.task_id, ["general"]));
     expect(screen.getByTestId("kb-pick")).toHaveClass("btn");

@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
+import { KnowledgeStore } from "../src/knowledge.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { SERVICE_DB_NAME, ServiceDb } from "../src/service_db.ts";
 import { BACKEND_MAIN, ROOT, captureConsole, tempDir } from "./helpers.ts";
@@ -47,6 +48,7 @@ const registered = (data: string) => {
 test("导出整套再导入到一个空的数据目录：两个命令都退出 0；再导入一次跳过；加 --renumber 改编号导入", async () => {
   const where = await dataWith(fresh("data"), ["甲", "乙"]);
   const [a, b] = where.ids;
+  const lib = new KnowledgeStore(where.knowledgeDir).create("规范");
   put(join(where.tasksDir, a, "inputs", "材料.md"), "读者凭借书证借书。\n");
   putArchive(where, a);
   const file = join(outDir(), "all.taskwright.zip");
@@ -55,16 +57,16 @@ test("导出整套再导入到一个空的数据目录：两个命令都退出 0
   assert.equal(exported.status, 0, exported.err);
   assert.match(exported.out, /^数据包已经写好：.*all\.taskwright\.zip（\d+ 个文件，/);
   assert.match(exported.out, new RegExp(`任务 ${a}「甲」：\\d+ 个文件\\n`));
-  assert.match(exported.out, /知识库 general「通用知识库」：0 个文件/);
+  assert.match(exported.out, new RegExp(`知识库 ${lib.id}「规范」：0 个文件`));
   assert.deepEqual(readPack(file).manifest.tasks.map((t) => t.task_id).sort(), [a, b].sort());
 
   const target = fresh("target");
   const imported = run(["data", "import", "--data", target, "--from", file]);
   assert.equal(imported.status, 0, imported.err + imported.out);
   assert.match(imported.out, /^数据包导入报告（/);
-  // 通用知识库两边都是空的：没有要导入的，照实写。
-  assert.match(imported.out, /知识库 general「通用知识库」：没有导入（两边都是空的，没有要导入的）/);
-  assert.match(imported.out, /合计：导入了 2 个任务、0 个知识库；因为已经存在而跳过 1 项；没有做成 0 项。/);
+  // 一个空的知识库：目标里没有它，照常导入。
+  assert.match(imported.out, new RegExp(`知识库 ${lib.id}「规范」：已导入`));
+  assert.match(imported.out, /合计：导入了 2 个任务、1 个知识库；因为已经存在而跳过 0 项；没有做成 0 项。/);
   assert.match(imported.out, /这份报告也写在 .*logs.import-\d{8}-\d{6}\.txt/);
   assert.deepEqual(registered(target)?.sort(), [[a, "甲", a], [b, "乙", b]].sort(), "导入时建出了任务登记");
   // 缺省不带事件归档：导入之后的归档是原来的对话记录那一部分。
@@ -86,11 +88,12 @@ test("导出整套再导入到一个空的数据目录：两个命令都退出 0
 test("导出：一个任务、一个知识库；没有这个编号、目标文件已经在、参数不对时退出 2；有任务目录没有带时退出 1", async () => {
   const where = await dataWith(fresh("data"), ["甲"]);
   const [a] = where.ids;
+  const library = new KnowledgeStore(where.knowledgeDir).create("规范").id;
   const dir = outDir();
   const one = run(["data", "export", "--data", where.dataDir, "--task", a, "--to", join(dir, "one.zip")]);
   assert.equal(one.status, 0, one.err);
   assert.deepEqual([readPack(join(dir, "one.zip")).manifest.scope, readPack(join(dir, "one.zip")).manifest.libraries], ["task", []]);
-  const lib = run(["data", "export", "--data", where.dataDir, "--library", "general", "--to", join(dir, "lib.zip")]);
+  const lib = run(["data", "export", "--data", where.dataDir, "--library", library, "--to", join(dir, "lib.zip")]);
   assert.equal(lib.status, 0, lib.err);
   assert.deepEqual(readPack(join(dir, "lib.zip")).manifest.scope, "library");
 
@@ -99,7 +102,7 @@ test("导出：一个任务、一个知识库；没有这个编号、目标文�
   const taken = run(["data", "export", "--data", where.dataDir, "--to", join(dir, "one.zip")]);
   assert.equal(taken.status, 2);
   assert.match(taken.err, /没有导出：文件 .*one\.zip 已经在了，没有覆盖它。/);
-  for (const args of [["--data", where.dataDir], ["--data", where.dataDir, "--task", a, "--library", "general", "--to", join(dir, "x.zip")], ["--to", join(dir, "y.zip"), "--port", "1"]]) {
+  for (const args of [["--data", where.dataDir], ["--data", where.dataDir, "--task", a, "--library", library, "--to", join(dir, "x.zip")], ["--to", join(dir, "y.zip"), "--port", "1"]]) {
     const bad = run(["data", "export", ...args]);
     assert.equal(bad.status, 2, args.join(" "));
     assert.match(bad.err, /用法：taskwright data upgrade \[--data <数据目录>\][^]*taskwright data export \[--data <数据目录>\]/);

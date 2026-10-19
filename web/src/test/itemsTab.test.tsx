@@ -1,4 +1,4 @@
-// 条目区的页签：顶上一排六个，需求条目页签里一排集合的子页签；一打开停在哪一个（选中的条目、地址、记住的、缺省）；
+// 条目区的页签：顶上一排六个加问题，需求条目页签里一排集合的子页签；一打开停在哪一个（选中的条目、地址、记住的、缺省）；
 // 用户换了页签就记下来，下次打开这个任务回到那里。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -39,9 +39,9 @@ describe("页签的次序", () => {
   it("业务说明那一个集合排最前，其余照任务定义的先后", () => {
     expect(tabOrder(overallTask().definition.collections).map((c) => c.name)).toEqual(["业务说明", "功能用例", "问题"]);
     render(<Panel t={overallTask()} />);
-    // 顶上一排是需求资产六类；业务说明那一个集合在「业务说明」页签里，其余集合是「需求条目」页签里的子页签。
-    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((t) => t.firstChild!.textContent)).toEqual(["材料与证据", "业务说明", "分析模型", "需求条目", "评审与确认", "文档与版本"]);
-    expect(tabs()).toEqual(["功能用例", "问题"]);
+    // 顶上一排是需求资产六类加问题；业务说明那一个集合在「业务说明」页签里，问题集合在「问题」页签里，其余集合是「需求条目」页签里的子页签。
+    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((t) => t.firstChild!.textContent)).toEqual(["材料与证据", "业务说明", "分析模型", "需求条目", "问题", "评审与确认", "文档与版本"]);
+    expect(tabs()).toEqual(["功能用例"]);
     expect(screen.getByTestId("pane-description").querySelector(".cnt")!.textContent).toBe("11");
   });
 });
@@ -124,5 +124,42 @@ describe("「需求条目」页签", () => {
       expect(screen.getByTestId("progress")).toBeInTheDocument();
       expect([screen.queryByTestId("item-filters"), screen.queryByTestId("unread-bar"), screen.queryByTestId("export-docx")]).toEqual([null, null, null]);
     }
+  });
+});
+
+describe("问题页签", () => {
+  it("与需求条目并列：点开列出问题条目的卡片，只有一个问题集合时没有子页签，「导出 Word」与筛选照常在；再点需求条目回到上次停的集合", () => {
+    render(<Panel t={overallTask()} />);
+    expect(onTab()).toBe("功能用例");
+    fireEvent.click(screen.getByTestId("pane-issues"));
+    expect(screen.getByTestId("pane-issues")).toHaveClass("on");
+    expect(onTab()).toBe("问题");
+    expect(tabs()).toEqual([]);
+    expect(screen.getByTestId("export-docx")).toBeInTheDocument();
+    expect(screen.getByTestId("item-filters")).toBeInTheDocument();
+    expect(screen.getByTestId("item-TBD-001")).toBeInTheDocument();
+    expect(screen.queryByTestId("item-UC-001")).toBeNull();
+    fireEvent.click(screen.getByTestId("pane-items"));
+    expect(onTab()).toBe("功能用例");
+  });
+
+  it("选中一个问题条目或者地址里带问题集合：一打开就停在问题页签；记住的是问题集合时下次也回到问题页签", () => {
+    render(<Panel t={overallTask()} first="TBD-001" />);
+    expect(screen.getByTestId("pane-issues")).toHaveClass("on");
+    cleanup();
+    render(<Panel t={overallTask()} collection="问题" />);
+    expect(screen.getByTestId("pane-issues")).toHaveClass("on");
+    cleanup();
+    saveTab(overallTask().task_id, "问题");
+    render(<Panel t={overallTask()} />);
+    expect(screen.getByTestId("pane-issues")).toHaveClass("on");
+  });
+
+  it("任务定义里没有问题集合（没有取值「用户决定保留」的字段）时没有这个页签，那个集合照旧在需求条目里", () => {
+    const t = overallTask();
+    t.definition = { ...t.definition, collections: t.definition.collections.map((c) => ({ ...c, fields: c.fields.map((f) => ({ ...f, values: (f.values ?? []).filter((v) => v !== "用户决定保留") })) })) };
+    render(<Panel t={t} />);
+    expect(screen.queryByTestId("pane-issues")).toBeNull();
+    expect(tabs()).toEqual(["功能用例", "问题"]);
   });
 });

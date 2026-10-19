@@ -77,6 +77,13 @@ make_venv() {
     python3 -m venv "$dir/.venv"
     (cd "$dir" && .venv/bin/python -m pip install --quiet -e 'observatory[test]')
   fi
+  # pytest also loads every plugin it finds on PYTHONPATH, and the ones a shell profile may put there (for example
+  # ROS's launch_testing) can need modules this environment lacks or not work with its pytest at all, so pytest
+  # stops before collecting a single test. The tests here use no plugins: turn the automatic loading off for this
+  # environment's Python, whether or not .venv/bin/activate was sourced (a .pth line starting with import runs at start-up).
+  local site
+  site="$("$dir/.venv/bin/python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+  echo 'import os; os.environ.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")' > "$site/taskwright-no-pytest-autoload.pth"
 }
 
 cmd_new() {

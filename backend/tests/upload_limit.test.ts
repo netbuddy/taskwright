@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { ApiError } from "../src/errors.ts";
 import { serviceInfo } from "../src/http.ts";
-import { MAX_UPLOAD, Service, TOO_LARGE_TEXT, unsupportedTypeText } from "../src/service.ts";
+import { Service, maxUpload, tooLargeText, unsupportedTypeText } from "../src/service.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
 
 // 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
@@ -19,11 +19,11 @@ captureConsole();
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-test("服务信息的 upload：上限 5 MB、「单个文件不能超过 5 MB。」、允许的扩展名、类型给人看的一串与类型不符时的那句话，两种运行形态都给；上传超过上限时报的也是这句话", async () => {
+test("服务信息的 upload：上限 10 MB、「单个文件不能超过 10 MB。」、允许的扩展名、类型给人看的一串与类型不符时的那句话，两种运行形态都给；上传超过上限时报的也是这句话", async () => {
   for (const mode of ["server", "desktop"] as const) {
     const service = new Service(join(tmp, `t-${mode}`), join(tmp, `r-${mode}`), {}, { port: 1, mode });
     try {
-      assert.deepEqual(serviceInfo(service).upload, { max_bytes: 5 * 1024 * 1024, too_large_text: "单个文件不能超过 5 MB。", extensions: [".md", ".txt", ".docx", ".pdf"], types_text: ".md、.txt、Word 的 .docx 与 PDF", unsupported_type_text: "只接受 .md、.txt、Word 的 .docx 与 PDF 文件。" });
+      assert.deepEqual(serviceInfo(service).upload, { max_bytes: 10 * 1024 * 1024, too_large_text: "单个文件不能超过 10 MB。", extensions: [".md", ".txt", ".docx", ".pdf"], types_text: ".md、.txt、Word 的 .docx 与 PDF", unsupported_type_text: "只接受 .md、.txt、Word 的 .docx 与 PDF 文件。" });
     } finally {
       await service.close();
     }
@@ -31,8 +31,8 @@ test("服务信息的 upload：上限 5 MB、「单个文件不能超过 5 MB。
   const service = new Service(join(tmp, "tasks"), join(tmp, "runs"), {}, { port: 1 });
   try {
     const { task_id: taskId } = service.create({ task_type: "requirements-engineering" });
-    assert.throws(() => service.upload(service.task(taskId), "a.md", Buffer.alloc(MAX_UPLOAD + 1)),
-      (error: unknown) => error instanceof ApiError && error.code === "too_large" && error.message === TOO_LARGE_TEXT);
+    assert.throws(() => service.upload(service.task(taskId), "a.md", Buffer.alloc(maxUpload() + 1)),
+      (error: unknown) => error instanceof ApiError && error.code === "too_large" && error.message === tooLargeText());
   } finally {
     await service.close();
   }

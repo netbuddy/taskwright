@@ -1,5 +1,5 @@
 /**
- * 知识库文档换算好的数字串存在哪里、怎样读写。一份文档换算好之后，在它旁边有两个派生文件（与投影、分段清单一样不列在 documents 里）：
+ * 知识库文档向量化好的数字串存在哪里、怎样读写。一份文档向量化好之后，在它旁边有两个派生文件（与投影、分段清单一样不列在 documents 里）：
  *   <文档名>.embeddings.json   {version, chunk_rules, document_sha256, model, dimensions, byte_order, normalized, embedded_at, chunks}
  *                              chunks 是各片段的位置与正文（knowledge_chunks.ts 的 Chunk），model 是「服务名/型号」。
  *   <文档名>.embeddings.bin    各片段的数字串依次连在一起，每个数是 4 个字节的浮点数（Float32），低位字节在前；
@@ -9,7 +9,7 @@
  * 再把数字串写成临时文件、改名成 .bin，最后把 .json 写成临时文件、改名。读的时候 .json 在、.bin 的长度也对得上才算数。
  * 没有片段的文档（没有文字）照样写：chunks 是空的，dimensions 是 0，.bin 是空文件。
  *
- * 一份文档算不算「换算好了」每次现看（isEmbedded）：成品里记的文档 sha256、模型名、格式版本与切法版本都与现在的一致才算。
+ * 一份文档算不算「向量化完成」每次现看（isEmbedded）：成品里记的文档 sha256、模型名、格式版本与切法版本都与现在的一致才算。
  * 所以换了嵌入模型、换了文档内容或者服务重启之后，不用另外登记，状态自然是对的。
  *
  * 本模块只管这两个文件，不调嵌入模型。
@@ -23,7 +23,7 @@ import { type Chunk, chunkRulesVersion } from "./knowledge_chunks.ts";
 
 export const EMBEDDINGS_SUFFIX = ".embeddings.json";
 export const VECTORS_SUFFIX = ".embeddings.bin";
-/** 成品的格式版本。2：每个片段另记它在源文字里的位置（knowledge_chunks.ts 的 start_offset、pieces 等）。版本对不上的旧成品算没有换算过，重新换算，不做兼容读取。 */
+/** 成品的格式版本。2：每个片段另记它在源文字里的位置（knowledge_chunks.ts 的 start_offset、pieces 等）。版本对不上的旧成品算没有向量化过，重新向量化，不做兼容读取。 */
 export const EMBEDDINGS_VERSION = 2;
 
 const LITTLE = endianness() === "LE";
@@ -132,7 +132,7 @@ export function readHead(document: string): EmbeddingsHead | null {
   return head && sizeOf(document + VECTORS_SUFFIX) === head.chunks * head.dimensions * 4 ? head : null;
 }
 
-/** 这份文档（内容的 sha256 是 sha256）在嵌入模型 model 下是不是换算好了。 */
+/** 这份文档（内容的 sha256 是 sha256）在嵌入模型 model 下是不是向量化完成。 */
 export function isEmbedded(document: string, sha256: string, model: string): boolean {
   const head = readHead(document);
   return head !== null && head.version === EMBEDDINGS_VERSION && head.chunk_rules === chunkRulesVersion(document) && head.document_sha256 === sha256 && head.model === model;
@@ -187,7 +187,7 @@ export function removeEmbeddings(document: string): void {
 }
 
 /**
- * 清掉一个库的 files/ 目录里换算留下的半成品：写到一半的临时文件，以及没有 .json 的 .bin（数字串写完了、概况还没写）。
+ * 清掉一个库的 files/ 目录里向量化留下的半成品：写到一半的临时文件，以及没有 .json 的 .bin（数字串写完了、概况还没写）。
  * 服务启动时做一次；返回删掉了几个文件。目录不在时什么也不做。
  */
 export function sweepLeftovers(filesDir: string): number {

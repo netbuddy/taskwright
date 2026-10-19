@@ -251,6 +251,42 @@ export async function writePromptDir(dir: string | null, env: NodeJS.ProcessEnv 
   });
 }
 
+// ───────────── 上传上限 ─────────────
+
+export const MB = 1024 * 1024;
+/** 上传上限能设到多大（MB）：两种上传都不能超过它。 */
+export const UPLOAD_CAP_MB = 50;
+/** 没有设过时的上传上限（MB）：任务材料与知识库文档各一个。 */
+export const UPLOAD_DEFAULT_MB = { material: 10, knowledge: 20 } as const;
+
+export interface UploadLimits {
+  /** 任务材料单个文件的上限，MB。 */
+  material_mb: number;
+  /** 知识库文档单个文件的上限，MB。 */
+  knowledge_mb: number;
+}
+
+/** 上传上限的一个值合不合用：1 到 UPLOAD_CAP_MB 的整数。 */
+export function validUploadMb(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 1 && (value as number) <= UPLOAD_CAP_MB;
+}
+
+/** 现在的上传上限：设置文件顶层的 uploads；文件不在、没有这一项或者某个值不合用时，那一个用缺省值。只读，不改文件。 */
+export function readUploadLimits(env: NodeJS.ProcessEnv | Record<string, string> = process.env): UploadLimits {
+  const file = settingsFile(env);
+  const uploads = existsSync(file) ? readForView(file)?.uploads : undefined;
+  const pick = (value: unknown, fallback: number) => (validUploadMb(value) ? value : fallback);
+  return { material_mb: pick(uploads?.material_mb, UPLOAD_DEFAULT_MB.material), knowledge_mb: pick(uploads?.knowledge_mb, UPLOAD_DEFAULT_MB.knowledge) };
+}
+
+/** 在锁里把上传上限写进设置文件顶层的 uploads；文件里别的键原样保留。两个值由调用方先查过合用。 */
+export async function writeUploadLimits(limits: UploadLimits, env: NodeJS.ProcessEnv | Record<string, string> = process.env): Promise<void> {
+  await updateJsonFile(settingsFile(env), (value) => {
+    value.uploads = { material_mb: limits.material_mb, knowledge_mb: limits.knowledge_mb };
+    return true;
+  });
+}
+
 /** 设置文件能不能写：读不出来时抛 config_unwritable（与写入时同样的检查），先于别的改动做。 */
 export function checkWritable(env: NodeJS.ProcessEnv | Record<string, string> = process.env): void {
   readForWrite(settingsFile(env));

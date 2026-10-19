@@ -1,5 +1,5 @@
 // 知识库页面里「试一试按意思查找」：在选中的这一个知识库里找与一句话意思最相近的几个片段，让用户不经助手也能看看查不查得到。
-// 助手在任务里用的是同一个接口，只是它查的是任务选用的全部知识库。这个知识库里的文档没有都换算好、或者还没有选嵌入模型时不能查，
+// 助手在任务里用的是同一个接口，只是它查的是任务选用的全部知识库。这个知识库里的文档没有都向量化、或者还没有选嵌入模型时不能查，
 // 输入框是灰的，下面写明原因。换一个知识库看时，页面给这个组件换一个 key，上一次的结果随之清掉。
 
 import { useState } from "react";
@@ -10,9 +10,9 @@ import { searchPlaceText } from "../model/knowledge";
 import { useToast } from "./Toasts";
 
 export const SEARCH_NO_MODEL_TEXT = "还没有选嵌入模型，不能按意思查找。";
-export const SEARCH_NOT_READY_TEXT = "这个知识库里的文档都换算好之后，才能按意思查找。";
+export const SEARCH_NOT_READY_TEXT = "这个知识库里的文档都向量化之后，才能按意思查找。";
 export const SEARCH_NO_CHUNKS_TEXT = "这个知识库里的文档没有可比较的文字。";
-export const searchPendingText = (pending: number) => `这个知识库里还有 ${pending} 份文档没有换算好，换算完成后才能按意思查找。`;
+export const searchPendingText = (pending: number) => `这个知识库里还有 ${pending} 份文档没有向量化，向量化完成后才能按意思查找。`;
 
 export function KnowledgeSearchBox({ library, model }: { library: EmbeddedLibrary; model: string | null }) {
   const toast = useToast();

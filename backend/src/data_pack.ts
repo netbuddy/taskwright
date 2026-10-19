@@ -766,17 +766,14 @@ function importLibrary(where: PackLocations, staging: Staging, one: PackLibrary,
   const target = join(where.knowledgeDir, one.id);
   let moved = false;
   try {
-    // 目标数据目录还没有知识库的清单（全新的数据目录）：先建出来，通用知识库随之建出。
+    // 目标数据目录还没有知识库的清单（全新的数据目录）：先建出来（一份空的清单）。
     if (!existsSync(join(where.knowledgeDir, "libraries.json"))) store.ensure();
     if ((store.has(one.id) || existsSync(target)) && !store.isEmpty(one.id)) {
       const count = stagedDocumentCount(staging, one.id);
-      const reason = one.id === GENERAL
-        ? `通用知识库已经存在而且里面有文档，包里通用知识库的 ${count} 份文档没有导入；需要的话请在知识库页面把这些文档另行上传`
-        : `已经有编号是 ${one.id} 的知识库而且里面有文档，包里这个库的 ${count} 份文档没有导入`;
-      return { ...out, outcome: "skipped", reason };
+      return { ...out, outcome: "skipped", reason: `已经有编号是 ${one.id} 的知识库而且里面有文档，包里这个库的 ${count} 份文档没有导入` };
     }
     const staged = join(staging.knowledge, one.id);
-    // 目标里有同编号的库，它是空的，包里这个库也是空的（两个全新数据目录的通用知识库就是这样）：没有东西可导入，照实写。
+    // 目标里有同编号的库，它是空的，包里这个库也是空的：没有东西可导入，照实写。
     if ((store.has(one.id) || existsSync(target)) && stagedDocumentCount(staging, one.id) === 0 && walk(join(staged, "files"), new Set(), "", []).files.length === 0) {
       return { ...out, outcome: "skipped", reason: "两边都是空的，没有要导入的" };
     }
@@ -788,7 +785,7 @@ function importLibrary(where: PackLocations, staging: Staging, one: PackLibrary,
     }
     const row = rows.get(one.id);
     const adopted = store.adopt({ id: one.id, name: row?.name ?? one.name, created_at: typeof row?.created_at === "string" ? row.created_at : clock.now() });
-    return { ...out, outcome: "imported", new_name: one.id !== GENERAL && adopted.name !== (row?.name ?? one.name) ? adopted.name : null };
+    return { ...out, outcome: "imported", new_name: adopted.name !== (row?.name ?? one.name) ? adopted.name : null };
   } catch (error) {
     if (moved) rmSync(target, { recursive: true, force: true });
     return { ...out, reason: (error as Error).message };
@@ -850,7 +847,7 @@ function importTask(where: PackLocations, staging: Staging, one: PackTask, optio
       task_id: id, name: row.name, owner: text(listed?.owner) ?? readTaskJson(target)?.owner ?? one.owner, status: null,
       task_type: row.task_type ?? text(listed?.task_type), created_at: row.created_at ?? text(listed?.created_at), dir: id,
     });
-    // 它选用的知识库在这个数据目录里有没有。
+    // 它选用的知识库在这个数据目录里有没有。以前的通用知识库（general）不提：先前的版本里每个任务都选用它，不是用户选的，空的那个升级时已经删掉。
     const known = new Set(librariesIn(where.knowledgeDir).map((x) => x.id));
     for (const lib of selectedLibraries(target)) {
       if (lib !== GENERAL && !known.has(lib)) out.notes.push(`这个任务选用的知识库 ${lib} 不在这个数据目录里。`);

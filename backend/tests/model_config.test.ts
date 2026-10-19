@@ -15,6 +15,7 @@ import { BACKUP_KEEP, LOCK_WAIT_MS, lockPath, updateJsonFile } from "../src/conf
 import { dispatch, serviceInfo } from "../src/http.ts";
 import { resolveModel } from "../src/launch.ts";
 import { embeddingTarget, migrateProviderPurposes } from "../src/model_config.ts";
+import { adoptPiConfig } from "../src/desktop_dirs.ts";
 import { needsPurposeMigration, readPiDirSettings } from "../src/product_settings.ts";
 import { Service } from "../src/service.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
@@ -864,4 +865,43 @@ test("迁移时共用文件不能改写（有注释）就什么都不改，说�
     providers: { "taskwright-ollama-embedding": { ...oldProvider("嵌入", []), purpose: "embedding", models: [{ id: "bge-m3", enabled: true, context_window: null, context_source: null }] } },
   } } }));
   assert.deepEqual([resolveModel(service.profile).model, resolveModel(service.profile).from], ["fake/fake-model", "启动配置"]);
+});
+
+// ───────────── 孤项与首次复制 ─────────────
+
+test("孤项：模型登记文件里带产品前缀、不在产品名单上的项先当用户的服务列出；再添加同一种模型服务时接管它的服务名，旧的那一项与它留下的密钥都换掉，不留孤项", async () => {
+  writeFileSync(modelsJson(), JSON.stringify({ providers: {
+    "taskwright-ollama-embedding": { baseUrl: "http://old/v1", api: "openai-completions", apiKey: "taskwright-no-key", models: [], leftover: true },
+    "my-llm": { baseUrl: "http://x/v1", models: [{ id: "big" }] },
+  } }));
+  writeFileSync(authJson(), JSON.stringify({ "taskwright-ollama-embedding": { type: "api_key", key: "old-key" }, "my-llm": { type: "api_key", key: "user-key" } }));
+  const before = (await go("GET", "/api/v1/model-config")).body;
+  assert.deepEqual(before.providers.map((p: Dict) => [p.id, p.managed]), [["my-llm", false], ["taskwright-ollama-embedding", false]]);
+  const id = await addOllama("embedding");
+  assert.equal(id, "taskwright-ollama-embedding", "接管孤项的服务名，不另起 -2");
+  const entry = readJson(modelsJson()).providers[id];
+  assert.equal(entry.baseUrl, `${fake.url}/v1`);
+  assert.equal(entry.leftover, undefined, "旧的那一项整个换掉");
+  assert.deepEqual(readJson(authJson()), { "my-llm": { type: "api_key", key: "user-key" } }, "孤项留下的密钥删掉，别人的照留");
+  const view = (await go("GET", "/api/v1/model-config")).body;
+  assert.deepEqual(view.providers.map((p: Dict) => [p.id, p.managed]), [["taskwright-ollama-embedding", true], ["my-llm", false]]);
+});
+
+test("桌面包首次启动复制了本机 pi 的配置：模型登记里只有产品自己的服务，设置页只列它们，并写明哪些别的服务登记没有复制", async () => {
+  const legacy = join(tmp, `legacy-${round}`);
+  mkdirSync(legacy, { recursive: true });
+  writeFileSync(join(legacy, "models.json"), JSON.stringify({ providers: {
+    "taskwright-ollama": { baseUrl: "http://a/v1", api: "openai-completions", apiKey: "taskwright-no-key", models: [{ id: "qwen3:8b", contextWindow: 8192 }] },
+    "other-llm": { baseUrl: "http://b/v1", models: [{ id: "q" }] },
+  } }));
+  writeFileSync(join(legacy, "auth.json"), "{}");
+  mkdirSync(join(settings, ".."), { recursive: true });
+  writeFileSync(settings, JSON.stringify({ version: 2, pi_dirs: { [legacy]: { selection: { language: null, embedding: null }, providers: {
+    "taskwright-ollama": { kind: "ollama", purpose: "language", name: "本机 ollama", base_url: "http://a", models_fetched_at: null, status: null, models: [{ id: "qwen3:8b", enabled: true, context_window: 8192, context_source: "service" }] },
+  } } } }));
+  rmSync(agent, { recursive: true, force: true });
+  await adoptPiConfig(agent, legacy);
+  const view = (await go("GET", "/api/v1/model-config")).body;
+  assert.deepEqual(view.providers.map((p: Dict) => [p.id, p.managed]), [["taskwright-ollama", true]], "other-llm 不出现在设置页上");
+  assert.deepEqual(view.copied_from_pi.skipped, ["other-llm"]);
 });

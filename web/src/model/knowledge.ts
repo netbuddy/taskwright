@@ -2,24 +2,17 @@
 // 种类的叫法与上传上限都来自服务信息（GET /api/v1/service 的 knowledge_upload），前端不另写一份。
 
 import type { DocumentEmbedding, EmbeddedLibrary, KnowledgeKind, KnowledgeLibrary, KnowledgeSearchHit, ServiceInfo } from "../api/types";
-import { GENERAL, isKnowledgeLocator, parseKnowledgeLocator } from "../../../agent/src/lib/knowledge_locator.ts";
+import { isKnowledgeLocator, parseKnowledgeLocator } from "../../../agent/src/lib/knowledge_locator.ts";
 
-// 通用知识库的编号（每个任务都选用它，不能删除、不能改名）与「出处是不是指向知识库」的判断，定义在助手一侧，这里原样交出去。
-export { GENERAL, isKnowledgeLocator };
-
-/** 通用知识库排第一，其余照后端给的先后。 */
-export function sortedLibraries<T extends KnowledgeLibrary>(libs: T[]): T[] {
-  return [...libs.filter((l) => l.id === GENERAL), ...libs.filter((l) => l.id !== GENERAL)];
-}
+// 「出处是不是指向知识库」的判断，定义在助手一侧，这里原样交出去。
+export { isKnowledgeLocator };
 
 export const docCountText = (lib: KnowledgeLibrary) => `${lib.documents.length} 份文档`;
 
 /**
- * 有几个任务在用这个库。通用知识库写「每个任务都会用到」。thisTask 给了时按这个任务是否选用了它说：
- * 只有这个任务在用时写「只有这个任务在用」。
+ * 有几个任务在用这个库。thisTask 给了时按这个任务是否选用了它说：只有这个任务在用时写「只有这个任务在用」。
  */
 export function usageText(lib: KnowledgeLibrary, thisTask?: { selected: boolean }): string {
-  if (lib.id === GENERAL) return "每个任务都会用到";
   if (lib.used_by_tasks === 0) return "没有任务在用";
   if (thisTask?.selected && lib.used_by_tasks === 1) return "只有这个任务在用";
   return `${lib.used_by_tasks} 个任务在用`;
@@ -30,10 +23,10 @@ export const embeddingPolling = { intervalMs: 2000 };
 
 /** 一份文档的换算状态给人看的写法。换算中带「算完了几个片段 / 一共几个」；没有文字的文档不用换算。 */
 export function embeddingStatusText(e: DocumentEmbedding): string {
-  if (e.status === "queued") return "等待换算";
-  if (e.status === "running") return e.total === null ? "换算中" : `换算中（${e.done ?? 0} / ${e.total}）`;
-  if (e.status === "done") return e.total === 0 ? "没有文字，不用换算" : "已换算";
-  return e.status === "failed" ? "换算失败" : "未换算";
+  if (e.status === "queued") return "等待向量化";
+  if (e.status === "running") return e.total === null ? "向量化中" : `向量化中（${e.done ?? 0} / ${e.total}）`;
+  if (e.status === "done") return e.total === 0 ? "没有文字，不用向量化" : "已向量化";
+  return e.status === "failed" ? "向量化失败" : "未向量化";
 }
 
 /** 嵌入模型「服务名/型号」里给人看的那一半：型号。 */

@@ -172,7 +172,10 @@ async function main(): Promise<void> {
     const legacy = path.join(os.homedir(), ".pi", "agent");
     try {
       const copied = await adoptPiConfig(layout.pi, legacy);
-      if (copied) notes.push(`已从本机 pi 的配置 ${copied.from} 复制 ${copied.files.join("、")} 到 ${layout.pi}；之后 Taskwright 只用它自己的这一份，不再读写 ${legacy}。`);
+      if (copied) {
+        notes.push(`已从本机 pi 的配置 ${copied.from} 复制 ${copied.files.join("、")} 到 ${layout.pi}；之后 Taskwright 只用它自己的这一份，不再读写 ${legacy}。`);
+        if (copied.skipped.length) notes.push(`本机 pi 里别的模型服务登记没有复制：${copied.skipped.join("、")}。要在 Taskwright 里用它们，请在设置页面的「模型」一栏里添加。`);
+      }
     } catch (error) {
       notes.push(`没能从本机 pi 的配置 ${legacy} 复制：${(error as Error).message}`);
     }
