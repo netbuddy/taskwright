@@ -192,7 +192,7 @@ test("整理建模那一段：主动画五种图并写明第十一节第 1 条�
   assert.deepEqual(steps, ["1 先画系统边界图（context）。", "2 再画用例图（use_case）。", "3 再画对象关系图（class）。", "4 每一页流程画一张流程图（flowchart）。",
     "5 有状态的概念各画一张状态图（state）。", "6 把各页「已经定下的」通读一遍，找互相矛盾的规则。", "7 汇报。"]);
   for (const words of [`「事项」以「${RULE_CONFLICT_PREFIX}」开头`, "每张图的节点文字最前面写它画的那一页的编号，来源写它画自的页",
-    "在用的页还没贴标签、或者没有上级主题的，这时贴上或建议", "并请用户把这几张图看一遍"]) assert.ok(text.includes(words), words);
+    "在用的页还没贴标签、或者没有上级主题的，这时贴上或建议", "并在成文的话里告诉用户先看哪几张图（写图的编号与图名；图不是条目，不写进 `items`）"]) assert.ok(text.includes(words), words);
   const enough = sections(text).get("做到什么算够")!;
   assert.ok(enough.startsWith("## 做到什么算够\n\n七件："));
   assert.equal(enough.slice(enough.indexOf("七件：")).split("。")[0].split("；").length, 7);
