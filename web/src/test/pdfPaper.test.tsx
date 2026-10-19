@@ -228,6 +228,18 @@ describe("点来源：滚到那一页、框出那一块、摘录逐字标出", (
     expect(page.querySelector(".textLayer span")!.textContent).toBe("预约的图书保留 3 天。");
   });
 
+  it("一打开就带着定位（知识库来源的对话框）：按量好宽度之后的比例滚到那一页，不必等用户滚动", async () => {
+    // 对话框比材料区宽：适应宽度时是原始大小的两倍。定位在宽度量好之前就到了，第一次算位置时比例还是 1。
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(2 * W + 24);
+    render(<Host locate={locateAt(`${PATH}#p5-1`, "图书保留 3 天")} />);
+    await screen.findByTestId("pdf-pages");
+    await waitFor(() => expect(screen.getByTestId("pdf-pages").style.height).toBe(`${5 * 2 * H + 4 * PAGE_GAP}px`));
+    // 第 5 页的上沿（按两倍算）加这一块在页上的上沿（72 的两倍），再往上让出看得见的高度的三分之一；第 5 页随即画出来，框也在。
+    await waitFor(() => expect(screen.getByTestId("scroller").scrollTop).toBeCloseTo(4 * (2 * H + PAGE_GAP) + 2 * 72 - 700 / 3, 3));
+    await waitFor(() => expect(drawnPages()).toContain(5));
+    expect(await screen.findByTestId("pdf-blockbox-5-1")).toBeTruthy();
+  });
+
   it("摘录从出处那一块接到了后面的块：几块都框出来，各自标出自己那一截，顶部写明一共几块", async () => {
     const onNote = vi.fn();
     const view = await opened({ onNote });

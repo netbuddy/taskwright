@@ -315,18 +315,23 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
     setTarget({ nonce: locate.nonce, page, blocks: found.length ? found.map((r) => r.block) : [block], ranges, hit: ranges.length > 0 });
     onNote?.(!place ? null : place.kind === "miss" ? PDF_NOTES.miss(page) : place.kind === "cross_page" ? PDF_NOTES.crossPage(page)
       : place.kind === "span" ? PDF_NOTES.span(page, found.length) : null);
-    // 先滚到那一页的那一块附近（页面多半还没有画出来，按位置表估）；画出来之后再把框对到中间。
-    const pane = scroller();
-    const box = locations ? pdfBlockBox(locations, page, block) : null;
-    if (pane) {
-      const inPage = box ? roughTop(box, sizes[page - 1], scale) : 0;
-      pane.scrollTop = Math.max(0, pagesOffset(pane) + layout.tops[page - 1] + inPage - pane.clientHeight / 3);
-      remeasure.current();
-    }
     if (ranges.length === 0) return;
     const timer = setTimeout(() => setTarget((old) => (old && old.nonce === locate.nonce ? { ...old, hit: false } : old)), pdfHit.fadeMs);
     return () => clearTimeout(timer);
   }, [locate?.nonce, doc, projected?.status]);
+
+  // 先滚到那一页的那一块附近（页面多半还没有画出来，按位置表估）；画出来之后再把框对到中间（下面「框画出来之后」那一段）。
+  // 框对到中间之前各页的位置变了就按新的位置再滚一次：一打开就带着定位时（知识库来源的对话框），定位先于量出宽度，
+  // 头一次是按比例 1 算的，比例定下来之后各页变高，不再滚的话停在前面几页，那一页要等用户滚过去才画、才对到中间。
+  useEffect(() => {
+    if (!target || centred.current === target.nonce) return;
+    const pane = scroller();
+    if (!pane) return;
+    const box = locations ? pdfBlockBox(locations, target.page, target.blocks[0]) : null;
+    const inPage = box ? roughTop(box, sizes[target.page - 1], scale) : 0;
+    pane.scrollTop = Math.max(0, pagesOffset(pane) + layout.tops[target.page - 1] + inPage - pane.clientHeight / 3);
+    remeasure.current();
+  }, [target?.nonce, layout]);
 
   // 退路里点来源、点目录：只跳到那一页。出处没有写页时按摘录找它在哪一页，找不到就不动。
   useEffect(() => {
