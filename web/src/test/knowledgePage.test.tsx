@@ -157,10 +157,10 @@ describe("知识库页面", () => {
     expect(calls.upload).toHaveBeenCalledTimes(1);
   });
 
-  it("左侧栏：「任务」下面有「知识库」入口，写着有几个知识库，当前页面是它时高亮", async () => {
+  it("左边导航栏：参考一段的「知识库」一行写着几个库几份文档，当前页面是它时高亮；「任务列表」不高亮", async () => {
     page();
     const entry = await screen.findByTestId("nav-knowledge");
-    await waitFor(() => expect(entry.textContent).toBe("知识库2 个知识库"));
+    await waitFor(() => expect(entry.textContent).toMatch(/^知识库2 库 \d+ 份$/));
     expect(entry.className).toContain("on");
     expect(screen.getByTestId("nav-tasks").className).not.toContain("on");
   });

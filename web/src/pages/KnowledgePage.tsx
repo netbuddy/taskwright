@@ -121,7 +121,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
   const extensions = service.info?.knowledge_upload?.extensions;
 
   return (
-    <Shell nav="knowledge" libraries={libs.length}>
+    <Shell nav="knowledge" libraries={libs}>
       <div className="page-title" style={{ justifyContent: "space-between" }}>
         <div className="page-title"><h1>知识库</h1></div>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setName(""); setDialog({ mode: "create" }); }} data-testid="kb-new-library">新建一个知识库</Button>

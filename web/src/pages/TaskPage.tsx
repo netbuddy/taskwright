@@ -3,7 +3,7 @@
 // 工作流程两张卡、单项活动七张卡与「自由讨论」一行、会话清单、材料与选用的知识库两张并排的卡。这一页没有对话区。
 // 「三步开始」指引与三种常见起点是推荐流程的入口，任务里没有流程工作项时才显示：六类资产都空着时在页头之下，
 // 已有资产时在「工作项」之后、六格之前，标题改「启动需求分析」。
-// 外框是工作视图的顶栏加导航条（components/TaskFrame.tsx）；各块的组件在 components/task/，样式在 styles/task-page.css。
+// 外框是工作视图的顶栏加左边的导航栏（components/TaskFrame.tsx）；地址带 ?focus=pending 时（导航栏的「待决定」点过来）读到数据后滚到「待处理事项」一节；各块的组件在 components/task/，样式在 styles/task-page.css。
 // 数据是两次普通读取：任务详情（GET …/tasks/{task_id}，带材料与会话）与任务状况（GET …/status，带资产现状、活动目录与这一页的几段话）。
 // 另开一条不带会话的事件连接，只听执行者状态：助手做完一轮时两样都重读一次。
 // 工作流程卡、活动卡、三种常见起点与主按钮都只是进活动输入页（pages/StartInputPage.tsx），启动在那里提交。
@@ -13,7 +13,7 @@
 // 任务已完成或已放弃时整页只读：没有活动目录，上传区、材料的「删除」与知识库的改选用都不显示，只读说明写明原因。
 // 没有阶段的任务（早先建的）没有资产现状与活动目录，这一页只有任务头、「自由讨论」、会话与材料。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Spin } from "antd";
 import { api, ApiError } from "../api/client";
 import { openEventStream } from "../api/events";
@@ -33,6 +33,7 @@ import { useMaterialViewer } from "../components/task/MaterialViewer";
 import { ActivityCards, AssetCells, FlowCards, FreeTalk, StartGuide, WorkItemCards } from "../components/task/StartBlocks";
 import { PendingWorkSection } from "../components/task/PendingWork";
 import { showsPendingWork } from "../model/pendingWork";
+import { PENDING_SECTION_ID } from "../model/leftNav";
 import "../styles/task-page.css";
 
 /**
@@ -44,7 +45,7 @@ export function taskTypeVersionNote(versions: { copied: number | null; current: 
   return `任务类型说明是 ${versions.copied} 版，当前产品自带的是 ${versions.current} 版。`;
 }
 
-export function TaskPage({ taskId }: { taskId: string }) {
+export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pending" | null }) {
   const [task, setTask] = useState<TaskDetail | null>(null);
   // 任务状况：资产现状、活动目录与这一页的几段话。读不到（没有阶段的任务、早先的后端）时是 null，页面只画任务详情里有的。
   const [status, setStatus] = useState<TaskStatusView | null>(null);
@@ -92,8 +93,18 @@ export function TaskPage({ taskId }: { taskId: string }) {
     });
   }, [taskId, loaded]);
 
-  if (error) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Alert type="error" showIcon message={error} /></div></TaskFrame>;
-  if (!task) return <TaskFrame taskId={taskId} where="任务起点" sessions={[]}><div className="tp-page"><Spin /></div></TaskFrame>;
+  // 地址要滚到「待处理事项」一节：任务详情与任务状况都读到、这一节画出来之后滚一次。
+  const focused = useRef(false);
+  useEffect(() => {
+    if (focus !== "pending" || focused.current || !task || !status) return;
+    const section = document.getElementById(PENDING_SECTION_ID);
+    if (!section) return;
+    focused.current = true;
+    section.scrollIntoView?.({ block: "start" });
+  }, [focus, task, status]);
+
+  if (error) return <TaskFrame taskId={taskId} where="任务起点" here="task" sessions={[]}><div className="tp-page"><Alert type="error" showIcon message={error} /></div></TaskFrame>;
+  if (!task) return <TaskFrame taskId={taskId} where="任务起点" here="task" sessions={[]}><div className="tp-page"><Spin /></div></TaskFrame>;
 
   const selected = task.knowledge_libraries ?? [];
   const lastActive = task.sessions.map((s) => s.last_active_at).filter(Boolean).sort().pop();
@@ -193,7 +204,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
   };
 
   return (
-    <TaskFrame taskId={taskId} taskName={task.task_name} where="任务起点" sessions={task.sessions}>
+    <TaskFrame taskId={taskId} taskName={task.task_name} where="任务起点" here="task" sessions={task.sessions} task={task} pending={showsPendingWork(task, status)}>
       <div className="tp-page" data-testid="task-page">
         <div className="tp-crumb"><a href={href.tasks()}>任务</a><span className="sep">›</span>{task.task_name}</div>
 
@@ -219,7 +230,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
         {guideFirst && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} materials={materialCount} />}
 
         {showsPendingWork(task, status) && (
-          <section className="tp-sec">
+          <section className="tp-sec" id={PENDING_SECTION_ID}>
             <div className="tp-sec-h"><h2>待处理事项</h2><span className="tp-sec-note">由需求资产上的记号汇总；每一项可直接启动对应的活动，或打开做它的会话</span></div>
             <PendingWorkSection task={task} status={status} />
           </section>

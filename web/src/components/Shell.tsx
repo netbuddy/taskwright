@@ -1,99 +1,42 @@
-// 任务列表页、任务页与知识库页面共用的外壳：左侧栏（新建任务、「任务」与「知识库」两个入口、按最近活动排的任务、当前任务的会话）加主体。
-// 「知识库」入口只在服务有知识库时出现。
+// 没有任务的页面（任务列表页、知识库页）的外壳：左边是全站同一个导航栏（components/work/LeftNav.tsx），只有「任务列表」一行、参考一段与底部三行，
+// 这一页那一行高亮；右边是页面主体。知识库清单（导航栏「知识库」一行的计数）由知识库页给，别的页面这里另取一次（服务有知识库时）。
+// 新建任务在任务列表页正文上（NewTaskModal）；全部任务也在正文的表格里，导航栏不另列。
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Button, Form, Input, Modal, Select } from "antd";
-import { BookOutlined, CaretDownOutlined, CaretRightOutlined, MessageOutlined, PlusOutlined, SettingOutlined, UnorderedListOutlined } from "@ant-design/icons";
+import { Form, Input, Modal, Select } from "antd";
 import { api, ApiError } from "../api/client";
-import type { SessionListEntry, TaskListEntry } from "../api/types";
-import { openTask } from "../model/startPage";
-import { go, href, openSettings } from "../router";
+import type { KnowledgeLibrary, TaskListEntry } from "../api/types";
+import { go, href } from "../router";
 import { useToast } from "./Toasts";
-import { NoModelBanner, UserMenu, useService } from "./ServiceControls";
+import { NoModelBanner, useService } from "./ServiceControls";
+import { LeftNav } from "./work/LeftNav";
 
-
-export function Shell({ currentTaskId, nav = "tasks", libraries, children }: {
-  currentTaskId?: string;
+export function Shell({ nav = "tasks", libraries, children }: {
   nav?: "tasks" | "knowledge";
-  /** 知识库页面自己有库的清单，给了就用它的个数，增删库之后侧栏跟着变。 */
-  libraries?: number;
+  /** 知识库页面自己有库的清单，给了就用它算计数，增删库之后导航栏跟着变。 */
+  libraries?: Pick<KnowledgeLibrary, "documents">[];
   children: ReactNode;
 }) {
-  const [tasks, setTasks] = useState<TaskListEntry[]>([]);
-  const [sessions, setSessions] = useState<SessionListEntry[]>([]);
-  const [open, setOpen] = useState(false);
-  const hasKnowledge = !!useService().info?.capabilities.knowledge;
-  const [libraryCount, setLibraryCount] = useState<number | null>(null);
+  const service = useService();
+  const hasKnowledge = service.info ? !!service.info.capabilities.knowledge : null;
+  const [loaded, setLoaded] = useState<KnowledgeLibrary[] | null>(null);
   useEffect(() => {
-    if (hasKnowledge) api.knowledge().then((list) => setLibraryCount(list.length)).catch(() => setLibraryCount(null));
-  }, [hasKnowledge, nav]);
-
-  useEffect(() => {
-    // 侧栏只列打得开的任务；旧格式任务只在任务列表页里标明不支持。删除了一个任务时（TASKS_CHANGED）重读。
-    const load = () => api.listTasks().then((list) => setTasks(sortByActivity(list.filter((t) => t.supported !== false)))).catch(() => setTasks([]));
-    void load();
-    window.addEventListener(TASKS_CHANGED, load);
-    return () => window.removeEventListener(TASKS_CHANGED, load);
-  }, [currentTaskId]);
-  useEffect(() => {
-    if (currentTaskId) api.listSessions(currentTaskId).then(setSessions).catch(() => setSessions([]));
-  }, [currentTaskId]);
+    if (!hasKnowledge || libraries) return;
+    let live = true;
+    api.knowledge().then((list) => { if (live) setLoaded(list); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [hasKnowledge, !!libraries]);
 
   return (
     <div className="shell">
       <NoModelBanner />
       <div className="shell-card">
-        <aside className="sider">
-          <div className="sider-head">需求工作台</div>
-          <div style={{ padding: "0 8px" }}>
-            <Button type="primary" block icon={<PlusOutlined />} onClick={() => setOpen(true)} data-testid="new-task">
-              新建任务
-            </Button>
-          </div>
-          {hasKnowledge && (
-            <div className="sider-nav">
-              <div className={`nav-item${nav === "tasks" ? " on" : ""}`} onClick={() => go(href.tasks())} data-testid="nav-tasks">
-                <UnorderedListOutlined className="ic" />任务<span className="cnt">{tasks.length}</span>
-              </div>
-              <div className={`nav-item${nav === "knowledge" ? " on" : ""}`} onClick={() => go(href.knowledge())} data-testid="nav-knowledge">
-                <BookOutlined className="ic" />知识库{(libraries ?? libraryCount) !== null && <span className="cnt">{libraries ?? libraryCount} 个知识库</span>}
-              </div>
-            </div>
-          )}
-          <div className="sider-list">
-            <div className="sider-caption">任务（按最近活动排序）</div>
-            {tasks.map((t) => (
-              <div key={t.task_id}>
-                <div className={`sider-task${t.task_id === currentTaskId ? " on" : ""}`} onClick={() => openTask(t.task_id, go)}>
-                  {t.task_id === currentTaskId ? <CaretDownOutlined /> : <CaretRightOutlined />}
-                  <span className="name" title={t.task_name}>{t.task_name}</span>
-                  <span className="muted small">{t.session_count}</span>
-                </div>
-                {t.task_id === currentTaskId &&
-                  sessions.map((s) => (
-                    <div key={s.session_id} className="sider-session" onClick={() => go(href.work(t.task_id, s.session_id))}>
-                      <MessageOutlined />
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</span>
-                      {s.active && <span style={{ color: "var(--ok)" }}>●</span>}
-                    </div>
-                  ))}
-              </div>
-            ))}
-          </div>
-          <div className="sider-foot">
-            <UserMenu where="sider" />
-            <span className="set-link" role="button" onClick={openSettings} data-testid="open-settings"><SettingOutlined />设置</span>
-          </div>
-        </aside>
+        <LeftNav here={nav} libraries={hasKnowledge === false ? undefined : libraries ?? loaded} />
         <main className="main">{children}</main>
       </div>
-      <NewTaskModal open={open} onClose={() => setOpen(false)} />
     </div>
   );
 }
-
-/** 任务清单变了（删除了一个任务）时在 window 上发的事件名：侧栏据此重读。 */
-export const TASKS_CHANGED = "taskwright:tasks-changed";
 
 export function sortByActivity(list: TaskListEntry[]): TaskListEntry[] {
   // 时刻的写法可能带不同的时区，按时刻本身比；没有时刻的排在最后。
