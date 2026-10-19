@@ -142,7 +142,7 @@ const found = (list: Dict[], extra: Dict = {}) => ({ body: {
   candidates: { semantic: [{ library: "general", name: "借阅规范.md", index: 2 }], keyword: [] }, ...extra,
 } });
 const CANDIDATES = found([]).body.candidates;
-const OPENING = "查找「图书超期不还怎样罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找。";
+const OPENING = "查找「图书超期不还怎样罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找，整句原样出现的片段在按字面一路排在前面。";
 
 test("任务服务的地址：先是本机回环地址上占用标记里的端口，再是标记里的主机名；没有标记、标记里没有端口时是空的", () => {
   assert.deepEqual(backendAddresses(makeTask(["general"], { port: 8790, pid: 1, host: "某台主机" })), ["http://127.0.0.1:8790", "http://某台主机:8790"]);
@@ -231,17 +231,17 @@ test("预算：全部文字连同说明不超过 8192 字节；超过时从末�
 test("开头的一句写明这一次是怎样找的：两路都做；只按字面与原因；哪些文档只按字面找了；哪些文档没有查到。没有命中时请助手换一种说法", async () => {
   const base = found([]).body;
   const open = (extra: Dict) => openingText("罚款", { ...base, ...extra }, 2);
-  assert.equal(open({}), "查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找。");
+  assert.equal(open({}), "查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找，整句原样出现的片段在按字面一路排在前面。");
   // 只按字面：括号里写原因，每一种原因各有说法。
-  assert.equal(open({ mode: "keyword", reason: "not_selected", model: null }), "查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里只按字面找（没有选嵌入模型）。");
+  assert.equal(open({ mode: "keyword", reason: "not_selected", model: null }), "查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里只按字面找（没有选嵌入模型），整句原样出现的片段排在前面。");
   for (const reason of ["provider_gone", "not_offered", "timeout", "unreachable", "key_rejected", "service_error", "bad_answer"]) {
-    assert.ok(open({ mode: "keyword", reason }).endsWith(`只按字面找（${REASON_TEXT[reason]}）。`), reason);
+    assert.ok(open({ mode: "keyword", reason }).endsWith(`只按字面找（${REASON_TEXT[reason]}），整句原样出现的片段排在前面。`), reason);
     assert.ok(REASON_TEXT[reason].length > 4);
   }
-  assert.ok(open({ mode: "keyword", reason: "没见过的原因" }).endsWith("只按字面找（按意思那一路没有做成）。"));
+  assert.ok(open({ mode: "keyword", reason: "没见过的原因" }).endsWith("只按字面找（按意思那一路没有做成），整句原样出现的片段排在前面。"));
   // 有的文档还没有向量化：写明对它只按字面找了；多于 5 份时只写前 5 份与一共几份。
   const doc = (name: string) => ({ library: "general", library_name: "通用知识库", name });
-  assert.ok(open({ mode: "hybrid_partial", uncovered_semantic: [doc("甲.md")] }).endsWith("按意思与按字面两路找。《甲.md》还没有向量化，这一次对它只按字面找了。"));
+  assert.ok(open({ mode: "hybrid_partial", uncovered_semantic: [doc("甲.md")] }).endsWith("按意思与按字面两路找，整句原样出现的片段在按字面一路排在前面。《甲.md》还没有向量化，这一次对它只按字面找了。"));
   assert.ok(open({ mode: "hybrid_partial", uncovered_semantic: ["一", "二", "三", "四", "五", "六", "七"].map((n) => doc(`${n}.md`)) })
     .endsWith("《一.md》《二.md》《三.md》《四.md》《五.md》等 7 份文档还没有向量化，这一次对它们只按字面找了。"));
   // 文档读不出来：写明没有查到它，并且不把局部的结果说成全部。
@@ -251,14 +251,14 @@ test("开头的一句写明这一次是怎样找的：两路都做；只按字�
   const root = makeRoot();
   reply = () => found([], { mode: "keyword", reason: "not_selected", model: null, ready: false, pending: 2 });
   const none = await searchKnowledge(makeTask(), root, { query: "罚款" });
-  assert.equal(none.text, `查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里只按字面找（没有选嵌入模型）。\n${NOT_FOUND_TEXT}`);
+  assert.equal(none.text, `查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里只按字面找（没有选嵌入模型），整句原样出现的片段排在前面。\n${NOT_FOUND_TEXT}`);
   assert.equal(NOT_FOUND_TEXT, "没有找到相关的片段。换一种说法再查一次；换了说法仍然没有，才算知识库里没有。");
   assert.deepEqual(none.details, { ok: true, ready: false, query: "罚款", limit: 3, model: null, pending: 2, mode: "keyword", reason: "not_selected", uncovered_semantic: [], uncovered: [], candidates: CANDIDATES, hits: [],
     shown: 0, bytes: Buffer.byteLength(none.text, "utf-8"), truncated_chars: null });
   // 文档没有都向量化不再是「不能查」：照样把结果给助手，开头写明哪一份只按字面找了。
   reply = () => found([MD_HIT], { mode: "hybrid_partial", ready: false, pending: 1, uncovered_semantic: [doc("需求说明.docx")] });
   const partial = await searchKnowledge(makeTask(), root, { query: "罚款" });
-  assert.ok(partial.text.startsWith("查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找。《需求说明.docx》还没有向量化，这一次对它只按字面找了。下面是最相关的 1 个片段。"));
+  assert.ok(partial.text.startsWith("查找「罚款」：在这个任务选用的 2 个知识库、2 份文档、37 个片段里按意思与按字面两路找，整句原样出现的片段在按字面一路排在前面。《需求说明.docx》还没有向量化，这一次对它只按字面找了。下面是最相关的 1 个片段。"));
   assert.equal((partial.details.hits as unknown[]).length, 1);
 });
 
@@ -325,7 +325,7 @@ test("没有可查的：没有知识库、任务选用的知识库里没有文�
   reply = () => found([], { libraries: 1, documents: 1, chunks: 0 });
   const blank = await searchKnowledge(makeTask(["lib-a1"]), root, { query: "罚款" });
   assert.deepEqual([blank.text, blank.details.ok, blank.details.ready],
-    [`查找「罚款」：在这个任务选用的 1 个知识库、1 份文档、0 个片段里按意思与按字面两路找。\n${NOT_FOUND_TEXT}`, true, true]);
+    [`查找「罚款」：在这个任务选用的 1 个知识库、1 份文档、0 个片段里按意思与按字面两路找，整句原样出现的片段在按字面一路排在前面。\n${NOT_FOUND_TEXT}`, true, true]);
   assert.deepEqual(hits[0].body.libraries, ["lib-a1"]);
 });
 

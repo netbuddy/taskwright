@@ -6,13 +6,16 @@
  *
  * 段怎样分（参数见 lib/segments.ts 的 SegmentParams）：
  * - 文件有书签目录时，级别不超过 heading_depth 的书签所指的页开始一段，标题是这一页上这样的书签的标题（有几个时用「；」连起来）；
- *   第一个这样的书签之前的页是一段，标题为 null。没有书签目录的材料整份一段。段按页首尾相接，覆盖第 1 页到最后一页。
+ *   第一个这样的书签之前的页是一段，标题为 null。段按页首尾相接，覆盖第 1 页到最后一页。
+ * - 没有书签目录时，按解析时由字号推断出的小节分段（backend/src/pdf_projection.ts 的 inferHeadings），当作一级书签用；
+ *   这样的段的 heading 前面写「（推断）」，几个小节连在一起时只在最前面写一次。也推断不出时，整份一段。
  * - 块数少于 min_paragraphs 的段并入下一段，最后一段不够时并入前一段；合并后的标题是各段标题依次用「；」连起来。
  * - 块数多于 max_paragraphs 的段在页与页之间切成 ceil(块数 / max_paragraphs) 段左右：每攒够 ceil(块数 / 段数) 块就在这一页结束处切开，
  *   标题相同。一页之内不切，所以单独一页的块数超过上限时这一页自成一段。
  * 块只数有定位符、块号不是 0 的行：页眉页脚没有定位符；「这一页没有文字」那一行的块号是 0，不能被引用。
  *
- * 清单只由投影全文与书签目录（位置表的 headings）算出，两样都在材料旁边，所以随时可以重算。
+ * 有书签目录时，清单只由投影全文与书签目录（位置表的 headings）算出，两样都在材料旁边，随时可以重算；
+ * 按字号推断的小节要读 PDF 本身才知道，只在解析时算一次。
  * 本模块只用 Node 自带模块。
  */
 
@@ -28,7 +31,7 @@ export const PDF_SEGMENTS_VERSION = 1;
 export interface PdfSegmentBlock {
   /** 第几段，从 1 起。 */
   index: number;
-  /** 开始这一段的书签标题，几段合并的用「；」连起来；第一个书签之前的那段、没有书签目录的材料是 null。 */
+  /** 开始这一段的书签标题，几段合并的用「；」连起来；按字号推断出的以「（推断）」开头；第一个书签之前的那段、没有书签目录也推断不出的材料是 null。 */
   heading: string | null;
   first_page: number;
   last_page: number;
@@ -57,6 +60,8 @@ export interface PdfSegmentList {
 }
 
 const NOTE = "行号只对同目录里当前这份文字版文件有效；units 只数有定位符、块号不是 0 的行。";
+/** 按字号推断出的段，heading 前面写的字。 */
+export const INFERRED = "（推断）";
 
 // 投影全文 → 各块的取法在 lib/pdf_source.ts（页面也用它，那个文件不导入 Node 的模块）；这里照原来的名字再导出。
 export { type PdfUnit, pdfProjectionUnits };
@@ -68,11 +73,15 @@ interface Draft { headings: string[]; first: number; last: number }
 
 /**
  * 投影全文与书签目录 → 分段清单。source 与 projection 是写进清单的两个相对路径；
- * headings 是位置表里的书签目录（lib/pdf_locations.ts 的 PdfLocationFile.headings），没有时给空数组。
+ * headings 是位置表里的书签目录（lib/pdf_locations.ts 的 PdfLocationFile.headings），没有时给空数组；
+ * inferred 是没有书签目录时按字号推断出的小节（所在的页与文字），有书签目录时不用它。
  */
 export function buildPdfSegments(
   text: string, params: SegmentParams, source: string, projection: string, headings: { page: number; level: number; title: string }[],
+  inferred: { page: number; title: string }[] = [],
 ): PdfSegmentList {
+  const guessed = headings.length === 0 && inferred.length > 0;
+  if (guessed) headings = inferred.map((h) => ({ ...h, level: 1 }));
   const all = pdfProjectionUnits(text);
   const units = all.filter((u) => u.block > 0);
   const total = all.reduce((most, u) => Math.max(most, u.page), pdfProjectionPages(text));
@@ -176,7 +185,7 @@ export function buildPdfSegments(
     for (let p = d.first; p <= d.last; p++) chars += charsOn.get(p) ?? 0;
     return {
       index: k + 1,
-      heading: d.headings.length ? d.headings.join("；") : null,
+      heading: d.headings.length ? (guessed ? INFERRED : "") + d.headings.join("；") : null,
       first_page: d.first,
       last_page: d.last,
       first_line: first,

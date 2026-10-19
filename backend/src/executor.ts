@@ -986,20 +986,13 @@ export class Executor {
     }
   }
 
+  /** 任务库里的任务定义；没有库、库里还没有任务时是空的。库在而读不出来时抛出：能打开的库（格式 8 起）都有任务表，读错是真的出了错。 */
   private definition(): Dict {
-    const db = (() => {
-      try {
-        return openRo(this.taskDir);
-      } catch {
-        return null;
-      }
-    })();
+    const db = openRo(this.taskDir);
     if (db === null) return {};
     try {
       const row = db.prepare("SELECT definition_text FROM task LIMIT 1").get() as Dict | undefined;
       return row ? parseDefinition(row.definition_text) : {};
-    } catch {
-      return {};
     } finally {
       db.close();
     }

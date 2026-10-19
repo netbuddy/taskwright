@@ -121,13 +121,13 @@
 
 用途：这一次只按字面找了。reason 是 result.search.reason_*。
 
-只按字面找（{{reason}}）
+只按字面找（{{reason}}），整句原样出现的片段排在前面
 
 ## `result.search.way_hybrid`
 
 用途：这一次按两路找。
 
-按意思与按字面两路找
+按意思与按字面两路找，整句原样出现的片段在按字面一路排在前面
 
 ## `result.search.partial`
 

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { PDF_LOCATION_RULES_VERSION, pdfBlockBox, pdfChapterOf } from "../../agent/src/lib/pdf_locations.ts";
 import { comparablePdfText } from "../../agent/src/lib/pdf_normalize.ts";
-import { type PdfSegmentList, pdfProjectionUnits } from "../../agent/src/lib/pdf_segments.ts";
+import { INFERRED, type PdfSegmentList, pdfProjectionUnits } from "../../agent/src/lib/pdf_segments.ts";
 import { NO_TEXT_LINE, PDFJS_VERSION, PDF_LIMITS, PdfProjectionError, pdfProjection, writePdfProjection, tooSlowText } from "../src/pdf_projection.ts";
 import { ROOT, tempDir } from "./helpers.ts";
 
@@ -46,6 +46,8 @@ test("多页中文：投影开头的说明写明页数、块总数与出处的�
   assert.equal(lines[0], "<!--");
   assert.equal(lines[1], `由 multipage.pdf 生成，供助手阅读。页数：3。块总数：${units}。`);
   assert.ok(markdown.includes("出处写 inputs/multipage.pdf#p页-块（例如 inputs/multipage.pdf#p3-7）"));
+  assert.ok(markdown.includes("表格的一行是一块，一格里折成几行的文字接在一起，各格之间隔两个空格，不分列；"));
+  assert.ok(markdown.includes("代码（等宽字体排的行）一行是一块，行首的空格是原来的缩进。"));
   const end = lines.indexOf("-->");
   assert.ok(end > 1);
   const body = lines.slice(end + 1);
@@ -81,6 +83,70 @@ test("表格：一行是一块，各格之间隔两个空格，不分列", async
   const { markdown } = await project("table");
   const t = expected.table;
   assert.deepEqual(unitLines(markdown), [`1-1 ${t.before}`, ...t.rows.map((row: string[], k: number) => `1-${k + 2} ${row.join("  ")}`), `1-6 ${t.after}`]);
+});
+
+test("格里有折行的表格（一格写完再写下一格）：一个表格行连同各格的折行是一块，同一格的折行直接相接；表头只隔一个字宽的两格也分开", async () => {
+  const { markdown } = await project("wrapped-table");
+  const t = expected.wrapped_table;
+  const units = unitLines(markdown);
+  assert.equal(units[0], `1-1 ${t.before}`);
+  assert.deepEqual(units.slice(1, 5), t.cell_wise.map((row: string[], k: number) => `1-${k + 2} ${row.filter((cell) => cell).join("  ")}`));
+});
+
+test("格里有折行的表格（逐行写）：第一列空着的续行并回上一行，接在那一格后面", async () => {
+  const { markdown } = await project("wrapped-table");
+  const t = expected.wrapped_table;
+  const rows = t.line_wise.map((row: string[][]) => row[0].map((cell, c) => row.map((line) => line[c]).join("")).filter((cell) => cell).join("  "));
+  assert.deepEqual(unitLines(markdown).slice(5), [`1-6 ${t.between}`, ...rows.map((row: string, k: number) => `1-${k + 7} ${row}`), `1-10 ${t.after}`]);
+  assert.equal(rows[0], "读者类型  一次最多  借期规定  续借次数", "表头各格间距相同，仍是表格的一行");
+  assert.equal(rows[1], "学生  五本  借期，遇假期顺延到开学  一次");
+});
+
+test("等宽字体的代码：每行一块，行首按缩进补空格；字体声明了等宽的、没有声明而只能靠字宽认出的，两段都一样；代码里的空行不出块", async () => {
+  const { markdown } = await project("code");
+  const t = expected.code;
+  const listing = (t.code as string[]).filter((line) => line);
+  assert.deepEqual(pdfProjectionUnits(markdown).map((u) => u.text), [t.first, ...listing, t.second, ...listing, t.third]);
+});
+
+test("非等宽字体的正文不补空格：英文、中文、由 Word 转出的几份样本里没有一块以空格开头", async () => {
+  for (const name of ["english", "multipage", "from-word"]) {
+    const { markdown } = await project(name);
+    for (const u of pdfProjectionUnits(markdown)) assert.ok(!u.text.startsWith(" "), `${name} ${u.page}-${u.block}：${u.text}`);
+  }
+});
+
+test("编号列表：悬挂缩进的续行并进这一项；每行都排满时，最后一项与紧跟着的条款「1.5 ……」也分得开", async () => {
+  const { markdown } = await project("list");
+  const t = expected.list;
+  assert.deepEqual(pdfProjectionUnits(markdown).slice(0, 4).map((u) => u.text),
+    [t.intro, ...t.items.map(([marker, text]: string[]) => `${marker} ${text}`), t.clause.join("")]);
+});
+
+test("项目符号列表：每项一行、排满时，一项是一块，不接成一段", async () => {
+  const { markdown } = await project("list");
+  assert.deepEqual(pdfProjectionUnits(markdown).slice(4).map((u) => u.text), expected.list.bullets);
+});
+
+test("没有书签目录、靠字号分层次的文件：分段清单按部分标题分段并标「（推断）」；封面大字与小标题不开段；推断的标题不进位置表与文字版", async () => {
+  const dir = join(tmp, "sections", "inputs");
+  mkdirSync(dir, { recursive: true });
+  const pdf = join(dir, "guide.pdf");
+  copyFileSync(join(FIXTURES, "sections.pdf"), pdf);
+  const written = await writePdfProjection(pdf, "inputs/guide.pdf");
+  const list = JSON.parse(readFileSync(written.segments, "utf-8")) as PdfSegmentList;
+  assert.deepEqual(list.blocks.map((b) => [b.heading, b.first_page, b.last_page]), [
+    [null, 1, 1], [`${INFERRED}Part A: Access`, 2, 3], [`${INFERRED}Part B: Audit`, 4, 4],
+  ]);
+  assert.deepEqual(JSON.parse(readFileSync(written.locations, "utf-8")).headings, []);
+  assert.ok(!/^#/m.test(readFileSync(written.projection, "utf-8")));
+  assert.deepEqual((await project("sections")).inferred, [{ page: 2, title: "Part A: Access" }, { page: 4, title: "Part B: Audit" }]);
+});
+
+test("带书签目录的文件不按字号推断：没有推断的标题，分段清单的标题都是书签", async () => {
+  const result = await project("multipage");
+  assert.deepEqual(result.inferred, []);
+  assert.ok(result.locations.headings.length > 0);
 });
 
 test("没有文字的页：写一行块号为 0 的说明，位置表里标出来；只有页眉的页也算", async () => {

@@ -7,15 +7,25 @@
     （例如 uv venv /tmp/pdf-fixtures && uv pip install --python /tmp/pdf-fixtures/bin/python reportlab==5.0.1 pikepdf==10.16.0 pillow==12.3.0）
   - 字体 Droid Sans Fallback（DroidSansFallbackFull.ttf，许可证 Apache License 2.0；Debian 与 Ubuntu 的 fonts-droid-fallback 包）。
     quirks.pdf 里嵌入了它的一个子集（用到的三十几个字）。字体不在缺省路径时用 --font 指出。
+  - 等宽字体 DejaVu Sans Mono（DejaVuSansMono.ttf，许可证是 Bitstream Vera 的自由许可；Debian 与 Ubuntu 的 fonts-dejavu-core 包）。
+    code.pdf 里嵌入了它的一个子集。字体不在缺省路径时用 --mono-font 指出。
   - 可选：LibreOffice（命令 soffice）。带 --word 时把 web/src/test/fixtures/loc-numbering.docx 转成 from-word.pdf；
     转出的文件里嵌着本机字体的子集，换一台机器结果不会逐字节相同，所以不带 --word 时不动这一份。
 
-用法：python3 build_fixtures.py [--font <ttf 文件>] [--word]
+用法：python3 build_fixtures.py [--font <ttf 文件>] [--mono-font <ttf 文件>] [--word]
 
 各样本的用意（文字内容同时写进 expected.json，测试对着它核对）：
   multipage.pdf   三页中文，不嵌入字体（要靠字符映射表才读得出字）；每页有页眉页脚；段落首行缩进；带两级书签目录。
   two-column.pdf  一页两栏（栏很窄，两栏挨得近），一个段落从左栏底排到右栏顶。
   table.pdf       一张三列的表格，前后各一段。
+  wrapped-table.pdf 两张格里有折行的表格：上一张一格写完再写下一格（LibreOffice 转出的文件是这样写的），表头的后两格只隔一个字宽；
+                  下一张逐行写，一格的折行在下一行，那一行的第一列是空的。
+  code.pdf        英文正文中间两段带缩进的代码：前一段用标准字体 Courier（字体声明自己是等宽的），后一段用嵌入的 DejaVu Sans Mono，
+                  并把字体说明里「定宽」的标记抹掉（有的文件里等宽字体就是这样的，只能靠字宽认出来）；代码中间有一个空行。
+  list.pdf        编号列表与项目符号列表：编号列表每项两行，第二行悬挂缩进到编号之后，每行都排满；列表之后紧跟一条排满的条款「1.5 ……」。
+                  项目符号列表每项一行，也排满。各行之间行距相同，只能靠编号与缩进分开。
+  sections.pdf    四页英文，没有书签目录，靠字号分出层次：第 1 页是 32 点的封面标题，第 2、4 页各有一个 20 点的部分标题，
+                  部分标题下面紧跟 15 点的小标题（第 3 页也有一个），正文 11 点。
   scanned.pdf     三页：第 1 页有正文，第 2 页只有页眉与一张图，第 3 页只有一张图。
   quirks.pdf      文字层里的两种毛病：常用汉字写成部首字符（文件里「字形到 Unicode」的对照表被改写过）；字与字之间被撑开。
   english.pdf     英文，左对齐不排满；有一处行末断词的连字符；用标准字体（不嵌入）。
@@ -171,6 +181,156 @@ def table():
     return TABLE
 
 
+WRAPPED_TABLE = {
+    "before": "各类操作的审批要求见下表。",
+    "cell_wise": [["编号", "类别", "操作", "审批要求", "审批人"],
+                  ["R01", "账号类", "重置用户口令", "必须审批", "用户直属主管"],
+                  ["R02", "", "解锁被锁定的账号", "必须审批", "信息化部审批人"],
+                  ["R03", "查询类", "查询工单", "无需审批", "不适用"]],
+    "between": "逐行写的表格如下，借期一格折成两行。",
+    "line_wise": [[["读者类型", "一次最多", "借期规定", "续借次数"]],
+                  [["学生", "五本", "借期，遇假期", "一次"], ["", "", "顺延到开学", ""]],
+                  [["教职工", "十本", "六十天", "两次"]]],
+    "after": "表后的一段话。",
+}
+
+
+def wrapped_table():
+    c = new_canvas("wrapped-table.pdf")
+    c.setFont(SONG, SIZE)
+    y = paragraph(c, WRAPPED_TABLE["before"], 760) - LEAD
+    # 一格写完再写下一格：每格每行最多 4 个字，折行的行距 16 点；一个表格行的高度是它最多的那一格的行数乘 16 再加 8 点的上下留白。
+    # 「审批要求」排到 304 点，「审批人」从 316 点起：两格之间只隔 12 点（一个字宽），不到切格要的两个字宽。
+    xs = (72, 120, 192, 256, 316)
+    for row in WRAPPED_TABLE["cell_wise"]:
+        parts = [[cell[i:i + 4] for i in range(0, len(cell), 4)] for cell in row]
+        for x, lines in zip(xs, parts):
+            for k, line in enumerate(lines):
+                c.drawString(x, y - 16 * k, line)
+        y -= 16 * max(len(lines) for lines in parts) + 8
+    y = paragraph(c, WRAPPED_TABLE["between"], y - LEAD) - LEAD
+    # 逐行写：一行里从左到右写各格；借期一格折成两行，第二行只有这一格有字。行距 16 点，表格行之间多空 8 点。
+    # 表头四格都是四个字、间距相同：格与格之间的空隙一样大，不能因此当成两端对齐的正文。
+    for row in WRAPPED_TABLE["line_wise"]:
+        for line in row:
+            for x, cell in zip((72, 168, 264, 360), line):
+                if cell:
+                    c.drawString(x, y, cell)
+            y -= 16
+        y -= 8
+    paragraph(c, WRAPPED_TABLE["after"], y - LEAD)
+    c.showPage()
+    c.save()
+    return WRAPPED_TABLE
+
+
+CODE = {
+    "first": "The reference implementation is shown below.",
+    "code": ["def sign(secret, body):", "    ts = str(int(time.time()))", "    if ts:", "        return ts", "", "    return None"],
+    "second": "The same code again, in a monospaced font that does not declare itself fixed pitch:",
+    "third": "Both listings keep their indentation.",
+}
+
+
+def code(mono_font_path):
+    pdfmetrics.registerFont(TTFont("DejaVuSansMono", mono_font_path))
+    plain = HERE / "code.plain.pdf"
+    c = canvas.Canvas(str(plain), pagesize=A4, invariant=1)
+    y = 760
+    for font, before in (("Courier", CODE["first"]), ("DejaVuSansMono", CODE["second"])):
+        c.setFont("Helvetica", SIZE)
+        c.drawString(LEFT, y, before)
+        y -= 28
+        c.setFont(font, 10)
+        for line in CODE["code"]:
+            if line:
+                indent = len(line) - len(line.lstrip(" "))
+                c.drawString(LEFT + 6 * indent, y, line.lstrip(" "))   # 两种字体每个字都是 6 点宽（10 点字号的 0.6）
+            y -= 13
+        y -= 15
+    c.setFont("Helvetica", SIZE)
+    c.drawString(LEFT, y, CODE["third"])
+    c.showPage()
+    c.save()
+    # 让读的一方从字体说明里看不出它是等宽的：抹掉「定宽」的标记（Flags 的第 1 位），再在字宽表末尾添一个用不到的、宽度不同的字
+    # （pdf.js 见字宽表里每个字一样宽，会自己补上这个标记；中日韩等宽字体里半角与全角宽度不同，就是这种情形）。
+    pdf = pikepdf.open(plain)
+    for obj in pdf.objects:
+        if not isinstance(obj, pikepdf.Dictionary):
+            continue
+        if obj.get("/Type") == "/FontDescriptor" and "DejaVuSansMono" in str(obj.get("/FontName")):
+            obj.Flags = int(obj.Flags) & ~1
+        if obj.get("/Type") == "/Font" and "DejaVuSansMono" in str(obj.get("/BaseFont")) and "/Widths" in obj:
+            obj.Widths.append(300)
+            obj.LastChar = int(obj.LastChar) + 1
+    pdf.save(HERE / "code.pdf", static_id=True)
+    plain.unlink()
+    return CODE
+
+
+LIST = {
+    "intro": "本要求的基本原则如下。",
+    "items": [["1.", "最小权限：智能体只获得完成当前任务所必需的数据与操作权限，不多给一项，超出的权限一律收回，授权到期之后自动失效。"],
+              ["2.", "人在回路：高风险操作必须经人工审批后才能执行，审批人看得到完整的参数，拒绝之后不得自动重试，审批记录要保留三年。"]],
+    "clause": ["1.5 ", "本要求与现行制度不一致的，以现行制度为准；本要求有更严格规定的，从其规定，并在下一次修订时统一两处的写法，修订稿另行发布。"],
+    "bullets": ["·每一次工具调用与每一次审批都必须形成一份可以核查的日志记录", "·数据按敏感程度分级处理，不同级别的数据采用不同的传输方式。"],
+}
+
+
+def list_sample():
+    c = new_canvas("list.pdf")
+    c.setFont(SONG, SIZE)
+    y = 760
+    c.drawString(LEFT, y, LIST["intro"])
+    y -= LEAD
+    # 编号写在左边，正文从编号之后两个字处起；正文每行 28 个字，续行也从那里起（悬挂缩进），每行都排到右边 432 点。
+    for marker, text in LIST["items"]:
+        assert len(text) % 28 == 0, "每项的正文要正好排满两行"
+        c.drawString(LEFT, y, marker)
+        for k in range(0, len(text), 28):
+            c.drawString(LEFT + 24, y, text[k:k + 28])
+            y -= LEAD
+    number, clause = LIST["clause"]
+    # 条款从左边起：条款号「1.5 」是四个半角字符，占两个字宽，第一行再排 28 个字；以后每行 30 个字。前两行都排满。
+    lines = [number + clause[:28]] + [clause[k:k + 30] for k in range(28, len(clause), 30)]
+    assert len(lines) >= 3 and all(len(line) == 30 for line in lines[1:-1])
+    for line in lines:
+        c.drawString(LEFT, y, line)
+        y -= LEAD
+    y -= LEAD
+    for line in LIST["bullets"]:   # 每项一行，30 个字，排满
+        assert len(line) == 30
+        c.drawString(LEFT, y, line)
+        y -= LEAD
+    c.showPage()
+    c.save()
+    return LIST
+
+
+SECTIONS = {
+    "cover": "Sample Guide 2025",
+    "pages": [
+        [(32, "Sample Guide 2025"), (11, "This guide is a sample for the tests."), (11, "It has no bookmarks at all.")],
+        [(20, "Part A: Access"), (15, "Description"), (11, "Access is granted per task."), (11, "Access ends with the task.")],
+        [(15, "Examples"), (11, "A reader asks for a file."), (11, "The file is opened for reading only.")],
+        [(20, "Part B: Audit"), (15, "Description"), (11, "Every call is written to the log."), (11, "The log is kept for three years.")],
+    ],
+}
+
+
+def sections():
+    c = new_canvas("sections.pdf")
+    for page in SECTIONS["pages"]:
+        y = 760
+        for size, text in page:
+            c.setFont("Helvetica", size)
+            c.drawString(LEFT, y, text)
+            y -= size * 4   # 行与行隔得远，每行单独一块
+        c.showPage()
+    c.save()
+    return SECTIONS
+
+
 SCANNED = {"header": "读者意见登记表（扫描件样本）", "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"}
 
 
@@ -307,12 +467,13 @@ def from_word():
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--font", default="/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf", help="Droid Sans Fallback 的 ttf 文件")
+    parser.add_argument("--mono-font", default="/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", help="DejaVu Sans Mono 的 ttf 文件")
     parser.add_argument("--word", action="store_true", help="同时用 LibreOffice 重新生成 from-word.pdf")
     args = parser.parse_args()
     if not Path(args.font).is_file():
         raise SystemExit(f"找不到字体文件 {args.font}；用 --font 指出 DroidSansFallbackFull.ttf 的位置")
     pdfmetrics.registerFont(UnicodeCIDFont(SONG))
-    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
+    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "wrapped_table": wrapped_table(), "code": code(args.mono_font), "list": list_sample(), "sections": sections(), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
     locked()
     if args.word:
         from_word()

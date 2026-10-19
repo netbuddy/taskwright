@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { PDF_SEGMENTS_VERSION, buildPdfSegments, pdfProjectionPages, pdfProjectionUnits, writePdfSegments } from "../src/lib/pdf_segments.ts";
+import { INFERRED, PDF_SEGMENTS_VERSION, buildPdfSegments, pdfProjectionPages, pdfProjectionUnits, writePdfSegments } from "../src/lib/pdf_segments.ts";
 import { SEGMENT_DEFAULTS, paramsDigest } from "../src/lib/segments.ts";
 import { tempDir } from "./helpers.ts";
 
@@ -67,6 +67,24 @@ test("有书签目录：级别不超过 heading_depth 的书签所指的页开�
   // heading_depth 是 1 时第二级的书签不参加
   const shallow = buildPdfSegments(text, params({ heading_depth: 1 }), "inputs/x.pdf", "inputs/x.pdf.md", headings);
   assert.deepEqual(shallow.blocks.map((b) => b.heading), [null, "第一章 总则", "第二章 借阅"]);
+});
+
+test("没有书签目录、有按字号推断的小节：推断的标题所指的页开始一段，标题前写「（推断）」，同一页的几个只在最前面写一次", () => {
+  const text = projection([3, 3, 3, 3]);
+  const inferred = [{ page: 2, title: "LLM01 提示词注入" }, { page: 4, title: "LLM02 敏感信息泄露" }, { page: 4, title: "LLM03 供应链" }];
+  const list = buildPdfSegments(text, params(), "inputs/x.pdf", "inputs/x.pdf.md", [], inferred);
+  assert.deepEqual(list.blocks.map((b) => [b.heading, b.first_page, b.last_page, b.units]), [
+    [null, 1, 1, 3], [`${INFERRED}LLM01 提示词注入`, 2, 3, 6], [`${INFERRED}LLM02 敏感信息泄露；LLM03 供应链`, 4, 4, 3],
+  ]);
+});
+
+test("有书签目录时不用按字号推断的小节：分段与不给推断标题时相同，标题不带「（推断）」", () => {
+  const text = projection([3, 3, 3, 3]);
+  const headings = [{ page: 3, level: 1, title: "第二章 借阅" }];
+  const plain = buildPdfSegments(text, params(), "inputs/x.pdf", "inputs/x.pdf.md", headings);
+  const both = buildPdfSegments(text, params(), "inputs/x.pdf", "inputs/x.pdf.md", headings, [{ page: 2, title: "推断出来的标题" }]);
+  assert.deepEqual(both, plain);
+  assert.deepEqual(both.blocks.map((b) => b.heading), [null, "第二章 借阅"]);
 });
 
 test("块数太少的段并入下一段，最后一段不够时并入前一段", () => {

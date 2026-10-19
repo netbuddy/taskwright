@@ -3,7 +3,8 @@
  * - 按意思：把这句话用选定的嵌入模型按查询的用途换算成数字串（会加查询前缀），与各片段的数字串比远近。片段与数字串是后台换算时
  *   存在文档旁边的（knowledge_embeddings.ts）。相近程度是两条数字串的点积：存着的数字串长度都是 1，查询的那一条这里也缩放成
  *   长度 1，所以它在 -1 到 1 之间，越大越相近。
- * - 按字面：把这句话切成词，按词在各片段里出现的情况打分（knowledge_keywords.ts）。专管按意思查不准的条号、编号与原话。
+ * - 按字面：把这句话切成词，按词在各片段里出现的情况打分（knowledge_keywords.ts），整句原样出现这句话的片段排在最前。
+ *   专管按意思查不准的条号、编号与原话。
  *
  * 取哪几个（limit 个）：按意思一路的前 limit 名是候选；按字面一路得分大于 0 的前 KEYWORD_KEEP 名里不在候选中的，依次替换候选里
  * 按意思排名最末的；按意思第 1 名永不被替换，所以 limit 为 1 时不替换。留下来的按意思排名在前的在前，被替换进来的按字面名次
@@ -32,7 +33,7 @@ import type { DocumentRow, Kind, KnowledgeStore } from "./knowledge.ts";
 import { type Chunk, type PdfPlace, chunkDocument } from "./knowledge_chunks.ts";
 import type { KnowledgeEmbedder } from "./knowledge_embedder.ts";
 import { isEmbedded, normalize, readEmbeddings } from "./knowledge_embeddings.ts";
-import { keywordIndex, keywordRanking } from "./knowledge_keywords.ts";
+import { keywordIndex, keywordRanking, phraseFirst } from "./knowledge_keywords.ts";
 import { type Passage, passageOf } from "./knowledge_passage.ts";
 import type { Context } from "./model_config.ts";
 
@@ -295,7 +296,7 @@ export async function searchKnowledge(
   cancelled();
 
   const index = timed("tokenize", () => keywordIndex(entries.map((entry) => entry.chunk)));
-  const keyword = timed("keyword_score", () => keywordRanking(index, request.query));
+  const keyword = timed("keyword_score", () => phraseFirst(keywordRanking(index, request.query), entries.map((entry) => entry.chunk), request.query));
   const semantic = entries.map((entry, i) => ({ i, score: entry.semantic })).filter((one): one is { i: number; score: number } => one.score !== null)
     .sort((a, b) => b.score - a.score || a.i - b.i);
   const semanticRank = new Map(semantic.map((one, at) => [one.i, at + 1]));

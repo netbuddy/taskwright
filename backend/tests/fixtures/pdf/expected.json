@@ -85,6 +85,176 @@
     ],
     "after": "校外读者办理借书证时需要交纳押金，退证时全额退还。"
   },
+  "wrapped_table": {
+    "before": "各类操作的审批要求见下表。",
+    "cell_wise": [
+      [
+        "编号",
+        "类别",
+        "操作",
+        "审批要求",
+        "审批人"
+      ],
+      [
+        "R01",
+        "账号类",
+        "重置用户口令",
+        "必须审批",
+        "用户直属主管"
+      ],
+      [
+        "R02",
+        "",
+        "解锁被锁定的账号",
+        "必须审批",
+        "信息化部审批人"
+      ],
+      [
+        "R03",
+        "查询类",
+        "查询工单",
+        "无需审批",
+        "不适用"
+      ]
+    ],
+    "between": "逐行写的表格如下，借期一格折成两行。",
+    "line_wise": [
+      [
+        [
+          "读者类型",
+          "一次最多",
+          "借期规定",
+          "续借次数"
+        ]
+      ],
+      [
+        [
+          "学生",
+          "五本",
+          "借期，遇假期",
+          "一次"
+        ],
+        [
+          "",
+          "",
+          "顺延到开学",
+          ""
+        ]
+      ],
+      [
+        [
+          "教职工",
+          "十本",
+          "六十天",
+          "两次"
+        ]
+      ]
+    ],
+    "after": "表后的一段话。"
+  },
+  "code": {
+    "first": "The reference implementation is shown below.",
+    "code": [
+      "def sign(secret, body):",
+      "    ts = str(int(time.time()))",
+      "    if ts:",
+      "        return ts",
+      "",
+      "    return None"
+    ],
+    "second": "The same code again, in a monospaced font that does not declare itself fixed pitch:",
+    "third": "Both listings keep their indentation."
+  },
+  "list": {
+    "intro": "本要求的基本原则如下。",
+    "items": [
+      [
+        "1.",
+        "最小权限：智能体只获得完成当前任务所必需的数据与操作权限，不多给一项，超出的权限一律收回，授权到期之后自动失效。"
+      ],
+      [
+        "2.",
+        "人在回路：高风险操作必须经人工审批后才能执行，审批人看得到完整的参数，拒绝之后不得自动重试，审批记录要保留三年。"
+      ]
+    ],
+    "clause": [
+      "1.5 ",
+      "本要求与现行制度不一致的，以现行制度为准；本要求有更严格规定的，从其规定，并在下一次修订时统一两处的写法，修订稿另行发布。"
+    ],
+    "bullets": [
+      "·每一次工具调用与每一次审批都必须形成一份可以核查的日志记录",
+      "·数据按敏感程度分级处理，不同级别的数据采用不同的传输方式。"
+    ]
+  },
+  "sections": {
+    "cover": "Sample Guide 2025",
+    "pages": [
+      [
+        [
+          32,
+          "Sample Guide 2025"
+        ],
+        [
+          11,
+          "This guide is a sample for the tests."
+        ],
+        [
+          11,
+          "It has no bookmarks at all."
+        ]
+      ],
+      [
+        [
+          20,
+          "Part A: Access"
+        ],
+        [
+          15,
+          "Description"
+        ],
+        [
+          11,
+          "Access is granted per task."
+        ],
+        [
+          11,
+          "Access ends with the task."
+        ]
+      ],
+      [
+        [
+          15,
+          "Examples"
+        ],
+        [
+          11,
+          "A reader asks for a file."
+        ],
+        [
+          11,
+          "The file is opened for reading only."
+        ]
+      ],
+      [
+        [
+          20,
+          "Part B: Audit"
+        ],
+        [
+          15,
+          "Description"
+        ],
+        [
+          11,
+          "Every call is written to the log."
+        ],
+        [
+          11,
+          "The log is kept for three years."
+        ]
+      ]
+    ]
+  },
   "scanned": {
     "header": "读者意见登记表（扫描件样本）",
     "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"
