@@ -22,14 +22,14 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { ASSETS, type AssetKey, type Mode, READ_ALL, READ_KNOWLEDGE, type ReadKey, splitHead } from "./activity_def.ts";
-import type { WriteKind } from "./stage.ts";
+import { WRITE_KINDS, type WriteKind } from "./stage.ts";
 
 /** 七项能力，目录名。 */
 export const CAPABILITIES = ["reading", "analysis", "organizing", "writing", "reviewing", "dialogue", "planning"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
-/** 获准能力表里的写法：与 lib/stage.ts 的 WriteKind 是同一组写法。 */
-export const WRITE_KINDS: readonly WriteKind[] = ["page", "problem", "diagram", "item", "review", "publish"];
+/** 获准能力表里的写法（定义在 lib/stage.ts）。 */
+export { WRITE_KINDS };
 
 /** 会话的三种位置。 */
 export const SESSION_KINDS = ["flow", "single", "idle"] as const;

@@ -6,19 +6,25 @@
  * 同一相对路径下的那一份（BUILTIN_TASK_TYPES_DIR 下哪个任务类型目录里有这份 skill 就读哪个），并在结果里写明回退了。
  *
  * 校验：每份文件的声明合规；六个阶段各至少有一项活动算作它（stage 一栏），另有恰好一项只能由用户发起的「发布」（键 publish）；
- * 流程的各步只能写这个任务类型里的活动。任何一处不对都抛错（DefinitionHeadError），调用方据此不出活动目录、拼不成系统提示。
+ * 流程的各步只能写这个任务类型里的活动；每项活动声明的获准能力（writes_allowed）不能超出它所用的平台模板头里的那一栏。
+ * 任何一处不对都抛错（DefinitionHeadError），调用方据此不出活动目录、拼不成系统提示。
+ * 获准能力表（每个位置助手能做哪几类写入）由这里生成：六个阶段取各自代表活动的声明，空闲取空闲模板头。
  * 进程里按目录记着上一次读的结果与各份文件的修改时刻和大小，文件没变就不重读。
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type ActivityDef, DefinitionHeadError, type FlowDef, PUBLISH, parseActivityDef, parseFlowDef } from "./activity_def.ts";
-import { STAGES } from "./stage.ts";
+import { type ActivityDef, DefinitionHeadError, type FlowDef, PUBLISH, parseActivityDef, parseFlowDef, splitHead } from "./activity_def.ts";
+import { type AllowedTable, IDLE, STAGES, WRITE_KINDS, type WriteKind } from "./stage.ts";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 /** 产品自带的任务类型所在的目录（与后端 backend/src/paths.ts 的 TASK_TYPES_DIR 是同一个）。 */
 export const BUILTIN_TASK_TYPES_DIR = join(REPO_ROOT, "task-types");
+/** 平台的活动模板所在的目录（与 lib/context_assemble.ts 拼装时读的是同一份）。 */
+const PLATFORM_TEMPLATES_DIR = join(REPO_ROOT, "agent", "prompts", "templates");
+/** 空闲会话用的模板：它不对应任务类型里的活动，空闲时的获准能力取它头里的那一栏。 */
+const IDLE_TEMPLATE = "idle";
 export const ACTIVITIES_SUBDIR = "activities";
 export const FLOWS_SUBDIR = "flows";
 
@@ -28,6 +34,8 @@ export interface Definitions {
   activities: ActivityDef[];
   /** 按标识符。 */
   flows: FlowDef[];
+  /** 获准能力表：六个阶段取各自代表活动的 writes_allowed，空闲取空闲模板头。 */
+  allowed: AllowedTable;
   /** 读的是哪个 skill 目录（绝对路径），与它是不是回退到产品自带的那一份。 */
   dir: string;
   fallback: boolean;
@@ -39,6 +47,33 @@ function mdFiles(dir: string): string[] {
     return readdirSync(dir).filter((name) => name.endsWith(".md") && name !== "README.md").sort();
   } catch {
     return [];
+  }
+}
+
+/** 平台的一份活动模板头里「writes_allowed」一栏的写入种类；模板不在或者没有这一栏都抛错。 */
+export function templateWritesAllowed(template: string): WriteKind[] {
+  const path = join(PLATFORM_TEMPLATES_DIR, `${template}.md`);
+  let text: string;
+  try {
+    text = readFileSync(path, "utf-8");
+  } catch {
+    throw new DefinitionHeadError(`平台没有「${template}」这份活动模板：${path}`);
+  }
+  const value = splitHead(text).head?.writes_allowed;
+  if (value === undefined) throw new DefinitionHeadError(`平台模板 ${template}.md 的头里缺「writes_allowed」一栏。`);
+  const kinds = value.split(/[,，]/).map((one) => one.trim()).filter(Boolean);
+  const bad = kinds.find((one) => !(WRITE_KINDS as readonly string[]).includes(one));
+  if (bad) throw new DefinitionHeadError(`平台模板 ${template}.md 的头里「writes_allowed」写了「${bad}」，只能是 ${WRITE_KINDS.join("、")} 里的。`);
+  return kinds as WriteKind[];
+}
+
+/** 一项活动声明的获准能力不能超出它所用模板头里的那一栏。 */
+function checkWithinTemplate(one: ActivityDef): void {
+  if (one.template === null) return;
+  const cap = templateWritesAllowed(one.template);
+  const over = one.writesAllowed.filter((kind) => !cap.includes(kind));
+  if (over.length > 0) {
+    throw new DefinitionHeadError(`activities/${one.key}.md 的声明里「writes_allowed」写了 ${over.join("、")}，超出了它所用的模板 ${one.template}.md 头里写的（${cap.join("、")}）。`);
   }
 }
 
@@ -67,7 +102,13 @@ export function readDefinitions(dir: string, fallback = false): Definitions {
   ordered.push(...all.filter((one) => !ordered.includes(one)));
   const keys = ordered.map((one) => one.key);
   const flows = mdFiles(join(dir, FLOWS_SUBDIR)).map((name) => parseFlowDef(read(join(dir, FLOWS_SUBDIR, name)), name.slice(0, -3), `${FLOWS_SUBDIR}/${name}`, keys));
-  return { activities: ordered, flows, dir, fallback };
+  for (const one of ordered) checkWithinTemplate(one);
+  // 六个阶段的代表排在最前（见上），所以 ordered[i] 就是 STAGES[i] 的代表。
+  const allowed = Object.fromEntries([
+    ...STAGES.map((stage, i) => [stage, ordered[i].writesAllowed] as const),
+    [IDLE, templateWritesAllowed(IDLE_TEMPLATE)] as const,
+  ]) as AllowedTable;
+  return { activities: ordered, flows, allowed, dir, fallback };
 }
 
 /**

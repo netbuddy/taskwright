@@ -63,7 +63,7 @@ export function stageByName(name: unknown): Stage | null {
  * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它已经归档（它的工作项被删除了）。它不是一个阶段，
  * 不排在 STAGES 的次序里，也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「这条会话现在在哪里」的那几处。它与 null 不是一回事：
  * null 是早先建的任务（任务定义里没有「业务说明」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
- * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED）。启动哪一项活动由用户在任务起点页上定。
+ * 空闲时助手能写什么取空闲模板头里的「writes_allowed」（见 AllowedTable）。启动哪一项活动由用户在任务起点页上定。
  */
 export const IDLE = "idle";
 export const IDLE_NAME = "空闲";
@@ -415,30 +415,19 @@ export function launchView(facts: LaunchFacts): LaunchView {
  * review 请求评审；publish 发布版本。
  */
 export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "publish";
+/** 全部写入种类，按这个次序。 */
+export const WRITE_KINDS: readonly WriteKind[] = ["page", "problem", "diagram", "item", "review", "publish"];
 
 /**
- * 每个阶段助手能做哪几类写入。页与问题任何阶段都可以写（评审确认阶段对页另有限制，见 pageRefusal）。
- * 编写文档排在最后，却不能写条目、不能画图、不能请求评审，所以这里一个阶段一个阶段列出来，不按先后推。
- * 空闲时与澄清相同：只能写页与问题。
+ * 获准能力表：每个位置助手能做哪几类写入。表的内容不在这里写：六个阶段取各自代表活动的声明里的「writes_allowed」，
+ * 空闲取空闲模板头里的那一栏（lib/activity_def_read.ts 读声明时生成，随声明一起记着）。这里只是消费它。
+ * 页与问题的限制另见 pageRefusal（评审确认阶段对页另有限制）。
  */
-const ALLOWED: Record<Position, readonly WriteKind[]> = {
-  idle: ["page", "problem"],
-  reading: ["page", "problem"],
-  clarifying: ["page", "problem"],
-  modeling: ["page", "problem", "diagram"],
-  writing: ["page", "problem", "diagram", "item", "review"],
-  reviewing: ["page", "problem", "diagram", "item", "review", "publish"],
-  document: ["page", "problem", "publish"],
-};
+export type AllowedTable = Readonly<Record<Position, readonly WriteKind[]>>;
 
-/** 这个阶段（或者空闲时）助手能做哪几类写入，按 page、problem、diagram、item、review、publish 的次序。 */
-export function allowedWrites(stage: Position): readonly WriteKind[] {
-  return ALLOWED[stage];
-}
-
-/** 这个阶段（或者空闲时）助手能不能做这一类写入。 */
-export function canWrite(stage: Position, kind: WriteKind): boolean {
-  return ALLOWED[stage].includes(kind);
+/** 给定这个位置获准的写入种类，能不能做这一类写入。 */
+export function canWrite(allowed: readonly WriteKind[], kind: WriteKind): boolean {
+  return allowed.includes(kind);
 }
 
 /** 拒绝的原因码与两层文字：事实（现在在哪个阶段、拦下的是什么）与怎么办（这一步要先做什么、谁能移动）。 */
@@ -466,11 +455,11 @@ function howToReachWriting(): string {
 }
 
 /**
- * 助手新增、修改或删除别的集合（不是业务说明、也不是问题）的条目：写条目之前的阶段都拦，空闲时也拦。
+ * 助手新增、修改或删除别的集合（不是业务说明、也不是问题）的条目：这个位置获准的写入（allowed）里没有 item 就拦。
  * 可以写时返回 null。
  */
-export function itemRefusal(stage: Position, op: string, collection: string): Refusal | null {
-  if (canWrite(stage, "item")) return null;
+export function itemRefusal(stage: Position, allowed: readonly WriteKind[], op: string, collection: string): Refusal | null {
+  if (canWrite(allowed, "item")) return null;
   const words = { op: OP_WORDS[op] ?? "写", collection };
   if (stage === IDLE) return refusalText("gate.stage_item_write.idle", { ...words, leave_idle: howToLeaveIdle() });
   if (stage === "document") return refusalText("gate.stage_item_write.document", { ...words, stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("reviewing") });
@@ -498,8 +487,8 @@ export function pageRefusal(stage: Position, op: string, changed: readonly strin
  * 助手新画、修改或删除一张图：整理建模之前的阶段都拦，空闲时也拦。可以时返回 null。
  * 「怎么办」里说的是怎样走到整理建模：往前进入下一段要由用户在卡片上点，助手只能发卡片提议（forwardCardGuidance）。
  */
-export function diagramRefusal(stage: Position): Refusal | null {
-  if (canWrite(stage, "diagram")) return null;
+export function diagramRefusal(stage: Position, allowed: readonly WriteKind[]): Refusal | null {
+  if (canWrite(allowed, "diagram")) return null;
   if (stage === IDLE) return refusalText("gate.stage_diagram.idle", { leave_idle: howToLeaveIdle() });
   if (stage === "document") return refusalText("gate.stage_diagram.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("modeling") });
   const enterModeling = nextStepOption("modeling").text;
@@ -509,16 +498,16 @@ export function diagramRefusal(stage: Position): Refusal | null {
 }
 
 /** 助手请求评审：写条目之前的阶段都拦，空闲时也拦。可以时返回 null。 */
-export function reviewRefusal(stage: Position): Refusal | null {
-  if (canWrite(stage, "review")) return null;
+export function reviewRefusal(stage: Position, allowed: readonly WriteKind[]): Refusal | null {
+  if (canWrite(allowed, "review")) return null;
   if (stage === IDLE) return refusalText("gate.stage_review.idle", { leave_idle: howToLeaveIdle() });
   if (stage === "document") return refusalText("gate.stage_review.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("reviewing") });
   return refusalText("gate.stage_review", { stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
 /** 助手发布版本：评审确认与编写文档两个阶段可以，空闲时不可以。可以时返回 null。 */
-export function publishRefusal(stage: Position): Refusal | null {
-  if (canWrite(stage, "publish")) return null;
+export function publishRefusal(stage: Position, allowed: readonly WriteKind[]): Refusal | null {
+  if (canWrite(allowed, "publish")) return null;
   if (stage === IDLE) return refusalText("gate.stage_publish.idle", { leave_idle: howToLeaveIdle() });
   return stage === "writing"
     ? refusalText("gate.stage_publish.writing", { stage: STAGE_NAMES[stage], enter_reviewing: nextStepOption("reviewing").text, forward: forwardCardGuidance("writing") })

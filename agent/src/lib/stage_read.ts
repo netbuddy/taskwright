@@ -32,7 +32,7 @@ import {
 import { openProposal } from "./stage_proposal.ts";
 import {
   FLOW_ANALYSIS, FLOW_NAMES, type FlowItemRef, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
-  type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
+  type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow, type WriteKind,
   activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, stageLamps, cardMove, gotoOption, nextStepOption,
 } from "./stage.ts";
 import { refusalText } from "./texts.ts";
@@ -159,6 +159,11 @@ export function stageOf(db: DatabaseSync, workspaceDir: string, taskId: string, 
   sessionId: string | null | undefined): Position | null {
   if (!hasOverall(definition.collections)) return null;
   return currentStage(db, taskId, sessionId);
+}
+
+/** 在这个位置助手能做哪几类写入：取这个任务的活动声明生成的获准能力表（lib/activity_def_read.ts）。声明读不出来时抛错。 */
+export function allowedAt(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, stage: Position): readonly WriteKind[] {
+  return definitionsFor(workspaceDir, definition.skillPath).allowed[stage];
 }
 
 /** 一个工作项是哪一种、叫什么：流程的工作项叫流程的名字，单项活动的叫活动的名字。 */

@@ -86,7 +86,7 @@ import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.t
 import { OVERALL_COLLECTION, OVERALL_FIELDS, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import { type Position, itemRefusal, pageRefusal } from "./stage.ts";
-import { stageOf } from "./stage_read.ts";
+import { allowedAt, stageOf } from "./stage_read.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 import { codeOf, fillText, refusalText, textPrefix } from "./texts.ts";
 import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
@@ -417,11 +417,13 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   // 工作的阶段（任务有业务说明集合时才有，lib/stage.ts）：助手这一刻能写什么看这次调用所在的会话的阶段，取的是这条会话正在做的工作项（会话空闲时按澄清的规矩拦）。
   // 用户在界面上的操作不看阶段。早先建的任务没有阶段，stage 是 null，下面几处都不拦。
   const stage: Position | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition, call.sessionId) : null;
+  // 这个位置获准的写入种类取任务类型的活动声明（获准能力表）。
+  const allowed = stage === null ? null : allowedAt(call.workspaceDir, definition, stage);
   /** 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改业务说明的页时改动了的字段名。 */
   const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = []) => {
-    if (stage === null) return null;
+    if (stage === null || allowed === null) return null;
     if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed);
-    return keepPendingField(collection) === null ? itemRefusal(stage, kind, collection.name) : null;
+    return keepPendingField(collection) === null ? itemRefusal(stage, allowed, kind, collection.name) : null;
   };
 
   const problems: RejectReason[] = [];

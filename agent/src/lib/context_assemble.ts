@@ -1,7 +1,7 @@
 /**
  * 有阶段的任务的系统提示怎样拼：按会话的三样输入选段、按固定的次序接起来。不碰 pi，挂到事件上的那一半在 hooks/stage_prompt.ts。
  *
- * 三样输入：活动的头（方式、读哪几类、写哪几类，lib/activity_def.ts）、获准能力表（这个位置助手能做哪几类写入，lib/stage.ts 的 allowedWrites）、
+ * 三样输入：活动的头（方式、读哪几类、写哪几类，lib/activity_def.ts）、获准能力表（这个位置助手能做哪几类写入，由任务类型的活动声明生成，lib/activity_def_read.ts）、
  * 会话的位置（工作流的工作项、单项活动的工作项、空闲）。拼出来的次序是：
  *   1 系统提示（agent/prompts/system.md）
  *   2 一段由程序生成的位置说明：本次会话在哪里、主要做什么、获准做什么（模板 stage_prompt.position）
@@ -47,7 +47,7 @@ import {
   type PromptModule, PromptAssemblyError, type SessionKind, type Situation, WRITE_KINDS, loadModules, modulesStamp, parseModule, requireModules, selectModules,
 } from "./prompt_modules.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
-import { FLOW_ANALYSIS, FLOW_NAMES, IDLE, type Position, STAGES, STAGE_NAMES, type Stage, type WriteKind, allowedWrites, gateStage, isStage } from "./stage.ts";
+import { FLOW_ANALYSIS, FLOW_NAMES, IDLE, type Position, STAGES, STAGE_NAMES, type Stage, type WriteKind, gateStage, isStage } from "./stage.ts";
 import { openActivityRecord, stageOf } from "./stage_read.ts";
 import { fillText } from "./texts.ts";
 
@@ -316,7 +316,7 @@ function activityOf(input: ComposeInput): ActivityDef {
 /** 这次会话的三样输入合成的 Situation。 */
 export function situationOf(input: ComposeInput, activity: ActivityDef = activityOf(input)): Situation {
   if (activity.mode === "user_only") throw new PromptAssemblyError(`「${activity.name}」只能由用户发起，不是工作阶段，没有系统提示。`);
-  return { mode: activity.mode, reads: activity.reads, writes: activity.writes, allowed: allowedWrites(input.stage), session: sessionKind(input) };
+  return { mode: activity.mode, reads: activity.reads, writes: activity.writes, allowed: definitionsOf(input).allowed[input.stage], session: sessionKind(input) };
 }
 
 /** 位置说明的「在哪里」那半句。 */

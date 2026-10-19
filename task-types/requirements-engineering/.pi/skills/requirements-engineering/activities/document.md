@@ -4,6 +4,7 @@ mode: batch
 purpose: 补写各章导语与术语表，将需求资产编排为可阅读的需求规格说明。
 reads: all
 writes: description, versions
+writes_allowed: page, problem, publish
 requires: has_confirmed_items
 example: 为第 3 章补一段导语，术语表收入「副本」「预约」。
 template: document

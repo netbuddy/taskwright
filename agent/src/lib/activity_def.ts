@@ -17,7 +17,7 @@
  */
 
 import { ASSETS, type AssetKey } from "./assets.ts";
-import { STAGES, STAGE_NAMES, type Stage } from "./stage.ts";
+import { STAGES, STAGE_NAMES, type Stage, WRITE_KINDS, type WriteKind } from "./stage.ts";
 
 export { ASSETS, type AssetKey };
 
@@ -84,6 +84,11 @@ export interface ActivityDef {
   purpose: string;
   reads: ReadKey[];
   writes: AssetKey[];
+  /**
+   * 获准能力：做这项活动时助手能做哪几类写入（page、problem、diagram、item、review、publish）。六个阶段的获准能力表
+   * 取各阶段代表活动的这一栏（lib/activity_def_read.ts），不能超出它所用模板头里的那一栏。只能由用户发起的活动为空。
+   */
+  writesAllowed: WriteKind[];
   requires: Condition[];
   /** 一句例子。 */
   example: string;
@@ -167,7 +172,7 @@ function headOf(text: string, file: string): Record<string, string> {
 export function parseActivityDef(text: string, key: string, file: string): ActivityDef {
   if (!IDENTIFIER_PATTERN.test(key)) throw new DefinitionHeadError(`${file} 的文件名「${key}」不能当活动的标识符：只能是小写字母开头的小写字母、数字、短横线与下划线。`);
   const head = headOf(text, file);
-  const known = new Set(["name", "mode", "purpose", "reads", "writes", "requires", "example", "template", "stage"]);
+  const known = new Set(["name", "mode", "purpose", "reads", "writes", "writes_allowed", "requires", "example", "template", "stage"]);
   const extra = Object.keys(head).filter((field) => !known.has(field));
   if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
   const mode = oneOf(head, "mode", MODES, file);
@@ -182,6 +187,8 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
   if (mode === "user_only" ? template !== null || stageText !== null : template === null || stageText === null) {
     throw new DefinitionHeadError(`${file} 的声明里「template」与「stage」：只能由用户发起的活动两栏都空着，别的活动两栏都要写。`);
   }
+  const writesAllowed = listOf(head, "writes_allowed", WRITE_KINDS, file, mode !== "user_only");
+  if (mode === "user_only" && writesAllowed.length > 0) throw new DefinitionHeadError(`${file} 的声明里「writes_allowed」：只能由用户发起的活动不经助手，这一栏空着。`);
   return {
     key,
     name: need(head, "name", file),
@@ -189,6 +196,7 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
     purpose: need(head, "purpose", file),
     reads: listOf(head, "reads", [...ASSETS, READ_KNOWLEDGE, READ_ALL] as readonly ReadKey[], file, true),
     writes: listOf(head, "writes", ASSETS, file, true),
+    writesAllowed,
     requires: listOf(head, "requires", CONDITIONS, file, false),
     example: need(head, "example", file),
     template,

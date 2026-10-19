@@ -12,13 +12,13 @@ import {
   ACTIVITIES, ASSETS, CONDITIONS, CONDITION_TEXTS, DefinitionHeadError, MODE_NAMES, NO_PREREQUISITE_TEXT,
   parseActivityDef, parseFlowDef, prerequisiteText, splitHead,
 } from "../src/lib/activity_def.ts";
-import { definitionsFor, readDefinitions } from "../src/lib/activity_def_read.ts";
+import { definitionsFor, readDefinitions, templateWritesAllowed } from "../src/lib/activity_def_read.ts";
 import { STAGES } from "../src/lib/stage.ts";
 import { composeContext } from "../src/lib/context_assemble.ts";
 import { SRS_SKILL_DIR } from "./helpers.ts";
 
-const HEAD = ["name: 核读材料", "mode: batch", "purpose: 通读材料。", "reads: materials, knowledge", "writes: description", "requires: has_materials", "example: 一句例子。",
-  "template: reading", "stage: reading"];
+const HEAD = ["name: 核读材料", "mode: batch", "purpose: 通读材料。", "reads: materials, knowledge", "writes: description", "writes_allowed: page, problem",
+  "requires: has_materials", "example: 一句例子。", "template: reading", "stage: reading"];
 const withHead = (lines: readonly string[], body = "# 正文\n") => `---\n${lines.join("\n")}\n---\n\n${body}`;
 const SKILL_PATH = ".pi/skills/requirements-engineering/SKILL.md";
 
@@ -37,6 +37,33 @@ test("需求工程的七项活动：方式、读、写、前置条件、模板�
     publish: ["发布", "user_only", "all", "versions", "no_open_findings confirmations_clear", null, null],
   });
   for (const one of activities) assert.ok(one.purpose.endsWith("。") && one.example.endsWith("。"), one.key);
+});
+
+test("获准能力表由活动声明生成：六个阶段取各自代表活动的 writes_allowed，空闲取空闲模板头；与原来手写的表相同", () => {
+  const { activities, allowed } = readDefinitions(SRS_SKILL_DIR);
+  assert.deepEqual(Object.fromEntries(activities.map((one) => [one.key, one.writesAllowed.join(" ")])), {
+    reading: "page problem", clarifying: "page problem", modeling: "page problem diagram", writing: "page problem diagram item review",
+    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "",
+  });
+  assert.deepEqual(allowed, {
+    reading: ["page", "problem"], clarifying: ["page", "problem"], modeling: ["page", "problem", "diagram"],
+    writing: ["page", "problem", "diagram", "item", "review"], reviewing: ["page", "problem", "diagram", "item", "review", "publish"],
+    document: ["page", "problem", "publish"], idle: ["page", "problem"],
+  });
+  for (const one of activities) if (one.template !== null) assert.ok(one.writesAllowed.every((kind) => templateWritesAllowed(one.template!).includes(kind)), one.key);
+});
+
+test("活动声明的 writes_allowed 超出它所用模板头里的那一栏时，读声明报错，说明是哪份文件、多写了什么", () => {
+  const dir = mkdtempSync(join(tmpdir(), "allowed-"));
+  try {
+    cpSync(SRS_SKILL_DIR, dir, { recursive: true });
+    const file = join(dir, "activities", "reading.md");
+    writeFileSync(file, readFileSync(file, "utf-8").replace("writes_allowed: page, problem", "writes_allowed: page, problem, item"));
+    assert.throws(() => readDefinitions(dir), (error: Error) => error instanceof DefinitionHeadError
+      && error.message === "activities/reading.md 的声明里「writes_allowed」写了 item，超出了它所用的模板 reading.md 头里写的（page、problem）。");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("需求工程的两条流程：各步与前置条件；需求分析没有前置条件，需求变更要有已发布的版本", () => {
@@ -72,7 +99,7 @@ test("活动的声明缺栏、取值不认、标识符不对都报错，说明�
   const got = parseActivityDef(withHead(HEAD), "reading", "activities/reading.md");
   assert.deepEqual([got.key, got.name, got.template, got.stage], ["reading", "核读材料", "reading", "reading"]);
   const without = (field: string) => HEAD.filter((line) => !line.startsWith(`${field}:`));
-  for (const field of ["name", "mode", "purpose", "reads", "writes", "requires", "example", "template", "stage"]) {
+  for (const field of ["name", "mode", "purpose", "reads", "writes", "writes_allowed", "requires", "example", "template", "stage"]) {
     assert.throws(() => parseActivityDef(withHead(without(field)), "reading", "activities/reading.md"), (error: Error) =>
       error instanceof DefinitionHeadError && error.message.includes(`缺「${field}」一栏`), field);
   }
@@ -83,6 +110,9 @@ test("活动的声明缺栏、取值不认、标识符不对都报错，说明�
   assert.throws(() => parse(replaced("writes", "")), /「writes」一栏是空的/);
   assert.throws(() => parse(replaced("mode", "auto")), /「mode」写的是「auto」，只能是 batch、dialogue、user_only 之一/);
   assert.throws(() => parse(replaced("writes", "description, knowledge")), /「writes」写了「knowledge」/);
+  assert.throws(() => parse(replaced("writes_allowed", "")), /「writes_allowed」一栏是空的/);
+  assert.throws(() => parse(replaced("writes_allowed", "page, items")), /「writes_allowed」写了「items」，只能是 page、problem、diagram、item、review、publish 里的/);
+  assert.deepEqual(parse(replaced("writes_allowed", "page，problem")).writesAllowed, ["page", "problem"]);
   assert.throws(() => parse(replaced("requires", "ran_reading")), /「requires」写了「ran_reading」/);
   assert.throws(() => parse(replaced("stage", "testing")), /「stage」写的是「testing」/);
   assert.throws(() => parse(replaced("template", "")), /两栏都要写/);
@@ -90,9 +120,11 @@ test("活动的声明缺栏、取值不认、标识符不对都报错，说明�
   assert.throws(() => parseActivityDef(withHead(HEAD), "Reading", "activities/Reading.md"), /不能当活动的标识符/);
   assert.throws(() => parseActivityDef("# 没有头\n", "reading", "activities/reading.md"), /reading.md 开头没有头/);
   // 只能由用户发起的活动：模板与阶段都空着。
-  const publish = ["name: 发布", "mode: user_only", "purpose: 发布。", "reads: all", "writes: versions", "requires:", "example: 发布第 1 版。", "template:", "stage:"];
+  const publish = ["name: 发布", "mode: user_only", "purpose: 发布。", "reads: all", "writes: versions", "writes_allowed:", "requires:", "example: 发布第 1 版。", "template:", "stage:"];
   const parsed = parseActivityDef(withHead(publish), "publish", "activities/publish.md");
-  assert.deepEqual([parsed.template, parsed.stage], [null, null]);
+  assert.deepEqual([parsed.template, parsed.stage, parsed.writesAllowed], [null, null, []]);
+  assert.throws(() => parseActivityDef(withHead(publish.map((line) => (line === "writes_allowed:" ? "writes_allowed: publish" : line))), "publish", "activities/publish.md"),
+    /「writes_allowed」：只能由用户发起的活动不经助手，这一栏空着/);
   assert.throws(() => parseActivityDef(withHead(publish.map((line) => (line === "stage:" ? "stage: document" : line))), "publish", "activities/publish.md"), /两栏都空着/);
 });
 

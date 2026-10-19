@@ -20,6 +20,11 @@ import { skillBody, withoutSection } from "../src/lib/context_assemble.ts";
 import { moduleText, platformText } from "./platform_text.ts";
 import { SRS_SKILL_DIR } from "./helpers.ts";
 import { CARD_TYPED_PREFIX } from "../src/lib/dialogue_acts.ts";
+import { readDefinitions } from "../src/lib/activity_def_read.ts";
+import { SRS_SKILL_DIR as SKILL_DIR_FOR_ALLOWED } from "./helpers.ts";
+
+/** 获准能力表：取真实任务类型的活动声明生成的那一份。 */
+const ALLOWED = readDefinitions(SKILL_DIR_FOR_ALLOWED).allowed;
 
 /** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
 const EMPTY_LAMP_INPUT: LampInput = {
@@ -195,7 +200,7 @@ test("每一段的「不做什么」与工具守的一致：这一段不能写�
   for (const stage of STAGES) {
     const not = sections(read(`${stage}.md`)).get("这一段不做什么")!;
     for (const [kind, word] of Object.entries(WORDS) as [WriteKind, string][]) {
-      assert.equal(not.includes(word), !canWrite(stage, kind), `${stage}：${word}`);
+      assert.equal(not.includes(word), !canWrite(ALLOWED[stage], kind), `${stage}：${word}`);
     }
   }
   // 评审确认阶段主题页只能改两处。
