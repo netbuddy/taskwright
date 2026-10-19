@@ -121,13 +121,17 @@ function skillCopy(): { root: string; skill: string } {
   return { root, skill };
 }
 
-test("从目录里读：六个阶段各要恰好一项活动、要有发布", () => {
+test("从目录里读：六个阶段各至少要有一项活动（可以有几项）、要有发布", () => {
   const { root, skill } = skillCopy();
   try {
     assert.deepEqual(readDefinitions(skill).activities, readDefinitions(SRS_SKILL_DIR).activities);
     const modeling = join(skill, "activities", "modeling.md");
-    writeFileSync(modeling, readFileSync(modeling, "utf-8").replace("stage: modeling", "stage: writing"));
-    assert.throws(() => readDefinitions(skill), /几项活动都算作「writing」/);
+    // 再加一项也算作核读材料的活动：可以，排在发布之后；按文件名它排在 reading 前面，核读材料的代表仍是标识符相同的 reading。
+    const interview = join(skill, "activities", "interview.md");
+    writeFileSync(interview, readFileSync(join(skill, "activities", "reading.md"), "utf-8").replace("name: 核读材料", "name: 访谈"));
+    const both = readDefinitions(skill).activities;
+    assert.deepEqual([both[0].key, both.at(-1)!.key, both.at(-1)!.stage], ["reading", "interview", "reading"]);
+    rmSync(interview);
     rmSync(modeling);
     assert.throws(() => readDefinitions(skill), /没有算作「modeling」这个阶段的活动/);
     cpSync(join(SRS_SKILL_DIR, "activities", "modeling.md"), modeling);
@@ -153,7 +157,7 @@ test("任务目录里的 skill 没有 activities/ 时回退读产品自带的同
   }
 });
 
-test("拼系统提示时声明去掉：活动模板从标题起，流程的出口是那一节的正文，整份文字里没有声明的任何一栏", () => {
+test("拼系统提示时声明去掉：活动模板从标题起，各步之间的转移由程序填好，整份文字里没有声明的任何一栏", () => {
   const { root, skill } = skillCopy();
   try {
     const skills = [{ name: "requirements-engineering", filePath: join(skill, "SKILL.md") }];
@@ -161,7 +165,7 @@ test("拼系统提示时声明去掉：活动模板从标题起，流程的出�
     for (const stage of STAGES) {
       const prompt = composeContext({ stage, workspaceDir: root, skills, tail: "" });
       assert.ok(prompt.parts.find((one) => one.part === "template")!.text.startsWith("# 现在这个阶段："), stage);
-      assert.ok(prompt.parts.find((one) => one.part === "node_exit")!.text.startsWith("## 出口\n"), stage);
+      assert.ok(prompt.parts.find((one) => one.module === "flow_transitions")!.text.startsWith("## 各步之间的转移\n"), stage);
       assert.doesNotMatch(prompt.text, fields, stage);
       assert.doesNotMatch(prompt.text, /^---$/m, stage);
     }

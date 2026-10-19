@@ -162,15 +162,22 @@ def validity(first: list[dict]) -> dict:
 
 #: 卡片上表示看过了的那一下点击：现在走 mark_viewed，早期版本的演练记录里是 confirm。
 SEEN_KINDS = ("mark_viewed", "confirm")
-#: 助手提议进入下一段的那张请选择卡片上，进入的那个选项的键（agent/src/lib/stage.ts 的 ENTER_OPTIONS）：进入写条目的键沿用早先的名字，
-#: 其余都以 enter_ 开头。按写法认而不逐个列出，产品再加一段时这里不用改。留在这一段的键以 continue_ 开头，不算。
+#: 助手提议往前走的那张请选择卡片上，生效的那个选项的键（agent/src/lib/stage.ts 的 cardMove）：进入下一步是 next_step，
+#: 转到某一步是 goto:<活动标识符>（卡片上的字以「回到」开头的是往回退，不算）；早先的卡片是 start_items 或以 enter_ 开头的键。
+#: 留在这一步的 stay（早先以 continue_ 开头）不算。
+NEXT_STEP = "next_step"
+GOTO_PREFIX = "goto:"
 START_ITEMS = "start_items"
 ENTER_PREFIX = "enter_"
 
 
-def enters_next_stage(choice) -> bool:
-    """卡片上点的这个选项是不是进入下一段的。"""
-    return isinstance(choice, str) and (choice == START_ITEMS or choice.startswith(ENTER_PREFIX))
+def enters_next_stage(choice, label: str = "") -> bool:
+    """卡片上点的这个选项是不是往前走的。label 是卡片上那一项的字：转到某一步的选项要看它分前后。"""
+    if not isinstance(choice, str):
+        return False
+    if choice.startswith(GOTO_PREFIX):
+        return not label.startswith("回到")
+    return choice in (NEXT_STEP, START_ITEMS) or choice.startswith(ENTER_PREFIX)
 
 
 def clicked_card(record: dict, reply_message_id: str | None, before_round: int) -> dict:
@@ -205,11 +212,13 @@ def enter_clicks(data: dict) -> dict:
     for u in user_utterances(record):
         opened |= {x for x in u["looks"] if x}
         choice = (u.get("card") or {}).get("choice")
-        if not enters_next_stage(choice):
+        if not isinstance(choice, str):
             continue
         card = clicked_card(record, (u["card"] or {}).get("reply_message_id"), u["轮"])
         # 选项给人看的文字取自卡片；卡片找不到或者上面没有这个键时写键。
         label = next((o.get("text") for o in card.get("options") or [] if isinstance(o, dict) and o.get("key") == choice and o.get("text")), choice)
+        if not enters_next_stage(choice, label):
+            continue
         clicks.append(f"第 {u['轮']} 轮「{label}」")
         items = card_items(record, (u["card"] or {}).get("reply_message_id"), u["轮"])
         missing = [i["item_id"] for i in items if i["item_id"] not in opened]

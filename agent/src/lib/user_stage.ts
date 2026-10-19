@@ -16,8 +16,8 @@
 
 import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { NoDatabaseYet, withTaskDatabase } from "./schema.ts";
-import { DOCUMENT_REVIEWED_OPTION, STAGE_NAMES, STAY_IDLE_OPTION, STAY_TEXT } from "./stage.ts";
-import { type ProposalFact, isStayKey, openProposal, proposalOfAct } from "./stage_proposal.ts";
+import { DOCUMENT_REVIEWED_OPTION, STAGE_NAMES, STAY_TEXT } from "./stage.ts";
+import { type ProposalFact, isStayKey, openProposal, positionOf, proposalOfAct } from "./stage_proposal.ts";
 import { fillText } from "./texts.ts";
 import { UserOpError, type UserOpRequest } from "./user_ops.ts";
 
@@ -27,13 +27,12 @@ export const CONTINUE_STAGE_KIND = "continue_stage";
 export function continueStageNote(fact: Pick<ProposalFact, "stage" | "enter"> & Partial<Pick<ProposalFact, "kind" | "stay">>, optionKey?: string): string {
   const kind = fact.kind ?? "enter";
   const stage = STAGE_NAMES[fact.stage];
-  if (kind === "back") return fillText("ui_ops.continue_back", { enter: fact.enter.text, stay: fact.stay?.text ?? "留在本段", stage });
+  if (kind === "back") return fillText("ui_ops.continue_back", { enter: fact.enter.text, stay: STAY_TEXT, stage });
   if (kind === "review") {
     return optionKey === fact.enter.key
       ? fillText("ui_ops.continue_review_ok", { option: fact.enter.text })
       : fillText("ui_ops.continue_review_fix", { option: fact.stay?.text ?? "需要修改" });
   }
-  if (fact.stay?.key === STAY_IDLE_OPTION.key) return fillText("ui_ops.continue_idle", { enter: fact.enter.text, stay: STAY_IDLE_OPTION.text, stage });
   return fillText("ui_ops.continue_stay", { enter: fact.enter.text, stay: STAY_TEXT, stage });
 }
 
@@ -63,16 +62,17 @@ export function continueStage(ctx: { workspaceDir: string; sessionId: string }, 
   const accepts = (one: ProposalFact) => one.stay?.key === optionKey || (one.kind === "review" && one.enter.key === optionKey);
   const card = branch.find((entry) => entry.id === replyEntry);
   let fact: ProposalFact | null = null;
-  if (card) {
-    fact = proposalOfAct(chooseActOf(card));
-    if (fact === null || !accepts(fact)) throw unknown();
-  }
   try {
     withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       if (!task) throw new UserOpError("no_task", "这个任务目录里还没有任务记录。");
       if (typeof request.task_id === "string" && request.task_id !== "" && request.task_id !== task.task_id) {
         throw new UserOpError("bad_request", `task_id 写的是 ${request.task_id}，这个库里的任务是 ${task.task_id}。`);
+      }
+      // 卡片在这条会话里：照它自己认，进入下一步要知道这条会话现在在哪一步。
+      if (card) {
+        fact = proposalOfAct(chooseActOf(card), positionOf(db, task.task_id, ctx.sessionId));
+        if (fact === null || !accepts(fact)) throw unknown();
       }
       if (fact === null) {
         // 这条会话里没有那条回复：卡片是在同一个工作项的另一条会话里发的，照这条会话的工作项开着的提议核对。

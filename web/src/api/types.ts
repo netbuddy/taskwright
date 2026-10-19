@@ -528,7 +528,7 @@ export interface UserMessage {
    * 用户点了一张进入某个阶段的卡片而阶段没有移动时才有（次序不对，或者任务本来就在那个阶段）：任务当时在哪个阶段。
    * why 为 not_in_flow 是任务当时不在需求分析流程里（空闲，at 是 idle；或者正在单独开展一项活动），进入与退回不算数。
    */
-  stage_unmoved?: { at: string; why?: string };
+  stage_unmoved?: { at: string; why?: string; blocked?: string };
 }
 
 export interface AssistantReply {

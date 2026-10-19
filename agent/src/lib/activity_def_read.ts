@@ -5,7 +5,7 @@
  * 早先建的任务、或者数据目录里早先播种的任务类型复制出来的任务，skill 目录里没有 activities/，这时回退读产品自带的任务类型里
  * 同一相对路径下的那一份（BUILTIN_TASK_TYPES_DIR 下哪个任务类型目录里有这份 skill 就读哪个），并在结果里写明回退了。
  *
- * 校验：每份文件的声明合规；六个阶段各恰好有一项活动算作它（stage 一栏），另有一项只能由用户发起的「发布」（键 publish）；
+ * 校验：每份文件的声明合规；六个阶段各至少有一项活动算作它（stage 一栏），另有恰好一项只能由用户发起的「发布」（键 publish）；
  * 流程的各步只能写这个任务类型里的活动。任何一处不对都抛错（DefinitionHeadError），调用方据此不出活动目录、拼不成系统提示。
  * 进程里按目录记着上一次读的结果与各份文件的修改时刻和大小，文件没变就不重读。
  */
@@ -24,7 +24,7 @@ export const FLOWS_SUBDIR = "flows";
 
 /** 一个任务类型的全部活动与流程的声明。 */
 export interface Definitions {
-  /** 先是六个阶段各自的那一项（按阶段的先后），再是发布，再是别的（按标识符）。 */
+  /** 先是六个阶段各自的代表（按阶段的先后；见 readDefinitions），再是发布，再是别的（按标识符）。 */
   activities: ActivityDef[];
   /** 按标识符。 */
   flows: FlowDef[];
@@ -54,12 +54,10 @@ export function readDefinitions(dir: string, fallback = false): Definitions {
   const activityFiles = mdFiles(join(dir, ACTIVITIES_SUBDIR));
   if (activityFiles.length === 0) throw new DefinitionHeadError(`任务类型里没有活动的定义：${join(dir, ACTIVITIES_SUBDIR)}`);
   const all = activityFiles.map((name) => parseActivityDef(read(join(dir, ACTIVITIES_SUBDIR, name)), name.slice(0, -3), `${ACTIVITIES_SUBDIR}/${name}`));
-  for (const stage of STAGES) {
-    const found = all.filter((one) => one.stage === stage);
-    if (found.length > 1) throw new DefinitionHeadError(`任务类型里有几项活动都算作「${stage}」这个阶段：${found.map((one) => one.key).join("、")}。`);
-  }
+  // 每个阶段至少要有一项活动算作它（同一个阶段可以有几项，例如访谈与核读都算作核读材料）；排序时先放各阶段的代表：
+  // 标识符就是阶段键的那一项，没有时是按文件名排在最前的那一项。
   const ordered: ActivityDef[] = STAGES.map((stage) => {
-    const found = all.find((one) => one.stage === stage);
+    const found = all.find((one) => one.stage === stage && one.key === stage) ?? all.find((one) => one.stage === stage);
     if (!found) throw new DefinitionHeadError(`任务类型里没有算作「${stage}」这个阶段的活动。`);
     return found;
   });

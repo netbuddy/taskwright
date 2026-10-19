@@ -104,8 +104,8 @@ export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: Cont
     }
     const options = event.systemPromptOptions ?? {};
     const tail = piTail(launched, String(options.customPrompt ?? ""));
-    const { stage, inFlow, flow, scope } = where;
-    const got = cache.get({ stage, inFlow, flow, scope, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
+    const { stage, inFlow, flow, scope, activity } = where;
+    const got = cache.get({ stage, inFlow, flow, activity: activity ?? null, scope, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
     let summary = summaries.get(got.prompt);
     if (!summary) summaries.set(got.prompt, (summary = summarize(got.prompt)));
     report({

@@ -89,92 +89,119 @@ export function gateStage(position: Position): Stage {
 // ───────────── 移动 ─────────────
 
 /**
- * 往前进入下一个阶段要由用户在卡片上点：助手做完这一段，发一张请选择卡片说清下一段要做什么，卡片上固定两个选项，
- * 「进入下一段」与「留在这一段」，键与文字都是固定的。用户点了「进入」，系统替用户记一次移动。
- * 进入写条目的那个键沿用早先的名字 start_items。
+ * 工作流里的转移由用户在卡片上点：助手做完这一步，发一张请选择卡片提议，用户点了生效的那一项，系统替用户把工作项移过去。
+ * 卡片的键是通用的三种，不再按阶段各写一个：
+ * - next_step「进入下一步：某活动」：进入工作流里的下一步（哪一步由工作流声明的 steps 推出来）；
+ * - goto:<活动标识符>「回到：某活动」或「转到：某活动」：退回前面的某一步，或者跳到后面的某一步；
+ * - stay「继续本步」：不移动，只把卡片标为已选，提议仍然开着。
+ * 过渡期活动的标识符与阶段的键相同，所以这里按阶段写；工作流的各步与阶段的先后相同（需求分析）。
+ * 早先的卡片用的是按阶段的固定键（enter_clarify、start_items、back_to_reading、continue_reading、stay_in_stage 之类），
+ * 任务库里还开着的旧卡片照样认：LEGACY_CARD_MOVES 把它们换成上面三种，只读，不再用来发新卡片。
  */
-export const START_ITEMS_KEY = "start_items";
-export const START_ITEMS_TEXT = "开始写条目";
-export const CONTINUE_CLARIFY_KEY = "continue_clarify";
-/** 留在这一段的那个选项的文字：五张卡片上都是这一句。 */
-export const STAY_TEXT = "继续本阶段";
-export const CONTINUE_CLARIFY_TEXT = STAY_TEXT;
+export const NEXT_STEP_KEY = "next_step";
+export const STAY_KEY = "stay";
+export const GOTO_PREFIX = "goto:";
+/** 留在这一步的那个选项的文字：所有提议卡片上都是这一句。 */
+export const STAY_TEXT = "继续本步";
 
 export interface CardOption {
   key: string;
   text: string;
 }
 
-/**
- * 进入某个阶段的那个选项。核读材料是第一段，在流程里没有「进入」它的卡片；它的这一项是早先任务空闲时用的（现在启动一律从任务起点页做，点了不算数）：
- * 用户上传了材料，助手用请选择卡片提议开始核读材料，卡片上另一项是「先不开始」（STAY_IDLE_OPTION）。
- */
-export const ENTER_OPTIONS: Record<Stage, CardOption> = {
-  reading: { key: "enter_reading", text: "开始核读材料" },
-  clarifying: { key: "enter_clarify", text: "进入澄清" },
-  modeling: { key: "enter_consolidate", text: "进入整理建模" },
-  writing: { key: START_ITEMS_KEY, text: START_ITEMS_TEXT },
-  reviewing: { key: "enter_review", text: "进入评审确认" },
-  document: { key: "enter_document", text: "进入编写文档" },
-};
+/** 留在这一步的那个选项。 */
+export const STAY_OPTION: CardOption = { key: STAY_KEY, text: STAY_TEXT };
+
+/** 进入下一步的那个选项：文字里带下一步的名字。 */
+export function nextStepOption(to: Stage): CardOption {
+  return { key: NEXT_STEP_KEY, text: `进入下一步：${STAGE_NAMES[to]}` };
+}
+
+/** 转到工作流里某一步的那个选项：在现在这一步之前的写「回到」，之后的写「转到」。from 不是阶段（空闲、不知道）时写「转到」。 */
+export function gotoOption(to: Stage, from: Position | null): CardOption {
+  const back = from !== null && from !== IDLE && STAGES.indexOf(to) < STAGES.indexOf(from);
+  return { key: `${GOTO_PREFIX}${to}`, text: `${back ? "回到" : "转到"}：${STAGE_NAMES[to]}` };
+}
 
 /**
- * 留在某个阶段的那个选项（编写文档是最后一段，没有往前的卡片）。五张卡片上文字相同、键各不相同：页面按键认出这一项，
- * 不管助手在卡片里把它写成什么都显示成这一句；点它只把卡片标为已选，不替用户发话（lib/user_stage.ts）。
+ * 卡片上一个选项键的意思：进入下一步、转到某一步、留在这一步。转到某一步的，早先的固定键自己带着方向（back：back_to_ 开头的是退回，
+ * 别的是往前）；新键没有，方向看它与现在所在的那一步谁前谁后。
  */
-export const STAY_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
-  reading: { key: "continue_reading", text: STAY_TEXT },
-  clarifying: { key: CONTINUE_CLARIFY_KEY, text: STAY_TEXT },
-  modeling: { key: "continue_consolidate", text: STAY_TEXT },
-  writing: { key: "continue_writing", text: STAY_TEXT },
-  reviewing: { key: "continue_review", text: STAY_TEXT },
+export type CardMove = { kind: "next" } | { kind: "goto"; to: Stage; back?: boolean } | { kind: "stay" };
+
+/** 早先按阶段的固定键，只读：任务库里还开着的旧卡片照样认。 */
+export const LEGACY_CARD_MOVES: Readonly<Record<string, CardMove>> = {
+  enter_reading: { kind: "goto", to: "reading", back: false },
+  enter_clarify: { kind: "goto", to: "clarifying", back: false },
+  enter_consolidate: { kind: "goto", to: "modeling", back: false },
+  start_items: { kind: "goto", to: "writing", back: false },
+  enter_review: { kind: "goto", to: "reviewing", back: false },
+  enter_document: { kind: "goto", to: "document", back: false },
+  back_to_reading: { kind: "goto", to: "reading", back: true },
+  back_to_clarify: { kind: "goto", to: "clarifying", back: true },
+  back_to_consolidate: { kind: "goto", to: "modeling", back: true },
+  back_to_writing: { kind: "goto", to: "writing", back: true },
+  back_to_review: { kind: "goto", to: "reviewing", back: true },
+  continue_reading: { kind: "stay" },
+  continue_clarify: { kind: "stay" },
+  continue_consolidate: { kind: "stay" },
+  continue_writing: { kind: "stay" },
+  continue_review: { kind: "stay" },
+  stay_in_stage: { kind: "stay" },
+  stay_idle: { kind: "stay" },
 };
 
-/**
- * 早先任务空闲时助手提议开始核读材料的那张卡片上不生效的那一项：空闲时没有阶段可以「继续」，所以另写一句。
- * 点它只把卡片标为已选，不替用户发话，提议仍然开着。
- */
-export const STAY_IDLE_OPTION: CardOption = { key: "stay_idle", text: "先不开始" };
+/** 一个选项键是三种里的哪一种；不是转移卡片的键时返回 null。早先的固定键照 LEGACY_CARD_MOVES 换。 */
+export function cardMove(key: unknown): CardMove | null {
+  if (typeof key !== "string") return null;
+  if (key === NEXT_STEP_KEY) return { kind: "next" };
+  if (key === STAY_KEY) return { kind: "stay" };
+  if (key.startsWith(GOTO_PREFIX)) {
+    const to = key.slice(GOTO_PREFIX.length);
+    return isStage(to) ? { kind: "goto", to } : null;
+  }
+  return LEGACY_CARD_MOVES[key] ?? null;
+}
+
+/** 这个选项键是不是留在这一步的那一项（含早先的「继续本阶段」「留在本段」「先不开始」）。 */
+export function isStayCardKey(key: unknown): boolean {
+  return cardMove(key)?.kind === "stay";
+}
 
 /**
- * 退回前面的阶段也由用户决定：助手认为这一段的输入大面积不能用了（用户放进了新材料、几页的理解互相矛盾），用一张请选择卡片
- * 提议退回并写明原因，卡片上固定两个选项，「退回某段」与「留在本段」。用户点了「退回」，系统替用户记一次移动。
- * 局部不明白的地方不退回：记一条问题条目、在那一处标「待定」、接着做这一段。
- * 退回某个阶段的那个选项（编写文档是最后一段，没有「退回」到它的卡片）。
+ * 卡片上的一个选项键是不是往前走、走到哪个阶段：进入下一步（下一步是现在这一步的下一个阶段），或者转到现在这一步之后的某一步；
+ * from 不是阶段（空闲、不知道）时，转到哪一步都算往前。不是往前的键时返回 null。
  */
-export const BACK_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
-  reading: { key: "back_to_reading", text: "退回核读材料" },
-  clarifying: { key: "back_to_clarify", text: "退回澄清" },
-  modeling: { key: "back_to_consolidate", text: "退回整理建模" },
-  writing: { key: "back_to_writing", text: "退回写条目" },
-  reviewing: { key: "back_to_review", text: "退回评审确认" },
-};
-/** 回退卡片上留在这一段的那个选项：点它只把卡片标为已选，不替用户发话，提议仍然开着。 */
-export const STAY_HERE_OPTION: CardOption = { key: "stay_in_stage", text: "留在本段" };
+export function stageEnteredBy(key: unknown, from: Position | null): Stage | null {
+  const move = cardMove(key);
+  if (move === null || move.kind === "stay") return null;
+  if (move.kind === "next") return from !== null && from !== IDLE ? nextStage(from) : null;
+  if (move.back !== undefined) return move.back ? null : move.to;
+  if (from === null || from === IDLE) return move.to;
+  return STAGES.indexOf(move.to) > STAGES.indexOf(from) ? move.to : null;
+}
+
+/** 卡片上的一个选项键是不是往回退、退到哪个阶段：转到现在这一步之前的某一步。from 不是阶段时不算退回。 */
+export function stageBackedBy(key: unknown, from: Position | null): Stage | null {
+  const move = cardMove(key);
+  if (move === null || move.kind !== "goto") return null;
+  if (move.back !== undefined) return move.back ? move.to : null;
+  if (from === null || from === IDLE) return null;
+  return STAGES.indexOf(move.to) < STAGES.indexOf(from) ? move.to : null;
+}
 
 /**
  * 编写文档阶段请用户过目的那张卡片的两个选项。点「看过了，生成文档」不移动阶段、不引出助手的运行：页面把卡片点名的页记为看过，
- * 再打开生成文档；点「需要修改」只把卡片标为已选，用户接着说要改哪里。
+ * 再打开生成文档；点「需要修改」只把卡片标为已选，用户接着说要改哪里。这两项不是工作流的转移，键照旧。
  */
 export const DOCUMENT_REVIEWED_OPTION: CardOption = { key: "document_reviewed", text: "看过了，生成文档" };
 export const DOCUMENT_REVISE_OPTION: CardOption = { key: "document_revise", text: "需要修改" };
 
-/** 卡片上的一个选项键是「退回」哪个阶段的；不是这样的键时返回 null。 */
-export function stageBackedBy(key: unknown): Exclude<Stage, "document"> | null {
-  const found = (Object.keys(BACK_OPTIONS) as Exclude<Stage, "document">[]).find((stage) => BACK_OPTIONS[stage].key === key);
-  return found ?? null;
+/** 怎样提议退回某个阶段：告诉助手用哪张卡片、两个选项怎样写。from 是现在所在的阶段。 */
+export function backCardGuidance(to: Stage, from: Position | null = null): string {
+  const back = gotoOption(to, from ?? STAGES[STAGES.length - 1]);
+  return fillText("part.back_card", { back_key: back.key, back_text: back.text, stay_key: STAY_OPTION.key, stay_text: STAY_OPTION.text });
 }
-
-/** 怎样提议退回某个阶段：告诉助手用哪张卡片、两个选项怎样写。 */
-export function backCardGuidance(to: Exclude<Stage, "document">): string {
-  const back = BACK_OPTIONS[to];
-  return fillText("part.back_card", { back_key: back.key, back_text: back.text, stay_key: STAY_HERE_OPTION.key, stay_text: STAY_HERE_OPTION.text });
-}
-
-/** 回复里写了已经停用的 stage 时的拒绝：原因码、事实与怎么办。 */
-export const STAGE_PARAM_RETIRED: Refusal = refusalText("reply.stage_param_retired", {
-  back_options: Object.values(BACK_OPTIONS).map((one) => `${one.key}「${one.text}」`).join("、"), stay_key: STAY_HERE_OPTION.key, stay_text: STAY_HERE_OPTION.text,
-});
 
 /**
  * 业务说明还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
@@ -208,26 +235,14 @@ export function nextStage(stage: Stage): Stage | null {
   return STAGES[STAGES.indexOf(stage) + 1] ?? null;
 }
 
-/** 卡片上的一个选项键是「进入」哪个阶段的（「开始核读材料」算进入核读材料）；不是这样的键时返回 null。 */
-export function stageEnteredBy(key: unknown): Stage | null {
-  const found = (Object.keys(ENTER_OPTIONS) as Stage[]).find((stage) => ENTER_OPTIONS[stage].key === key);
-  return found ?? null;
-}
-
-/** 早先任务空闲时怎样提议开始核读材料：告诉助手用哪张卡片、两个选项怎样写。现在的说明不再教助手发这张卡片。 */
-export function startReadingCardGuidance(): string {
-  const enter = ENTER_OPTIONS.reading;
-  return `请用请选择卡片提议，两个选项的键与文字是 ${enter.key}「${enter.text}」、${STAY_IDLE_OPTION.key}「${STAY_IDLE_OPTION.text}」`;
-}
-
 /**
  * 在某个阶段怎样提议进入下一段：告诉助手用哪张卡片、两个选项怎样写。编写文档是最后一段，没有下一段，返回空串。
  */
 export function forwardCardGuidance(from: Stage): string {
   const next = nextStage(from);
   if (next === null || from === "document") return "";
-  const enter = ENTER_OPTIONS[next], stay = STAY_OPTIONS[from];
-  return fillText("part.forward_card", { enter_key: enter.key, enter_text: enter.text, stay_key: stay.key, stay_text: stay.text });
+  const enter = nextStepOption(next);
+  return fillText("part.forward_card", { enter_key: enter.key, enter_text: enter.text, stay_key: STAY_OPTION.key, stay_text: STAY_OPTION.text });
 }
 
 /**
@@ -447,7 +462,7 @@ const howToLeaveIdle = (): string => fillText("part.leave_idle");
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
 function howToReachWriting(): string {
-  return fillText("part.reach_writing", { start_items: START_ITEMS_TEXT });
+  return fillText("part.reach_writing", { start_items: gotoOption("writing", null).text });
 }
 
 /**
@@ -487,7 +502,7 @@ export function diagramRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "diagram")) return null;
   if (stage === IDLE) return refusalText("gate.stage_diagram.idle", { leave_idle: howToLeaveIdle() });
   if (stage === "document") return refusalText("gate.stage_diagram.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("modeling") });
-  const enterModeling = ENTER_OPTIONS.modeling.text;
+  const enterModeling = nextStepOption("modeling").text;
   return stage === "reading"
     ? refusalText("gate.stage_diagram.reading", { stage: STAGE_NAMES[stage], forward: forwardCardGuidance("reading"), enter_modeling: enterModeling })
     : refusalText("gate.stage_diagram", { stage: STAGE_NAMES[stage], forward: forwardCardGuidance("clarifying"), enter_modeling: enterModeling });
@@ -506,7 +521,7 @@ export function publishRefusal(stage: Position): Refusal | null {
   if (canWrite(stage, "publish")) return null;
   if (stage === IDLE) return refusalText("gate.stage_publish.idle", { leave_idle: howToLeaveIdle() });
   return stage === "writing"
-    ? refusalText("gate.stage_publish.writing", { stage: STAGE_NAMES[stage], enter_reviewing: ENTER_OPTIONS.reviewing.text, forward: forwardCardGuidance("writing") })
+    ? refusalText("gate.stage_publish.writing", { stage: STAGE_NAMES[stage], enter_reviewing: nextStepOption("reviewing").text, forward: forwardCardGuidance("writing") })
     : refusalText("gate.stage_publish", { stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 

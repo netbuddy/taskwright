@@ -16,8 +16,7 @@ test("kind 的说明写明是非题用请选择、征求同意用提议、提问
   assert.equal(SOURCE.includes("提议会撤掉条目或大改条目时必须写"), false);
 });
 
-test("stage 与 reason 的说明写明已经停用、不要写，阶段的移动一律用卡片提议由用户点", () => {
-  assert.ok(SOURCE.includes("已停用，不要写（写了回复会被拒绝）。阶段不由你移动：往前进入下一段、退回前面的阶段，都用请选择卡片提议，由用户在卡片上点。"));
-  assert.ok(SOURCE.includes("已停用，不要写。提议退回前面的阶段时，原因写在那张请选择卡片的问句里。"));
+test("回复的参数里没有 stage 与 reason：阶段的移动一律用卡片提议由用户点", () => {
+  assert.ok(!templates().has("reply.param.stage") && !templates().has("reply.param.reason") && !templates().has("reply.stage_param_retired"));
   assert.ok(!SOURCE.includes("你自己只能把任务退回前面的阶段"));
 });

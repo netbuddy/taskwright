@@ -9,12 +9,11 @@
  */
 
 import { basename } from "node:path";
-import { ACTIVITY_START_TEXTS, ENTER_OPTIONS, STAGE_START_TEXTS, STATUS_NEXT_TEXT, STAY_IDLE_OPTION, STAY_OPTIONS } from "../../agent/src/lib/stage.ts";
+import { ACTIVITY_START_TEXTS, STAGE_START_TEXTS, STATUS_NEXT_TEXT, cardMove } from "../../agent/src/lib/stage.ts";
 
 /** 一条会话的对话消息（conversation.ts 的 baseMessages 给的形状），按先后。 */
 export type SessionMessages = Record<string, any>[];
 
-const STAGE_KEYS = new Set([...Object.values(ENTER_OPTIONS), ...Object.values(STAY_OPTIONS), STAY_IDLE_OPTION].map((one) => one.key));
 const START_TEXTS = new Set<string>([...Object.values(STAGE_START_TEXTS), ...Object.values(ACTIVITY_START_TEXTS), STATUS_NEXT_TEXT]);
 
 export interface PersonaFact {
@@ -39,7 +38,7 @@ export function factsOfSession(messages: SessionMessages): PersonaFact[] {
       if (!START_TEXTS.has(text)) out.push(fact(text));
     } else if (one.origin === "card_choice") {
       const note = (one.annotation ?? {}) as Record<string, any>;
-      if (STAGE_KEYS.has(String(note.option_key ?? ""))) continue;
+      if (cardMove(note.option_key) !== null) continue;
       const card = replies.get(String(note.reply_message_id ?? ""));
       const asked = String(card?.act?.text ?? "").trim();
       const answer = String(note.option_text ?? "").trim() || text;

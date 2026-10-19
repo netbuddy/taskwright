@@ -80,15 +80,17 @@ export function clickStageMove(details: Record<string, any>): { from: string; to
 }
 
 /**
- * 用户点了一张「进入」某个阶段的卡片而阶段没有移动时（次序不对，或者任务本来就在那个阶段），那句「我选：……」带的一项：
+ * 用户点了一张转移卡片而阶段没有移动时（目标不在流程里、前置条件不满足，或者任务本来就在那一步），那句「我选：……」带的一项：
  * 任务当时在哪个阶段。details 是那条界面点击标注的 details（助手一侧写进 stage_unmoved）。没有这一项时为 null：
  * 记了移动的点击、不是进入阶段的点击、没有阶段的任务、早先版本留下的点击都没有。
  */
-export function clickStageUnmoved(details: Record<string, any>): { at: string; why?: string } | null {
+export function clickStageUnmoved(details: Record<string, any>): { at: string; why?: string; blocked?: string } | null {
   const stay = details.stage_unmoved;
-  // at 可以是空闲；why 为 not_in_flow 是这条会话不在做流程的工作项（空闲，或者它的工作项是单项活动），进入与退回不算数。
+  // at 可以是空闲；why 为 not_in_flow 是这条会话不在做流程的工作项（空闲，或者它的工作项是单项活动），转移不算数；
+  // why 为 not_ready 是要去的那一步前置条件不满足，blocked 写缺什么。
   if (!isObject(stay) || !isPosition(stay.at)) return null;
-  return { at: stay.at, ...(stay.why === "not_in_flow" ? { why: stay.why } : {}) };
+  return { at: stay.at, ...(stay.why === "not_in_flow" || stay.why === "not_ready" ? { why: stay.why } : {}),
+    ...(typeof stay.blocked === "string" && stay.blocked ? { blocked: stay.blocked } : {}) };
 }
 
 /**

@@ -76,43 +76,46 @@ export function buttonsOf(act: Act | null | undefined, task?: TaskView | null): 
 }
 
 /**
- * 助手提议进入下一个阶段的卡片，与网页认的是同一种（web/src/components/work/ReplyCard.tsx）：请选择，其中一个选项的键是进入某个阶段的
- * （start_items，或者以 enter_ 开头）。这种卡片上留在这一段的那个选项（键以 continue_ 开头）页面一律写成「继续本阶段」，
+ * 助手提议往前走的卡片，与网页认的是同一种（web/src/model/stage.ts）：请选择，其中一个选项是进入下一步（next_step）、
+ * 或者转到后面的某一步（goto:<活动标识符>，卡片上的字不以「回到」开头）；早先的卡片是 start_items 或以 enter_ 开头的键。
+ * 这种卡片上留在这一步的那个选项（stay，早先是以 continue_ 开头的键）页面一律写成「继续本步」，
  * 点它不替用户发话，只发一个界面操作 continue_stage：卡片标为已选，助手不因此运行，提议仍然开着。
  */
-export const STAY_TEXT = "继续本阶段";
+export const STAY_TEXT = "继续本步";
 export const CONTINUE_STAGE = "continue_stage";
-const isEnterKey = (key: string): boolean => key === "start_items" || key.startsWith("enter_");
+const isGoto = (key: string): boolean => key.startsWith("goto:");
+const isEnterOption = (o: { key: string; text?: string }): boolean =>
+  o.key === "next_step" || (isGoto(o.key) && !(o.text ?? "").startsWith("回到")) || o.key === "start_items" || o.key.startsWith("enter_");
+const isStayKey = (key: string): boolean => key === "stay" || key.startsWith("continue_") || key === "stay_in_stage" || key === "stay_idle";
 
 export function isStageCard(act: Act | null | undefined): boolean {
-  return act?.kind === "choose" && (act.options ?? []).some((o) => isEnterKey(o.key));
+  return act?.kind === "choose" && (act.options ?? []).some(isEnterOption);
 }
 
 /**
- * 助手提议的另两种卡片，也与网页认的是同一种：提议退回前面的阶段（一个选项的键以 back_to_ 开头，另一项 stay_in_stage 页面写成「留在本段」），
+ * 助手提议的另两种卡片，也与网页认的是同一种：提议退回前面的一步（一个选项是 goto:<活动标识符>、字以「回到」开头，早先的键以 back_to_ 开头；
+ * 另一项是 stay，页面写成「继续本步」），
  * 编写文档阶段请用户过目补写的页（document_reviewed「看过了，生成文档」与 document_revise「需要修改」）。
  * 「留在本段」「需要修改」与「继续本阶段」一样只发界面操作 continue_stage；「看过了，生成文档」也不发话：先发 continue_stage，
  * 再把卡片点名的页标为已读（mark_viewed，不通知助手），助手不因此运行。
  */
-export const STAY_HERE_KEY = "stay_in_stage";
-export const STAY_HERE_TEXT = "留在本段";
 export const DOCUMENT_REVIEWED_KEY = "document_reviewed";
 export const DOCUMENT_REVISE_KEY = "document_revise";
 export const DOCUMENT_REVISE_TEXT = "需要修改";
-const isBackKey = (key: string): boolean => key.startsWith("back_to_");
+const isBackOption = (o: { key: string; text?: string }): boolean => (isGoto(o.key) && (o.text ?? "").startsWith("回到")) || o.key.startsWith("back_to_");
 
 /** 一张卡片是助手的哪一种提议：进入下一个阶段、退回前面的阶段、请用户过目补写的页；不是提议是 null。照这个先后取第一种对得上的。 */
 export function proposalKind(act: Act | null | undefined): "enter" | "back" | "review" | null {
   if (act?.kind !== "choose") return null;
   const keys = (act.options ?? []).map((o) => o.key);
-  if (keys.some(isEnterKey)) return "enter";
-  if (keys.some(isBackKey)) return "back";
+  if ((act.options ?? []).some(isEnterOption)) return "enter";
+  if ((act.options ?? []).some(isBackOption)) return "back";
   return keys.includes(DOCUMENT_REVIEWED_KEY) ? "review" : null;
 }
 
 /** 这个键是不是提议的卡片上不生效的那个选项：进入卡片上留在这一段的、回退卡片上的「留在本段」、请过目卡片上的「需要修改」。 */
 export function isStayOption(act: Act | null | undefined, key: string): boolean {
-  return proposalKind(act) !== null && (key.startsWith("continue_") || key === STAY_HERE_KEY || key === DOCUMENT_REVISE_KEY) && (act!.options ?? []).some((o) => o.key === key);
+  return proposalKind(act) !== null && (isStayKey(key) || key === DOCUMENT_REVISE_KEY) && (act!.options ?? []).some((o) => o.key === key);
 }
 
 /** 这个键是不是请过目卡片上的「看过了，生成文档」。 */
@@ -123,13 +126,13 @@ export function isReviewedOption(act: Act | null | undefined, key: string): bool
 /** 请选择卡片上一个选项给人看的文字：提议的卡片上不生效的那一项照页面写固定的字（「继续本阶段」「留在本段」「需要修改」），别的照助手写的。 */
 function optionLabel(act: Act, option: { key: string; text: string }): string {
   if (!isStayOption(act, option.key)) return option.text;
-  return option.key === STAY_HERE_KEY ? STAY_HERE_TEXT : option.key === DOCUMENT_REVISE_KEY ? DOCUMENT_REVISE_TEXT : STAY_TEXT;
+  return option.key === DOCUMENT_REVISE_KEY ? DOCUMENT_REVISE_TEXT : STAY_TEXT;
 }
 
 /**
  * 请选择卡片上点的是哪个选项：写选项的键或者选项的文字都认，返回选项的键；都对不上时原样返回。
- * 界面上人看到的是选项的文字（例如「开始写条目」），键是给程序认的（start_items），所以两种写法都收。
- * 文字先按界面上显示的认（留在这一段的那一项是「继续本阶段」），再按助手在卡片里写的认。
+ * 界面上人看到的是选项的文字（例如「进入下一步：澄清」），键是给程序认的（next_step），所以两种写法都收。
+ * 文字先按界面上显示的认（留在这一步的那一项是「继续本步」），再按助手在卡片里写的认。
  */
 export function optionKeyOf(act: Act | null | undefined, click: string): string {
   if (!act || act.kind !== "choose") return click;

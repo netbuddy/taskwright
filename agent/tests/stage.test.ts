@@ -4,10 +4,9 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  activityDoneRefusal, activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, publishRefusal, flowStartNode, launchView, startReadingCardGuidance, STAY_IDLE_OPTION, workItemContinuedSentence, workItemDeletedSentence, flowExistsText, CONTINUE_CLARIFY_KEY, diagramRefusal, ENTER_OPTIONS, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage,
-  itemRefusal, judgeMove, nextStage, pageRefusal, positionName, reviewRefusal, type Stage, STAGE_NAMES, stageByName, stageEnteredBy, STAGES, START_ITEMS_KEY, STAY_OPTIONS,
-} from "../src/lib/stage.ts";
+import { activityDoneRefusal, activityDoneSentence, activityStartSentence, backCardGuidance, canWrite, publishRefusal, flowStartNode, launchView, workItemContinuedSentence, workItemDeletedSentence, flowExistsText, diagramRefusal, forwardCardGuidance, gateStage, IDLE, IDLE_NAME, isPosition, isStage, itemRefusal, judgeMove, nextStage, pageRefusal, positionName, reviewRefusal, type Stage, STAGE_NAMES, stageByName, stageEnteredBy, STAGES,
+  GOTO_PREFIX, LEGACY_CARD_MOVES, NEXT_STEP_KEY, STAY_KEY, STAY_OPTION, cardMove, gotoOption, isStayCardKey, nextStepOption, stageBackedBy } from "../src/lib/stage.ts";
+import { STAY_IDLE_OPTION, CONTINUE_CLARIFY_KEY, ENTER_OPTIONS, START_ITEMS_KEY, STAY_OPTIONS } from "./old_cards.ts";
 
 /** 拒绝的两层文字，照「[事实, 指引]」比；原因码另比。 */
 const pair = (r: { fact: string; guidance: string } | null | undefined) => (r ? [r.fact, r.guidance] : r);
@@ -31,26 +30,34 @@ test("移动：助手一律不能自己移动阶段，往前、往后都要由�
   for (const from of STAGES) assert.deepEqual(STAGES.map((to) => verdict(from, to, "user")), STAGES.map((to) => (to === from ? "same" : "ok")));
 });
 
-test("提议的卡片怎样写：往前一段一张、两个选项的键与文字固定；退回的卡片写明原因，第二项是「留在本段」", () => {
-  assert.equal(forwardCardGuidance("reading"), "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_clarify「进入澄清」、continue_reading「继续本阶段」");
-  assert.equal(forwardCardGuidance("clarifying"), "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_consolidate「进入整理建模」、continue_clarify「继续本阶段」");
-  assert.equal(forwardCardGuidance("modeling"), "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 start_items「开始写条目」、continue_consolidate「继续本阶段」");
-  assert.equal(forwardCardGuidance("writing"), "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续本阶段」");
-  assert.equal(forwardCardGuidance("reviewing"), "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_document「进入编写文档」、continue_review「继续本阶段」");
-  assert.equal(backCardGuidance("clarifying"), "请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_clarify「退回澄清」、stay_in_stage「留在本段」");
-  assert.equal(backCardGuidance("reviewing"), "请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_review「退回评审确认」、stay_in_stage「留在本段」");
-  assert.deepEqual([START_ITEMS_KEY, CONTINUE_CLARIFY_KEY], ["start_items", "continue_clarify"]);
-  // 五张卡片的两个选项：进入下一段的键与文字，留在这一段的键与文字。核读材料的那一项只在任务空闲时用，另一项是「先不开始」。
-  assert.deepEqual(ENTER_OPTIONS, { reading: { key: "enter_reading", text: "开始核读材料" },
-    clarifying: { key: "enter_clarify", text: "进入澄清" }, modeling: { key: "enter_consolidate", text: "进入整理建模" },
-    writing: { key: "start_items", text: "开始写条目" }, reviewing: { key: "enter_review", text: "进入评审确认" }, document: { key: "enter_document", text: "进入编写文档" } });
-  assert.deepEqual(STAY_OPTIONS, { reading: { key: "continue_reading", text: "继续本阶段" }, clarifying: { key: "continue_clarify", text: "继续本阶段" },
-    modeling: { key: "continue_consolidate", text: "继续本阶段" }, writing: { key: "continue_writing", text: "继续本阶段" },
-    reviewing: { key: "continue_review", text: "继续本阶段" } });
-  assert.deepEqual(["enter_clarify", "enter_consolidate", "start_items", "enter_review", "enter_document", "continue_clarify", "别的键", null].map(stageEnteredBy),
-    ["clarifying", "modeling", "writing", "reviewing", "document", null, null, null]);
-  assert.deepEqual([stageEnteredBy("enter_reading"), stageEnteredBy("stay_idle"), STAY_IDLE_OPTION], ["reading", null, { key: "stay_idle", text: "先不开始" }]);
-  assert.equal(startReadingCardGuidance(), "请用请选择卡片提议，两个选项的键与文字是 enter_reading「开始核读材料」、stay_idle「先不开始」");
+test("提议的卡片怎样写：键是通用的三种，进入下一步、转到某一步、继续本步；早先按阶段的固定键照换算表认，自带方向", () => {
+  assert.equal(forwardCardGuidance("reading"), "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 next_step「进入下一步：澄清」、stay「继续本步」");
+  assert.equal(forwardCardGuidance("modeling"), "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 next_step「进入下一步：写条目」、stay「继续本步」");
+  assert.equal(forwardCardGuidance("reviewing"), "请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 next_step「进入下一步：编写文档」、stay「继续本步」");
+  assert.equal(backCardGuidance("clarifying"), "请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 goto:clarifying「回到：澄清」、stay「继续本步」");
+  assert.equal(backCardGuidance("reviewing", "document"), "请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 goto:reviewing「回到：评审确认」、stay「继续本步」");
+  assert.deepEqual([NEXT_STEP_KEY, STAY_KEY, GOTO_PREFIX, STAY_OPTION], ["next_step", "stay", "goto:", { key: "stay", text: "继续本步" }]);
+  assert.deepEqual([nextStepOption("clarifying"), gotoOption("reading", "modeling"), gotoOption("writing", "clarifying"), gotoOption("writing", IDLE)],
+    [{ key: "next_step", text: "进入下一步：澄清" }, { key: "goto:reading", text: "回到：核读材料" }, { key: "goto:writing", text: "转到：写条目" }, { key: "goto:writing", text: "转到：写条目" }]);
+  // 三种键的意思；goto 后面要是阶段的键。
+  assert.deepEqual(["next_step", "stay", "goto:modeling", "goto:testing", "别的键", null].map(cardMove),
+    [{ kind: "next" }, { kind: "stay" }, { kind: "goto", to: "modeling" }, null, null, null]);
+  // 进入下一步看现在在哪一步；转到某一步按前后分进入与退回。
+  assert.deepEqual([stageEnteredBy("next_step", "clarifying"), stageEnteredBy("next_step", "document"), stageEnteredBy("next_step", IDLE), stageEnteredBy("next_step", null)],
+    ["modeling", null, null, null]);
+  assert.deepEqual([stageEnteredBy("goto:writing", "clarifying"), stageEnteredBy("goto:reading", "modeling"), stageBackedBy("goto:reading", "modeling"), stageBackedBy("goto:writing", "clarifying")],
+    ["writing", null, "reading", null]);
+  assert.deepEqual([stageEnteredBy("goto:reading", IDLE), stageBackedBy("goto:reading", IDLE), stageEnteredBy("stay", "reading"), isStayCardKey("stay")], ["reading", null, null, true]);
+  // 早先的固定键：自带方向，与现在在哪一步无关；留在这一段的几种都算 stay。
+  assert.deepEqual(["enter_clarify", "enter_consolidate", "start_items", "enter_review", "enter_document", "enter_reading"].map((key) => stageEnteredBy(key, "reviewing")),
+    ["clarifying", "modeling", "writing", "reviewing", "document", "reading"]);
+  assert.deepEqual(["back_to_reading", "back_to_clarify", "back_to_consolidate", "back_to_writing", "back_to_review"].map((key) => [stageBackedBy(key, "reading"), stageEnteredBy(key, "reading")]),
+    [["reading", null], ["clarifying", null], ["modeling", null], ["writing", null], ["reviewing", null]]);
+  assert.deepEqual(["continue_reading", "continue_clarify", "continue_consolidate", "continue_writing", "continue_review", "stay_in_stage", "stay_idle"].map(isStayCardKey),
+    [true, true, true, true, true, true, true]);
+  assert.deepEqual(Object.keys(LEGACY_CARD_MOVES).sort(), [...Object.values(ENTER_OPTIONS).map((one) => one.key), ...Object.values(STAY_OPTIONS).map((one) => one.key), START_ITEMS_KEY,
+    CONTINUE_CLARIFY_KEY, STAY_IDLE_OPTION.key, "stay_in_stage", "back_to_reading", "back_to_clarify", "back_to_consolidate", "back_to_writing", "back_to_review"]
+    .filter((key, i, all) => all.indexOf(key) === i).sort());
   assert.deepEqual(STAGES.map(nextStage), ["clarifying", "modeling", "writing", "reviewing", "document", null]);
   // 编写文档是最后一段，没有往前的卡片。
   assert.equal(forwardCardGuidance("document"), "");
@@ -69,14 +76,14 @@ test("每个阶段助手能写什么：页与问题一直可以，图从整理�
   assert.deepEqual(pair(itemRefusal("document", "update", "功能用例")), ["任务现在在编写文档阶段，这个阶段不能修改「功能用例」的条目", leave("reviewing")]);
   assert.deepEqual(pair(diagramRefusal("document")), ["任务现在在编写文档阶段，这个阶段不能画图、改图或删图", leave("modeling")]);
   assert.deepEqual(pair(reviewRefusal("document")), ["任务现在在编写文档阶段，这个阶段不能请求评审", leave("reviewing")]);
-  assert.equal(leave("reviewing"), "编写文档阶段只补写主题页的文字。要做这件事，得先回到评审确认：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_review「退回评审确认」、stay_in_stage「留在本段」，由用户在卡片上点");
+  assert.equal(leave("reviewing"), "编写文档阶段只补写主题页的文字。要做这件事，得先回到评审确认：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 goto:reviewing「回到：评审确认」、stay「继续本步」，由用户在卡片上点");
   assert.deepEqual([publishRefusal("document"), publishRefusal("reviewing"), pageRefusal("document", "add"), pageRefusal("document", "update", ["它是什么"])], [null, null, null, null]);
 });
 
 test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么；怎么办写这一步要先做什么、谁能移动", () => {
   assert.deepEqual(pair(itemRefusal("clarifying", "add", "功能用例")), [
     "任务现在在澄清阶段，这个阶段不能新增「功能用例」的条目",
-    "「功能用例」的条目要到写条目阶段才能写。进入写条目要由用户在卡片上选「开始写条目」：你可以先立页、请用户看，觉得理解够了就用请选择卡片提议",
+    "「功能用例」的条目要到写条目阶段才能写。进入写条目要由用户在卡片上选「转到：写条目」：你可以先立页、请用户看，觉得理解够了就用请选择卡片提议",
   ]);
   assert.match(itemRefusal("reading", "update", "约束")!.fact, /^任务现在在核读材料阶段，这个阶段不能修改「约束」的条目$/);
   assert.equal(itemRefusal("reading", "update", "约束")!.guidance, itemRefusal("clarifying", "update", "约束")!.guidance);
@@ -86,21 +93,21 @@ test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么�
   assert.match(diagramRefusal("reading")!.fact, /^任务现在在核读材料阶段，这个阶段不能画图、改图或删图$/);
   // 怎样走到整理建模：往前由用户在卡片上点，助手只能发卡片提议；指引里没有「在回复里把任务移到」这种说法。
   assert.match(diagramRefusal("reading")!.guidance, /往前进入下一段要由用户在卡片上点，你只能提议：材料读完之后先提议进入澄清，请用请选择卡片提议/);
-  assert.match(diagramRefusal("reading")!.guidance, /enter_clarify「进入澄清」、continue_reading「继续本阶段」；澄清告一段落之后，再照同样的办法提议「进入整理建模」$/);
-  assert.match(diagramRefusal("clarifying")!.guidance, /进入整理建模要由用户在卡片上选「进入整理建模」，你只能提议：澄清告一段落之后，请用请选择卡片提议/);
-  assert.match(diagramRefusal("clarifying")!.guidance, /enter_consolidate「进入整理建模」、continue_clarify「继续本阶段」$/);
+  assert.match(diagramRefusal("reading")!.guidance, /next_step「进入下一步：澄清」、stay「继续本步」；澄清告一段落之后，再照同样的办法提议「进入下一步：整理建模」$/);
+  assert.match(diagramRefusal("clarifying")!.guidance, /进入整理建模要由用户在卡片上选「进入下一步：整理建模」，你只能提议：澄清告一段落之后，请用请选择卡片提议/);
+  assert.match(diagramRefusal("clarifying")!.guidance, /next_step「进入下一步：整理建模」、stay「继续本步」$/);
   for (const stage of ["reading", "clarifying"] as const) assert.doesNotMatch(diagramRefusal(stage)!.guidance, /在回复里把任务移到|自己移到/);
   assert.deepEqual([diagramRefusal("modeling"), diagramRefusal("writing"), diagramRefusal("reviewing")], [null, null, null]);
 
   for (const stage of ["reading", "clarifying", "modeling"] as const) {
     assert.equal(reviewRefusal(stage)!.fact, `任务现在在${STAGE_NAMES[stage]}阶段，评审要到写条目阶段才能请求`);
-    assert.match(reviewRefusal(stage)!.guidance, /^条目写出来之后再评审。进入写条目要由用户在卡片上选「开始写条目」/);
+    assert.match(reviewRefusal(stage)!.guidance, /^条目写出来之后再评审。进入写条目要由用户在卡片上选「转到：写条目」/);
   }
   assert.deepEqual([reviewRefusal("writing"), reviewRefusal("reviewing")], [null, null]);
 
   assert.deepEqual(pair(publishRefusal("writing")), ["任务现在在写条目阶段，发布版本要在评审确认阶段",
-    "条目写完之后，要由用户在卡片上选「进入评审确认」进入评审确认，再发布版本。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 enter_review「进入评审确认」、continue_writing「继续本阶段」"]);
-  assert.match(publishRefusal("clarifying")!.guidance, /^要先写条目、再由用户进入评审确认，才能发布版本。进入写条目要由用户在卡片上选「开始写条目」/);
+    "条目写完之后，要由用户在卡片上选「进入下一步：评审确认」进入评审确认，再发布版本。请用请选择卡片提议，说清下一段要做什么，两个选项的键与文字是 next_step「进入下一步：评审确认」、stay「继续本步」"]);
+  assert.match(publishRefusal("clarifying")!.guidance, /^要先写条目、再由用户进入评审确认，才能发布版本。进入写条目要由用户在卡片上选「转到：写条目」/);
   assert.equal(publishRefusal("reviewing"), null);
 });
 
@@ -108,7 +115,7 @@ test("业务说明的页：前四个阶段随便写；评审确认阶段只能�
   for (const stage of ["reading", "clarifying", "modeling", "writing"] as const) {
     assert.deepEqual([pageRefusal(stage, "add"), pageRefusal(stage, "update", ["它是什么"]), pageRefusal(stage, "delete")], [null, null, null]);
   }
-  assert.deepEqual(pair(pageRefusal("reviewing", "add")), ["任务现在在评审确认阶段，这个阶段不能新立主题页", "要动主题页的内容，得先回到澄清或整理建模：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 back_to_clarify「退回澄清」、stay_in_stage「留在本段」，由用户在卡片上点"]);
+  assert.deepEqual(pair(pageRefusal("reviewing", "add")), ["任务现在在评审确认阶段，这个阶段不能新立主题页", "要动主题页的内容，得先回到澄清或整理建模：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 goto:clarifying「回到：澄清」、stay「继续本步」，由用户在卡片上点"]);
   assert.equal(pageRefusal("reviewing", "delete")!.fact, "任务现在在评审确认阶段，这个阶段不能删除主题页");
   assert.deepEqual([pageRefusal("reviewing", "update", ["状态"]), pageRefusal("reviewing", "update", ["状态", "改看"]), pageRefusal("reviewing", "update", [])], [null, null, null]);
   assert.equal(pageRefusal("reviewing", "update", ["状态", "它是什么", "例子"])!.fact,

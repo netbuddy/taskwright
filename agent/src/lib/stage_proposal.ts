@@ -21,7 +21,7 @@ import { validateDefinition } from "./definition.ts";
 import { hasOverall } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
 import {
-  type CardOption, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, STAGE_NAMES, STAY_HERE_OPTION, STAY_IDLE_OPTION, STAY_OPTIONS, type Stage, isStage, stageBackedBy, stageEnteredBy,
+  type CardOption, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, type Position, STAGE_NAMES, type Stage, cardMove, isStage, isStayCardKey, stageBackedBy, stageEnteredBy,
 } from "./stage.ts";
 
 /** 「回复」记执行者行为的那条事件的名字（与 lib/dialogue_acts.ts 的 EVENT_EXECUTOR_ACTS_RECORDED 同一个；这里不从它导入，免得两个文件互相导入）。 */
@@ -54,16 +54,9 @@ function workItemOf(db: DatabaseSync, taskId: string, sessionId: string | null |
   return { recordId, sessions };
 }
 
-/**
- * 三种卡片上不生效的那一项：进入卡片的「继续本阶段」（早先任务空闲时提议开始核读材料的那张卡片上是「先不开始」）、
- * 回退卡片的「留在本段」、请过目卡片的「需要修改」。点它只把卡片标为已选。
- */
-const ENTER_STAY_KEYS: ReadonlySet<string> = new Set([...Object.values(STAY_OPTIONS).map((one) => one.key), STAY_IDLE_OPTION.key]);
-const STAY_KEYS: ReadonlySet<string> = new Set([...ENTER_STAY_KEYS, STAY_HERE_OPTION.key, DOCUMENT_REVISE_OPTION.key]);
-
-/** 卡片上的一个选项键是不是不生效的那一项（见 STAY_KEYS）。 */
+/** 卡片上的一个选项键是不是不生效的那一项：转移卡片的「继续本步」（含早先的几种写法）、请过目卡片的「需要修改」。点它只把卡片标为已选。 */
 export function isStayKey(key: unknown): boolean {
-  return typeof key === "string" && STAY_KEYS.has(key);
+  return isStayCardKey(key) || key === DOCUMENT_REVISE_OPTION.key;
 }
 
 export type ProposalKind = "enter" | "back" | "review";
@@ -98,11 +91,11 @@ const optionOf = (value: unknown): CardOption | null => {
 };
 
 /**
- * 一张卡片是不是提议的卡片：请选择，选项里有一个「进入」某个阶段的键、「退回」某个阶段的键，或者「看过了，生成文档」的键
- * （照这个先后认第一种对得上的）。是的话返回要记进事件的内容，不是返回 null。
- * 不读库，也不管任务有没有阶段（那一层由 proposalFor 判）。
+ * 一张卡片是不是提议的卡片：请选择，选项里有一个往前走的键（进入下一步、转到后面的某一步）、往回退的键（转到前面的某一步），
+ * 或者「看过了，生成文档」的键（照这个先后认第一种对得上的）。from 是发卡片时这条会话所在的阶段：进入下一步要它才知道是哪一步，
+ * 转到某一步要它才分得出前后。是的话返回要记进事件的内容，不是返回 null。不读库，也不管任务有没有阶段（那一层由 proposalFor 判）。
  */
-export function proposalOfAct(act: unknown): ProposalFact | null {
+export function proposalOfAct(act: unknown, from: Position | null): ProposalFact | null {
   const card = act as { kind?: unknown; text?: unknown; options?: unknown; items?: unknown } | null;
   if (!card || card.kind !== "choose" || !Array.isArray(card.options)) return null;
   const options = card.options.map(optionOf).filter((one): one is CardOption => one !== null);
@@ -110,22 +103,29 @@ export function proposalOfAct(act: unknown): ProposalFact | null {
     .filter((one): one is { item_id: string; revision_no?: unknown } => typeof (one as { item_id?: unknown } | null)?.item_id === "string")
     .map((one) => ({ item_id: one.item_id, revision_no: typeof one.revision_no === "number" ? one.revision_no : null }));
   const rest = { text: typeof card.text === "string" ? card.text : "", items };
-  const enter = options.find((one) => stageEnteredBy(one.key) !== null);
-  if (enter) return { kind: "enter", stage: stageEnteredBy(enter.key)!, enter, stay: options.find((one) => ENTER_STAY_KEYS.has(one.key)) ?? null, ...rest };
-  const back = options.find((one) => stageBackedBy(one.key) !== null);
-  if (back) return { kind: "back", stage: stageBackedBy(back.key)!, enter: back, stay: options.find((one) => one.key === STAY_HERE_OPTION.key) ?? null, ...rest };
+  const stay = options.find((one) => isStayCardKey(one.key)) ?? null;
+  const enter = options.find((one) => stageEnteredBy(one.key, from) !== null);
+  if (enter) return { kind: "enter", stage: stageEnteredBy(enter.key, from)!, enter, stay, ...rest };
+  const back = options.find((one) => stageBackedBy(one.key, from) !== null);
+  if (back) return { kind: "back", stage: stageBackedBy(back.key, from)!, enter: back, stay, ...rest };
   const reviewed = options.find((one) => one.key === DOCUMENT_REVIEWED_OPTION.key);
   if (reviewed) return { kind: "review", stage: "document", enter: reviewed, stay: options.find((one) => one.key === DOCUMENT_REVISE_OPTION.key) ?? null, ...rest };
   return null;
 }
 
-/** 事件里记的一项是不是一条认得出的提议：有生效的那一项，种类与它的键对得上。早先没有记 kind 的当作 enter。返回它的种类，认不出是 null。 */
+/**
+ * 事件里记的一项是不是一条认得出的提议：有生效的那一项，种类与它的键对得上（往前、往回的键都是转移卡片的键，新旧写法都认）。
+ * 早先没有记 kind 的当作 enter。返回它的种类，认不出是 null。
+ */
 export function proposalKindOf(fact: unknown): ProposalKind | null {
   const one = fact as { kind?: unknown; stage?: unknown; enter?: { key?: unknown } } | null;
   if (!one || typeof one !== "object" || !isStage(one.stage)) return null;
   const kind = one.kind ?? "enter";
-  if (kind === "enter") return stageEnteredBy(one.enter?.key) !== null ? "enter" : null;
-  if (kind === "back") return stageBackedBy(one.enter?.key) !== null ? "back" : null;
+  const move = cardMove(one.enter?.key);
+  if (move === null || move.kind === "stay") return kind === "review" && one.enter?.key === DOCUMENT_REVIEWED_OPTION.key ? "review" : null;
+  // 进入下一步只能是往前的；早先的固定键自带方向，要与记下的种类对得上；新的转到某一步两种都可以。
+  if (kind === "enter") return move.kind === "next" || move.back !== true ? "enter" : null;
+  if (kind === "back") return move.kind === "goto" && move.back !== false ? "back" : null;
   if (kind === "review") return one.enter?.key === DOCUMENT_REVIEWED_OPTION.key ? "review" : null;
   return null;
 }
@@ -142,9 +142,17 @@ function taskHasStages(db: DatabaseSync, taskId: string): boolean {
 }
 
 /** 「回复」记事件时调用：这张卡片是提议的卡片、任务又有阶段，就返回要并进事件的 proposal；否则 null。必须在调用方已经开好的事务里调用。 */
-export function proposalFor(db: DatabaseSync, taskId: string, act: unknown): ProposalFact | null {
-  const fact = proposalOfAct(act);
+export function proposalFor(db: DatabaseSync, taskId: string, act: unknown, sessionId: string | null | undefined): ProposalFact | null {
+  const fact = proposalOfAct(act, positionOf(db, taskId, sessionId));
   return fact !== null && taskHasStages(db, taskId) ? fact : null;
+}
+
+/** 这条会话的工作项现在在哪个阶段（活动记录的 activity 一列）；不属于任何工作项时是 null。与 lib/stage_read.ts 的 currentStage 是同一回事。 */
+export function positionOf(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): Position | null {
+  const item = workItemOf(db, taskId, sessionId);
+  if (item === null) return null;
+  const row = db.prepare("SELECT activity FROM activity_record WHERE record_id = ?").get(item.recordId) as { activity: string } | undefined;
+  return row && isStage(row.activity) ? row.activity : null;
 }
 
 /** 请过目的那张卡片点名的页是不是用户都看过了（现在还在的页里，每一页现在的内容都看过）。一页都没有点名时算没看完。 */

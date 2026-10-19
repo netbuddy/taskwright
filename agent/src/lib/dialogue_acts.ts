@@ -547,7 +547,7 @@ export function recordReplyActs<T = never>(
         : null;
       // 没有告知也没有要的回应：不记这条事件，除非另带的那件事有话要留在事件里。
       if (rows.length === 0 && !extra?.payload) return { acts: [], text: extra?.text ?? "", eventSeq: null, extra: extra?.value ?? null, answersCard, resendsCard };
-      const proposal = reply.act ? proposalFor(db, taskId, reply.act) : null;
+      const proposal = reply.act ? proposalFor(db, taskId, reply.act, sessionId) : null;
       const seq = emit(db, {
         taskId, sessionId, callId: toolCallId, name: EVENT_EXECUTOR_ACTS_RECORDED, actor: ACTOR_EXECUTOR,
         payload: { run_id: runId, reply_entry: replyEntryId, acts: rows.map(payloadOf), ...(proposal ? { proposal } : {}), ...(extra?.payload ?? {}) },

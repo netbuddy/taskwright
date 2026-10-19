@@ -9,25 +9,26 @@
  *   4 平台说明里条件满足的模块，按次序号
  *   5 活动模板（agent/prompts/templates/<模板>.md，「现在这个阶段」；用哪一份看活动声明的 template）
  *   6 任务类型说明的共用部分（任务 skill 的 SKILL.md 正文）
- *   7 这项活动在工作流里的出口（任务 skill 目录下 flows/<工作流>.md 里它那一节；工作流的工作项才有；单项活动的收尾与空闲的规矩是第 4 步里的模块）
- *   8 任务类型说明里这项活动的补充（任务 skill 目录下 activities/<活动>.md 声明之后的正文，没有就没有）
+ *   7 任务类型说明里这项活动的补充（任务 skill 目录下 activities/<活动>.md 声明之后的正文，没有就没有；工作流之外去掉收尾一节）
+ *   8 工作流声明里这一步的提示（note.<活动标识符>，写了才有）。工作流里的转移（各步、上一步、下一步、分工表）由程序从声明推出来，
+ *     填进第 4 步里 planning/flow_transitions 模块的占位；单项活动的收尾与空闲的规矩也是第 4 步里的模块
  *   9 用户启动工作项时写的说明（写了才有）
  *   10 pi 自己接在后面的那一截（工作目录等）
  *
  * 活动与工作流的声明从任务 skill 的目录读，任务目录里没有就回退读产品自带的（lib/activity_def_read.ts）；回退时这两部分的出处写产品自带。
  *
  * 空闲时没有活动：按算作澄清的那项活动的声明选模块，获准能力是空闲那一份；活动模板 idle.md 的头写着 based_on: clarifying，
- * 正文用澄清的模板去掉题头与开头那一段话、去掉「出口」一节；任务类型的补充同样用澄清的那一份去掉「出口」一节。
+ * 正文用澄清的模板去掉标题与开头那一段话、去掉「出口」一节；任务类型的补充同样用澄清的那一份去掉「出口」一节。
  *
  * 拼不成一律抛错（PromptAssemblyError），调用方停下这次运行，不沿用以前拼好的任何一份：平台说明缺了 REQUIRED_MODULES 里的模块、
- * 模块的头不对、重名、次序号相同、活动模板或系统提示的文件不在、工作流的定义里没有这个节点。
+ * 模块的头不对、重名、次序号相同、活动模板或系统提示的文件不在、任务类型里没有这条工作流、模块里有填不上的占位。
  *
  * 不是每次运行都重读重拼（ContextCache）：进程里记着上一次拼的那一份，与一把钥匙：各项输入、模块目录的指纹（文件清单与每份的修改时刻和大小）、
  * 别的几份文件的修改时刻和大小。钥匙没变就原样交回，变了才重读重拼；重拼出错时把错抛出去并忘掉上一份。
  *
  * 调试模式下另有一个「提示词目录」（debugPromptDir）：目录里有哪一份，就用那一份代替原来的，没有的照旧。认的文件名与产品自带的
  * 相对路径相同（system.md、capabilities/<能力>/<模块>.md、templates/<模板>.md），任务类型一级的是
- * task-type/common.md（SKILL.md 的正文）、task-type/<活动>.md（这项活动的文件）与 task-type/flows/<工作流>.md（工作流的文件）。只能代替已有的，不能多出一份模块：
+ * task-type/common.md（SKILL.md 的正文）与 task-type/<活动>.md（这项活动的文件）。只能代替已有的，不能多出一份模块：
  * 代替的模块的头照样要合规（名字与次序号与原来的相同），否则拼不成。软链接不跟、超过 PROMPT_DIR_MAX_BYTES 的不读、
  * 不是合法 UTF-8 的不用，这几种情形照旧用原来的并在 notes 里写明原因。产品只读这个目录，不往里写。
  */
@@ -37,8 +38,8 @@ import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { type ActivityDef, ASSET_NAMES, DefinitionHeadError, splitHead } from "./activity_def.ts";
-import { ACTIVITIES_SUBDIR, type Definitions, FLOWS_SUBDIR, definitionsFor } from "./activity_def_read.ts";
+import { type ActivityDef, ASSETS, ASSET_NAMES, DefinitionHeadError, prerequisiteText, splitHead } from "./activity_def.ts";
+import { ACTIVITIES_SUBDIR, type Definitions, definitionsFor } from "./activity_def_read.ts";
 import { databasePath } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import {
@@ -75,35 +76,20 @@ export const REQUIRED_MODULES = [
   "system_message", "task_definition", "tools_general", "sources", "three_facts", "work_items",
   "materials", "knowledge", "batches", "reply_full", "reply_brief", "reply_confirm", "understanding_full", "understanding_brief",
   "review", "confirm_publish", "pages_full", "pages_brief", "problems", "items_full", "items_brief", "diagrams_full", "diagrams_brief",
-  "stage_cards", "standalone_exit", "idle_rules",
+  "stage_cards", "retell", "flow_transitions", "standalone_exit", "idle_rules",
 ] as const;
 
-/** 讲怎样离开这一段的那一节的题头：空闲时拼的文字里不带它。 */
+/** 讲怎样离开这一段的那一节的标题：空闲时拼的文字里不带它。 */
 export const EXIT_HEADING = "出口";
 
-/** 工作流的定义里一个节点那一节的一级题头。 */
-export function nodeHeading(stage: Stage): string {
-  return `节点：${STAGE_NAMES[stage]}`;
-}
-
-/** 从工作流的定义里取出一个节点那一节的正文：从「# 节点：某阶段」的下一行起，到下一个一级题头之前。没有这一节时返回 null。 */
-export function nodeSection(text: string, stage: Stage): string | null {
-  const lines = text.split("\n");
-  const start = lines.findIndex((line) => /^#\s+/.test(line) && line.replace(/^#\s+/, "").trim() === nodeHeading(stage));
-  if (start < 0) return null;
-  const rest = lines.slice(start + 1);
-  const end = rest.findIndex((line) => /^#\s+/.test(line));
-  return (end < 0 ? rest : rest.slice(0, end)).join("\n").trim();
-}
-
-/** 去掉一份活动说明开头的题头与那一段话：从第一个二级小节起；一个二级小节都没有时原样返回。 */
+/** 去掉一份活动说明开头的标题与那一段话：从第一个二级小节起；一个二级小节都没有时原样返回。 */
 export function withoutOpening(text: string): string {
   const lines = text.split("\n");
   const first = lines.findIndex((line) => /^##\s+/.test(line));
   return first < 0 ? text : lines.slice(first).join("\n");
 }
 
-/** 去掉一份 Markdown 文字里题头是 heading 的二级小节（含其中更深的题头），到下一个一级或二级题头之前。没有这一节时原样返回。 */
+/** 去掉一份 Markdown 文字里标题是 heading 的二级小节（含其中更深的标题），到下一个一级或二级标题之前。没有这一节时原样返回。 */
 export function withoutSection(text: string, heading: string): string {
   const kept: string[] = [];
   let skipping = false;
@@ -158,7 +144,7 @@ export function parseTemplate(text: string, file: string): { head: TemplateHead;
 // ───────────── 拼出来的东西 ─────────────
 
 /** 拼进系统提示的一部分是什么。 */
-export type PartKind = "system" | "position" | "module" | "template" | "task_common" | "node_exit" | "task_activity" | "scope" | "tail";
+export type PartKind = "system" | "position" | "module" | "template" | "task_common" | "task_activity" | "flow_note" | "scope" | "tail";
 
 /** 每一部分给人看的名字。 */
 export const PART_NAMES: Record<PartKind, string> = {
@@ -167,8 +153,8 @@ export const PART_NAMES: Record<PartKind, string> = {
   module: "平台说明的一个模块",
   template: "活动模板",
   task_common: "任务类型说明的共用部分",
-  node_exit: "这一站在工作流里的出口",
   task_activity: "任务类型说明里这项活动的补充",
+  flow_note: "工作流声明里这一步的提示",
   scope: "本次范围说明",
   tail: "助手程序接在后面的工作目录等",
 };
@@ -279,6 +265,8 @@ export interface ComposeInput {
   promptDir?: string | null;
   /** 会话的工作项是工作流的工作项时，是哪一条工作流（标识符）；不给按 DEFAULT_FLOW。 */
   flow?: string | null;
+  /** 会话的工作项做的是哪一项活动（活动记录里的键）；不给时按算作这个阶段的那一项活动。空闲时不看它。 */
+  activity?: string | null;
   /** 这个任务类型的活动与工作流的声明；缺省从任务 skill 的目录读（lib/activity_def_read.ts，没有就回退读产品自带的）。 */
   definitions?: Definitions;
 }
@@ -302,10 +290,19 @@ function sessionKind(input: ComposeInput): SessionKind {
   return input.inFlow ?? true ? "flow" : "single";
 }
 
-/** 这次会话按哪项活动的声明选段：算作这个阶段的那一项；空闲时是算作澄清的那一项。 */
+/**
+ * 这次会话按哪项活动的声明选段：先按工作项的活动键在声明里找；找不到而这个键正好是阶段的键时（既有任务的记录），
+ * 或者没有给活动键时，按算作这个阶段的第一项活动；空闲时是算作澄清的第一项活动。
+ */
 function activityOf(input: ComposeInput): ActivityDef {
+  const all = definitionsOf(input).activities;
+  if (input.stage !== IDLE && input.activity) {
+    const byKey = all.find((one) => one.key === input.activity);
+    if (byKey) return byKey;
+    if (!isStage(input.activity)) throw new PromptAssemblyError(`活动记录里的「${input.activity}」在任务类型的活动声明里找不到，也不是阶段的键。`);
+  }
   const stage = gateStage(input.stage);
-  const found = definitionsOf(input).activities.find((one) => one.stage === stage);
+  const found = all.find((one) => one.stage === stage);
   if (!found) throw new PromptAssemblyError(`没有算作「${stage}」这个阶段的活动。`);
   return found;
 }
@@ -373,7 +370,6 @@ interface Wanted {
 /** 这一次打算读的文件（不含模块，模块整个目录一起看），按拼接的先后。只看路径，不读内容。 */
 function wantedFiles(input: ComposeInput, activity: ActivityDef, template: string): Wanted[] {
   const p = platformPaths(input);
-  const kind = sessionKind(input);
   const key = activity.key;
   const inTask = (path: string) => relative(resolve(input.workspaceDir), resolve(path));
   const out: Wanted[] = [
@@ -386,11 +382,6 @@ function wantedFiles(input: ComposeInput, activity: ActivityDef, template: strin
   // 活动与工作流的文件在任务 skill 的目录里；回退读产品自带的那一份时，出处写产品自带、路径相对代码仓根目录。
   const defs = definitionsOf(input);
   const typeFile = (path: string) => (defs.fallback ? { from: "builtin" as const, file: relative(REPO_ROOT, path) } : { from: "task" as const, file: inTask(path) });
-  if (kind === "flow") {
-    const flowKey = input.flow ?? DEFAULT_FLOW;
-    const path = join(defs.dir, FLOWS_SUBDIR, `${flowKey}.md`);
-    out.push({ part: "node_exit", ...typeFile(path), path, override: `${PROMPT_DIR_TASK_SUBDIR}/${FLOWS_SUBDIR}/${flowKey}.md`, required: true });
-  }
   const path = join(defs.dir, ACTIVITIES_SUBDIR, `${key}.md`);
   out.push({ part: "task_activity", ...typeFile(path), path, override: `${PROMPT_DIR_TASK_SUBDIR}/${key}.md`, required: false });
   return out;
@@ -442,6 +433,50 @@ function readModules(input: ComposeInput, io: PromptIo, notes: string[]): { modu
   return { modules: replaced, overridden };
 }
 
+/** 活动补充里讲这一步怎样收尾的那一节的标题：在工作流之外（单项活动、空闲）去掉。 */
+export const ENDING_HEADING = "这一步怎样收尾";
+
+/** 这次会话所在的工作流的声明；任务类型里没有这条工作流就拼不成。 */
+function currentFlow(input: ComposeInput) {
+  const flowKey = input.flow ?? DEFAULT_FLOW;
+  const found = definitionsOf(input).flows.find((one) => one.key === flowKey);
+  if (!found) throw new PromptAssemblyError(`任务类型里没有「${flowKey}」这条工作流的声明。`);
+  return found;
+}
+
+/**
+ * 工作流里的转移由程序从声明推出来，填进模块里的占位：flow 工作流的名字、steps 各步、here 现在这一步、prev 上一步的那半句、
+ * next 下一步的那一句（下一步只能由用户发起时只说条件，不发卡片）、division 分工表（每类资产由哪几步负责，按各活动声明的 writes）。
+ */
+export function flowSlots(input: ComposeInput, activity: ActivityDef): Record<string, string> {
+  const defs = definitionsOf(input);
+  const flow = currentFlow(input);
+  const steps = flow.steps.map((key) => defs.activities.find((one) => one.key === key)!);
+  const at = steps.findIndex((one) => one.key === activity.key);
+  if (at < 0) throw new PromptAssemblyError(`活动「${activity.name}」不在工作流「${flow.name}」的各步里。`);
+  const prev = steps[at - 1], next = steps[at + 1];
+  const nextText = !next ? fillText("stage_prompt.flow_last")
+    : next.mode === "user_only" ? fillText("stage_prompt.flow_next_user_only", { name: next.name, requires: prerequisiteText(next.requires).replace(/。$/, "") })
+      : fillText("stage_prompt.flow_next", { name: next.name });
+  const division = ASSETS.map((asset) => {
+    const owners = steps.filter((one) => one.writes.includes(asset)).map((one) => one.name);
+    return owners.length === 0 ? null : fillText("stage_prompt.division_line", { asset: ASSET_NAMES[asset], steps: owners.join("、") });
+  }).filter((one): one is string => one !== null).join("\n");
+  return {
+    flow: flow.name, steps: steps.map((one) => one.name).join("、"), here: activity.name,
+    prev: prev ? fillText("stage_prompt.flow_prev", { name: prev.name }) : fillText("stage_prompt.flow_first"), next: nextText, division,
+  };
+}
+
+/** 把一个模块正文里的 {{名字}} 换成 slots 里的值；正文里有占位而这次没有可填的值（不在工作流里、或者名字不认）就拼不成。 */
+function fillSlots(module: PromptModule, slots: Record<string, string> | null): string {
+  return module.body.replace(/\{\{([a-z_]+)\}\}/g, (_whole, name: string) => {
+    const value = slots?.[name];
+    if (value === undefined) throw new PromptAssemblyError(`模块 ${module.file} 里的占位「{{${name}}}」这次没有可填的值。`);
+    return value;
+  });
+}
+
 /** 拼出这次会话的系统提示。拼不成就抛 PromptAssemblyError。 */
 export function composeContext(input: ComposeInput, io: PromptIo = NODE_IO): StagePrompt {
   const activity = activityOf(input);
@@ -464,10 +499,11 @@ export function composeContext(input: ComposeInput, io: PromptIo = NODE_IO): Sta
   // 3、4 模块
   const { modules, overridden: replaced } = readModules(input, io, notes);
   requireModules(modules, REQUIRED_MODULES);
+  const slots = at.session === "flow" ? flowSlots(input, activity) : null;
   for (const one of selectModules(modules, at)) {
     const overridden = replaced.has(one.name);
     const file = overridden ? `${CAPABILITIES_SUBDIR}/${one.file}` : builtinName(input, join(platformPaths(input).capabilities, one.file));
-    add({ part: "module", from: overridden ? "prompt_dir" : "builtin", file, module: one.name, text: one.body });
+    add({ part: "module", from: overridden ? "prompt_dir" : "builtin", file, module: one.name, text: fillSlots(one, slots) });
   }
   // 5 活动模板
   const templateFile = readWanted(byPart("template")[0], input, io, notes)!;
@@ -486,17 +522,17 @@ export function composeContext(input: ComposeInput, io: PromptIo = NODE_IO): Sta
     const got = readWanted(one, input, io, notes);
     if (got) add({ part: "task_common", from: got.from, file: got.file, text: skillBody(got.text) });
   }
-  // 7 节点的出口
-  for (const one of byPart("node_exit")) {
-    const got = readWanted(one, input, io, notes)!;
-    const section = nodeSection(skillBody(got.text), input.stage as Stage);
-    if (section === null) throw new PromptAssemblyError(`工作流的定义里没有「# ${nodeHeading(input.stage as Stage)}」这一节：${got.file}`);
-    add({ part: "node_exit", from: got.from, file: got.file, text: section });
-  }
-  // 8 任务类型的活动补充
+  // 7 任务类型的活动补充：在工作流之外（单项活动、空闲）去掉「出口」与收尾一节，那两节说的是工作流里怎样提议下一步。
   for (const one of byPart("task_activity")) {
     const got = readWanted(one, input, io, notes);
-    if (got) add({ part: "task_activity", from: got.from, file: got.file, text: at.session === "idle" ? withoutSection(skillBody(got.text), EXIT_HEADING) : skillBody(got.text) });
+    if (!got) continue;
+    const body = skillBody(got.text);
+    add({ part: "task_activity", from: got.from, file: got.file, text: at.session === "flow" ? body : withoutSection(withoutSection(body, EXIT_HEADING), ENDING_HEADING) });
+  }
+  // 8 工作流声明里这一步的提示（note.<活动标识符>），写了才有。
+  if (at.session === "flow") {
+    const note = currentFlow(input).notes[activity.key];
+    if (note) add({ part: "flow_note", from: definitionsOf(input).fallback ? "builtin" : "task", file: null, text: note });
   }
   // 9 启动时写的说明
   if (at.session !== "idle" && input.scope?.trim()) add({ part: "scope", from: "task", file: null, text: scopeSection(input.scope) });
@@ -547,8 +583,8 @@ export class ContextCache {
   get(input: ComposeInput): CachedPrompt {
     let key: string;
     try {
-      key = JSON.stringify([input.stage, input.inFlow ?? true, input.flow ?? null, input.scope ?? null, input.tail, input.promptDir ?? null, input.workspaceDir,
-        input.skills.map((one) => one.filePath), stampsOf(input, this.io)]);
+      key = JSON.stringify([input.stage, input.inFlow ?? true, input.flow ?? null, input.activity ?? null, input.scope ?? null, input.tail, input.promptDir ?? null, input.workspaceDir,
+        input.skills.map((one) => one.filePath), stampsOf(input, this.io), definitionsOf(input)]);
     } catch (error) {
       this.last = null;
       throw error;
@@ -580,14 +616,15 @@ export function partFact(one: PromptPart): PartFact {
 // ───────────── 会话在哪里 ─────────────
 
 /**
- * 这条会话现在在哪个阶段（或者空闲），这条会话的工作项是不是工作流的工作项、是哪一条工作流，与用户启动它时写的说明。只读。
+ * 这条会话现在在哪个阶段（或者空闲），这条会话的工作项是不是工作流的工作项、是哪一条工作流、做的是哪一项活动（活动记录里的键；空闲时没有），
+ * 与用户启动它时写的说明。只读。
  * 任务库不在、库里还没有任务、或者是早先建的任务（没有「业务说明」集合）时返回 null：这些情形都不换系统提示。
  *
  * 活动记录里记的是活动的标识符：经这个任务类型的活动声明换成它算作的阶段（stage 一栏）。声明里找不到这个标识符、而它正好是
  * 六个阶段的键之一时，按那个阶段办（既有任务的记录就是这样，活动的标识符与阶段的键相同）；既找不到又不是阶段的键，或者活动的
  * 声明读不出来，就抛 PromptAssemblyError，这次运行停下。
  */
-export function whereInWorkspace(workspaceDir: string, sessionId: string | null): { stage: Position; inFlow: boolean; flow: string | null; scope: string | null } | null {
+export function whereInWorkspace(workspaceDir: string, sessionId: string | null): { stage: Position; inFlow: boolean; flow: string | null; scope: string | null; activity?: string } | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
@@ -599,7 +636,8 @@ export function whereInWorkspace(workspaceDir: string, sessionId: string | null)
     if (recorded === null) return null;
     const open = openActivityRecord(db, task.task_id, sessionId);
     if (recorded === IDLE) return { stage: IDLE, inFlow: false, flow: null, scope: null };
-    return { stage: positionOfActivity(workspaceDir, definition.skillPath, recorded), inFlow: open !== null && open.flow !== null, flow: open?.flow ?? null, scope: open?.scope ?? null };
+    return { stage: positionOfActivity(workspaceDir, definition.skillPath, recorded), inFlow: open !== null && open.flow !== null, flow: open?.flow ?? null,
+      scope: open?.scope ?? null, activity: recorded };
   } finally {
     db.close();
   }
@@ -630,7 +668,7 @@ export function stageInWorkspace(workspaceDir: string, sessionId: string | null)
 export function promptDirNames(platformDir: string = PROMPTS_DIR): string[] {
   const modules = loadModules(join(platformDir, CAPABILITIES_SUBDIR)).map((one) => `${CAPABILITIES_SUBDIR}/${one.file}`);
   const templates = [...STAGES, IDLE_TEMPLATE].map((key) => `${TEMPLATES_SUBDIR}/${key}.md`);
-  return [SYSTEM_FILE, ...modules, ...templates, `${PROMPT_DIR_TASK_SUBDIR}/${FLOWS_SUBDIR}/${DEFAULT_FLOW}.md`,
+  return [SYSTEM_FILE, ...modules, ...templates,
     `${PROMPT_DIR_TASK_SUBDIR}/${PROMPT_DIR_TASK_COMMON}`, ...STAGES.map((one) => `${PROMPT_DIR_TASK_SUBDIR}/${one}.md`)];
 }
 

@@ -13,7 +13,7 @@ import { runUserOperation } from "../src/lib/user_ops.ts";
 import { IDLE, STAGES, STAGE_NAMES, type Stage } from "../src/lib/stage.ts";
 import {
   ContextCache, ENV_DEBUG_SETTINGS, EXIT_HEADING, HOW_NAMES, NODE_IO, ORIGIN_NAMES, PART_NAMES, PROMPTS_DIR, PROMPT_DIR_MAX_BYTES, PromptAssemblyError, type PromptIo, REQUIRED_MODULES,
-  type StagePrompt, composeContext, debugPromptDir, digestOf, nodeHeading, nodeSection, partFact, piTail, promptDirNames, scopeSection, skillBody, stageInWorkspace,
+  type StagePrompt, composeContext, debugPromptDir, digestOf, partFact, piTail, promptDirNames, scopeSection, skillBody, stageInWorkspace,
   whereInWorkspace, withoutOpening, withoutSection,
 } from "../src/lib/context_assemble.ts";
 import { STAGE_PROMPT_ERROR_TYPE, STAGE_PROMPT_STATUS_KEY, type StagePromptReport, type StopMessage, stagePromptFor } from "../src/hooks/stage_prompt.ts";
@@ -42,34 +42,35 @@ const kinds = (prompt: StagePrompt) => prompt.parts.map((one) => one.module ?? o
 const ALWAYS = ["system_message", "task_definition", "tools_general", "sources", "three_facts", "work_items"];
 /** 每个位置选进来的条件模块。 */
 const CONDITIONAL: Record<Stage | typeof IDLE, string[]> = {
-  reading: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "pages_full", "problems", "stage_cards"],
-  clarifying: ["reply_full", "understanding_full", "pages_full", "problems", "stage_cards"],
-  modeling: ["batches", "reply_brief", "understanding_brief", "pages_full", "problems", "diagrams_full", "stage_cards"],
-  writing: ["batches", "reply_brief", "reply_confirm", "understanding_brief", "review", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards"],
-  reviewing: ["reply_full", "understanding_full", "review", "confirm_publish", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards"],
-  document: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "confirm_publish", "pages_full", "problems", "stage_cards"],
-  idle: ["reply_full", "understanding_full", "pages_full", "problems", "idle_rules"],
+  reading: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "pages_full", "problems", "stage_cards", "flow_transitions"],
+  clarifying: ["reply_full", "understanding_full", "pages_full", "problems", "stage_cards", "retell", "flow_transitions"],
+  modeling: ["batches", "reply_brief", "understanding_brief", "pages_full", "problems", "diagrams_full", "stage_cards", "flow_transitions"],
+  writing: ["batches", "reply_brief", "reply_confirm", "understanding_brief", "review", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards", "flow_transitions"],
+  reviewing: ["reply_full", "understanding_full", "review", "confirm_publish", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards", "retell", "flow_transitions"],
+  document: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "confirm_publish", "pages_full", "problems", "stage_cards", "flow_transitions"],
+  idle: ["reply_full", "understanding_full", "pages_full", "problems", "retell", "idle_rules"],
 };
-const WITH_TASK_ACTIVITY = new Set<string>(["reading", "writing", "document"]);
 
 for (const stage of STAGES) {
   test(`${STAGE_NAMES[stage]}阶段：系统提示、位置说明、共用模块、这个位置的条件模块、活动模板、任务类型共用、节点的出口、任务类型的补充、工作目录`, () => {
     const prompt = compose(stage);
     assert.equal(prompt.stage, stage);
-    assert.deepEqual(kinds(prompt), ["system", "position", ...ALWAYS, ...CONDITIONAL[stage], "template", "task_common", "node_exit",
-      ...(WITH_TASK_ACTIVITY.has(stage) ? ["task_activity"] : []), "tail"]);
+    assert.deepEqual(kinds(prompt), ["system", "position", ...ALWAYS, ...CONDITIONAL[stage], "template", "task_common", "task_activity", "tail"]);
     const file = (kind: string) => prompt.parts.find((one) => one.part === kind)?.file;
     assert.equal(file("system"), "agent/prompts/system.md");
     assert.equal(file("position"), null);
     assert.equal(file("template"), `agent/prompts/templates/${stage}.md`);
     assert.equal(file("task_common"), ".pi/skills/requirements-engineering/SKILL.md");
-    assert.equal(file("node_exit"), ".pi/skills/requirements-engineering/flows/analysis.md");
+    assert.equal(file("task_activity"), `.pi/skills/requirements-engineering/activities/${stage}.md`);
     for (const one of prompt.parts.filter((p) => p.part === "module")) assert.match(one.file!, new RegExp(`^agent/prompts/capabilities/[a-z]+/${one.module}\\.md$`));
     // 活动模板到「做到什么算够」为止；接在任务类型共用之后的是这个节点的一节。
     const template = prompt.parts.find((one) => one.part === "template")!.text;
-    const exit = prompt.parts.find((one) => one.part === "node_exit")!.text;
     assert.ok(template.startsWith(`# 现在这个阶段：${STAGE_NAMES[stage]}\n`) && !/^## 出口$/m.test(template));
-    assert.ok(exit.startsWith("## 出口\n") && exit.includes("\n## 用户说的话不属于本段时\n") && !/^# /m.test(exit));
+    // 工作流里的转移由程序从声明推出来：各步、现在这一步、上一步与下一步、分工表。活动的收尾一节在任务类型的补充里。
+    const moves = prompt.parts.find((one) => one.module === "flow_transitions")!.text;
+    assert.ok(moves.includes("各步依次是：核读材料、澄清、整理建模、写条目、评审确认、编写文档、发布。") && moves.includes(`现在在「${STAGE_NAMES[stage]}」这一步。`), moves);
+    assert.doesNotMatch(moves, /\{\{/);
+    assert.ok(prompt.parts.find((one) => one.part === "task_activity")!.text.includes("## 这一步怎样收尾"));
     assert.equal(prompt.text, prompt.parts.map((one) => one.text).join("\n\n"));
     assert.ok(prompt.text.startsWith("你是 Taskwright 的执行者"));
     assert.ok(prompt.text.endsWith(TAIL));
@@ -140,7 +141,7 @@ test("任务目录里的 skill 没有 activities/（早先建的任务）：回�
   const of = (part: string) => prompt.parts.find((one) => one.part === part)!;
   assert.deepEqual([of("task_common").from, of("task_common").file, of("task_common").text], ["task", ".pi/skills/requirements-engineering/SKILL.md", "# 早先的整份说明"]);
   assert.deepEqual([of("task_activity").from, of("task_activity").file], ["builtin", "task-types/requirements-engineering/.pi/skills/requirements-engineering/activities/writing.md"]);
-  assert.deepEqual([of("node_exit").from, of("node_exit").file], ["builtin", "task-types/requirements-engineering/.pi/skills/requirements-engineering/flows/analysis.md"]);
+
   const other = join(task, ".pi", "skills", "old-type");
   mkdirSync(other, { recursive: true });
   writeFileSync(join(other, "SKILL.md"), "# 早先的整份说明\n", "utf-8");
@@ -151,7 +152,8 @@ test("任务目录里的 skill 没有 activities/（早先建的任务）：回�
 test("一个任务 skill 都没有时拼不成；直接给了声明时，任务类型说明的共用部分不拼", () => {
   assert.throws(() => composeContext({ stage: "clarifying", workspaceDir: scratchDir(), skills: [], tail: TAIL }), /没有任务类型的 skill/);
   const prompt = composeContext({ stage: "clarifying", workspaceDir: scratchDir(), skills: [], tail: TAIL, definitions: DEFS });
-  assert.deepEqual(kinds(prompt).slice(-3), ["template", "node_exit", "tail"]);
+  assert.deepEqual(kinds(prompt).slice(-3), ["template", "task_activity", "tail"]);
+  assert.ok(!kinds(prompt).includes("task_common"));
 });
 
 /** 一个临时的任务目录，里面一份任务 skill：产品自带的需求工程那几份活动与工作流的声明，加给定的 SKILL.md。 */
@@ -181,16 +183,14 @@ test("拼不成就抛错，写明是哪一份：系统提示、活动模板、�
   };
   fails((dir) => rmSync(join(dir, "system.md")), /拼系统提示要用的文件不在：.*\/system\.md$/);
   fails((dir) => rmSync(join(dir, "templates", "reading.md")), /拼系统提示要用的文件不在：.*templates.reading\.md/);
-  // 工作流的文件在任务 skill 的目录里。
-  const flowFails = (change: (flowFile: string) => void, message: RegExp) => {
-    const copy = skillCopy();
-    const flowFile = join(copy.skillDir, "flows", "analysis.md");
-    composeContext({ stage: "reading", workspaceDir: copy.task, skills: copy.skills, tail: "" });
-    change(flowFile);
-    assert.throws(() => composeContext({ stage: "reading", workspaceDir: copy.task, skills: copy.skills, tail: "" }), message);
-  };
-  flowFails((file) => rmSync(file), /拼系统提示要用的文件不在：.*flows.analysis\.md/);
-  flowFails((file) => writeFileSync(file, readFileSync(file, "utf-8").replace(/\n# 节点：核读材料\n[\s\S]*?(?=\n# 节点：)/, "\n")), /工作流的定义里没有「# 节点：核读材料」这一节/);
+  // 工作流的声明在任务 skill 的目录里：这条工作流不在了、模块里有填不上的占位，都拼不成。
+  const noFlow = skillCopy();
+  rmSync(join(noFlow.skillDir, "flows", "analysis.md"));
+  assert.throws(() => composeContext({ stage: "reading", workspaceDir: noFlow.task, skills: noFlow.skills, tail: "" }), /任务类型里没有「analysis」这条工作流的声明/);
+  fails((dir) => writeFileSync(join(dir, "capabilities", "planning", "flow_transitions.md"),
+    "---\nname: flow_transitions\norder: 610\nwhen: session=flow\n---\n\n现在在{{here}}，{{nothing}}。\n"), /占位「\{\{nothing\}\}」这次没有可填的值/);
+  fails((dir) => writeFileSync(join(dir, "capabilities", "planning", "standalone_exit.md"),
+    "---\nname: standalone_exit\norder: 900\nwhen: always\n---\n\n现在在{{here}}。\n"), /占位「\{\{here\}\}」这次没有可填的值/, IDLE as never);
   // 这次用不着的模块缺了也不行。
   fails((dir) => rmSync(join(dir, "capabilities", "organizing", "diagrams_full.md")), /平台说明缺了这几个模块：diagrams_full/);
   fails((dir) => writeFileSync(join(dir, "capabilities", "reading", "materials.md"), "---\nname: materials\norder: 110\nwhen: reads=everything\n---\n\n正文\n"), /reading\/materials\.md 的头里「when」/);
@@ -204,7 +204,7 @@ test("拼不成就抛错，写明是哪一份：系统提示、活动模板、�
   const alone = { workspaceDir: copy.task, skills: copy.skills, tail: "" };
   assert.ok(composeContext({ ...alone, stage: "reading", inFlow: false }).text.includes("本会话的工作项是单项活动"));
   assert.ok(composeContext({ ...alone, stage: IDLE }).text.includes("# 现在：自由讨论"));
-  assert.equal(REQUIRED_MODULES.length, 26);
+  assert.equal(REQUIRED_MODULES.length, 28);
 });
 
 test("新增一个合规的模块：条件满足的位置就多这一段，次序按次序号", () => {
@@ -358,7 +358,7 @@ test("事件处理：有阶段的任务返回拼好的系统提示并报一行�
   assert.equal(report.digest, digestOf(own));
   assert.equal(report.bytes, Buffer.byteLength(own, "utf-8"));
   assert.equal(report.lines, own.split("\n").length);
-  assert.deepEqual(report.parts!.map((one) => one.module ?? one.part), ["system", "position", ...ALWAYS, ...CONDITIONAL.reading, "template", "task_common", "node_exit", "task_activity"]);
+  assert.deepEqual(report.parts!.map((one) => one.module ?? one.part), ["system", "position", ...ALWAYS, ...CONDITIONAL.reading, "template", "task_common", "task_activity"]);
   assert.ok(!JSON.stringify(report).includes(dir));
   assert.ok(!JSON.stringify(report).includes("你是 Taskwright 的执行者"));
 
@@ -403,7 +403,7 @@ test("提示词目录认的文件名：系统提示、每个模块、七份活�
   assert.equal(names[0], "system.md");
   assert.equal(names.filter((one) => one.startsWith("capabilities/")).length, REQUIRED_MODULES.length);
   assert.deepEqual(names.filter((one) => one.startsWith("templates/")), [...STAGES, "idle"].map((one) => `templates/${one}.md`));
-  assert.deepEqual(names.slice(-8), ["task-type/flows/analysis.md", "task-type/common.md", ...STAGES.map((one) => `task-type/${one}.md`)]);
+  assert.deepEqual(names.slice(-7), ["task-type/common.md", ...STAGES.map((one) => `task-type/${one}.md`)]);
 });
 
 test("提示词目录里有哪一份就用哪一份，没有的照旧；空目录的效果与没有设相同；别的文件名不读；模块只能代替、不能改名或换次序", () => {
@@ -564,13 +564,7 @@ test("事件处理，调试模式：从提示词目录读，报出去的那一�
 
 // ───────────── 节点的出口、单项活动、空闲 ─────────────
 
-test("取一个节点的一节、去掉一节、去掉开头：三个切文字的小函数", () => {
-  const flow = ["# 需求分析", "", "开头的话。", "", "# 节点：核读材料", "", "## 出口", "", "- 发卡片。", "", "### 卡片怎样写", "", "键与文字。", "", "## 用户说的话不属于本段时", "", "照三种处理。", "",
-    "# 节点：澄清", "", "## 出口", "", "澄清的出口。"].join("\n");
-  assert.equal(nodeHeading("reading"), "节点：核读材料");
-  assert.equal(nodeSection(flow, "reading"), ["## 出口", "", "- 发卡片。", "", "### 卡片怎样写", "", "键与文字。", "", "## 用户说的话不属于本段时", "", "照三种处理。"].join("\n"));
-  assert.equal(nodeSection(flow, "clarifying"), "## 出口\n\n澄清的出口。");
-  assert.equal(nodeSection(flow, "modeling"), null);
+test("去掉一节、去掉开头：两个切文字的小函数", () => {
   assert.equal(EXIT_HEADING, "出口");
   assert.equal(withoutSection("# 甲\n\n一句。\n\n## 出口\n\n- 发卡片。\n\n### 细节\n\n键。\n\n## 别的\n\n别的话。", EXIT_HEADING), "# 甲\n\n一句。\n\n## 别的\n\n别的话。");
   for (const same of ["## 甲\n\n一句。", "## 出口之外\n\n一句。", "## 甲\n\n### 出口\n\n一句。", ""]) assert.equal(withoutSection(same, EXIT_HEADING), same);
@@ -582,15 +576,17 @@ test("工作项是单项活动时：活动模板原样，单项活动的收尾�
   const io = countingIo();
   const alone = composeContext({ stage: "modeling", inFlow: false, workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: TAIL }, io);
   const inFlow = compose("modeling");
-  assert.deepEqual(kinds(alone), ["system", "position", ...ALWAYS, ...CONDITIONAL.modeling.filter((one) => one !== "stage_cards"), "standalone_exit", "template", "task_common", "tail"]);
+  assert.deepEqual(kinds(alone), ["system", "position", ...ALWAYS, ...CONDITIONAL.modeling.filter((one) => one !== "flow_transitions"), "standalone_exit", "template", "task_common", "tail"]);
   assert.ok(io.reads.every((path) => !path.includes("flows")));
   const text = (prompt: StagePrompt, name: string) => prompt.parts.find((one) => (one.module ?? one.part) === name)!.text;
   assert.equal(text(alone, "template"), text(inFlow, "template"));
   const exit = text(alone, "standalone_exit");
   assert.ok(exit.startsWith("## 出口\n\n本会话的工作项是单项活动，不在工作流程里。这项活动做够了就在回复里汇报做完，不提议进入别的活动"));
   assert.ok(exit.includes("汇报只是一句话，工作项照旧留着") && exit.includes("回复里写 `activity_done: true`") && exit.includes("请用户从任务起点页启动相应的工作项"));
-  const flowExit = "用请选择提议进入写条目，在成文的话里写第 7 条的汇报";
+  // 工作流里怎样提议下一步（转移的模块、活动补充里的收尾一节）不在里面；在工作流里时在。
+  const flowExit = "在成文的话里写第 7 条的汇报";
   assert.ok(!alone.text.includes(flowExit) && inFlow.text.includes(flowExit));
+  assert.ok(!alone.text.includes("## 各步之间的转移") && inFlow.text.includes("## 各步之间的转移"));
   const cache = new ContextCache();
   const input = { stage: "modeling" as const, workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: TAIL };
   assert.deepEqual([cache.get(input).how, cache.get({ ...input, inFlow: false }).how, cache.get({ ...input, inFlow: false }).how, cache.get({ ...input, inFlow: true }).how],
@@ -630,17 +626,17 @@ test("读一条会话现在在哪里：流程的工作项、单项活动的工�
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: IDLE, inFlow: false, flow: null, scope: null });
   enterStage(dir, "modeling");
-  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "modeling", inFlow: true, flow: "analysis", scope: null });
+  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "modeling", inFlow: true, flow: "analysis", scope: null, activity: "modeling" });
   const cache = new ContextCache(), summaries = new WeakMap<object, any>();
   const flowed = start(dir, cache, summaries).reports[0][1];
   assert.deepEqual([flowed.stage, flowed.in_flow], ["modeling", true]);
-  assert.ok(flowed.parts!.some((one) => one.part === "node_exit"));
+  assert.ok(flowed.parts!.some((one) => one.module === "flow_transitions"));
   runUserOperation({ workspaceDir: dir, sessionId: "sess-alone" }, { op_id: "ui-op-prompt-1", kind: "start_activity", fields: { activity: "澄清", in_flow: false } });
-  assert.deepEqual([whereInWorkspace(dir, "sess-alone"), whereInWorkspace(dir, CALL_SESSION)], [{ stage: "clarifying", inFlow: false, flow: null, scope: null }, { stage: "modeling", inFlow: true, flow: "analysis", scope: null }]);
+  assert.deepEqual([whereInWorkspace(dir, "sess-alone"), whereInWorkspace(dir, CALL_SESSION)], [{ stage: "clarifying", inFlow: false, flow: null, scope: null, activity: "clarifying" }, { stage: "modeling", inFlow: true, flow: "analysis", scope: null, activity: "modeling" }]);
   const alone = start(dir, cache, summaries, undefined, "sess-alone");
   assert.deepEqual([alone.reports[0][1].stage, alone.reports[0][1].in_flow, alone.reports[0][1].how], ["clarifying", false, "recomposed"]);
   assert.ok(alone.result!.systemPrompt.includes("本会话的工作项是单项活动") && alone.result!.systemPrompt.includes("# 现在这个阶段：澄清\n"));
-  assert.ok(!alone.reports[0][1].parts!.some((one) => one.part === "node_exit"));
+  assert.ok(!alone.reports[0][1].parts!.some((one) => one.module === "flow_transitions"));
   assert.deepEqual(whereInWorkspace(dir, "sess-free"), { stage: IDLE, inFlow: false, flow: null, scope: null });
   idleSessions(dir);
   assert.deepEqual([whereInWorkspace(dir, CALL_SESSION), stageInWorkspace(dir, "sess-alone")], [{ stage: IDLE, inFlow: false, flow: null, scope: null }, IDLE]);
@@ -655,7 +651,7 @@ test("范围说明：用户启动工作项时写了，这个工作项的会话�
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   const op = (n: number, session: string, fields: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: session }, { op_id: `ui-op-scope-${n}`, kind: "start_activity", fields });
   op(1, "sess-1", { activity: "澄清", in_flow: false, scope: "只问续借的规则" });
-  assert.deepEqual(whereInWorkspace(dir, "sess-1"), { stage: "clarifying", inFlow: false, flow: null, scope: "只问续借的规则" });
+  assert.deepEqual(whereInWorkspace(dir, "sess-1"), { stage: "clarifying", inFlow: false, flow: null, scope: "只问续借的规则", activity: "clarifying" });
   const cache = new ContextCache(), summaries = new WeakMap<object, any>();
   const scoped = start(dir, cache, summaries, undefined, "sess-1");
   assert.deepEqual(scoped.reports[0][1].parts!.map((one) => [one.part, one.from, one.file]).at(-1), ["scope", "task", null]);
@@ -667,11 +663,27 @@ test("范围说明：用户启动工作项时写了，这个工作项的会话�
   assert.equal(start(dir, cache, summaries, undefined, "sess-1").reports[0][1].how, "reused");
   op(2, "sess-2", { activity: "核读材料", in_flow: true, scope: "先读新补的那一份。" });
   const flowed = start(dir, cache, summaries, undefined, "sess-2");
-  assert.deepEqual([flowed.reports[0][1].how, flowed.reports[0][1].parts!.map((one) => one.part).slice(-3)], ["recomposed", ["node_exit", "task_activity", "scope"]]);
+  assert.deepEqual([flowed.reports[0][1].how, flowed.reports[0][1].parts!.map((one) => one.part).slice(-3)], ["recomposed", ["task_common", "task_activity", "scope"]]);
   assert.ok(flowed.result!.systemPrompt.includes("本次范围说明：先读新补的那一份。") && !flowed.result!.systemPrompt.includes("只问续借的规则"));
   op(3, "sess-3", { activity: "澄清", in_flow: false });
-  assert.deepEqual([whereInWorkspace(dir, "sess-3"), whereInWorkspace(dir, "sess-1")!.scope], [{ stage: "clarifying", inFlow: false, flow: null, scope: null }, "只问续借的规则"]);
+  assert.deepEqual([whereInWorkspace(dir, "sess-3"), whereInWorkspace(dir, "sess-1")!.scope], [{ stage: "clarifying", inFlow: false, flow: null, scope: null, activity: "clarifying" }, "只问续借的规则"]);
   assert.ok(!start(dir, cache, summaries, undefined, "sess-3").result!.systemPrompt.includes("本次范围说明"));
   const idle = composeContext({ stage: IDLE, scope: "不该出现", workspaceDir: dir, skills: [], tail: "", definitions: DEFS });
   assert.ok(!idle.text.includes("不该出现"));
+});
+
+test("工作流里的转移由程序从声明推出来：各步、上一步与下一步、下一步只能由用户发起时不发卡片、分工表按各活动的写入；声明里一步的提示接在活动补充之后", () => {
+  const moves = (stage: Stage) => compose(stage).parts.find((one) => one.module === "flow_transitions")!.text;
+  assert.ok(moves("reading").includes("现在在「核读材料」这一步。这是第一步，前面没有别的步。下一步是「澄清」：提议进入时选项固定两个，`next_step`「进入下一步：澄清」、`stay`「继续本步」。"));
+  assert.ok(moves("modeling").includes("上一步是「澄清」。下一步是「写条目」"));
+  assert.ok(moves("document").includes("下一步是「发布」，只能由用户发起：这一步做完了，在成文的话里说明怎样发布（前置条件：评审无未处理发现，确认记录待处理为 0），不发进入它的卡片。"));
+  assert.ok(moves("writing").includes("- 业务说明：核读材料、澄清、整理建模、编写文档\n- 分析模型：整理建模\n- 需求条目：写条目、评审确认\n- 评审与确认：评审确认\n- 文档与版本：编写文档、发布"));
+  // 一步的提示：写在流程声明里 note.<活动标识符>，接在这一步的活动补充之后。
+  const { task, skillDir, skills } = skillCopy();
+  const flowFile = join(skillDir, "flows", "analysis.md");
+  writeFileSync(flowFile, readFileSync(flowFile, "utf-8").replace("\nrequires:\n", "\nrequires:\nnote.clarifying: 这一步先问目标。\n"));
+  const prompt = composeContext({ stage: "clarifying", workspaceDir: task, skills, tail: "" });
+  assert.deepEqual(kinds(prompt).slice(-2), ["task_activity", "flow_note"]);
+  assert.equal(prompt.parts.at(-1)!.text, "这一步先问目标。");
+  assert.ok(!kinds(composeContext({ stage: "clarifying", inFlow: false, workspaceDir: task, skills, tail: "" })).includes("flow_note"));
 });

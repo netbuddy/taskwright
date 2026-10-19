@@ -111,7 +111,7 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       const early = db("SELECT fact, guidance FROM tool_rejection WHERE call_id = 'call-early'");
       assert.equal(early.length, 1);
       assert.match(early[0].fact, /任务现在在核读材料阶段，这个阶段不能新增「功能用例」的条目/);
-      assert.match(early[0].guidance, /进入写条目要由用户在卡片上选「开始写条目」/);
+      assert.match(early[0].guidance, /进入写条目要由用户在卡片上选「转到：写条目」/);
       assert.deepEqual(db("SELECT item_id FROM item").map((r: Dict) => r.item_id), ["OA-001"]);
       // 助手发了卡片，任务还在核读材料：往前要等用户点。这次运行的三个请求拿到的都是核读材料的那一段。
       assert.equal((await stageNow()).current, "reading");
@@ -134,12 +134,11 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] })).status, 200);
       await send({ text: "我选：开始写条目", client_id: "c-2", origin: "card_choice", card: { reply_message_id: entryOfCall("call-start"), kind: "choose", choice: "start_items" } });
       assert.deepEqual(db("SELECT item_id FROM item ORDER BY rowid").map((r: Dict) => r.item_id), ["OA-001", "UC-001"]);
-      // 助手在回复里写了 stage「评审确认」：这一项已经停用，那次回复被拒、阶段没有动；助手照指引改发卡片。
+      // 助手在回复里写了 stage「评审确认」：回复的参数里已经没有这一项，按多出来的项被拒、阶段没有动；助手改发卡片。
       assert.equal((await stageNow()).current, "writing");
       const refusedReply = db("SELECT tool_name, fact, guidance FROM tool_rejection ORDER BY rowid").at(-1) as Dict;
       assert.equal(refusedReply.tool_name, "reply");
-      assert.match(refusedReply.fact, /回复里写了 stage（或 reason），这两项已经停用：阶段不由你移动，任务还在原来的阶段/);
-      assert.match(refusedReply.guidance, /用请选择卡片提议退回并在问句里写明原因/);
+      assert.match(refusedReply.fact, /多了「stage」这一项，回复只有 informs、act、text 三项/);
       promptsAre("写条目", 3);
 
       // 用户在卡片上点「进入评审确认」。

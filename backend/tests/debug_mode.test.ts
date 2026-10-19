@@ -182,8 +182,8 @@ test("调试模式下真的跑一遍：提示词目录里改一句，再问一�
     assert.equal(first.text, systemText(requests()[0]));
     assert.deepEqual([first.available, first.replaced, first.stage, first.stage_name, first.how, first.prompt_dir, first.session_id], [true, true, "reading", "核读材料", "recomposed", null, session]);
     const kinds = first.parts.map((one: Dict) => one.part);
-    assert.deepEqual([kinds.slice(0, 2), kinds.slice(-5)], [["system", "position"], ["template", "task_common", "node_exit", "task_activity", "tail"]]);
-    assert.ok(kinds.slice(2, -5).every((one: string) => one === "module"));
+    assert.deepEqual([kinds.slice(0, 2), kinds.slice(-4)], [["system", "position"], ["template", "task_common", "task_activity", "tail"]]);
+    assert.ok(kinds.slice(2, -4).every((one: string) => one === "module"));
     for (const one of first.parts) assert.equal(one.part_name, PART_NAMES[one.part as keyof typeof PART_NAMES]);
     assert.deepEqual(first.parts.map((one: Dict) => one.from_name).filter((one: string, i: number, all: string[]) => all.indexOf(one) === i), ["产品自带", "程序生成", "任务目录", "助手程序"]);
     const template = (prompt: Dict) => prompt.parts.find((one: Dict) => one.part === "template");
@@ -254,7 +254,7 @@ test("调试模式下的阶段记录流水与被拒的工具调用：谁在什�
     // 被阶段拦下的保存，原因码 gate.stage_item_write 是守门类，拒绝种类记作缺前置步骤（gate）。
   assert.deepEqual([refused.tool, refused.kind, refused.call_id, refused.session_id], ["save_revision", "gate", "call-early", session]);
     assert.match(refused.fact, /任务现在在核读材料阶段，这个阶段不能新增「功能用例」的条目/);
-    assert.match(refused.guidance, /进入写条目要由用户在卡片上选「开始写条目」/);
+    assert.match(refused.guidance, /进入写条目要由用户在卡片上选「转到：写条目」/);
     assert.match(refused.work_id, /^w-/);
     assert.equal(view.latest_work_id, refused.work_id);
   }, { seed: false, args: ["--debug"], env: { TASKWRIGHT_SETTINGS_FILE: join(tmp, "stage-settings.json") } });

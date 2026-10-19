@@ -85,7 +85,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     await send({ text: "材料我放上去了。", client_id: "c-1" });
     const idlePrompt = systemText(requests()[0]);
     assert.ok(idlePrompt.includes(IDLE_OPENING), "空闲时的固定开头");
-    assert.ok(!idlePrompt.includes("# 现在这个阶段：") && !/^## 出口$/m.test(idlePrompt), "不说在哪个阶段，没有出口");
+    assert.ok(!idlePrompt.includes("# 现在这个阶段：") && !/^## 各步之间的转移$/m.test(idlePrompt), "不说在哪个阶段，没有各步之间的转移");
     assert.deepEqual(db("SELECT tool_name, fact FROM tool_rejection ORDER BY rowid").map((r: Dict) => [r.tool_name, String(r.fact).includes("本会话不属于任何工作项，这时不能新增「功能用例」的条目")]),
       [["save_revision", true]]);
     // 假模型发了一张早先那样的「开始核读材料」卡片：自由讨论的会话里没有提议；点了它不算数，对话里那句话写明没有开始。
@@ -122,7 +122,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     // 在需求分析的会话里说话：系统提示是核读材料的；助手写 activity_done，整次回复被拒，工作项仍在核读材料；去掉之后送达。
     await sayIn(flowSession, "读得怎么样了？", "c-3");
     const readingPrompt = systemText(requests().at(-1)!);
-    assert.ok(readingPrompt.includes("# 现在这个阶段：核读材料\n") && /^## 出口$/m.test(readingPrompt) && !readingPrompt.includes(IDLE_OPENING));
+    assert.ok(readingPrompt.includes("# 现在这个阶段：核读材料\n") && /^## 各步之间的转移$/m.test(readingPrompt) && !readingPrompt.includes(IDLE_OPENING));
     assert.ok(db("SELECT tool_name, fact FROM tool_rejection ORDER BY rowid").some((r: Dict) => r.tool_name === "reply"
       && String(r.fact).includes("回复里写了 activity_done，而本会话的工作项是工作流程，现在在核读材料阶段")));
     const inFlowMessages = await messagesOf(flowSession);

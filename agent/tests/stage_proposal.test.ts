@@ -8,14 +8,15 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { EVENT_EXECUTOR_ACTS_RECORDED, recordReplyActs } from "../src/lib/dialogue_acts.ts";
 import { TASK_ACTIVE, withTaskDatabase } from "../src/lib/schema.ts";
-import { BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, STAY_HERE_OPTION, STAY_OPTIONS, type Stage } from "../src/lib/stage.ts";
+import { DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, type Stage } from "../src/lib/stage.ts";
+import { BACK_OPTIONS, ENTER_OPTIONS, STAY_HERE_OPTION, STAY_OPTIONS } from "./old_cards.ts";
 import { NO_OPEN_CARDS_LINE, NO_PROPOSAL_LINE, isStayKey, openProposal, proposalKindOf, proposalLine, proposalOfAct } from "../src/lib/stage_proposal.ts";
 import { getTaskStatus } from "../src/lib/task_query.ts";
 import { taskStatusMessage } from "../src/lib/task_status.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
 import { moveStage, recordStageCardClick } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
-import { CALL_SESSION, DEFINITION_PATH, SOURCE, UI_SESSION, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query, stageMoves } from "./helpers.ts";
+import { CALL_SESSION, DEFINITION_PATH, READY_PAGE, SOURCE, UI_SESSION, callIn, viewReadyPage, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query, stageMoves } from "./helpers.ts";
 
 const SESSION = "sess-a";
 /**
@@ -162,6 +163,9 @@ test("早先建的任务没有阶段：发了带进入键的卡片也不记 prop
 
 test("卡片在同一个工作项的另一条会话里：这条会话的分支上找不到那条回复，点进入照这个工作项开着的提议记换站；键或回复编号对不上就不记", () => {
   const dir = workspace();
+  // 进入整理建模要业务说明至少一节：放一页用户看过的主题。
+  saveRevision(callIn(dir), { operations: [READY_PAGE] });
+  viewReadyPage(dir);
   enter(dir, "reading");
   const card = reply(dir, enterCard("clarifying", "reading"), "sess-first");
   const elsewhere = [said("u-x", "接着昨天的做")] as never;

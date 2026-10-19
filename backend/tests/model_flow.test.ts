@@ -131,10 +131,15 @@ test("整理建模画出五种图、七盏灯都通过；写条目依据两张�
       [["OA-004", "借书证", "一人一证。", ["助手补充"], []]]);
     assert.deepEqual([task.overall_views.goals, task.overall_views.decisions], [{ roots: [], loose: [] }, []]);
 
-    // 用户看过流程那一页，点「开始写条目」：助手写一条依据用例图与流程图的用例。
+    // 用户看过流程那一页与五张图，点「开始写条目」：进入写条目要图都看过（写条目的活动声明 requires 里有 diagrams_viewed，
+    // 点卡片时后端核对，没看完点了不生效）；助手写一条依据用例图与流程图的用例。
     assert.equal((await action({ kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 1 }] })).status, 200);
+    for (const id of ["D-001", "D-002", "D-003", "D-004", "D-005"]) {
+      assert.equal((await action({ kind: "mark_diagram_viewed", targets: [{ diagram_id: id, base_revision: 1 }] })).status, 200);
+    }
     await click("call-start", "start_items", "开始写条目");
     const writing = prompts();
+    assert.ok(writing.length > 0);
     for (const text of writing) {
       assert.ok(text.includes("# 现在这个阶段：写条目\n") && text.includes("1. **照图写条目。**") && text.includes("2. **每条功能用例的来源写两张图。**"), "写条目那一次运行带着任务类型的对应");
     }
@@ -142,21 +147,13 @@ test("整理建模画出五种图、七盏灯都通过；写条目依据两张�
     const sourcesOf = async () => ((await snapshot()).items as Dict[]).find((one) => one.item_id === "UC-001")!.sources
       .map((s: Dict) => [s.kind, s.locator, s.excerpt, s.depends_revision, s.current_revision, s.stale]);
     assert.deepEqual(await sourcesOf(), [["图", "D-002", "OA-001 自助借书", 1, 1, null], ["图", "D-004", "记下借阅", 1, 1, null]]);
-    // 流程页经图被用例依据；用例没有直接依据主题页；用户还没有看过任何一张图，依据的图那一盏不通过，用例因此待核实。
-    assert.deepEqual(await lamps("writing"), { flows_backed_by_use_cases: true, basis_pages_viewed: null, basis_diagrams_viewed: false, no_pending_items: false,
+    // 流程页经图被用例依据；用例没有直接依据主题页；依据的两张图用户都看过，那一盏通过。
+    assert.deepEqual(await lamps("writing"), { flows_backed_by_use_cases: true, basis_pages_viewed: null, basis_diagrams_viewed: true, no_pending_items: true,
       no_blocking_questions: null, no_pending_marks: true });
     const basisOf = async () => ((await snapshot()).items as Dict[]).find((one) => one.item_id === "UC-001")!.basis_pending;
-    assert.deepEqual(await basisOf(), { item_id: "D-002", reason: "unviewed", see: null });
-
-    // 用户看了用例图：还差流程图；两张都看了：通过。
-    assert.equal((await action({ kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-002", base_revision: 1 }] })).status, 200);
-    assert.equal((await lamps("writing")).basis_diagrams_viewed, false);
-    assert.deepEqual(await basisOf(), { item_id: "D-004", reason: "unviewed", see: null });
-    assert.equal((await action({ kind: "mark_diagram_viewed", targets: [{ diagram_id: "D-004", base_revision: 1 }] })).status, 200);
-    assert.deepEqual([(await lamps("writing")).basis_diagrams_viewed, (await lamps("writing")).no_pending_items, await basisOf()], [true, true, null]);
-    assert.deepEqual(((await snapshot()).diagrams as Dict[]).filter((one) => one.viewed).map((one) => one.diagram_id), ["D-002", "D-004"]);
-    assert.deepEqual(db("SELECT actor, payload FROM event WHERE name = 'DIAGRAM_VIEWED' ORDER BY seq").map((r: Dict) => [r.actor, JSON.parse(r.payload).diagrams]),
-      [["user", [{ diagram_id: "D-002", revision_no: 1 }]], ["user", [{ diagram_id: "D-004", revision_no: 1 }]]]);
+    assert.equal(await basisOf(), null);
+    assert.deepEqual(db("SELECT actor, payload FROM event WHERE name = 'DIAGRAM_VIEWED' ORDER BY seq").map((r: Dict) => [r.actor, JSON.parse(r.payload).diagrams[0].diagram_id]),
+      [["user", "D-001"], ["user", "D-002"], ["user", "D-003"], ["user", "D-004"], ["user", "D-005"]]);
 
     // 助手改了流程图：用例那条来源标「依据已变」，流程图要再看一次。
     await send({ text: "流程图里少了打印凭条那一步，补上。", client_id: "c-redraw" });

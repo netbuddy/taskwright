@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CONTINUE_STAGE, DOCUMENT_REVISE_TEXT, LAUNCH_SKIP, START_ACTIVITY, STAY_HERE_TEXT, STAY_TEXT, type LaunchView, launchOption, planLaunch, renderLaunch, buttonLabels, buttonsOf, isReviewedOption, isStageCard, isStayOption, optionKeyOf, pendingCount, planRespond, proposalKind, renderItems, renderMessages, renderReply,
+  CONTINUE_STAGE, DOCUMENT_REVISE_TEXT, LAUNCH_SKIP, START_ACTIVITY, STAY_TEXT, type LaunchView, launchOption, planLaunch, renderLaunch, buttonLabels, buttonsOf, isReviewedOption, isStageCard, isStayOption, optionKeyOf, pendingCount, planRespond, proposalKind, renderItems, renderMessages, renderReply,
   viewOnLook, viewedNow,
 } from "../lib/screen.ts";
 
@@ -198,36 +198,36 @@ test("请选择卡片的选项按键点或按文字点都行，发出去的请�
   assert.deepEqual(planRespond({ click: "开始写条目" }, startReply, "c1"), byKey);
   // 这是一张进入卡片：留在这一段的那一项照助手写的文字点也认，发的是界面操作（见下一例）。
   assert.equal((planRespond({ click: " 继续澄清 " }, startReply, "c2") as any).body.fields.option_key, "continue_clarify");
-  assert.throws(() => planRespond({ click: "先看看再说" }, startReply, "c"), /没有「先看看再说」这个按钮，可以点的是：开始写条目／继续本阶段/);
+  assert.throws(() => planRespond({ click: "先看看再说" }, startReply, "c"), /没有「先看看再说」这个按钮，可以点的是：开始写条目／继续本步/);
   assert.deepEqual([optionKeyOf(startReply.act, "开始写条目"), optionKeyOf(confirmReply.act, "不对"), optionKeyOf(null, "x")], ["start_items", "不对", "x"]);
-  assert.deepEqual([buttonLabels(startReply.act), buttonLabels(confirmReply.act)], [["开始写条目", "继续本阶段"], ["这几条都看过了", "不对"]]);
+  assert.deepEqual([buttonLabels(startReply.act), buttonLabels(confirmReply.act)], [["开始写条目", "继续本步"], ["这几条都看过了", "不对"]]);
   // 请确认卡片照旧。
   assert.equal((planRespond({ click: "这几条都看过了" }, confirmReply, "c3") as any).body.kind, "mark_viewed");
 });
 
-test("提议进入下一个阶段的卡片上留在这一段的那一项：显示成「继续本阶段」，点了发界面操作 continue_stage，不发话；别的请选择卡片不受影响", () => {
-  // 助手把这一项写成了早先的说法：界面上照样显示「继续本阶段」，按键、按「继续本阶段」、按助手写的文字点都认。
+test("提议进入下一个阶段的卡片上留在这一段的那一项：显示成「继续本步」，点了发界面操作 continue_stage，不发话；别的请选择卡片不受影响", () => {
+  // 助手把这一项写成了早先的说法：界面上照样显示「继续本步」，按键、按「继续本步」、按助手写的文字点都认。
   const card = { kind: "choose" as const, text: "材料核读完了，进入澄清吗？", items: [{ item_id: "OA-001", revision_no: 1 }],
     options: [{ key: "enter_clarify", text: "进入澄清" }, { key: "continue_reading", text: "再核读一遍" }] };
   const reply = { type: "assistant_reply", message_id: "a7", text: "进入澄清吗？", act: card };
   assert.deepEqual([isStageCard(card), isStayOption(card, "continue_reading"), isStayOption(card, "enter_clarify")], [true, true, false]);
-  assert.deepEqual(buttonLabels(card), ["进入澄清", "继续本阶段"]);
+  assert.deepEqual(buttonLabels(card), ["进入澄清", "继续本步"]);
   const shown = renderReply(reply as any);
-  assert.match(shown, /\n选项 continue_reading：继续本阶段\n/);
-  assert.match(shown, /\n可以点：进入澄清／继续本阶段（/);
+  assert.match(shown, /\n选项 continue_reading：继续本步\n/);
+  assert.match(shown, /\n可以点：进入澄清／继续本步（/);
   const stay = { kind: "action", body: { client_id: "c1", kind: "continue_stage", targets: [], notify_executor: false,
     fields: { reply_message_id: "a7", option_key: "continue_reading" } } };
   assert.deepEqual(planRespond({ click: "continue_reading" }, reply, "c1"), stay);
-  assert.deepEqual(planRespond({ click: "继续本阶段" }, reply, "c1"), stay);
+  assert.deepEqual(planRespond({ click: "继续本步" }, reply, "c1"), stay);
   assert.deepEqual(planRespond({ click: "再核读一遍" }, reply, "c1"), stay);
   assert.equal(CONTINUE_STAGE, "continue_stage");
-  assert.equal(STAY_TEXT, "继续本阶段");
-  // 进入的那一项照旧发话；点「继续本阶段」时也不能同时写一句话。
+  assert.equal(STAY_TEXT, "继续本步");
+  // 进入的那一项照旧发话；点「继续本步」时也不能同时写一句话。
   assert.equal((planRespond({ click: "进入澄清" }, reply, "c2") as any).body.card.choice, "enter_clarify");
-  assert.throws(() => planRespond({ click: "继续本阶段", text: "还有一件事" }, reply, "c3"), /点这个按钮时不要同时写 text/);
-  // 以后才有的键也认：进入的键以 enter_ 开头，留在这一段的键以 continue_ 开头。
-  const later = { kind: "choose" as const, text: "进入编写文档吗？", options: [{ key: "enter_document", text: "进入编写文档" }, { key: "continue_reviewing", text: "再看看" }] };
-  assert.deepEqual(buttonLabels(later), ["进入编写文档", "继续本阶段"]);
+  assert.throws(() => planRespond({ click: "继续本步", text: "还有一件事" }, reply, "c3"), /点这个按钮时不要同时写 text/);
+  // 现在的键：next_step 进入下一步，stay 留在这一步。
+  const later = { kind: "choose" as const, text: "进入编写文档吗？", options: [{ key: "next_step", text: "进入下一步：编写文档" }, { key: "stay", text: "再看看" }] };
+  assert.deepEqual(buttonLabels(later), ["进入下一步：编写文档", "继续本步"]);
   // 不是进入卡片：键以 continue_ 开头的选项照它写的显示，照旧发话（完成任务那张卡片的两个键是 complete 与 continue）。
   const other = { type: "assistant_reply", message_id: "a8", text: "",
     act: { kind: "choose" as const, text: "要不要接着读？", options: [{ key: "continue_reading", text: "接着读" }, { key: "stop", text: "先停" }] } };
@@ -235,18 +235,17 @@ test("提议进入下一个阶段的卡片上留在这一段的那一项：显�
   assert.equal((planRespond({ click: "接着读" }, other, "c4") as any).body.text, "我选：接着读");
 });
 
-test("提议退回前面阶段的卡片：「留在本段」不管助手写成什么都显示这四个字，点了发界面操作 continue_stage；退回的那一项照旧发话", () => {
+test("提议退回前面阶段的卡片：「继续本步」不管助手写成什么都显示这四个字，点了发界面操作 continue_stage；退回的那一项照旧发话", () => {
   const card = { kind: "choose" as const, text: "你放进了一份新材料，前面几页要重来。退回澄清吗？", items: [],
     options: [{ key: "back_to_clarify", text: "退回澄清" }, { key: "stay_in_stage", text: "先不退" }] };
   const reply = { type: "assistant_reply", message_id: "b1", text: "退回澄清吗？", act: card };
   assert.deepEqual([proposalKind(card), isStageCard(card), isStayOption(card, "stay_in_stage"), isStayOption(card, "back_to_clarify")], ["back", false, true, false]);
-  assert.deepEqual(buttonLabels(card), ["退回澄清", "留在本段"]);
-  assert.match(renderReply(reply as any), /\n选项 stay_in_stage：留在本段\n/);
+  assert.deepEqual(buttonLabels(card), ["退回澄清", "继续本步"]);
+  assert.match(renderReply(reply as any), /\n选项 stay_in_stage：继续本步\n/);
   const stay = { kind: "action", body: { client_id: "c1", kind: "continue_stage", targets: [], notify_executor: false, fields: { reply_message_id: "b1", option_key: "stay_in_stage" } } };
-  assert.deepEqual([planRespond({ click: "留在本段" }, reply, "c1"), planRespond({ click: "先不退" }, reply, "c1"), planRespond({ click: "stay_in_stage" }, reply, "c1")], [stay, stay, stay]);
+  assert.deepEqual([planRespond({ click: "继续本步" }, reply, "c1"), planRespond({ click: "先不退" }, reply, "c1"), planRespond({ click: "stay_in_stage" }, reply, "c1")], [stay, stay, stay]);
   assert.deepEqual(planRespond({ click: "退回澄清" }, reply, "c2"), { kind: "message", body: { text: "我选：退回澄清", client_id: "c2", origin: "card_choice",
     card: { reply_message_id: "b1", kind: "choose", choice: "back_to_clarify" } } });
-  assert.equal(STAY_HERE_TEXT, "留在本段");
 });
 
 test("编写文档阶段请过目的卡片：「看过了，生成文档」不发话，先发 continue_stage、再把卡片点名的页标为已读；「需要修改」只发 continue_stage", () => {

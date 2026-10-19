@@ -111,3 +111,51 @@
 ````text
 发布版本
 ````
+
+## `stage_prompt.flow_prev`
+
+用途：「各步之间的转移」模块里说上一步的那半句。name 是上一步的活动名。
+
+````text
+上一步是「{{name}}」。
+````
+
+## `stage_prompt.flow_first`
+
+用途：同上，现在是第一步时。
+
+````text
+这是第一步，前面没有别的步。
+````
+
+## `stage_prompt.flow_next`
+
+用途：「各步之间的转移」模块里说下一步的那一句：提议进入时卡片上的两个选项。name 是下一步的活动名。
+
+````text
+下一步是「{{name}}」：提议进入时选项固定两个，`next_step`「进入下一步：{{name}}」、`stay`「继续本步」。
+````
+
+## `stage_prompt.flow_next_user_only`
+
+用途：同上，下一步是只能由用户发起的活动（发布）时：只说明条件，不发卡片。name 是那项活动的名字，requires 是它声明里 requires 一栏的说法。
+
+````text
+下一步是「{{name}}」，只能由用户发起：这一步做完了，在成文的话里说明怎样{{name}}（{{requires}}），不发进入它的卡片。
+````
+
+## `stage_prompt.flow_last`
+
+用途：同上，现在是最后一步时。
+
+````text
+这是最后一步，后面没有别的步。
+````
+
+## `stage_prompt.division_line`
+
+用途：「各步之间的转移」模块里分工表的一行：一类资产由这条工作流里哪几步负责。asset 是资产的名字，steps 是活动名（用顿号接起来）。
+
+````text
+- {{asset}}：{{steps}}
+````

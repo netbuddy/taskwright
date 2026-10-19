@@ -1,5 +1,5 @@
-// 助手提议的另两种卡片：提议退回前面的阶段（「退回某阶段」「留在本段」），编写文档阶段请用户过目补写的页（「看过了，生成文档」「需要修改」）。
-// 退回的那一项照进入卡片的做法替用户发一句带选项键的话；「留在本段」「需要修改」只发界面操作 continue_stage，各显示自己的文字；
+// 助手提议的另两种卡片：提议退回前面的阶段（「回到：某活动」「继续本步」），编写文档阶段请用户过目补写的页（「看过了，生成文档」「需要修改」）。
+// 退回的那一项照进入卡片的做法替用户发一句带选项键的话；「继续本步」「需要修改」只发界面操作 continue_stage，各显示自己的文字；
 // 「看过了，生成文档」不发话，交给页面做三件事（留通知、标已读、打开生成文档）。输入框上方「待决定」一行按提议的种类各有写法。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -10,8 +10,8 @@ import { Conversation, answeredByStaying, answeredStayKey, answeredText } from "
 import { PendingProposal, actOnProposal, pendingParts } from "../components/work/PendingProposal";
 import { BACK_CARD_TITLE, REVIEW_CARD_TITLE, ReplyCard, START_CARD_TITLE, proposalKindOfCard } from "../components/work/ReplyCard";
 import {
-  BACK_KEYS, DOCUMENT_REVIEWED_KEY, DOCUMENT_REVISE_KEY, ENTER_KEYS, REVIEWED_HINT, REVISE_HINT, STAY_HERE_HINT, STAY_HERE_KEY, continueStageLine, isActingKey,
-  isQuietKey, proposalCardKind, quietChoiceText, quietText,
+  DOCUMENT_REVIEWED_KEY, DOCUMENT_REVISE_KEY, REVIEWED_HINT, REVISE_HINT, STAY_HINT, continueStageLine, forwardTarget, isActingKey,
+  isBackOption, isForwardOption, isQuietKey, proposalCardKind, quietChoiceText, quietText,
 } from "../model/stage";
 import { overallTask } from "./fixtures/overallTask";
 
@@ -21,7 +21,7 @@ const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>
 );
 const BACK: Act = { kind: "choose", text: "用户放进了一份新材料，前面几页的理解要重来。退回澄清吗？",
-  options: [{ key: "back_to_clarify", text: "退回澄清" }, { key: "stay_in_stage", text: "先不退" }], items: [{ item_id: "OA-001", revision_no: 1 }] };
+  options: [{ key: "goto:clarifying", text: "回到：澄清" }, { key: "stay", text: "先不退" }], items: [{ item_id: "OA-001", revision_no: 1 }] };
 const REVIEW: Act = { kind: "choose", text: "补写了两章的导语，请过目。",
   options: [{ key: "document_reviewed", text: "看过了，生成文档" }, { key: "document_revise", text: "需要修改" }],
   items: [{ item_id: "OA-001", revision_no: 1 }, { item_id: "OA-002", revision_no: 1 }] };
@@ -40,33 +40,42 @@ const show = (messages: unknown[]) => render(<Wrap><Conversation messages={messa
   hasEarlier={false} onLoadEarlier={noop} revisionOf={() => null} attachments={[]} /></Wrap>);
 
 describe("卡片的键与种类", () => {
-  it("进入的键六个（含空闲时的开始核读材料）、退回的键五个；一张卡片照进入、退回、请过目的先后认种类", () => {
-    expect(ENTER_KEYS).toEqual({ enter_reading: "reading", enter_clarify: "clarifying", enter_consolidate: "modeling", start_items: "writing", enter_review: "reviewing", enter_document: "document" });
-    expect(BACK_KEYS).toEqual({ back_to_reading: "reading", back_to_clarify: "clarifying", back_to_consolidate: "modeling", back_to_writing: "writing", back_to_review: "reviewing" });
-    expect([STAY_HERE_KEY, DOCUMENT_REVIEWED_KEY, DOCUMENT_REVISE_KEY]).toEqual(["stay_in_stage", "document_reviewed", "document_revise"]);
-    expect([proposalKindOfCard(BACK), proposalKindOfCard(REVIEW), proposalCardKind([{ key: "enter_document" }, { key: "continue_review" }]), proposalCardKind([{ key: "a" }]), proposalCardKind(null)])
-      .toEqual(["back", "review", "enter", null, null]);
+  it("转移卡片的键三种：next_step 往前、goto:<活动标识符> 按字分往前往回、stay 不生效；早先按阶段的固定键照换算表照样认；一张卡片照进入、退回、请过目的先后认种类", () => {
+    const next = { key: "next_step", text: "进入下一步：澄清" };
+    const back = { key: "goto:reading", text: "回到：核读材料" };
+    const jump = { key: "goto:writing", text: "转到：写条目" };
+    expect([next, back, jump].map((one) => [isForwardOption(one), isBackOption(one), forwardTarget(one)]))
+      .toEqual([[true, false, null], [false, true, null], [true, false, "writing"]]);
+    // 早先的键：进入某段的往前、退回某段的往回，与卡片上写的字无关。
+    expect([{ key: "enter_clarify", text: "回到澄清" }, { key: "back_to_clarify", text: "退回澄清" }, { key: "start_items", text: "开始写条目" }]
+      .map((one) => [isForwardOption(one), isBackOption(one), forwardTarget(one)]))
+      .toEqual([[true, false, "clarifying"], [false, true, null], [true, false, "writing"]]);
+    expect([DOCUMENT_REVIEWED_KEY, DOCUMENT_REVISE_KEY]).toEqual(["document_reviewed", "document_revise"]);
+    expect([proposalKindOfCard(BACK), proposalKindOfCard(REVIEW), proposalCardKind([next, { key: "stay", text: "继续本步" }]), proposalCardKind([back, { key: "stay" }]),
+      proposalCardKind([{ key: "enter_document" }, { key: "continue_review" }]), proposalCardKind([{ key: "a" }]), proposalCardKind(null)])
+      .toEqual(["back", "review", "enter", "back", "enter", null, null]);
     expect(proposalKindOfCard({ kind: "ask", text: "？" })).toBeNull();
-    expect(["back_to_clarify", "enter_document", "document_reviewed", "stay_in_stage", "document_revise", "continue_review"].map((key) => [isActingKey(key), isQuietKey(key)]))
-      .toEqual([[true, false], [true, false], [true, false], [false, true], [false, true], [false, true]]);
-    expect([quietText("stay_in_stage"), quietText("document_revise"), quietText("continue_review"), quietChoiceText("document_reviewed"), quietChoiceText(undefined)])
-      .toEqual(["留在本段", "需要修改", "继续本阶段", "看过了，生成文档", "继续本阶段"]);
+    expect(["next_step", "goto:reading", "stay", "back_to_clarify", "enter_document", "document_reviewed", "stay_in_stage", "document_revise", "continue_review", "stay_idle"]
+      .map((key) => [isActingKey(key), isQuietKey(key)]))
+      .toEqual([[true, false], [true, false], [false, true], [true, false], [true, false], [true, false], [false, true], [false, true], [false, true], [false, true]]);
+    // 不生效的那一项一律写「继续本步」（早先的「留在本段」「继续本阶段」「先不开始」也是），请过目卡片上是「需要修改」。
+    expect([quietText("stay"), quietText("stay_in_stage"), quietText("document_revise"), quietText("continue_review"), quietText("stay_idle"), quietChoiceText("document_reviewed"), quietChoiceText(undefined)])
+      .toEqual(["继续本步", "继续本步", "需要修改", "继续本步", "继续本步", "看过了，生成文档", "继续本步"]);
   });
 
-  it("任务空闲时提议开始核读材料的卡片：标题写「开始核读材料 · 请决定」，「先不开始」是不生效的那一项、照原文显示", () => {
+  it("任务空闲时提议开始核读材料的早先卡片：标题写「开始核读材料 · 请决定」，「先不开始」是不生效的那一项、写成「继续本步」", () => {
     const card = { kind: "choose", text: "你上传了一份材料。现在开始核读材料吗？", options: [{ key: "enter_reading", text: "开始核读材料" }, { key: "stay_idle", text: "先不开始" }] };
     show([{ type: "assistant_reply", message_id: "r1", at: "", work_id: null, via_reply_tool: true, informs: [], act: card, text: "现在开始核读材料吗？" }]);
     const shown = screen.getByTestId("act-choose");
     expect(shown.querySelector(".tt")).toHaveTextContent(START_CARD_TITLE);
     expect(START_CARD_TITLE).toBe("开始核读材料 · 请决定");
-    expect([...shown.querySelectorAll("button")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["开始核读材料", "先不开始"]));
-    expect([proposalCardKind(card.options), isActingKey("enter_reading"), isQuietKey("stay_idle"), quietText("stay_idle"), quietText("continue_reading")])
-      .toEqual(["enter", true, true, "先不开始", "继续本阶段"]);
+    expect([...shown.querySelectorAll("button")].map((b) => b.textContent)).toEqual(expect.arrayContaining(["开始核读材料", "继续本步"]));
+    expect([proposalCardKind(card.options), isActingKey("enter_reading"), isQuietKey("stay_idle")]).toEqual(["enter", true, true]);
   });
 });
 
 describe("提议退回前面的阶段的卡片", () => {
-  it("标题写退回；「退回澄清」是主按钮，点了替用户发一句带键的话；「留在本段」不管助手写成什么都显示这四个字", () => {
+  it("标题写退回；「回到：澄清」是主按钮，点了替用户发一句带键的话；「继续本步」不管助手写成什么都显示这四个字", () => {
     const handlers = card(BACK);
     const act = screen.getByTestId("act-choose");
     expect(act.querySelector(".tt")).toHaveTextContent(BACK_CARD_TITLE);
@@ -74,37 +83,37 @@ describe("提议退回前面的阶段的卡片", () => {
     expect(act).toHaveAttribute("data-proposal", "back");
     expect(act).not.toHaveAttribute("data-stage-card");
     expect(screen.getByTestId("card-look-first")).toHaveTextContent("牵涉到：");
-    expect(screen.getByTestId("card-option-back_to_clarify")).toHaveClass("pri");
-    expect(screen.getByTestId("card-option-stay_in_stage")).toHaveTextContent(/^留在本段$/);
-    fireEvent.click(screen.getByTestId("card-option-back_to_clarify"));
-    expect(handlers.onMessage.mock.calls).toEqual([["我选：退回澄清", { reply_message_id: "msg-1", kind: "choose", choice: "back_to_clarify" }]]);
+    expect(screen.getByTestId("card-option-goto:clarifying")).toHaveClass("pri");
+    expect(screen.getByTestId("card-option-stay")).toHaveTextContent(/^继续本步$/);
+    fireEvent.click(screen.getByTestId("card-option-goto:clarifying"));
+    expect(handlers.onMessage.mock.calls).toEqual([["我选：回到：澄清", { reply_message_id: "msg-1", kind: "choose", choice: "goto:clarifying" }]]);
     expect(handlers.onAction).not.toHaveBeenCalled();
   });
 
-  it("点「留在本段」：只发界面操作，卡片留着两个选项，「留在本段」带勾，小字说提议仍然开着", () => {
+  it("点「继续本步」：只发界面操作，卡片留着两个选项，「继续本步」带勾，小字说提议仍然开着", () => {
     const handlers = card(BACK);
-    fireEvent.click(screen.getByTestId("card-option-stay_in_stage"));
+    fireEvent.click(screen.getByTestId("card-option-stay"));
     expect(handlers.onAction.mock.calls).toEqual([[
-      { kind: "continue_stage", targets: [], fields: { reply_message_id: "msg-1", option_key: "stay_in_stage" }, notify_executor: false }, "选择留在本段"]]);
+      { kind: "continue_stage", targets: [], fields: { reply_message_id: "msg-1", option_key: "stay" }, notify_executor: false }, "选择继续本步"]]);
     expect(handlers.onMessage).not.toHaveBeenCalled();
     const stayed = screen.getByTestId("card-stayed");
-    expect(within(stayed).getByTestId("card-option-stay_in_stage")).toHaveTextContent("留在本段 ✓");
-    expect(within(stayed).getByTestId("card-option-back_to_clarify")).toHaveClass("faded");
-    expect(screen.getByTestId("card-stay-hint")).toHaveTextContent(STAY_HERE_HINT);
+    expect(within(stayed).getByTestId("card-option-stay")).toHaveTextContent("继续本步 ✓");
+    expect(within(stayed).getByTestId("card-option-goto:clarifying")).toHaveClass("faded");
+    expect(screen.getByTestId("card-stay-hint")).toHaveTextContent(STAY_HINT);
   });
 
-  it("对话记录里的通知：写成「界面操作：用户选择留在本段」，卡片是已选的样子", () => {
-    const messages = [reply("r1", "退回澄清吗？", BACK), note("n1", "r1", "stay_in_stage"), said("u1", "先把手上的写完。")];
+  it("对话记录里的通知：写成「界面操作：用户选择继续本步」，卡片是已选的样子", () => {
+    const messages = [reply("r1", "退回澄清吗？", BACK), note("n1", "r1", "stay"), said("u1", "先把手上的写完。")];
     show(messages);
-    expect(screen.getByTestId("continue-stage-note")).toHaveTextContent(/^界面操作：用户选择留在本段$/);
-    expect(screen.getByTestId("card-option-stay_in_stage")).toHaveTextContent("留在本段 ✓");
+    expect(screen.getByTestId("continue-stage-note")).toHaveTextContent(/^界面操作：用户选择继续本步$/);
+    expect(screen.getByTestId("card-option-stay")).toHaveTextContent("继续本步 ✓");
     expect([answeredText(messages as ConversationMessage[], 0), answeredByStaying(messages as ConversationMessage[], 0), answeredStayKey(messages as ConversationMessage[], 0)])
-      .toEqual(["你选了「留在本段」", true, "stay_in_stage"]);
+      .toEqual(["你选了「继续本步」", true, "stay"]);
     // 早先的通知没有记点的是哪一项：取卡片上不生效的那一项。
     cleanup();
     show([reply("r1", "退回澄清吗？", BACK), note("n1", "r1")]);
-    expect(screen.getByTestId("card-option-stay_in_stage")).toHaveTextContent("留在本段 ✓");
-    expect(continueStageLine(undefined)).toBe("界面操作：用户选择继续本阶段");
+    expect(screen.getByTestId("card-option-stay")).toHaveTextContent("继续本步 ✓");
+    expect(continueStageLine(undefined)).toBe("界面操作：用户选择继续本步");
   });
 });
 
