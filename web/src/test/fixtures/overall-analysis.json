@@ -161,7 +161,15 @@
      }
     ]
    }
-  ]
+  ],
+  "asset_names": {
+   "materials": "材料与证据",
+   "description": "业务说明",
+   "models": "分析模型",
+   "items": "需求条目",
+   "review": "评审与确认",
+   "versions": "文档与版本"
+  }
  },
  "items": [
   {

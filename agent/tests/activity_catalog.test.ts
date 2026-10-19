@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { CATALOG_LATER, type AssetFacts, assetCells, assetFacts, blockedByStage, blockedText, catalog, conditionMet } from "../src/lib/activity_catalog.ts";
 import { CONDITIONS } from "../src/lib/activity_def.ts";
 import { readDefinitions } from "../src/lib/activity_def_read.ts";
+import { assetNamesOf } from "../src/lib/asset_names.ts";
 import { SRS_SKILL_DIR } from "./helpers.ts";
 import { type LampDiagram, type LampInput, type LampItem, type LampPage, type LampQuestion, STAGES } from "../src/lib/stage.ts";
 
@@ -26,11 +27,13 @@ const EMPTY: AssetFacts = {
   items: 0, itemsUnread: 0, itemsPending: 0, itemsConfirmed: 0, reviewRounds: 0, openFindings: 0, versions: 0,
 };
 const DEFS = readDefinitions(SRS_SKILL_DIR);
-const cellsOf = (facts: AssetFacts) => Object.fromEntries(assetCells(facts, DEFS.activities).map((one) => [one.key, [one.text, one.note]]));
+/** 产品自带的需求工程任务定义里的资产显示名。 */
+const NAMES = assetNamesOf(null);
+const cellsOf = (facts: AssetFacts) => Object.fromEntries(assetCells(facts, DEFS.activities, NAMES).map((one) => [one.key, [one.text, one.note]]));
 
 test("空任务：六类都是零，材料来自上传所以没有产出它的活动，别的各写由哪些活动产出", () => {
   assert.deepEqual(assetFacts(input()), EMPTY);
-  const cells = assetCells(EMPTY, DEFS.activities);
+  const cells = assetCells(EMPTY, DEFS.activities, NAMES);
   assert.deepEqual(cells.map((one) => [one.key, one.name, one.count, one.unit, one.text, one.note]), [
     ["materials", "材料与证据", 0, "份", "0 份", ""], ["description", "业务说明", 0, "节", "0 节", ""], ["models", "分析模型", 0, "张", "0 张", ""],
     ["items", "需求条目", 0, "条", "0 条", ""], ["review", "评审与确认", 0, "轮", "未评审", ""], ["versions", "文档与版本", 0, "版", "未发布", ""]]);
@@ -97,7 +100,7 @@ test("前置条件只看数据：每一个各自什么时候满足，缺的时�
 });
 
 test("活动目录：空任务只有澄清与需求分析能启动；需求分析推荐，从澄清开始；发布与需求变更写缺什么", () => {
-  const got = catalog(DEFS, EMPTY);
+  const got = catalog(DEFS, NAMES, EMPTY);
   assert.deepEqual(got.activities.map((one) => [one.key, one.enabled, one.state]), [
     ["reading", false, "还没有项目材料"], ["clarifying", true, "可以启动"], ["modeling", false, "业务说明还没有内容"], ["writing", false, "业务说明还没有内容"],
     ["reviewing", false, "还没有需求条目"], ["document", false, "还没有已确认的需求条目"], ["publish", false, "还没有评审过"]]);
@@ -114,22 +117,22 @@ test("活动目录：空任务只有澄清与需求分析能启动；需求分�
   assert.deepEqual(got.flows[0].nodes.map((one) => one.name), ["核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档", "发布"]);
   assert.equal(got.flows[1].prerequisite_text, "前置条件：存在已发布的版本。");
   // 有材料：需求分析从核读材料开始。
-  assert.equal(catalog(DEFS, { ...EMPTY, materials: 1 }).flows[0].start, "reading");
+  assert.equal(catalog(DEFS, NAMES, { ...EMPTY, materials: 1 }).flows[0].start, "reading");
 });
 
 test("活动目录：单项活动能不能启动只看数据，已经有工作项也不拦；每一项带工作项个数；已有流程工作项时流程都不能启动", () => {
   const facts: AssetFacts = { ...EMPTY, materials: 1, sections: 2, items: 3, itemsConfirmed: 3, reviewRounds: 1 };
-  const none = catalog(DEFS, facts);
+  const none = catalog(DEFS, NAMES, facts);
   assert.deepEqual(none.activities.map((one) => [one.enabled, one.state, one.active_count]), [[true, "可以启动", 0], [true, "可以启动", 0], [true, "可以启动", 0], [true, "可以启动", 0],
     [true, "可以启动", 0], [true, "可以启动", 0], [false, CATALOG_LATER, 0]]);
   // 写条目有两个工作项：照样可以再启动，只是带上个数。需求分析已有一个工作项（在写条目这一站）：两条流程都不能启动，写明是哪一个。
   const flowItem = { record_id: 4, name: "需求分析", node: "writing" as const };
-  const busy = catalog(DEFS, facts, { analysis: 1, writing: 2 }, flowItem);
+  const busy = catalog(DEFS, NAMES, facts, { analysis: 1, writing: 2 }, flowItem);
   assert.deepEqual(busy.activities.map((one) => [one.key, one.enabled, one.active_count]).filter((one) => one[2] !== 0), [["writing", true, 2]]);
   assert.deepEqual([busy.flows[0].enabled, busy.flows[0].state, busy.flows[0].at, busy.flows[0].start, busy.flows[0].active_count, busy.flows[0].work_item],
     [false, "已有流程工作项「需求分析」，位于「写条目」", null, "reading", 1, flowItem]);
   assert.deepEqual([busy.flows[1].enabled, busy.flows[1].state, busy.flows[1].active_count, busy.flows[1].work_item], [false, "还没有已发布的版本", 0, flowItem]);
   // 发布过版本之后推荐的是需求变更；它现在还不能启动。
-  const released = catalog(DEFS, { ...facts, versions: 1 });
+  const released = catalog(DEFS, NAMES, { ...facts, versions: 1 });
   assert.deepEqual(released.flows.map((one) => [one.recommended, one.enabled, one.state]), [[false, true, "可以启动"], [true, false, CATALOG_LATER]]);
 });

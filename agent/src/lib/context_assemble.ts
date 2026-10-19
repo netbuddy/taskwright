@@ -38,7 +38,8 @@ import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { type ActivityDef, ASSETS, ASSET_NAMES, DefinitionHeadError, prerequisiteText, splitHead } from "./activity_def.ts";
+import { type ActivityDef, ASSETS, type AssetKey, DefinitionHeadError, prerequisiteText, splitHead } from "./activity_def.ts";
+import { assetNamesOf } from "./asset_names.ts";
 import { ACTIVITIES_SUBDIR, type Definitions, definitionsFor } from "./activity_def_read.ts";
 import { databasePath } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
@@ -269,7 +270,12 @@ export interface ComposeInput {
   activity?: string | null;
   /** 这个任务类型的活动与工作流的声明；缺省从任务 skill 的目录读（lib/activity_def_read.ts，没有就回退读产品自带的）。 */
   definitions?: Definitions;
+  /** 任务定义的资产显示名；不给时按 lib/asset_names.ts 的回退（产品自带的任务定义）。 */
+  assetNames?: Readonly<Record<AssetKey, string>>;
 }
+
+/** 这次拼用的资产显示名。 */
+const assetNamesFor = (input: ComposeInput): Readonly<Record<AssetKey, string>> => input.assetNames ?? assetNamesOf(null);
 
 /** 这次拼要用的活动与工作流的声明。没有任务 skill 时拼不成。 */
 function definitionsOf(input: ComposeInput): Definitions {
@@ -334,7 +340,7 @@ const CAN_TEXT: Record<WriteKind, string> = {
 
 /** 程序生成的那一段位置说明。 */
 export function positionText(input: ComposeInput, activity: ActivityDef, at: Situation): string {
-  const main = at.session === "idle" ? fillText("stage_prompt.main_idle") : activity.writes.map((one) => ASSET_NAMES[one]).join("、");
+  const main = at.session === "idle" ? fillText("stage_prompt.main_idle") : activity.writes.map((one) => assetNamesFor(input)[one]).join("、");
   const allowed = at.allowed.map((one) => CAN_TEXT[one]).join("、");
   return fillText("stage_prompt.position", { where: whereText(input, at.session), main, allowed });
 }
@@ -460,7 +466,7 @@ export function flowSlots(input: ComposeInput, activity: ActivityDef): Record<st
       : fillText("stage_prompt.flow_next", { name: next.name });
   const division = ASSETS.map((asset) => {
     const owners = steps.filter((one) => one.writes.includes(asset)).map((one) => one.name);
-    return owners.length === 0 ? null : fillText("stage_prompt.division_line", { asset: ASSET_NAMES[asset], steps: owners.join("、") });
+    return owners.length === 0 ? null : fillText("stage_prompt.division_line", { asset: assetNamesFor(input)[asset], steps: owners.join("、") });
   }).filter((one): one is string => one !== null).join("\n");
   return {
     flow: flow.name, steps: steps.map((one) => one.name).join("、"), here: activity.name,
@@ -583,7 +589,7 @@ export class ContextCache {
   get(input: ComposeInput): CachedPrompt {
     let key: string;
     try {
-      key = JSON.stringify([input.stage, input.inFlow ?? true, input.flow ?? null, input.activity ?? null, input.scope ?? null, input.tail, input.promptDir ?? null, input.workspaceDir,
+      key = JSON.stringify([input.stage, input.inFlow ?? true, input.flow ?? null, input.activity ?? null, input.assetNames ?? null, input.scope ?? null, input.tail, input.promptDir ?? null, input.workspaceDir,
         input.skills.map((one) => one.filePath), stampsOf(input, this.io), definitionsOf(input)]);
     } catch (error) {
       this.last = null;
@@ -624,7 +630,8 @@ export function partFact(one: PromptPart): PartFact {
  * 六个阶段的键之一时，按那个阶段办（既有任务的记录就是这样，活动的标识符与阶段的键相同）；既找不到又不是阶段的键，或者活动的
  * 声明读不出来，就抛 PromptAssemblyError，这次运行停下。
  */
-export function whereInWorkspace(workspaceDir: string, sessionId: string | null): { stage: Position; inFlow: boolean; flow: string | null; scope: string | null; activity?: string } | null {
+export function whereInWorkspace(workspaceDir: string, sessionId: string | null): { stage: Position; inFlow: boolean; flow: string | null; scope: string | null; activity?: string;
+  assetNames?: Record<AssetKey, string> } | null {
   const path = databasePath(workspaceDir);
   if (!existsSync(path) || statSync(path).size === 0) return null;
   const db = new DatabaseSync(path, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
@@ -637,7 +644,7 @@ export function whereInWorkspace(workspaceDir: string, sessionId: string | null)
     const open = openActivityRecord(db, task.task_id, sessionId);
     if (recorded === IDLE) return { stage: IDLE, inFlow: false, flow: null, scope: null };
     return { stage: positionOfActivity(workspaceDir, definition.skillPath, recorded), inFlow: open !== null && open.flow !== null, flow: open?.flow ?? null,
-      scope: open?.scope ?? null, activity: recorded };
+      scope: open?.scope ?? null, activity: recorded, assetNames: assetNamesOf(definition) };
   } finally {
     db.close();
   }

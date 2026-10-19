@@ -16,26 +16,18 @@
  * 前置条件（requires）是数据条件的键（CONDITIONS），一个都没有就是无前置条件。
  */
 
+import { ASSETS, type AssetKey } from "./assets.ts";
 import { STAGES, STAGE_NAMES, type Stage } from "./stage.ts";
 
-/** 需求资产的六类，按任务起点页上从左到右的次序。 */
-export const ASSETS = ["materials", "description", "models", "items", "review", "versions"] as const;
-export type AssetKey = (typeof ASSETS)[number];
-
-export const ASSET_NAMES: Record<AssetKey, string> = {
-  materials: "材料与证据",
-  description: "业务说明",
-  models: "分析模型",
-  items: "需求条目",
-  review: "评审与确认",
-  versions: "文档与版本",
-};
+export { ASSETS, type AssetKey };
 
 /** 「读」一栏在六类资产之外另认的两个写法。 */
 export const READ_KNOWLEDGE = "knowledge";
 export const READ_ALL = "all";
 export type ReadKey = AssetKey | typeof READ_KNOWLEDGE | typeof READ_ALL;
-export const READ_NAMES: Record<ReadKey, string> = { ...ASSET_NAMES, [READ_KNOWLEDGE]: "知识库", [READ_ALL]: "全部资产" };
+/** 「读」一栏各个写法给人看的名字：六类资产照任务定义的资产显示名，另两个是固定的。 */
+export const readName = (key: ReadKey, assetNames: Readonly<Record<AssetKey, string>>): string =>
+  key === READ_KNOWLEDGE ? "知识库" : key === READ_ALL ? "全部资产" : assetNames[key];
 
 /** 发布这项活动的键：它不是工作阶段，只能由用户发起。 */
 export const PUBLISH = "publish";

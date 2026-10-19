@@ -18,6 +18,7 @@ import { type LampInput, PENDING_MARK, STAGES, STAGE_NAMES, type Stage, type Wri
 import { NO_PROPOSAL_LINE, openCardsLine } from "../src/lib/stage_proposal.ts";
 import { skillBody, withoutSection } from "../src/lib/context_assemble.ts";
 import { moduleText, platformText } from "./platform_text.ts";
+import { SRS_SKILL_DIR } from "./helpers.ts";
 import { CARD_TYPED_PREFIX } from "../src/lib/dialogue_acts.ts";
 
 /** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
@@ -96,7 +97,9 @@ test("工作的阶段、转移、复述、业务说明的页、问题条目几�
 test("「随时可用的七项能力」一节已删去；其中「记决定」与「你补的内容一律待核实」两句并进业务说明的页", () => {
   assert.ok(!platformText().includes("随时可用的七项能力"));
   const pages = moduleText("pages_full");
-  assert.ok(pages.includes("5. **记决定。** 用户拍了板时用：立一页标签为「决定」的主题，写清定了什么、为什么，上级主题写它为的那个目标；用户没说为什么就问一句。"));
+  assert.ok(pages.includes("5. **记决定。** 用户拍了板时用：立一页主题记下这个决定（贴哪个标签见任务类型说明），写清定了什么、为什么，上级主题写它为的那一页；用户没说为什么就问一句。"));
+  // 标签的取值与含义在任务类型说明里，平台模块不列。
+  assert.ok(pages.includes("主题分哪几种、标签的取值与含义，见任务类型说明。") && !pages.includes("标签为「决定」"));
   assert.ok(pages.includes("6. 你补的内容一律待核实：用户没有确认之前不算定下，不要拿它当依据。"));
 });
 
@@ -312,8 +315,11 @@ test("编写文档那一段：补导语与概括句并写明依据；出口是�
   assert.deepEqual(steps, ["1 通读。", "2 每章补一页导语。", "3 各节开头补一句概括。", "4 核对术语与说法。", "5 补写的每一处都写明依据。", "6 汇报。"]);
   for (const words of ["「导语所属章」填这一章的章名", "一章只立一页", "任务定义里没有「导语所属章」这个字段时不立导语页", "来源种类写「助手补充」",
     "不要自己挑一个改掉，记一条问题条目"]) assert.ok(all.get("这一段做什么")!.includes(words), words);
-  // 七章的章名与程序里的相同。
-  for (const chapter of CHAPTERS) assert.ok(all.get("这一段做什么")!.includes(chapter.name), chapter.name);
+  // 七章的章名在任务类型的活动补充里，与程序里的相同；平台模板只说见任务类型说明。
+  assert.ok(all.get("这一段做什么")!.includes("有哪几章、各章收哪些页，见任务类型说明"));
+  const typeDocument = readFileSync(join(SRS_SKILL_DIR, "activities", "document.md"), "utf-8");
+  for (const chapter of CHAPTERS) assert.ok(typeDocument.includes(chapter.name), chapter.name);
+  assert.ok(!all.get("这一段做什么")!.includes("业务规则、业务目标"), "平台模板不列七章");
   const enough = all.get("做到什么算够")!;
   assert.ok(enough.startsWith("## 做到什么算够\n\n三件："));
   assert.equal(enough.slice(enough.indexOf("三件：")).split("。")[0].split("；").length, 3);

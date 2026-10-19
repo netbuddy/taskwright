@@ -7,8 +7,8 @@
  */
 
 import {
-  ACTIVITY_NAMES, ASSETS, ASSET_NAMES, type ActivityDef, type ActivityKey, type AssetKey, type Condition, type FlowDef, type FlowKey, MODE_NAMES, type Mode,
-  PUBLISH, READ_NAMES, prerequisiteText,
+  ACTIVITY_NAMES, ASSETS, type ActivityDef, type ActivityKey, type AssetKey, type Condition, type FlowDef, type FlowKey, MODE_NAMES, type Mode,
+  PUBLISH, prerequisiteText, readName,
 } from "./activity_def.ts";
 import { CHAPTERS, chapterLayout } from "./overall_chapters.ts";
 import { FLOW_ANALYSIS, type FlowItemRef, LAUNCH_READY, type LampInput, type Stage, flowExistsText, flowStartNode, isStage } from "./stage.ts";
@@ -125,8 +125,8 @@ export interface AssetCell {
   produced_by: string[];
 }
 
-/** 六类资产的现状，照 ASSETS 的次序。 */
-export function assetCells(facts: AssetFacts, activities: readonly ActivityDef[]): AssetCell[] {
+/** 六类资产的现状，照 ASSETS 的次序；names 是任务定义的资产显示名（lib/asset_names.ts 的 assetNamesOf）。 */
+export function assetCells(facts: AssetFacts, activities: readonly ActivityDef[], names: Readonly<Record<AssetKey, string>>): AssetCell[] {
   const itemsNote = [facts.itemsUnread > 0 ? `${facts.itemsUnread} 未读` : "", facts.itemsPending > 0 ? `${facts.itemsPending} 待核实` : ""].filter(Boolean).join(" · ");
   const shown: Record<AssetKey, [count: number, unit: string, text: string | null, note: string]> = {
     materials: [facts.materials, "份", null, facts.materials === 0 ? "" : facts.materialsUnread === 0 ? "均已核读" : `${facts.materialsUnread} 份未核读`],
@@ -139,7 +139,7 @@ export function assetCells(facts: AssetFacts, activities: readonly ActivityDef[]
   return ASSETS.map((key) => {
     const [count, unit, text, note] = shown[key];
     return {
-      key, name: ASSET_NAMES[key], count, unit, text: text ?? `${count} ${unit}`, note,
+      key, name: names[key], count, unit, text: text ?? `${count} ${unit}`, note,
       produced_by: activities.filter((one) => one.writes.includes(key)).map((one) => one.name),
     };
   });
@@ -215,12 +215,12 @@ export const CATALOG_LATER = "此版本尚未提供";
  * （单项活动的按活动的键、流程的按流程的键），单项活动已经有工作项不拦，再启动是另起一个。flowItem 是任务里已有的流程工作项：
  * 有它时两条流程都不能启动（一个任务同一时刻至多一个流程工作项）。
  */
-export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, facts: AssetFacts, counts: Readonly<Record<string, number>> = {},
-  flowItem: FlowItemRef | null = null): Catalog {
+export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, names: Readonly<Record<AssetKey, string>>, facts: AssetFacts,
+  counts: Readonly<Record<string, number>> = {}, flowItem: FlowItemRef | null = null): Catalog {
   const activities: CatalogActivity[] = defs.activities.map((one) => {
     const base = {
       key: one.key, name: one.name, mode: one.mode, mode_name: MODE_NAMES[one.mode], purpose: one.purpose,
-      reads: one.reads.map((key) => ({ key, name: READ_NAMES[key] })), writes: one.writes.map((key) => ({ key, name: ASSET_NAMES[key] })),
+      reads: one.reads.map((key) => ({ key, name: readName(key, names) })), writes: one.writes.map((key) => ({ key, name: names[key] })),
       prerequisite_text: prerequisiteText(one.requires), example: one.example, recommended: false, active_count: counts[one.key] ?? 0,
     };
     const blocked = blockedText(one.requires, facts);

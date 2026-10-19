@@ -19,6 +19,10 @@ import {
 import { STAGE_PROMPT_ERROR_TYPE, STAGE_PROMPT_STATUS_KEY, type StagePromptReport, type StopMessage, stagePromptFor } from "../src/hooks/stage_prompt.ts";
 import { readDefinitions } from "../src/lib/activity_def_read.ts";
 import { CALL_SESSION, DEFINITION_PATH, SRS_SKILL_DIR, callIn, demoDefinition, idleSessions, enterStage, makeWorkspace, overallDefinition, tempDir } from "./helpers.ts";
+import { assetNamesOf } from "../src/lib/asset_names.ts";
+
+/** 产品自带的需求工程任务定义里的资产显示名。 */
+const NAMES = assetNamesOf(null);
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
 const SRS_TYPE = join(ROOT, "task-types", "requirements-engineering");
@@ -626,13 +630,13 @@ test("读一条会话现在在哪里：流程的工作项、单项活动的工�
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: IDLE, inFlow: false, flow: null, scope: null });
   enterStage(dir, "modeling");
-  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "modeling", inFlow: true, flow: "analysis", scope: null, activity: "modeling" });
+  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "modeling", inFlow: true, flow: "analysis", scope: null, activity: "modeling", assetNames: NAMES });
   const cache = new ContextCache(), summaries = new WeakMap<object, any>();
   const flowed = start(dir, cache, summaries).reports[0][1];
   assert.deepEqual([flowed.stage, flowed.in_flow], ["modeling", true]);
   assert.ok(flowed.parts!.some((one) => one.module === "flow_transitions"));
   runUserOperation({ workspaceDir: dir, sessionId: "sess-alone" }, { op_id: "ui-op-prompt-1", kind: "start_activity", fields: { activity: "澄清", in_flow: false } });
-  assert.deepEqual([whereInWorkspace(dir, "sess-alone"), whereInWorkspace(dir, CALL_SESSION)], [{ stage: "clarifying", inFlow: false, flow: null, scope: null, activity: "clarifying" }, { stage: "modeling", inFlow: true, flow: "analysis", scope: null, activity: "modeling" }]);
+  assert.deepEqual([whereInWorkspace(dir, "sess-alone"), whereInWorkspace(dir, CALL_SESSION)], [{ stage: "clarifying", inFlow: false, flow: null, scope: null, activity: "clarifying", assetNames: NAMES }, { stage: "modeling", inFlow: true, flow: "analysis", scope: null, activity: "modeling", assetNames: NAMES }]);
   const alone = start(dir, cache, summaries, undefined, "sess-alone");
   assert.deepEqual([alone.reports[0][1].stage, alone.reports[0][1].in_flow, alone.reports[0][1].how], ["clarifying", false, "recomposed"]);
   assert.ok(alone.result!.systemPrompt.includes("本会话的工作项是单项活动") && alone.result!.systemPrompt.includes("# 现在这个阶段：澄清\n"));
@@ -651,7 +655,7 @@ test("范围说明：用户启动工作项时写了，这个工作项的会话�
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   const op = (n: number, session: string, fields: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: session }, { op_id: `ui-op-scope-${n}`, kind: "start_activity", fields });
   op(1, "sess-1", { activity: "澄清", in_flow: false, scope: "只问续借的规则" });
-  assert.deepEqual(whereInWorkspace(dir, "sess-1"), { stage: "clarifying", inFlow: false, flow: null, scope: "只问续借的规则", activity: "clarifying" });
+  assert.deepEqual(whereInWorkspace(dir, "sess-1"), { stage: "clarifying", inFlow: false, flow: null, scope: "只问续借的规则", activity: "clarifying", assetNames: NAMES });
   const cache = new ContextCache(), summaries = new WeakMap<object, any>();
   const scoped = start(dir, cache, summaries, undefined, "sess-1");
   assert.deepEqual(scoped.reports[0][1].parts!.map((one) => [one.part, one.from, one.file]).at(-1), ["scope", "task", null]);
@@ -666,7 +670,7 @@ test("范围说明：用户启动工作项时写了，这个工作项的会话�
   assert.deepEqual([flowed.reports[0][1].how, flowed.reports[0][1].parts!.map((one) => one.part).slice(-3)], ["recomposed", ["task_common", "task_activity", "scope"]]);
   assert.ok(flowed.result!.systemPrompt.includes("本次范围说明：先读新补的那一份。") && !flowed.result!.systemPrompt.includes("只问续借的规则"));
   op(3, "sess-3", { activity: "澄清", in_flow: false });
-  assert.deepEqual([whereInWorkspace(dir, "sess-3"), whereInWorkspace(dir, "sess-1")!.scope], [{ stage: "clarifying", inFlow: false, flow: null, scope: null, activity: "clarifying" }, "只问续借的规则"]);
+  assert.deepEqual([whereInWorkspace(dir, "sess-3"), whereInWorkspace(dir, "sess-1")!.scope], [{ stage: "clarifying", inFlow: false, flow: null, scope: null, activity: "clarifying", assetNames: NAMES }, "只问续借的规则"]);
   assert.ok(!start(dir, cache, summaries, undefined, "sess-3").result!.systemPrompt.includes("本次范围说明"));
   const idle = composeContext({ stage: IDLE, scope: "不该出现", workspaceDir: dir, skills: [], tail: "", definitions: DEFS });
   assert.ok(!idle.text.includes("不该出现"));

@@ -164,6 +164,8 @@ export interface CollectionDef {
 
 export interface TaskDefinition {
   collections: CollectionDef[];
+  /** 六类资产给人看的名字，由任务定义给（后端 library.ts 的 definitionView）；键是 materials、description、models、items、review、versions。 */
+  asset_names?: Record<string, string>;
 }
 
 /** 一条评审发现：依据的规则编号与级别（必选的叫问题，可选的叫建议）、字段、列表型字段的第几项（从 0 起）、问题、改法。 */

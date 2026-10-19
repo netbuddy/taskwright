@@ -11,6 +11,7 @@
  * 早先建的任务（任务定义里没有「业务说明」集合）没有阶段：stageOf 返回 null，调用方据此什么都不做。
  */
 
+import { assetNamesOf } from "./asset_names.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, blockedText, catalog } from "./activity_catalog.ts";
 import { DefinitionHeadError } from "./activity_def.ts";
@@ -722,8 +723,8 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
     flow_node: node,
     work_item: open ? workItemBrief(open) : null,
     launch: launchView(facts),
-    assets: assetCells(assets, found.defs?.activities ?? []),
-    catalog: found.defs ? catalog(found.defs, assets, activeCounts(db, taskId), facts.flowItem) : null,
+    assets: assetCells(assets, found.defs?.activities ?? [], assetNamesOf(definition)),
+    catalog: found.defs ? catalog(found.defs, assetNamesOf(definition), assets, activeCounts(db, taskId), facts.flowItem) : null,
     catalog_error: found.error,
     moved_by: moved?.actor ?? null,
     moved_at: moved?.at ?? null,

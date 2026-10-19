@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-  ACTIVITIES, ASSETS, ASSET_NAMES, CONDITIONS, CONDITION_TEXTS, DefinitionHeadError, MODE_NAMES, NO_PREREQUISITE_TEXT,
+  ACTIVITIES, ASSETS, CONDITIONS, CONDITION_TEXTS, DefinitionHeadError, MODE_NAMES, NO_PREREQUISITE_TEXT,
   parseActivityDef, parseFlowDef, prerequisiteText, splitHead,
 } from "../src/lib/activity_def.ts";
 import { definitionsFor, readDefinitions } from "../src/lib/activity_def_read.ts";
@@ -53,8 +53,8 @@ test("需求工程的两条流程：各步与前置条件；需求分析没有�
   for (const one of flows) for (const field of [one.purpose, one.applies, one.inputs, one.example]) assert.ok(field.length > 0, one.key);
 });
 
-test("六类资产与前置条件各有给人看的名字；几个前置条件合成一句", () => {
-  assert.deepEqual(ASSETS.map((one) => ASSET_NAMES[one]), ["材料与证据", "业务说明", "分析模型", "需求条目", "评审与确认", "文档与版本"]);
+test("六类资产的键是平台定的、名字由任务定义给；前置条件各有给人看的名字；几个前置条件合成一句", () => {
+  assert.deepEqual(ASSETS, ["materials", "description", "models", "items", "review", "versions"]);
   for (const one of CONDITIONS) assert.ok(CONDITION_TEXTS[one], one);
   assert.deepEqual(Object.values(MODE_NAMES), ["批处理", "逐项对话", "仅限用户发起"]);
   assert.equal(prerequisiteText([]), NO_PREREQUISITE_TEXT);

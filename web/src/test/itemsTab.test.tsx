@@ -44,6 +44,18 @@ describe("页签的次序", () => {
     expect(tabs()).toEqual(["功能用例"]);
     expect(screen.getByTestId("pane-description").querySelector(".cnt")!.textContent).toBe("11");
   });
+
+  it("六类资产的页签名字取任务定义的资产显示名：任务类型改了名字，页签跟着变；没有给的写键", () => {
+    const t = overallTask();
+    t.definition = { ...t.definition, asset_names: { ...t.definition.asset_names, items: "要求", versions: "交付件" } };
+    render(<Panel t={t} />);
+    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((one) => one.firstChild!.textContent)).toEqual(["材料与证据", "业务说明", "分析模型", "要求", "问题", "评审与确认", "交付件"]);
+    cleanup();
+    const bare = overallTask();
+    bare.definition = { collections: bare.definition.collections };
+    render(<Panel t={bare} />);
+    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((one) => one.firstChild!.textContent)[0]).toBe("materials");
+  });
 });
 
 describe("一打开停在哪个页签", () => {

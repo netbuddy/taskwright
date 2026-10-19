@@ -63,8 +63,8 @@ test("建任务：任务目录里写 task.json，任务库是现在的格式版�
     assert.deepEqual([row.name, row.owner, row.status, row.task_type, row.dir, row.upgrade_error], ["借阅系统", "local", null, "requirements-engineering", id, null]);
     assert.ok(row.created_at);
     // 任务页给出任务类型说明的两个版本：建任务时复制进来的与产品自带的现在这一版。
-    assert.deepEqual((service.taskPage(service.task(id)) as Record<string, any>).task_type_versions, { copied: 5, current: 5 });
-    assert.equal(taskTypeVersion("requirements-engineering"), 5);
+    assert.deepEqual((service.taskPage(service.task(id)) as Record<string, any>).task_type_versions, { copied: 6, current: 6 });
+    assert.equal(taskTypeVersion("requirements-engineering"), 6);
     assert.equal(taskTypeVersion("没有这种类型"), null);
   } finally {
     await service.close();

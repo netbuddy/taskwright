@@ -7,6 +7,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
+import { ASSETS, type AssetKey, parseAssetNames } from "./assets.ts";
 import { CONDITION_NAMES } from "./conditions.ts";
 
 /** 字段的四种类型。 */
@@ -122,6 +123,8 @@ export interface TaskDefinition {
    * 是给将来跨任务的只读视图「需求池」预留的；创建任务时用户给了标签就以用户给的为准。
    */
   domainTag: string | null;
+  /** 资产显示名：六类资产各叫什么（键是 ASSETS）。可选项，早先的任务定义里没有，这时用 lib/asset_names.ts 的回退。 */
+  assetNames: Record<AssetKey, string> | null;
 }
 
 /** 任务定义里不写「材料目录」时用的值。观测台据它把读材料的调用归到「读材料」这个阶段。 */
@@ -354,6 +357,14 @@ export function validateDefinition(given: unknown, path = "（未给出路径）
     }
   }
 
+  let assetNames: Record<AssetKey, string> | null = null;
+  if ("资产显示名" in raw) {
+    assetNames = parseAssetNames(raw["资产显示名"]);
+    if (assetNames === null) {
+      reasons.push(`「资产显示名」是可选项；写了就应当是一个对象，六个键 ${ASSETS.join("、")} 各写一段不为空的文字，不多不少。`);
+    }
+  }
+
   if (reasons.length > 0) throw new DefinitionError(path, reasons);
   return {
     taskName: raw["任务名"] as string,
@@ -365,8 +376,10 @@ export function validateDefinition(given: unknown, path = "（未给出路径）
     rulePaths,
     materialsDir,
     domainTag,
+    assetNames,
   };
 }
+
 
 /**
  * 核对一个集合的「界面」一项：几个键都可以不写；分组字段要是这个集合里的文本字段、枚举字段，或者写了「取值」的文本列表字段

@@ -98,6 +98,8 @@ const ALLOWED: Record<string, string[]> = {
   "versions.ts": ["VersionRecord", "versionRecords", "versionDir", "ARCHIVED_MARKDOWN", "ARCHIVED_DOCX"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。改任务类型时用 loadDefinition 核对改后的任务定义读得通（只读文件，不碰库）。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition", "withPlatformCollections"],
+  "asset_names.ts": ["assetNamesOf"],
+  "assets.ts": ["parseAssetNames"],
 };
 
 function files(dir: string): string[] {
