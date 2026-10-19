@@ -748,7 +748,7 @@ export const IDLE_LINE = "本会话是自由讨论，不属于任何工作项：
 
 /**
  * 给助手看的一段：这条会话的工作项是什么、现在在哪一站、最近一次是谁在什么时候为什么启动或者换站的，以及这一段还差什么（只说现在这个阶段的几盏灯）。
- * 查询任务状态的返回末尾用它。会话空闲时只有一句，不说灯：空闲没有自己的灯。
+ * 助手查任务现状的那个工具在返回末尾用它。会话空闲时只有一句，不说灯：空闲没有自己的灯。
  */
 export function stageLines(summary: StageSummary): string[] {
   if (summary.current === IDLE) return [IDLE_LINE];

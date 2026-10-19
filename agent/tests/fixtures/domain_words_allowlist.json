@@ -72,7 +72,7 @@
   },
   "agent/prompts/capabilities/planning/flow_transitions.md": {
     "决定": 1,
-    "状态": 2
+    "状态": 3
   },
   "agent/prompts/capabilities/planning/standalone_exit.md": {
     "流程": 1
@@ -650,7 +650,7 @@
     "业务说明": 4,
     "决定": 6,
     "流程": 51,
-    "状态": 2,
+    "状态": 1,
     "范围": 8
   },
   "agent/src/lib/task_query.ts": {
