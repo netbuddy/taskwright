@@ -315,13 +315,14 @@ function markIndents(lines: Line[], mono: boolean[]): void {
 
 /**
  * 这一行是不是表格的一行：有两格以上，并且不是两端对齐的正文。两端对齐的英文正文词距被撑开，撑得多的一行每处都超过两个字宽，
- * 会被切成好几格；认它的办法是词距（相邻两个词段之间的空隙，大小不论）有三处以上、都超过 0.6 个字宽，并且几乎一样大
- * （最大最小相差不到 0.1 个字宽：排版软件把一行剩下的空白平均分给各处词距）。表格各格的宽窄不同，格与格之间的空隙参差不齐。
+ * 会被切成好几格；认它的办法是词距（相邻两个词段之间的空隙，大小不论）有五处以上、都超过 0.6 个字宽，并且几乎一样大
+ * （最大最小相差不到 0.1 个字宽：排版软件把一行剩下的空白平均分给各处词距）。表格各格的宽窄不同，格与格之间的空隙多半参差不齐；
+ * 各格等宽、字数相同的表头空隙也会一样大（例如「编号 类别 操作 审批要求」），但格数少，所以要五处以上（一行正文少说也有六个词）。
  */
 function isRow(ln: Line): boolean {
   if (ln.cells.length < 2) return false;
   const gaps = ln.pieces.slice(1).map((p, k) => p.x0 - ln.pieces[k].x1);
-  const justified = gaps.length >= 3 && Math.min(...gaps) > 0.6 * ln.size && Math.max(...gaps) - Math.min(...gaps) < 0.1 * ln.size;
+  const justified = gaps.length >= 5 && Math.min(...gaps) > 0.6 * ln.size && Math.max(...gaps) - Math.min(...gaps) < 0.1 * ln.size;
   return !justified;
 }
 

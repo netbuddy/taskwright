@@ -188,8 +188,9 @@ WRAPPED_TABLE = {
                   ["R02", "", "解锁被锁定的账号", "必须审批", "信息化部审批人"],
                   ["R03", "查询类", "查询工单", "无需审批", "不适用"]],
     "between": "逐行写的表格如下，借期一格折成两行。",
-    "line_wise": [[["读者类型", "一次最多", "借期，遇假期"], ["", "", "顺延到开学"]],
-                  [["教职工", "十本", "六十天"]]],
+    "line_wise": [[["读者类型", "一次最多", "借期规定", "续借次数"]],
+                  [["学生", "五本", "借期，遇假期", "一次"], ["", "", "顺延到开学", ""]],
+                  [["教职工", "十本", "六十天", "两次"]]],
     "after": "表后的一段话。",
 }
 
@@ -209,9 +210,10 @@ def wrapped_table():
         y -= 16 * max(len(lines) for lines in parts) + 8
     y = paragraph(c, WRAPPED_TABLE["between"], y - LEAD) - LEAD
     # 逐行写：一行里从左到右写各格；借期一格折成两行，第二行只有这一格有字。行距 16 点，表格行之间多空 8 点。
+    # 表头四格都是四个字、间距相同：格与格之间的空隙一样大，不能因此当成两端对齐的正文。
     for row in WRAPPED_TABLE["line_wise"]:
         for line in row:
-            for x, cell in zip((72, 168, 264), line):
+            for x, cell in zip((72, 168, 264, 360), line):
                 if cell:
                     c.drawString(x, y, cell)
             y -= 16

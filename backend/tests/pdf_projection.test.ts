@@ -97,8 +97,9 @@ test("格里有折行的表格（逐行写）：第一列空着的续行并回�
   const { markdown } = await project("wrapped-table");
   const t = expected.wrapped_table;
   const rows = t.line_wise.map((row: string[][]) => row[0].map((cell, c) => row.map((line) => line[c]).join("")).filter((cell) => cell).join("  "));
-  assert.deepEqual(unitLines(markdown).slice(5), [`1-6 ${t.between}`, ...rows.map((row: string, k: number) => `1-${k + 7} ${row}`), `1-9 ${t.after}`]);
-  assert.equal(rows[0], "读者类型  一次最多  借期，遇假期顺延到开学");
+  assert.deepEqual(unitLines(markdown).slice(5), [`1-6 ${t.between}`, ...rows.map((row: string, k: number) => `1-${k + 7} ${row}`), `1-10 ${t.after}`]);
+  assert.equal(rows[0], "读者类型  一次最多  借期规定  续借次数", "表头各格间距相同，仍是表格的一行");
+  assert.equal(rows[1], "学生  五本  借期，遇假期顺延到开学  一次");
 });
 
 test("等宽字体的代码：每行一块，行首按缩进补空格；字体声明了等宽的、没有声明而只能靠字宽认出的，两段都一样；代码里的空行不出块", async () => {
