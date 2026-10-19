@@ -1,4 +1,4 @@
-// 工作视图：结构与样式照设计原型——顶栏（任务名 · 会话名、当前活动、字号三档、会话菜单），左边细导航条，
+// 工作视图：结构与样式照设计原型——顶栏（任务名 · 会话名、当前活动、字号三档），左边的导航栏（components/work/LeftNav.tsx：流程进度、会话、待处理事项、参考），
 // 对话区、条目区、右侧栏三栏；视口不到 100rem 宽时右侧栏默认收起成竖排的把手，用户自己开合过之后就不再自动改。
 // 数据按接口约定：先连事件流、再读整份数据、之后只听事件；说话与直接操作的响应只当作接受或拒绝。
 //
@@ -9,13 +9,12 @@
 // 助手改过的字段加框（字段修订标识）；执行者最近一次运行改过的条目带「刚改」（都在 model/revisions.ts）。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SettingOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
 import type { ActionRequest, AssistantReply, DiagramRow, Item, KnowledgeLibrary, MessageRequest, SessionListEntry, Task, UiActionNoted } from "../api/types";
 import { useWorkView } from "../state/useWorkView";
 import { STARTING_WAIT_TEXT, snapshotRetryText } from "../state/snapshotRetry";
 import { Conversation } from "../components/work/Conversation";
-import { ItemsPanel } from "../components/work/ItemsPanel";
+import { ItemsPanel, type NavRequest } from "../components/work/ItemsPanel";
 import { DIAGRAM_HOLD_TEXT } from "../components/work/ReplyCard";
 import type { ViewRequest } from "../components/work/ItemDetail";
 import type { LocateRequest } from "../components/work/MaterialPane";
@@ -26,7 +25,8 @@ import { App as AntApp } from "antd";
 import { SwitchWorkPanel, type SwitchWorkActions } from "../components/work/SwitchWorkPanel";
 import { deleteConfirmText } from "../model/startPage";
 import { newSessionLine } from "../model/taskStatus";
-import { SessionMenu } from "../components/SessionMenu";
+import { LeftNav } from "../components/work/LeftNav";
+import type { PendingLine } from "../model/leftNav";
 import { retellText } from "../model/overall";
 import { pendingReview } from "../model/items";
 import { ReviewPanel } from "../components/work/ReviewPanel";
@@ -40,7 +40,7 @@ import { diagramViewTarget } from "../model/sectionDiagrams";
 import { showSubmitBar } from "../model/submit";
 import { figuresOf } from "../model/versions";
 import { figurePngs } from "../components/diagram/mermaid";
-import { go, href, openSettings } from "../router";
+import { go, href } from "../router";
 import { useToast } from "../components/Toasts";
 import { NoModelBanner, UserMenu, useService } from "../components/ServiceControls";
 import { useConnectionToast, useProblemToasts, useReviewToast } from "../components/work/workToasts";
@@ -73,7 +73,6 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   const [sessions, setSessions] = useState<SessionListEntry[]>([]);
   // 这条会话是不是归档的会话（它的工作项被删除了）：归档的会话开头不写「新会话 · …」那一行。会话清单读回来之前是 null，那一行先不画，免得一闪。
   const [archivedHere, setArchivedHere] = useState<boolean | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [busyError, setBusyError] = useState<string | null>(null);
   const [docCollapsed, setDocCollapsed] = useState(narrowViewport);
   const [side, setSide] = useState<SideTab>("material");
@@ -82,6 +81,8 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   const [view, setView] = useState<ViewRequest | null>(null);
   /** 卡片上点「还有 N 条未读 · 筛出来看」的次数：条目区据此切到「未读」筛选。 */
   const [unreadRequest, setUnreadRequest] = useState(0);
+  /** 左边导航栏点了「待澄清问题」或「请过目」里的一张图：中栏据此换页签或打开那张图。 */
+  const [navRequest, setNavRequest] = useState<NavRequest | null>(null);
   const [dirty, setDirty] = useState(false);
   /** 业务说明里的图有没保存的改图：与有未保存的条目编辑一样，发送键与卡片按钮灰化，只是提示的说法不同。 */
   const [diagramDirty, setDiagramDirty] = useState(false);
@@ -125,9 +126,9 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
   const hint = executorHint(executor, state.outgoing.some((m) => m.state === "sending"));
   const readOnly = !!disabledReason && !busyElsewhere && !busyError;
 
-  // 会话列表（会话菜单里每条会话的最近活动与消息条数）：打开页面、会话改名、助手做完一轮（执行者状态从工作中变为不在工作）、
-  // 打开会话菜单时各读一次；不定时轮询。执行者状态属于整个任务，别的会话里做完一轮也会重读。
-  // 取的是带归档的清单：菜单里只列未归档的（归档的由菜单底部的开关另取），这里只用它看本会话是不是归档的。
+  // 会话列表（左边导航栏的会话一段）：打开页面、会话改名、助手做完一轮（执行者状态从工作中变为不在工作）、浏览器窗口重新得到焦点时各读一次；
+  // 不定时轮询。执行者状态属于整个任务，别的会话里做完一轮也会重读。
+  // 取的是带归档的清单：导航栏只列未归档的（归档的由列表末尾的开关另取），这里只用它看本会话是不是归档的。
   const loadSessions = () => {
     api.listSessions(taskId, true).then((all) => {
       setSessions(all.filter((s) => !s.archived));
@@ -140,7 +141,10 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     if (wasWorking.current && !working) loadSessions();
     wasWorking.current = working;
   }, [working]);
-  useEffect(() => { if (menuOpen) loadSessions(); }, [menuOpen]);
+  useEffect(() => {
+    window.addEventListener("focus", loadSessions);
+    return () => window.removeEventListener("focus", loadSessions);
+  }, [taskId]);
   useEffect(() => { if (!busyElsewhere) setBusyError(null); }, [busyElsewhere]);
   // 新加了材料（material_added 事件）：展开右侧栏、切到原文定位页签，由它选中它显示正文。
   useEffect(() => { if (state.focusMaterial) { setDocCollapsed(false); setSide("material"); } }, [state.focusMaterial]);
@@ -150,12 +154,6 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     window.addEventListener("taskwright:font-tier", onResize);
     return () => { window.removeEventListener("resize", onResize); window.removeEventListener("taskwright:font-tier", onResize); };
   }, []);
-  useEffect(() => {
-    if (!menuOpen) return;
-    const close = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest(".smenu, .smenu-btn")) setMenuOpen(false); };
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [menuOpen]);
   // 切到别的条目、回到列表时编辑框关掉，未保存的编辑也就不在了。
   useEffect(() => { if (!selected) setDirty(false); }, [selected]);
   // 待核实、依据待核实、提到这几项只随整份数据来，库事件里没有：任务里有业务说明时，交付物有了新修订、或者有条目被确认之后，
@@ -304,7 +302,6 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     (note as UiActionNoted & { revision_no?: number }).revision_no ?? (note.event_seq != null ? state.revisionBySeq[note.event_seq] ?? null : null);
 
   const newSession = async () => {
-    setMenuOpen(false);
     try {
       const { session_id } = await api.createSession(taskId);
       toast.success("已新建会话。");
@@ -420,6 +417,18 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
     openItem(itemId);
     setView((v) => ({ itemId, revision, nonce: (v?.nonce ?? 0) + 1 }));
   };
+  /**
+   * 左边导航栏待处理事项的一行：待决定去任务起点页的「待处理事项」一节；待澄清问题去中栏「问题」页签；
+   * 请过目打开列出的第一个编号，是条目就打开它的详情，是图就在业务说明里打开那张图（与「分析模型」页签里点一张图相同）。
+   */
+  const onPending = (line: PendingLine) => {
+    if (line.key === "decisions") { go(href.task(taskId, "pending")); return; }
+    if (line.key === "questions") { setNavRequest((r) => ({ target: "issues", nonce: (r?.nonce ?? 0) + 1 })); return; }
+    const first = line.ids[0];
+    if (!first) return;
+    if (task?.items.some((one) => one.item_id === first)) openItem(first);
+    else setNavRequest((r) => ({ target: { diagram: first }, nonce: (r?.nonce ?? 0) + 1 }));
+  };
   const chooseFont = (tier: FontTier) => { setFontTier(tier); saveFontTier(tier); };
   useReviewToast(state.review, showReviews);
   useProblemToasts(state.problems);
@@ -473,20 +482,12 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
               <a key={t.key} className={fontTier === t.key ? "on" : undefined} role="button" onClick={() => chooseFont(t.key)} data-testid={`font-${t.key}`}>{t.label}</a>
             ))}
           </span>
-          <span className="smenu-btn" role="button" onClick={() => setMenuOpen(!menuOpen)} data-testid="session-menu-button">会话 ▾</span>
-          <span className="set-btn" role="button" onClick={openSettings} data-testid="open-settings"><SettingOutlined />设置</span>
           <UserMenu where="topbar" />
-          <SessionMenu taskId={taskId} taskName={task?.task_name} sessions={sessions} open={menuOpen} onClose={() => setMenuOpen(false)} currentId={sessionId}
-            onNew={() => void newSession()} />
         </div>
         <div className="app-body">
-          <div className="rail">
-            <div className="ico" title="全局查找（还没有做）">⌕</div>
-            <a className="ico on" title="任务起点" href={href.task(taskId)}>▣</a>
-            <div className="ico" title="原文定位、修订与评审：展开或收起右侧栏" role="button" style={{ cursor: "pointer" }} onClick={() => toggleDoc(!docCollapsed)}>▤</div>
-            <div className="sp" />
-            <div className="ico" title="设置" role="button" style={{ cursor: "pointer" }} onClick={openSettings} data-testid="rail-settings">◉</div>
-          </div>
+          <LeftNav taskId={taskId} taskName={task?.task_name} stage={task?.stage} task={task}
+            sessions={sessions} currentSessionId={sessionId} currentSessionName={sessionName} onNewSession={() => void newSession()}
+            libraries={hasKnowledge === false ? undefined : libraries} onPending={onPending} />
 
           <div className="chat">
             <div className="chat-h"><b>{sessionName}</b><span className="chip">本任务共 {sessions.length} 条会话</span></div>
@@ -518,7 +519,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                   pendingItems={pendingItems} selected={selected} onSelect={openItem} submit={submit} onGenerateDoc={() => setDoc({ open: true, revision: null })}
                   onLocate={locateSource} onAskAssistant={(id) => prefill(PREFILL.revise(id))} onAnswer={answer} onSend={(t) => send(t)}
                   hit={hit} onClearHit={() => setSelectedRevision(null)} view={view} latestRevision={latestRevision} onDirty={setDirty} onDiagramDirty={setDiagramDirty} onDiagramViewed={viewDiagram}
-                  unreadRequest={unreadRequest} review={state.review} onReview={review} onPrefill={prefill}
+                  unreadRequest={unreadRequest} navRequest={navRequest} review={state.review} onReview={review} onPrefill={prefill}
                   submitBar={showSubmitBar(task, working, state.messages)} onPublish={publish}
                   materials={state.materials} info={service.info} libraries={hasKnowledge === false ? undefined : libraries} onViewMaterial={openMaterial}
                   onShowRevision={(revision) => showRevisions([revision])} />

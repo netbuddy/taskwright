@@ -59,10 +59,12 @@ import { useToast } from "../Toasts";
 export type ReviewAction = (targets: { item_id: string; base_revision: number }[], label: string) => void;
 
 export { BUSY_TEXT };
+/** 左边导航栏要中栏去的地方（components/work/LeftNav.tsx）。 */
+export type NavRequest = { target: "issues" | { diagram: string }; nonce: number };
 
 export function ItemsPanel({
   task, initialCollection = null, initialDiagrams = false, initialDiagram = null, readOnly, writesOff = false, recentlyChanged, marks = {}, just = new Set<string>(), pendingItems, selected, onSelect, submit, onGenerateDoc, onLocate,
-  onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, review = null, onReview, onPrefill,
+  onAskAssistant, onAnswer, onSend, hit = null, onClearHit, view = null, latestRevision = 0, onDirty, onDiagramDirty, onDiagramViewed, unreadRequest = 0, navRequest = null, review = null, onReview, onPrefill,
   submitBar = false, onPublish, materials = [], info = null, libraries, onViewMaterial, onShowRevision,
 }: {
   task: Task;
@@ -106,6 +108,8 @@ export function ItemsPanel({
   onDiagramViewed?: (row: DiagramRow) => void;
   /** 卡片上点「筛出来看」时加一：筛选切到「未读」、回到列表。 */
   unreadRequest?: number;
+  /** 左边导航栏点了一行要中栏去的地方：「问题」页签，或者业务说明里的一张图；nonce 每次加一。 */
+  navRequest?: NavRequest | null;
   /** 最近一批界面发起的评审（进度与结果）。 */
   review?: ReviewRun | null;
   /** 发起评审。 */
@@ -242,6 +246,12 @@ export function ItemsPanel({
   }, [scrollTo]);
   // 卡片上点了「还有 N 条未读 · 筛出来看」。
   useEffect(() => { if (unreadRequest > 0) { setFilter("unread"); onSelect(null); if (pane !== "items") openPane("items"); } }, [unreadRequest]);
+  // 左边导航栏点了「待澄清问题」或「请过目」里的一张图。
+  useEffect(() => {
+    if (!navRequest) return;
+    if (navRequest.target === "issues") openPane("issues");
+    else goFigure(navRequest.target.diagram);
+  }, [navRequest?.nonce]);
   // 库事件改过的条目闪一下。
   useEffect(() => {
     if (!recentlyChanged.length) return;

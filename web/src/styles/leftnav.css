@@ -1,0 +1,55 @@
+/* 左边的导航栏（components/work/LeftNav.tsx）：展开 --w-nav、收起 --w-nav-closed（styles.css 的 :root）。
+ * 图标全用 @ant-design/icons 的 Outlined 一族、同一尺寸 1rem，放在同宽的一格里，各行的图标对齐在同一条竖线上。
+ * 收起时只留图标：文字、计数、分段标题、流程进度与其余会话都不画，三组之间留分隔线，红点挪到图标右上角。 */
+.lnav{width:var(--w-nav);flex:none;background:var(--dark);border-right:1px solid var(--line);display:flex;flex-direction:column;
+  min-height:0;overflow-y:auto;overflow-x:hidden;transition:width .15s ease}
+.lnav.closed{width:var(--w-nav-closed)}
+.lnav a{color:inherit;text-decoration:none}
+.lnav .lnav-hd{display:flex;align-items:center;gap:.6rem;padding:.7rem .95rem .55rem;border-bottom:1px solid var(--line);color:var(--ink);min-width:0}
+.lnav .lnav-hd .i{color:var(--mut)}
+.lnav .lnav-hd b{font-size:0.94rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lnav .lnav-hd:hover .i{color:var(--ink)}
+.lnav .lnav-sec{padding:.6rem .5rem .25rem;display:flex;flex-direction:column;gap:.1rem}
+.lnav .lnav-sec .t{font-size:0.78rem;letter-spacing:.06em;color:var(--mut);padding:0 .45rem .3rem}
+.lnav .lnav-it{display:flex;align-items:center;gap:.6rem;padding:.4rem .45rem;border-radius:.45rem;color:var(--ink);cursor:pointer;
+  font-size:0.9rem;min-width:0;position:relative}
+.lnav .lnav-it:hover{background:var(--dark3)}
+.lnav .lnav-it.on{background:var(--blue-bg);color:var(--blue);font-weight:600;cursor:default}
+.lnav .lnav-it.off{color:var(--faint);cursor:not-allowed}
+.lnav .lnav-it.off:hover{background:none}
+.lnav .i{width:1.25rem;flex:none;display:inline-flex;align-items:center;justify-content:center;font-size:1rem;position:relative;color:var(--text2)}
+.lnav .lnav-it.on .i{color:var(--blue)}
+.lnav .lnav-it.off .i{color:var(--faint)}
+.lnav .n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lnav .n small{display:block;font-size:0.78rem;color:var(--mut);font-weight:400}
+.lnav .c{flex:none;font-size:0.8rem;color:var(--mut);font-weight:400;max-width:7.5rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 待处理事项一行：名字不截断，右边的计数与编号放不下时截断 */
+.lnav .lnav-it.lnav-pend .n{flex:none}
+.lnav .lnav-it.lnav-pend{gap:.5rem}
+.lnav .lnav-it.lnav-pend .c{flex:1;max-width:none;text-align:right;font-size:0.76rem;letter-spacing:-.01em}
+.lnav .lnav-it.sub{padding-left:2.3rem;font-size:0.86rem;color:var(--text2)}
+.lnav .lnav-it.sub .i{margin-left:-1.85rem;width:1.25rem}
+.lnav .lnav-it.sub.more .n{color:var(--blue)}
+.lnav .lnav-dot{position:absolute;top:-.12rem;right:-.18rem;width:.42rem;height:.42rem;border-radius:50%;background:var(--gap);
+  box-shadow:0 0 0 .1rem var(--dark)}
+.lnav .lnav-it.sub.archived .n{color:var(--mut)}
+.lnav .lnav-arch{display:flex;align-items:center;gap:.4rem;padding:.3rem .45rem .2rem 2.3rem;font-size:0.8rem;color:var(--mut);cursor:pointer}
+.lnav .lnav-arch input{margin:0}
+.lnav .lnav-none{font-size:0.86rem;color:var(--mut);padding:.3rem .45rem}
+.lnav .lnav-flow{margin:0 0 .25rem;padding:.45rem .55rem .5rem calc(.45rem - 1px);border:1px solid var(--line);border-radius:.55rem;background:var(--card)}
+.lnav .lnav-flow-h{display:flex;align-items:center;gap:.6rem;font-size:0.9rem;font-weight:600;color:var(--ink)}
+.lnav .lnav-flow .bar{display:flex;gap:.25rem;margin:.5rem 0 .3rem}
+.lnav .lnav-flow .bar i{flex:1;height:.32rem;border-radius:.2rem;border:1px solid var(--line2);background:transparent}
+.lnav .lnav-flow .bar i.done{background:var(--ok);border-color:var(--ok)}
+.lnav .lnav-flow .bar i.current{background:var(--blue);border-color:var(--blue)}
+.lnav .lnav-flow .lab{font-size:0.8rem;color:var(--mut);line-height:1.45}
+.lnav .sp{flex:1}
+.lnav .lnav-ft{border-top:1px solid var(--line);padding:.4rem .5rem;display:flex;flex-direction:column;gap:.1rem}
+
+/* 收起 */
+.lnav.closed .n,.lnav.closed .c,.lnav.closed .t,.lnav.closed .lnav-flow,.lnav.closed .lnav-it.sub,.lnav.closed .lnav-none,.lnav.closed .lnav-arch{display:none}
+.lnav.closed .lnav-hd{justify-content:center;padding:.8rem 0 .6rem}
+.lnav.closed .lnav-sec{padding:.45rem .5rem;border-bottom:1px solid var(--line)}
+.lnav.closed .lnav-sec:not(:has(.lnav-it:not(.sub))){display:none}
+.lnav.closed .lnav-it{justify-content:center;padding:.5rem 0}
+.lnav.closed .lnav-ft{border-top:0}

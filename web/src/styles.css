@@ -41,7 +41,7 @@
   /* 字体：正文、按钮、表格用 --font-body；各页的一级标题、分区标题与工作视图顶栏的任务名用 --font-title */
   --font-body:-apple-system, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-title:var(--font-body);
-  --w-rail:clamp(2.6rem,3vw,3.2rem); --w-chat:clamp(18rem,24%,26rem); --w-handle:2rem;
+  --w-nav:15.5rem; --w-nav-closed:3.5rem; --w-chat:clamp(18rem,24%,26rem); --w-handle:2rem;
 }
 
 [data-theme="paper"]{
