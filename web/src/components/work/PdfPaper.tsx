@@ -1,5 +1,6 @@
 // 材料区里的 PDF 材料：按原样分页显示，只画看得见的页；被条目引用的句子画浅蓝底线，点来源时滚到那一页、
-// 框出来源指的那一块、把摘录逐字标出来。任务页「查看」一份 PDF 材料时也用它。
+// 框出来源指的那一块、把摘录逐字标出来。任务页「查看」一份 PDF 材料时也用它；知识库的 PDF 文档也用它（taskId 写知识库文档的所属，
+// 见 state/docSource.ts）。
 //
 // 怎样画：每一页先留一张同样大小的白纸（大小取位置表，不用先读每一页）；滚到看得见的页连同上下各一页才交给 pdf.js
 // 画——一张画布加一层文字层（叠在画布上的透明文字，用来选字、标字）；滚走的页把画布与文字层收掉。
@@ -15,7 +16,6 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
-import { api } from "../../api/client";
 import type { Item } from "../../api/types";
 import { parsePdfLocator, pdfBlockBox, type PdfLocationFile } from "../../../../agent/src/lib/pdf_locations";
 import { type PdfUnit, placePdfExcerpt, pdfUnitsWith } from "../../../../agent/src/lib/pdf_source";
@@ -24,6 +24,7 @@ import {
   MAX_SCALE, MIN_SCALE, SCALE_STEP, type LayerItem, type Mark, type PageSize, clampScale, currentPage, findInBlock, fitScale, pageLayout, pageSizes, roughTop,
   screenBox, splitByMarks, visiblePages,
 } from "../../model/pdfView";
+import { fileRawUrl } from "../../state/docSource";
 import { usePdfBytes, usePdfLocations, usePdfUnits } from "../../state/pdfStore";
 import type { LocateRequest } from "./MaterialPane";
 
@@ -88,6 +89,7 @@ interface Target {
 }
 
 export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, scrollRef, onOpenItem, onMouseUp, onCitedCount, onNote, onUnavailable, onPage }: {
+  /** 文件属于哪个任务（任务编号）；知识库文档写 knowledgeOwner(知识库编号)（state/docSource.ts）。 */
   taskId: string;
   path: string;
   items: Item[];
@@ -313,18 +315,23 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
     setTarget({ nonce: locate.nonce, page, blocks: found.length ? found.map((r) => r.block) : [block], ranges, hit: ranges.length > 0 });
     onNote?.(!place ? null : place.kind === "miss" ? PDF_NOTES.miss(page) : place.kind === "cross_page" ? PDF_NOTES.crossPage(page)
       : place.kind === "span" ? PDF_NOTES.span(page, found.length) : null);
-    // 先滚到那一页的那一块附近（页面多半还没有画出来，按位置表估）；画出来之后再把框对到中间。
-    const pane = scroller();
-    const box = locations ? pdfBlockBox(locations, page, block) : null;
-    if (pane) {
-      const inPage = box ? roughTop(box, sizes[page - 1], scale) : 0;
-      pane.scrollTop = Math.max(0, pagesOffset(pane) + layout.tops[page - 1] + inPage - pane.clientHeight / 3);
-      remeasure.current();
-    }
     if (ranges.length === 0) return;
     const timer = setTimeout(() => setTarget((old) => (old && old.nonce === locate.nonce ? { ...old, hit: false } : old)), pdfHit.fadeMs);
     return () => clearTimeout(timer);
   }, [locate?.nonce, doc, projected?.status]);
+
+  // 先滚到那一页的那一块附近（页面多半还没有画出来，按位置表估）；画出来之后再把框对到中间（下面「框画出来之后」那一段）。
+  // 框对到中间之前各页的位置变了就按新的位置再滚一次：一打开就带着定位时（知识库来源的对话框），定位先于量出宽度，
+  // 头一次是按比例 1 算的，比例定下来之后各页变高，不再滚的话停在前面几页，那一页要等用户滚过去才画、才对到中间。
+  useEffect(() => {
+    if (!target || centred.current === target.nonce) return;
+    const pane = scroller();
+    if (!pane) return;
+    const box = locations ? pdfBlockBox(locations, target.page, target.blocks[0]) : null;
+    const inPage = box ? roughTop(box, sizes[target.page - 1], scale) : 0;
+    pane.scrollTop = Math.max(0, pagesOffset(pane) + layout.tops[target.page - 1] + inPage - pane.clientHeight / 3);
+    remeasure.current();
+  }, [target?.nonce, layout]);
 
   // 退路里点来源、点目录：只跳到那一页。出处没有写页时按摘录找它在哪一页，找不到就不动。
   useEffect(() => {
@@ -412,7 +419,7 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
       <div className="pdf-paper pdf-fallback" ref={host} data-testid="pdf-fallback">
         <div className="pdf-fallback-note" data-testid="pdf-fallback-note">{PDF_FALLBACK_NOTE}</div>
         <iframe key={fallbackAt.nonce} title={`PDF 材料 ${path.split("/").pop() ?? path}`} data-testid="pdf-fallback-frame"
-          src={`${api.materialRawUrl(taskId, path)}#page=${fallbackAt.page}`} />
+          src={`${fileRawUrl(taskId, path)}#page=${fallbackAt.page}`} />
       </div>
     );
   }

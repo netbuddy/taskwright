@@ -96,6 +96,18 @@ describe("节的各块", () => {
     expect(sources[1]).toHaveClass("v");
   });
 
+  it("它是什么：助手补充写了 inserted 时只标 inserted 里的字，理由里用引号引的别的词不标", () => {
+    const t = change(overallTask(), "OA-003", (item) => {
+      const one = item.sources.find((s) => s.kind === "助手补充")!;
+      one.excerpt = "按高校图书馆常见做法补的；材料里只说「预留架」。";
+      one.supports = [{ field: "它是什么", index: null, inserted: ["保留期是 3 天"] }, ...(one.supports ?? []).slice(1)];
+    });
+    render(<Panel t={t} />);
+    const what = screen.getByTestId("topic-what");
+    expect(what.textContent).toContain("预留架");
+    expect([...what.querySelectorAll(".oa-hl")].map((h) => h.textContent)).toEqual(["保留期是 3 天"]);
+  });
+
   it("说明：逐字出自材料的句子用底色标出，点它在右边的材料里看原文；支持整页的来源也列在来源那一行；正文里找不到的不标", () => {
     const locate = vi.fn();
     // OA-002 的「它是什么」里没有材料的原话（材料写的是「办理」，页里写的是「办」）：不标，来源照列。

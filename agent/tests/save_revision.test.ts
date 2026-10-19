@@ -103,7 +103,7 @@ test("修改时给了来源：改到的字段用新来源，支持整个条目�
         fields: { 名称: "用口令登录" },
         sources: [
           { kind: "用户的话", excerpt: "叫用口令登录" },
-          { kind: "助手补充", locator: "助手补充", excerpt: "按常识补的" },
+          { kind: "助手补充", locator: "助手补充", excerpt: "按常识补的", supports: [{ field: "名称", inserted: ["口令"] }] },
         ],
       },
     ],
@@ -321,8 +321,8 @@ test("助手补充：出处不用写，由工具填「助手补充」；理由�
   assert.throws(() => add({ kind: "助手补充", locator: "助手补充", excerpt: "  " }), /第 1 条来源的种类是「助手补充」，没有写理由/);
   assert.throws(() => add({ kind: "执行者补充", locator: "执行者补充", excerpt: "早期说明里的写法" }), /第 1 条来源的 kind 写的是 "执行者补充"/);
   assert.equal(query(dir, "SELECT 1 FROM item_source").length, 0);
-  add({ kind: "助手补充", excerpt: "登录页照例先打开" });
-  add({ kind: "助手补充", locator: "随手写的出处", excerpt: "出处写了别的也改成统一的" });
+  add({ kind: "助手补充", excerpt: "登录页照例先打开", supports: [{ field: "步骤", inserted: ["打开页面"] }] });
+  add({ kind: "助手补充", locator: "随手写的出处", excerpt: "出处写了别的也改成统一的", supports: [{ field: "步骤", inserted: ["打开页面"] }] });
   assert.deepEqual(query<any>(dir, "SELECT kind, locator, excerpt, depends_revision FROM item_source ORDER BY revision_no").map((row) => [row.kind, row.locator, row.excerpt, row.depends_revision]),
     [["助手补充", "助手补充", "登录页照例先打开", null], ["助手补充", "助手补充", "出处写了别的也改成统一的", null]]);
 });
@@ -336,7 +336,7 @@ test("修改时给了来源：原来的来源保留，新给的接在后面；�
   const added = saveRevision(callIn(dir), {
     operations: [{
       op: "update", item: "UC-001", base_revision: 1, fields: { 步骤: ["打开页面", "输入口令"] },
-      sources: [{ kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }] }],
+      sources: [{ kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1, inserted: ["输入口令"] }] }],
     }],
   });
   const v2 = query<any>(dir, "SELECT position, kind, field, field_index FROM item_source WHERE revision_no = 2 ORDER BY position, support_no").map((r) => ({ ...r }));
@@ -400,7 +400,7 @@ test("文本材料：一条来源的摘录用空行放进不相邻的两段时�
   assert.deepEqual(snapshot(dir), before);
   const outcome = saveRevision(callIn(dir), {
     operations: [{ ...addUseCase("甲"), sources: [
-      { kind: "助手补充", locator: "助手补充", excerpt: "按常识补的步骤" },
+      { kind: "助手补充", locator: "助手补充", excerpt: "按常识补的步骤", supports: [{ field: "步骤", inserted: ["打开页面"] }] },
       { ...SOURCE, excerpt: "用户可以登录。", supports },
       { ...SOURCE, excerpt: "退款须在七天内处理完毕。", supports },
     ] }],
@@ -408,7 +408,7 @@ test("文本材料：一条来源的摘录用空行放进不相邻的两段时�
   assert.equal(outcome.text, "已保存为任务 TASK-001 的修订 1，一共 1 个操作：\n1. 新增了条目 UC-001（集合「用例」），UC-001 现在是修订 1。");
   const rows = query<any>(dir, "SELECT position, kind, excerpt, field FROM item_source WHERE item_id = 'UC-001' ORDER BY position");
   assert.deepEqual(rows.map((r) => [r.position, r.kind, r.excerpt, r.field]), [
-    [1, "助手补充", "按常识补的步骤", null], [2, "文档原文", "用户可以登录。", "名称"], [3, "文档原文", "退款须在七天内处理完毕。", "名称"],
+    [1, "助手补充", "按常识补的步骤", "步骤"], [2, "文档原文", "用户可以登录。", "名称"], [3, "文档原文", "退款须在七天内处理完毕。", "名称"],
   ]);
 });
 

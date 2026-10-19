@@ -120,8 +120,9 @@ test("范围说明记进工作项与事件，接在对话那一句后面；早�
   start(dir, "s-3", "澄清", false, { scope: "   " });
   assert.equal("scope" in (events(dir, mark).at(-1)![1] as Record<string, unknown>), false);
   assert.equal(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-3"))!.scope, null);
-  // 会话的名字：单项活动是活动名，流程是「流程名 · 所在的一站」，写了范围说明的接前 12 个字。
-  assert.deepEqual(inDb(dir, (db) => activityRecords(db, taskId)).map(workItemSessionName), ["澄清 · 只问续借的规则", "需求分析 · 写条目 · 先写续借那几条。", "澄清"]);
+  // 会话的名字：单项活动是活动名，流程是流程名（不带所在的一站），写了范围说明的接前 12 个字。
+  assert.deepEqual(inDb(dir, (db) => activityRecords(db, taskId)).map(workItemSessionName), ["澄清 · 只问续借的规则", "需求分析 · 先写续借那几条。", "澄清"]);
+  assert.equal(workItemSessionName({ activity: "modeling", flow: "analysis", scope: null }), "需求分析");
   assert.equal(workItemSessionName({ activity: "modeling", flow: null, scope: "只重画对象关系图，图书与副本分开建模；流程图与状态图不动。" }), "整理建模 · 只重画对象关系图，图书与");
   // 写法不对的拒绝，什么都不记：范围说明不是文字、太长；session 一项已经停用。
   const rows = count(dir, "activity_record");

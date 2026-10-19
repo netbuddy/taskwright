@@ -132,7 +132,7 @@ describe("真实任务类型里依据另一个条目的来源", () => {
       [{ op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] },
         sources: [SOURCE, { kind: "条目", locator: "OA-001", excerpt: "读者登录时输入的一串字符", supports: [{ field: "基本流程", index: 0 }] }] }],
       [{ op: "add", collection: "约束", fields: { 类别: "安全", 句式类型: "普遍型", 需求语句: "口令输错三次后锁定账号。" },
-        sources: [{ kind: "条目", locator: "UC-001", excerpt: "读者登录系统。" }, { kind: "助手补充", excerpt: "输错多次后锁定是通行的做法" }] }],
+        sources: [{ kind: "条目", locator: "UC-001", excerpt: "读者登录系统。" }, { kind: "助手补充", excerpt: "输错多次后锁定是通行的做法", supports: [{ field: "需求语句", inserted: ["锁定账号"] }] }] }],
     ]);
     text = render.render(typed, library.libraryOf(typed));
   });

@@ -158,8 +158,8 @@
           "路径": "clarifying.md"
          },
          {
-          "字节数": 65778,
-          "摘要值": "4f7a62a26a9970b4",
+          "字节数": 65826,
+          "摘要值": "48823a07ba569b6c",
           "路径": "common.md"
          },
          {
@@ -193,8 +193,8 @@
           "路径": "system.md"
          },
          {
-          "字节数": 2915,
-          "摘要值": "6b38b9e61732358f",
+          "字节数": 3241,
+          "摘要值": "f441ec13bfa0bffc",
           "路径": "writing.md"
          }
         ],
@@ -288,8 +288,8 @@
        "摘要算法": "SHA-256 取前 16 位十六进制",
        "文件": [
         {
-         "字节数": 8002,
-         "摘要值": "100f21ab77086d7e",
+         "字节数": 7947,
+         "摘要值": "5c88896564e6f0f4",
          "路径": ".pi/skills/requirements-engineering/SKILL.md"
         },
         {
@@ -467,7 +467,7 @@
        {
         "归档文件": "service-<时刻>.jsonl",
         "归档行号": "<归档行号>",
-        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"0ed2a64a2a15fe80\",\"bytes\":79672,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65777,\"lines\":238,\"digest\":\"f1d92743cd665c04\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/requirements-engineering/SKILL.md\",\"bytes\":7626,\"lines\":30,\"digest\":\"bb84eb46c4bb206d\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"4427c36421f90d90\"}]}",
+        "文字": "{\"replaced\":true,\"stage\":\"idle\",\"in_flow\":false,\"how\":\"recomposed\",\"digest\":\"bb12f13147e02f30\",\"bytes\":79665,\"lines\":315,\"parts\":[{\"part\":\"system\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/system.md\",\"bytes\":1708,\"lines\":18,\"digest\":\"91a6570a4d4c670f\"},{\"part\":\"platform_common\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/common.md\",\"bytes\":65825,\"lines\":238,\"digest\":\"1980e6c610f66643\"},{\"part\":\"task_common\",\"from\":\"task\",\"file\":\".pi/skills/requirements-engineering/SKILL.md\",\"bytes\":7571,\"lines\":30,\"digest\":\"937972fa49abebf4\"},{\"part\":\"platform_stage\",\"from\":\"builtin\",\"file\":\"agent/prompts/stages/clarifying.md\",\"bytes\":4555,\"lines\":26,\"digest\":\"4427c36421f90d90\"}]}",
         "方法": "setStatus",
         "标题": "",
         "状态键": "taskwright-stage-prompt",

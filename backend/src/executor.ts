@@ -581,7 +581,7 @@ export class Executor {
   }
 
   /**
-   * 属于一个工作项的会话在建立时就按工作项起名：单项活动是活动的名字，流程是「流程名 · 所在的一站」，写了范围说明的接前几个字
+   * 属于一个工作项的会话在建立时就按工作项起名：单项活动是活动的名字，流程是流程名（不带所在的一站），写了范围说明的接前几个字
    * （agent/src/lib/stage_read.ts 的 workItemSessionName）。起了名的会话不再按第一句用户的话起名。起名没有做成不算这次操作失败。
    */
   private async nameAfterWorkItem(sessionId: string, recordId: number): Promise<void> {

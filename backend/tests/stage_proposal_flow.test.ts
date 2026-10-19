@@ -88,7 +88,7 @@ test("发卡片、选继续本阶段、再说两轮、在另一条会话里点�
     assert.equal((await call("GET", `/api/v1/tasks/${taskId}/status`)).body.status.proposal, null);
     // 这条新会话在建立时就按工作项起了名。
     const names = Object.fromEntries(((await call("GET", `/api/v1/tasks/${taskId}/sessions`)).body.sessions as Dict[]).map((one) => [one.session_id, [one.name, one.work_item?.record_id, one.work_item?.name]]));
-    assert.deepEqual(names[second], ["需求分析 · 核读材料", 1, "需求分析"]);
+    assert.deepEqual(names[second], ["需求分析", 1, "需求分析"]);
     await sendAndWaitTurn(port, taskId, second, async () => {
       const sent = await call("POST", `/api/v1/tasks/${taskId}/messages?session=${second}`,
         { text: "我选：进入澄清", client_id: "c-4", origin: "card_choice", card: { reply_message_id: cardEntry, kind: "choose", choice: "enter_clarify" } });

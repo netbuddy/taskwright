@@ -166,12 +166,12 @@ export function workItemName(item: Pick<ActivityRecord, "activity" | "flow">): s
 }
 
 /**
- * 属于一个工作项的会话在建立时起的名字：单项活动是活动的名字，例如「整理建模」；流程是「需求分析 · 核读材料」这一式（建立时所在的那一站）；
- * 写了范围说明的在后面接「 · 」与范围说明的前 12 个字。
+ * 属于一个工作项的会话在建立时起的名字：单项活动是活动的名字，例如「整理建模」；流程是「需求分析」，不带所在的那一站
+ * （站会往下走，名字不跟着改，带上站名会被读成现在的阶段）；写了范围说明的在后面接「 · 」与范围说明的前 12 个字。
  */
 export const SESSION_NAME_SCOPE_LENGTH = 12;
 export function workItemSessionName(item: Pick<ActivityRecord, "activity" | "flow" | "scope">): string {
-  const base = item.flow !== null ? `${FLOW_NAMES[item.flow] ?? item.flow} · ${STAGE_NAMES[item.activity]}` : STAGE_NAMES[item.activity];
+  const base = workItemName(item);
   const scope = [...(item.scope ?? "").replace(/\s+/g, " ").trim()].slice(0, SESSION_NAME_SCOPE_LENGTH).join("");
   return scope ? `${base} · ${scope}` : base;
 }

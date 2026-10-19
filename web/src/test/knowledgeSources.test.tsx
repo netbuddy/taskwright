@@ -140,15 +140,11 @@ describe("点知识库来源的出处打开的只读对话框", () => {
     expect(screen.queryByTestId("kb-doc-miss")).toBeNull();
   });
 
-  it("Word 文档按段落号找到那一段再高亮摘录；正文里没有这段原文时写一句说明并照样显示全文", async () => {
-    vi.spyOn(api, "documentText").mockResolvedValue({ name: "规范.docx", text: "[p11] 退款须审核。\n[p12] 审核通过后，退款在 3 个工作日内到账。\n" });
-    const { unmount } = open(WORD.locator, WORD.excerpt);
-    expect(await screen.findByText("行业规范 / 规范.docx")).toBeTruthy();
-    expect((await screen.findByText("退款在 3 个工作日内到账。", { selector: "mark.hit" })).textContent).toBe("退款在 3 个工作日内到账。");
-    unmount();
+  it("纯文本文档里没有这段原文时写一句说明并照样显示全文", async () => {
+    vi.spyOn(api, "documentText").mockResolvedValue({ name: "术语.md", text: "# 退款术语\n\n部分退款：只退一部分。\n" });
     open("knowledge/general/术语.md", "正文里没有的一句话。");
     expect((await screen.findByTestId("kb-doc-miss")).textContent).toBe("没有在这份文档里找到这段原文，下面是文档的全文。");
-    expect(screen.getByTestId("kb-doc").querySelector(".kbdoc-text")!.textContent).toContain("[p11] 退款须审核。");
+    expect(screen.getByTestId("kb-doc").querySelector(".kbdoc-text")!.textContent).toContain("部分退款：只退一部分。");
   });
 
   it("出处拆不出知识库编号与文档名时写「这份文档的正文没有读到。」，不去读、也不停在「正在读这份文档。」", async () => {

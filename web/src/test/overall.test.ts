@@ -3,7 +3,7 @@
 // 页怎样归章、排先后与编节号在 chapters.test.ts 与助手一侧的测试里核对。
 import { describe, expect, it } from "vitest";
 import {
-  STORY_KEYS, addedQuotes, confirmAction, dependents, factsKey, exampleKind, firstParagraph, glossary, isStoryOptions, markPassage, materialQuotes, openQuestions,
+  STORY_KEYS, addedQuotes, addedWords, confirmAction, dependents, factsKey, exampleKind, firstParagraph, glossary, isStoryOptions, markPassage, materialQuotes, openQuestions,
   overallDef, pagesOf, pendingCount, questionReason, retellText, sectionLead, settledCount, sourcesFor, storyPlace, supplemented, topicState, totals, viewOnOpen, wholeSources,
 } from "../model/overall";
 import { change, itemOf, overallTask } from "./fixtures/overallTask";
@@ -85,6 +85,15 @@ describe("业务说明：一页里的内容", () => {
     expect(addedQuotes(["这一句是我补的。"])).toEqual([]);
     // 只引一个字的不算（太容易在别处撞上）；两条理由引了同一处只算一次。
     expect(addedQuotes(["「丙」是补的", "「甲乙」", "又是「甲乙」"])).toEqual(["甲乙"]);
+  });
+
+  it("助手补进某个字段的字：取指到这个字段的 inserted；来源一处 inserted 都没有（旧数据）时退回理由里的直角引号", () => {
+    const item = { item_id: "OA-009", collection: "业务说明", revision_no: 1, fields: {}, sources: [
+      { kind: "助手补充", locator: "", excerpt: "材料里只说「预留架」。", supports: [{ field: "它是什么", inserted: ["保留期是 3 天"] }, { field: "例子", index: 0, inserted: ["周二来取"] }] },
+      { kind: "助手补充", locator: "", excerpt: "「过期不取」是我补的。", supports: [{ field: "它是什么" }] },
+    ] } as unknown as Parameters<typeof addedWords>[0];
+    expect(addedWords(item, "它是什么")).toEqual(["保留期是 3 天", "过期不取"]);
+    expect(addedWords(item, "例子")).toEqual(["周二来取", "过期不取"]);
   });
 
   it("在一段文字里标出原话：找得到的切成单独的一截，找不到的不标；出现两次的两处都标，先后照正文", () => {

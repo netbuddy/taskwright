@@ -129,6 +129,18 @@ excerpt（摘录的原文）
 
 {{at}}的 index 应当是从 0 起的整数，现在写的是 {{given}}
 
+## `source.supports_inserted_invalid`
+
+用途：supports 一项的 inserted 不是字符串数组，或者里面有空的字符串。
+
+{{at}}的 inserted 应当是字符串数组，每一项写一段补进正文的字，不能是空的
+
+## `source.inserted_not_supplement`
+
+用途：不是助手补充的来源在 supports 里写了 inserted。
+
+{{where}}的 supports 写了 inserted；只有「{{kind}}」的来源写 inserted，别的来源不写
+
 ## `source.supports_in_figure`
 
 用途：图的来源写了 supports。
@@ -411,6 +423,18 @@ excerpt（摘录的原文）
 
 {{exact}}；摘录必须逐字抄自{{noun}}里连续的一段，不要跳句拼接或改字；{{several}}
 
+## `source.material_excerpt_in_other_file`
+
+用途：文本材料里找不到摘录，在材料目录的另一份材料里逐字找到了。places 是前几处（part.other_file_place 用「、」接起来），more 是空的或者 part.more_places。
+
+{{where}}的摘录「{{excerpt}}」在 {{file}} 里找不到；这段文字在{{places}}{{more}}
+
+## `source.material_excerpt_in_other_file.guide`
+
+用途：上一条的指引。locator 是找到的第一处的出处写法，confirm 是空的或者 part.other_file_confirm。
+
+出处改写成 {{locator}}{{confirm}}
+
 ## `part.docx_pointer_legacy`
 
 用途：Word 材料的段落号在哪里看（早先的纯文本文字版）。file 是文字版的文件名。
@@ -489,6 +513,18 @@ Word {{noun}}的出处要写段落号，例如 {{path}}#p12；{{pointer}}
 
 等 {{count}} 处
 
+## `part.other_file_place`
+
+用途：摘录在另一份材料里的一处：哪份材料，接着是第几段（part.docx_label）或第几页第几块（part.pdf_label）；文本材料没有位置，label 是空的。
+
+《{{name}}》{{label}}
+
+## `part.other_file_confirm`
+
+用途：摘录在别的材料里有好几处时，接在指引后面的半句。
+
+；这段文字有好几处，请按上下文确认是其中哪一处，出处写那一处
+
 ## `source.docx_excerpt_elsewhere_one`
 
 用途：摘录不在写的那一段，只在另一段。head 是 part.docx_head。
@@ -512,6 +548,18 @@ Word {{noun}}的出处要写段落号，例如 {{path}}#p12；{{pointer}}
 用途：上一条的指引。
 
 请按上下文确认是哪一段，出处写那一段的段落号
+
+## `source.docx_excerpt_in_other_file`
+
+用途：Word 材料里哪一段都没有摘录，在材料目录的另一份材料里逐字找到了。head 是 part.docx_head，places 与 more 同 source.material_excerpt_in_other_file。
+
+{{head}}；这段文字在{{places}}{{more}}
+
+## `source.docx_excerpt_in_other_file.guide`
+
+用途：上一条的指引。locator 与 confirm 同 source.material_excerpt_in_other_file.guide。
+
+出处改写成 {{locator}}{{confirm}}
 
 ## `source.docx_excerpt_not_contiguous`
 
@@ -686,6 +734,18 @@ PDF {{noun}}的出处要写页与块，例如 {{path}}#p3-2；{{pointer}}
 用途：上一条的指引。
 
 请按上下文确认是哪一块，出处写那一块的页与块
+
+## `source.pdf_excerpt_in_other_file`
+
+用途：PDF 材料里哪一块都没有摘录，在材料目录的另一份材料里逐字找到了。head 是 part.pdf_head，places 与 more 同 source.material_excerpt_in_other_file。
+
+{{head}}；这段文字在{{places}}{{more}}
+
+## `source.pdf_excerpt_in_other_file.guide`
+
+用途：上一条的指引。locator 与 confirm 同 source.material_excerpt_in_other_file.guide。
+
+出处改写成 {{locator}}{{confirm}}
 
 ## `source.pdf_excerpt_not_contiguous`
 

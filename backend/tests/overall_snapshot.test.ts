@@ -20,7 +20,7 @@ test("整份数据带待核实、因依据而待核实与提到；用户确认�
   const ws = build("overall", DEFINITION, [[
     page({ 标题: "预约取书", 别名: ["预约"], 标签: ["流程"], 已经定下的: ["保留期是 3 天。"] },
       [{ ...SOURCE, supports: [{ field: "它是什么" }] }, SUPPLEMENT([{ field: "已经定下的", index: 0 }])]),
-    page({ 标题: "保留期", 它是什么: "预约取书的书在预留架上留着的那几天。" }, [SUPPLEMENT([])]),
+    page({ 标题: "保留期", 它是什么: "预约取书的书在预留架上留着的那几天。" }, [SUPPLEMENT([{ field: "它是什么" }], "预留架")]),
   ], [READY], { view: ["OA-003"] }, [
     { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["读者选一本在架的书", "读者办预约取书"] }, sources: [{ kind: "条目", locator: "OA-001", excerpt: "读者对在架的书办预约。" }] },
   ]]);
@@ -28,8 +28,8 @@ test("整份数据带待核实、因依据而待核实与提到；用户确认�
   const item = (id: string) => task!.items.find((i) => i.item_id === id)! as Record<string, any>;
   assert.deepEqual([item("OA-001").pending_verification, item("OA-001").pending_sources, item("OA-001").pending_places, item("OA-001").basis_pending],
     [true, 1, [{ field: "已经定下的", index: 0 }], null]);
-  // OA-002 的助手补充没有写支持哪几处：指整个条目。
-  assert.deepEqual([item("OA-002").pending_verification, item("OA-002").pending_sources, item("OA-002").pending_places], [true, 1, [{ field: null, index: null }]]);
+  // OA-002 的助手补充指到「它是什么」。
+  assert.deepEqual([item("OA-002").pending_verification, item("OA-002").pending_sources, item("OA-002").pending_places], [true, 1, [{ field: "它是什么", index: null }]]);
   assert.deepEqual([item("UC-001").pending_verification, item("UC-001").pending_sources, item("UC-001").pending_places, item("UC-001").basis_pending],
     [false, 0, [], { item_id: "OA-001", reason: "pending", see: null }]);
   // 提到：OA-001 贴了标签，被 OA-002 与用例提到；OA-002 没有贴标签，不进词表，mentioned_by 是空列表；用例不带这一项。
@@ -57,7 +57,7 @@ test("用户亲手改只确认他改到的那几处：只贴标签不算；改�
   const ws = build("by-place", DEFINITION, [[
     page({ 标题: "预约取书", 已经定下的: ["只有在架的书才能预约取书。", "保留期是 3 天。"], 例子: ["小王周六预约了一本书。"] },
       [{ ...SOURCE, supports: [{ field: "它是什么" }] }, { kind: "文档原文", locator: "inputs/材料.md", excerpt: "只有在架的书才能预约取书。", supports: [{ field: "已经定下的", index: 0 }] },
-        SUPPLEMENT([{ field: "已经定下的", index: 1 }]), { kind: "助手补充", excerpt: "照材料里的做法举的例子，等用户确认。", supports: [{ field: "例子", index: 0 }] }]),
+        SUPPLEMENT([{ field: "已经定下的", index: 1 }]), { kind: "助手补充", excerpt: "照材料里的做法举的例子，等用户确认。", supports: [{ field: "例子", index: 0, inserted: ["小王周六预约了一本书"] }] }]),
   ]]);
   const pending = () => {
     const item = library.taskSnapshot(ws)[1]!.items.find((i) => i.item_id === "OA-001")! as Record<string, any>;

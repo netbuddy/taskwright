@@ -97,3 +97,9 @@
 用途：参数 operations.sources.supports.index 的说明，随参数结构发给模型。
 
 列表型字段（文本列表、条目引用）里的第几项，从 0 起。不写表示支持整个字段。
+
+## `save_revision.param.operations.sources.supports.inserted`
+
+用途：参数 operations.sources.supports.inserted 的说明，随参数结构发给模型。
+
+只有「助手补充」的来源写：你补进这一处正文的字，每段逐字照抄正文里的写法。助手补充的来源至少要有一处写它。

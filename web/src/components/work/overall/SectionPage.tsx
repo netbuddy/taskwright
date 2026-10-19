@@ -23,7 +23,7 @@ import type { CollectionDef, Item, Source, Task } from "../../../api/types";
 import { CHAPTER_FLOWS, INTRO_NAME, UNSORTED_NAME, chapterByNo, introChapter, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
 import { SOURCE_SUPPLEMENT, issueAnswerText, writeOffReason } from "../../../model/items";
 import {
-  DEPRECATED, TOPIC, addedQuotes, confirmAction, dependents, exampleKind, examplesOf, isBlockingQuestion, isDeprecated, isPending, labelsOf, markPassage, materialQuotes, openQuestions,
+  DEPRECATED, TOPIC, addedWords, confirmAction, dependents, exampleKind, examplesOf, isBlockingQuestion, isDeprecated, isPending, labelsOf, markPassage, materialQuotes, openQuestions,
   pendingCount, questionBlockingText, questionLanded, questionReason, questionRevisit, settledQuestions, retellText, reviseDependentsText, sectionLead, seeInstead, settledOf, sourceShortText, sourcesFor, supplemented, titleOf, whatOf, wholeSources,
 } from "../../../model/overall";
 import { FieldEditor, type SubmitAction } from "../ItemDetail";
@@ -97,10 +97,10 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
   // 说明里要标出的两样：逐字出自材料的句子（底色），与助手补的、还没有确认的那几个字（琥珀底）。
   const quotes = [
     ...materialQuotes(item),
-    ...(whatPending ? addedQuotes(marked.reasons).map((quote) => ({ quote, mark: "added" as const })) : []),
+    ...(whatPending ? addedWords(item, TOPIC.what).map((quote) => ({ quote, mark: "added" as const })) : []),
   ];
   const pieces = paragraphs.map((p) => markPassage(p, quotes));
-  // 助手补的在「它是什么」里，但理由没有引原文、标不出是哪几个字：整块旁边画一道琥珀边，来源那一行说明。
+  // 助手补的在「它是什么」里，但没有写补进了哪几个字（或者那几个字在正文里找不到）：整块旁边画一道琥珀边，来源那一行说明。
   const whatUnmarked = whatPending && !pieces.some((one) => one.some((part) => part.mark === "added"));
   const examples = examplesOf(item).map((one, index) => ({ index, ...exampleKind(one) }));
   const exceptions = examples.filter((one) => one.kind === "exception");

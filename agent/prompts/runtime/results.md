@@ -45,6 +45,12 @@
 
 这次重新标注了 {{item}} 的来源，去掉了原来的 {{count}} 条：{{removed}}。
 
+## `result.save_revision.locator_moved`
+
+用途：Word 来源的摘录不在写的那一段、只在同一表格行的另一格里时，工具把出处改到那一段，写在保存结果末尾的一句。no 是第几个操作，where 是 part.source_no，from 是原来的出处，n 是改到的段落号。
+
+第 {{no}} 个操作的{{where}}的出处 {{from}} 已改为 #p{{n}}：摘录「{{excerpt}}」在同一行的另一格里。
+
 ## `result.save_revision.stale_sources`
 
 用途：执行者改写了的内容上还留着原来的来源时，写在保存结果末尾的提醒。parts 是哪几处的哪几条（result.save_revision.stale_part，用「；」接起）。

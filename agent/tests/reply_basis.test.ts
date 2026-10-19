@@ -27,7 +27,7 @@ function workspace(): string {
   saveRevision(callIn(dir), { operations: [
     { op: "add", collection: "用例", fields: { 名称: "退款", 步骤: ["申请退款"] }, sources: [SOURCE] },
     { op: "add", collection: "领域说明", fields: { 标题: "口令", 内容: "口令是登录时输入的一串字符，区分大小写。" },
-      sources: [{ kind: "助手补充", locator: "助手补充", excerpt: "口令的意思" }] },
+      sources: [{ kind: "助手补充", locator: "助手补充", excerpt: "口令的意思", supports: [{ field: "内容", inserted: ["区分大小写"] }] }] },
   ] });
   return dir;
 }
