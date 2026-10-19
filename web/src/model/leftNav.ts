@@ -1,12 +1,11 @@
 // 工作视图与任务一级整页左边的导航栏上由数据算出的东西。只算，不画（画在 components/work/LeftNav.tsx）。
 // 数据都是页面已经持有的：任务详情里的阶段与灯（task.stage）、会话清单、知识库清单，不另取。
-//   · 开合：用户点过开合之后记在浏览器本地，以记忆为准；没有记忆时视口窄（model/fontScale.ts 的 narrowViewport）默认收起，否则展开；
+//   · 开合：用户点过开合之后记在浏览器本地，以记忆为准；没有记忆时视口宽度不到 1280px 默认收起，否则展开（按像素，不随字号档位变；右侧栏另按 fontScale.ts 的 narrowViewport）；
 //   · 流程进度：流程的工作项走到的那一站（会话清单里流程工作项的会话上记的 activity，不论打开的是哪条会话都相同）、那一站没通过的灯数、下一站；
 //   · 会话：未归档的会话按建立时间倒序，当前会话单列在前；多于 SESSION_ROWS 条时折起；
 //   · 待处理事项三行：取自 model/pendingWork.ts，与任务起点页「待处理事项」一节同一个口径。
 
 import type { KnowledgeLibrary, SessionListEntry, StageKey, StageView, Task } from "../api/types";
-import { narrowViewport } from "./fontScale";
 import { pendingWork } from "./pendingWork";
 import { STAGES, STAGE_NAMES, stageMarks, type StageMark } from "./stage";
 
@@ -30,10 +29,13 @@ export function saveLeftNav(open: boolean): void {
   }
 }
 
-/** 左栏一打开是展开还是收起：有记忆按记忆，否则视口窄时收起。 */
+/** 视口宽度不到这么多像素时，左栏没有记忆时默认收起。 */
+export const LEFT_NAV_MIN_OPEN_PX = 1280;
+
+/** 左栏一打开是展开还是收起：有记忆按记忆，否则视口不到 1280px 时收起。 */
 export function initialLeftNavOpen(): boolean {
   const remembered = readLeftNav();
-  return remembered ? remembered === "open" : !narrowViewport();
+  return remembered ? remembered === "open" : window.innerWidth >= LEFT_NAV_MIN_OPEN_PX;
 }
 
 export interface FlowProgress {

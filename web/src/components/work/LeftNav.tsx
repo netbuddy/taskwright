@@ -1,5 +1,5 @@
 // 工作视图与任务一级整页（任务起点页、活动输入页）左边的导航栏：回答「哪个任务、流程走到哪一站、哪条会话、有什么事等我处理」。
-// 自上而下五段：任务头（回任务起点）、工作（流程进度与会话列表）、待处理事项（三行）、参考（知识库、查找），末尾设置与收起。
+// 自上而下五段：任务头（「‹」回任务列表，任务名回任务起点）、工作（流程进度与会话列表）、待处理事项（三行）、参考（知识库、查找），末尾设置与收起。
 // 展开约 248px、收起约 56px 只留图标（悬停出全名），宽度是 styles.css 的 --w-nav 与 --w-nav-closed；收起时三组图标之间有分隔线，红点保留。
 // 会话列表末尾有开关「显示已归档的会话」：默认关着；打开时另取一次带归档的会话清单，归档的接在后面、标「已归档」，也能点开（打开后按自由讨论办）。
 // 开合与待处理事项的口径在 model/leftNav.ts；除了归档的会话，数据都由页面给。工作与待处理事项两段数据不全时（页面没有给）不画。
@@ -72,9 +72,10 @@ export function LeftNav({ taskId, taskName, stage, task, sessions, currentSessio
 
   return (
     <nav className={`lnav ${open ? "open" : "closed"}`} data-testid="left-nav">
-      <a className="lnav-hd" href={href.task(taskId)} title={`回任务起点：${taskName ?? ""}`} data-testid="nav-task">
-        <span className="i"><LeftOutlined /></span><b className="n">{taskName ?? "…"}</b>
-      </a>
+      <div className="lnav-hd">
+        <a className="i" href={href.tasks()} title="回任务列表" data-testid="nav-back"><LeftOutlined /></a>
+        <a className="n" href={href.task(taskId)} title={`回任务起点：${taskName ?? ""}`} data-testid="nav-task"><b>{taskName ?? "…"}</b></a>
+      </div>
 
       {(progress || rows) && (
         <div className="lnav-sec" data-testid="nav-work">

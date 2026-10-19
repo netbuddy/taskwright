@@ -1,5 +1,5 @@
 // 左边的导航栏：展开态五段（任务头、工作、待处理事项、参考、收起）、待处理事项三行为零与不为零、红点、
-// 开合按视口宽度的默认与记忆优先、库事件带来的阶段让计数就地变化、各行点了去哪里。
+// 开合按视口宽度（1280px）的默认与记忆优先、库事件带来的阶段让计数就地变化、各行点了去哪里。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { DiagramRow, FieldDef, Item, KnowledgeLibrary, SessionListEntry, Snapshot, StageLamp, StageView, Task } from "../api/types";
@@ -66,8 +66,10 @@ function nav(over: Partial<Parameters<typeof LeftNav>[0]> = {}) {
 const text = (el: Element | null) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
 
 describe("展开态五段", () => {
-  it("任务头：「‹ 任务名」，回任务起点", () => {
+  it("任务头：「‹」回任务列表，任务名回任务起点", () => {
     nav();
+    expect(screen.getByTestId("nav-back")).toHaveAttribute("href", "#/tasks");
+    expect(screen.getByTestId("nav-back")).toHaveAttribute("title", "回任务列表");
     expect(screen.getByTestId("nav-task")).toHaveAttribute("href", "#/tasks/TASK-L");
     expect(text(screen.getByTestId("nav-task"))).toBe("图书借阅");
     expect(screen.getByTestId("left-nav")).toHaveClass("open");
@@ -163,13 +165,16 @@ describe("收起态", () => {
 });
 
 describe("开合的默认与记忆", () => {
-  it("没有记忆时视口窄（不到 100rem，1100px 宽）默认收起，宽时展开", () => {
+  it("没有记忆时视口不到 1280px 默认收起，1280px 及以上展开（按像素，不看字号档位）", () => {
+    for (const [width, open] of [[1100, false], [1279, false], [1280, true], [1900, true]] as const) {
+      setWidth(width);
+      expect(initialLeftNavOpen()).toBe(open);
+    }
     setWidth(1100);
-    expect(initialLeftNavOpen()).toBe(false);
     nav();
     expect(screen.getByTestId("left-nav")).toHaveClass("closed");
     cleanup();
-    setWidth(1900);
+    setWidth(1280);
     nav();
     expect(screen.getByTestId("left-nav")).toHaveClass("open");
   });

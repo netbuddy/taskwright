@@ -6,9 +6,10 @@
 .lnav.closed{width:var(--w-nav-closed)}
 .lnav a{color:inherit;text-decoration:none}
 .lnav .lnav-hd{display:flex;align-items:center;gap:.6rem;padding:.7rem .95rem .55rem;border-bottom:1px solid var(--line);color:var(--ink);min-width:0}
-.lnav .lnav-hd .i{color:var(--mut)}
-.lnav .lnav-hd b{font-size:0.94rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lnav .lnav-hd:hover .i{color:var(--ink)}
+.lnav .lnav-hd .i{color:var(--mut);height:1.6rem;border-radius:.4rem}
+.lnav .lnav-hd .i:hover{color:var(--ink);background:var(--dark3)}
+.lnav .lnav-hd b{font-size:0.94rem}
+.lnav .lnav-hd .n:hover{text-decoration:underline}
 .lnav .lnav-sec{padding:.6rem .5rem .25rem;display:flex;flex-direction:column;gap:.1rem}
 .lnav .lnav-sec .t{font-size:0.78rem;letter-spacing:.06em;color:var(--mut);padding:0 .45rem .3rem}
 .lnav .lnav-it{display:flex;align-items:center;gap:.6rem;padding:.4rem .45rem;border-radius:.45rem;color:var(--ink);cursor:pointer;
