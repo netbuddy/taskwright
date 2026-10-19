@@ -1,5 +1,6 @@
 // 材料区里的 PDF 材料：按原样分页显示，只画看得见的页；被条目引用的句子画浅蓝底线，点来源时滚到那一页、
-// 框出来源指的那一块、把摘录逐字标出来。任务页「查看」一份 PDF 材料时也用它。
+// 框出来源指的那一块、把摘录逐字标出来。任务页「查看」一份 PDF 材料时也用它；知识库的 PDF 文档也用它（taskId 写知识库文档的所属，
+// 见 state/docSource.ts）。
 //
 // 怎样画：每一页先留一张同样大小的白纸（大小取位置表，不用先读每一页）；滚到看得见的页连同上下各一页才交给 pdf.js
 // 画——一张画布加一层文字层（叠在画布上的透明文字，用来选字、标字）；滚走的页把画布与文字层收掉。
@@ -15,7 +16,6 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
-import { api } from "../../api/client";
 import type { Item } from "../../api/types";
 import { parsePdfLocator, pdfBlockBox, type PdfLocationFile } from "../../../../agent/src/lib/pdf_locations";
 import { type PdfUnit, placePdfExcerpt, pdfUnitsWith } from "../../../../agent/src/lib/pdf_source";
@@ -24,6 +24,7 @@ import {
   MAX_SCALE, MIN_SCALE, SCALE_STEP, type LayerItem, type Mark, type PageSize, clampScale, currentPage, findInBlock, fitScale, pageLayout, pageSizes, roughTop,
   screenBox, splitByMarks, visiblePages,
 } from "../../model/pdfView";
+import { fileRawUrl } from "../../state/docSource";
 import { usePdfBytes, usePdfLocations, usePdfUnits } from "../../state/pdfStore";
 import type { LocateRequest } from "./MaterialPane";
 
@@ -88,6 +89,7 @@ interface Target {
 }
 
 export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, scrollRef, onOpenItem, onMouseUp, onCitedCount, onNote, onUnavailable, onPage }: {
+  /** 文件属于哪个任务（任务编号）；知识库文档写 knowledgeOwner(知识库编号)（state/docSource.ts）。 */
   taskId: string;
   path: string;
   items: Item[];
@@ -412,7 +414,7 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
       <div className="pdf-paper pdf-fallback" ref={host} data-testid="pdf-fallback">
         <div className="pdf-fallback-note" data-testid="pdf-fallback-note">{PDF_FALLBACK_NOTE}</div>
         <iframe key={fallbackAt.nonce} title={`PDF 材料 ${path.split("/").pop() ?? path}`} data-testid="pdf-fallback-frame"
-          src={`${api.materialRawUrl(taskId, path)}#page=${fallbackAt.page}`} />
+          src={`${fileRawUrl(taskId, path)}#page=${fallbackAt.page}`} />
       </div>
     );
   }

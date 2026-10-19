@@ -334,6 +334,10 @@ export const api = {
   /** 知识库文档的正文：Word 文档给由它生成的文字（每段一行，段落号写在方括号里）。 */
   documentText: (id: string, name: string) =>
     request<{ name: string; text: string }>("GET", `/knowledge/libraries/${encodeURIComponent(id)}/documents/content?name=${encodeURIComponent(name)}`),
+  /** 知识库文档的原始字节（Word、PDF 按原样显示用）。 */
+  documentRaw: (id: string, name: string) => rawBytes(`/knowledge/libraries/${encodeURIComponent(id)}/documents/raw?name=${encodeURIComponent(name)}`),
+  /** 知识库文档原始字节的地址（给 <iframe> 这类要一个真实地址的地方用；取字节用 documentRaw）。 */
+  documentRawUrl: (id: string, name: string) => `${BASE}/knowledge/libraries/${encodeURIComponent(id)}/documents/raw?name=${encodeURIComponent(name)}`,
   deleteDocument: (id: string, name: string) => request<{ ok: true }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}/documents/delete`, { name }),
   setTaskKnowledge: (taskId: string, libraries: string[]) =>
     request<{ libraries: string[] }>("POST", `${task(taskId)}/knowledge`, { libraries }).then((r) => r.libraries),

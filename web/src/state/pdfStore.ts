@@ -1,5 +1,6 @@
 // PDF 材料的位置表、原始字节与投影里的各块，按「任务编号 + 材料路径」各读一次、缓存起来（材料上传后不再改：同名的文件再上传会被拒绝，不会覆盖）。
 // 例外是删除与替换：还没有进入对话的材料可以删掉、可以换成另一个文件（可以同名），这时由 forgetPdf 丢掉这一份的缓存。
+// 知识库里的 PDF 文档也用这里读：「任务编号」换成知识库文档的所属写法（state/docSource.ts），同一套读法。
 //
 // 三样分开读：条目区的来源标签只要位置表（「第 N 页」后面的章节取自它的书签目录），不必为了一个标签把整份 PDF 取回来；
 // 材料区显示时三样都要。位置表是上传时任务服务写的 x.pdf.locations.json（格式见 agent/src/lib/pdf_locations.ts）；
@@ -7,9 +8,10 @@
 // 用同一个函数（agent/src/lib/pdf_source.ts）。
 
 import { useSyncExternalStore } from "react";
-import { api, ApiError } from "../api/client";
+import { ApiError } from "../api/client";
 import { PDF_LOCATIONS_SUFFIX, type PdfLocationFile } from "../../../agent/src/lib/pdf_locations";
 import { type PdfUnit, pdfProjectionUnits } from "../../../agent/src/lib/pdf_source";
+import { fileRaw, fileText } from "./docSource";
 
 export interface PdfLocationsEntry {
   status: "loading" | "ready";
@@ -62,7 +64,7 @@ export function pdfLocationsEntry(taskId: string, path: string): PdfLocationsEnt
     entry = { status: "loading", locations: null };
     locations.set(key, entry);
     const started = entry;
-    api.materialContent(taskId, `${path}${PDF_LOCATIONS_SUFFIX}`).then((r) => parsePdfLocations(r.text), () => null)
+    fileText(taskId, `${path}${PDF_LOCATIONS_SUFFIX}`).then((r) => parsePdfLocations(r.text), () => null)
       .then((table) => settle(locations, key, started, { status: "ready", locations: table }));
   }
   return entry;
@@ -76,7 +78,7 @@ export function pdfBytesEntry(taskId: string, path: string): PdfBytesEntry {
     entry = { status: "loading" };
     bytes.set(key, entry);
     const started = entry;
-    api.materialRaw(taskId, path).then(
+    fileRaw(taskId, path).then(
       (data) => settle(bytes, key, started, { status: "ready", bytes: data }),
       (e: unknown) => settle(bytes, key, started, { status: "error", error: e instanceof ApiError ? e.message : String(e) }),
     );
@@ -92,7 +94,7 @@ export function pdfUnitsEntry(taskId: string, path: string): PdfUnitsEntry {
     entry = { status: "loading", units: null };
     units.set(key, entry);
     const started = entry;
-    api.materialContent(taskId, path).then((r) => pdfProjectionUnits(r.text), () => null)
+    fileText(taskId, path).then((r) => pdfProjectionUnits(r.text), () => null)
       .then((list) => settle(units, key, started, { status: "ready", units: list }));
   }
   return entry;
