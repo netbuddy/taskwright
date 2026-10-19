@@ -170,6 +170,11 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
       </dl>
       {first && intake && <p className="tp-lead" data-testid="start-lead">{intake.lead}</p>}
 
+      {blocks.materials && blocks.knowledge && (
+        <p className="tp-in-split" data-testid="start-split">
+          <b>材料与知识库的分工</b>材料是本任务的几份一手证据，助手逐句引用；规范、接口说明、法规、旧文档等参考资料放进知识库，可供多个任务选用。
+        </p>
+      )}
       {(blocks.materials || blocks.knowledge) && (
         <div className={`tp-pair${blocks.materials && blocks.knowledge ? "" : " single"}`}>
           {blocks.materials && (
