@@ -22,6 +22,8 @@
                   下一张逐行写，一格的折行在下一行，那一行的第一列是空的。
   code.pdf        英文正文中间两段带缩进的代码：前一段用标准字体 Courier（字体声明自己是等宽的），后一段用嵌入的 DejaVu Sans Mono，
                   并把字体说明里「定宽」的标记抹掉（有的文件里等宽字体就是这样的，只能靠字宽认出来）；代码中间有一个空行。
+  list.pdf        编号列表与项目符号列表：编号列表每项两行，第二行悬挂缩进到编号之后，每行都排满；列表之后紧跟一条排满的条款「1.5 ……」。
+                  项目符号列表每项一行，也排满。各行之间行距相同，只能靠编号与缩进分开。
   scanned.pdf     三页：第 1 页有正文，第 2 页只有页眉与一张图，第 3 页只有一张图。
   quirks.pdf      文字层里的两种毛病：常用汉字写成部首字符（文件里「字形到 Unicode」的对照表被改写过）；字与字之间被撑开。
   english.pdf     英文，左对齐不排满；有一处行末断词的连字符；用标准字体（不嵌入）。
@@ -262,6 +264,45 @@ def code(mono_font_path):
     return CODE
 
 
+LIST = {
+    "intro": "本要求的基本原则如下。",
+    "items": [["1.", "最小权限：智能体只获得完成当前任务所必需的数据与操作权限，不多给一项，超出的权限一律收回，授权到期之后自动失效。"],
+              ["2.", "人在回路：高风险操作必须经人工审批后才能执行，审批人看得到完整的参数，拒绝之后不得自动重试，审批记录要保留三年。"]],
+    "clause": ["1.5 ", "本要求与现行制度不一致的，以现行制度为准；本要求有更严格规定的，从其规定，并在下一次修订时统一两处的写法，修订稿另行发布。"],
+    "bullets": ["·每一次工具调用与每一次审批都必须形成一份可以核查的日志记录", "·数据按敏感程度分级处理，不同级别的数据采用不同的传输方式。"],
+}
+
+
+def list_sample():
+    c = new_canvas("list.pdf")
+    c.setFont(SONG, SIZE)
+    y = 760
+    c.drawString(LEFT, y, LIST["intro"])
+    y -= LEAD
+    # 编号写在左边，正文从编号之后两个字处起；正文每行 28 个字，续行也从那里起（悬挂缩进），每行都排到右边 432 点。
+    for marker, text in LIST["items"]:
+        assert len(text) % 28 == 0, "每项的正文要正好排满两行"
+        c.drawString(LEFT, y, marker)
+        for k in range(0, len(text), 28):
+            c.drawString(LEFT + 24, y, text[k:k + 28])
+            y -= LEAD
+    number, clause = LIST["clause"]
+    # 条款从左边起：条款号「1.5 」是四个半角字符，占两个字宽，第一行再排 28 个字；以后每行 30 个字。前两行都排满。
+    lines = [number + clause[:28]] + [clause[k:k + 30] for k in range(28, len(clause), 30)]
+    assert len(lines) >= 3 and all(len(line) == 30 for line in lines[1:-1])
+    for line in lines:
+        c.drawString(LEFT, y, line)
+        y -= LEAD
+    y -= LEAD
+    for line in LIST["bullets"]:   # 每项一行，30 个字，排满
+        assert len(line) == 30
+        c.drawString(LEFT, y, line)
+        y -= LEAD
+    c.showPage()
+    c.save()
+    return LIST
+
+
 SCANNED = {"header": "读者意见登记表（扫描件样本）", "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"}
 
 
@@ -404,7 +445,7 @@ def main():
     if not Path(args.font).is_file():
         raise SystemExit(f"找不到字体文件 {args.font}；用 --font 指出 DroidSansFallbackFull.ttf 的位置")
     pdfmetrics.registerFont(UnicodeCIDFont(SONG))
-    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "wrapped_table": wrapped_table(), "code": code(args.mono_font), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
+    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "wrapped_table": wrapped_table(), "code": code(args.mono_font), "list": list_sample(), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
     locked()
     if args.word:
         from_word()

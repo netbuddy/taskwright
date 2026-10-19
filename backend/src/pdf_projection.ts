@@ -13,7 +13,9 @@
  *   （怎样认折行、列边界从哪里来见 tableRows）。只按行写，不分列，合并单元格不还原；表格行跨页、跨栏时照样断开。
  * - 其余的行先按版面切成几段连着的行：往上跳（换栏）、字号相差超过 12%、行距超过这一页常见行距的 1.3 倍、横向跳开很远，都另起一段。
  *   再在每段里找段落的分界：这一行缩进了一个字而上下两行都没有缩进（段落的第一行），或者上一行后面还放得下这一行开头的词
- *   （上一行是段落的最后一行）。分出来的每一截是一块。块不跨页，也不跨栏。
+ *   （上一行是段落的最后一行）。列表项另有三条：一块的第一行以编号或项目符号开头时，比编号靠右的行是悬挂缩进的续行，
+ *   不当作首行缩进；续行之后退回编号那一列的行另起一块；又一行以编号开头时另起一块（每行都排满时只能靠这几条分开）。
+ *   分出来的每一截是一块。块不跨页，也不跨栏。
  * - 等宽字体的行（多半是代码，怎样认见 monospaceLines）每行单独一块，行首补上缩进的空格（markIndents）；它不当作表格的一行。
  * - 行接成一块时，前后有一边是中日韩字符就直接接上，否则中间加一个空格；行末的连字符原样留着。接好以后做一次整理
  *   （lib/pdf_normalize.ts 的 tidyPdfText：部首字符换成通用汉字等）。
@@ -228,6 +230,14 @@ const median = (values: number[]) => values.length ? [...values].sort((p, q) => 
 function isCjk(ch: string | undefined): boolean {
   const c = ch?.codePointAt(0) ?? 0;
   return (c >= 0x2e80 && c <= 0x9fff && c !== 0x3000) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xff00 && c <= 0xffef) || c >= 0x20000;
+}
+
+/**
+ * 一行是不是以列表的编号开头：「1.」「2、」「3)」「（4）」「a.」「1.5」「2.3.1」这样的数字编号与条款号，或者「•」「·」「-」这样的项目符号。
+ * 编号后面要跟着空格或者别的字，不认「3.5 万」里的 3.5 以外的写法。
+ */
+function startsWithMarker(ln: Line): boolean {
+  return /^(?:\d{1,3}(?:[.．]\d{1,3})+(?=\s)|\d{1,3}[.．、)）](?!\d)|[（(]\d{1,3}[)）]|[a-zA-Z][.)](?=\s)|[•·▪◦‣●○■□](?=\s|\S)|[-*–](?=\s))/.test(ln.cells[0].text);
 }
 
 /** 一行开头那个词排出来大约多宽：中日韩文字是一个字，别的是到第一个空格为止的一截（按字数占这一行的比例估）。 */
@@ -522,7 +532,13 @@ function blocksOf(lines: Line[]): Block[] {
         const prevEnded = prev.x1 + 0.3 * size + firstWordWidth(ln) < right - 0.3 * size;
         // 首行缩进：这一行缩进而上一行没有缩进，并且下一行回到左边（下一行也缩进的是悬挂缩进的续行，不算）。
         const firstLine = indented(ln) && !indented(prev) && (i + 1 >= each.length || !indented(each[i + 1]));
-        brk = prevEnded || firstLine;
+        // 列表项：这一块的第一行以编号开头时，比编号那一列靠右的行是悬挂缩进的续行（不是首行缩进）；
+        // 续行之后退回编号那一列的行、又以编号开头的行，都是下一项或列表之后的话，另起一块。
+        const head = blk!.lines[0];
+        const listItem = startsWithMarker(head);
+        const hanging = listItem && ln.x0 > head.x0 + 0.5 * size;
+        const outdent = listItem && !hanging && blk!.lines.some((l) => l.x0 > head.x0 + 0.5 * size);
+        brk = prevEnded || (firstLine && !hanging) || outdent || (listItem && startsWithMarker(ln));
       }
       if (!blk || brk) {
         blk = { lines: [], x0: ln.x0, x1: ln.x1, row: false };

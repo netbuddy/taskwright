@@ -113,6 +113,18 @@ test("非等宽字体的正文不补空格：英文、中文、由 Word 转出�
   }
 });
 
+test("编号列表：悬挂缩进的续行并进这一项；每行都排满时，最后一项与紧跟着的条款「1.5 ……」也分得开", async () => {
+  const { markdown } = await project("list");
+  const t = expected.list;
+  assert.deepEqual(pdfProjectionUnits(markdown).slice(0, 4).map((u) => u.text),
+    [t.intro, ...t.items.map(([marker, text]: string[]) => `${marker} ${text}`), t.clause.join("")]);
+});
+
+test("项目符号列表：每项一行、排满时，一项是一块，不接成一段", async () => {
+  const { markdown } = await project("list");
+  assert.deepEqual(pdfProjectionUnits(markdown).slice(4).map((u) => u.text), expected.list.bullets);
+});
+
 test("没有文字的页：写一行块号为 0 的说明，位置表里标出来；只有页眉的页也算", async () => {
   const result = await project("scanned");
   assert.deepEqual(result.no_text_pages, [2, 3]);
