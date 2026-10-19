@@ -22,7 +22,7 @@ import { buildPrompt, majority, parseUnderstanding, scoreCase, tally, understand
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, "..", "..", "..");
-const SKILL = join(REPO, "agent/prompts/stages/common.md");
+const SKILL = join(REPO, "agent/prompts/capabilities/dialogue/understanding_full.md");
 const SCHEMA = join(REPO, "agent/prompts/schemas/user_intent.schema.json");
 const PROFILE = join(REPO, "backend/profiles/dev.json");
 const TIMEOUT_MS = 180_000;
@@ -129,7 +129,7 @@ async function main() {
     `# 对话理解评测报告 ${stamp}`,
     "",
     `- 模型：${profile.model}，思考 ${profile.thinking}；每例跑 ${repeat} 次${repeat > 1 ? "，四项各按多数判" : ""}`,
-    `- 平台共用说明（common.md）sha256 前 12 位：${hash(SKILL)}；理解 schema sha256 前 12 位：${hash(SCHEMA)}；评测集 sha256 前 12 位：${hash(join(HERE, "cases.jsonl"))}`,
+    `- 平台说明「先写理解」模块（understanding_full.md）sha256 前 12 位：${hash(SKILL)}；理解 schema sha256 前 12 位：${hash(SCHEMA)}；评测集 sha256 前 12 位：${hash(join(HERE, "cases.jsonl"))}`,
     `- 例数 ${t.cases}（其中补写 ${cases.filter((c) => c.source === "补写").length}）；格式不合格 ${t.formatFailures} 例；开始于 ${started.toISOString()}，用时 ${Math.round((Date.now() - started.getTime()) / 1000)} 秒`,
     "",
     "## 总分",

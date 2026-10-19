@@ -7,9 +7,14 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ACTIVITIES, type ActivityDef, DefinitionHeadError, FLOW_KEYS, type FlowDef, parseActivityDef, parseFlowDef } from "./activity_def.ts";
-import { PLATFORM_FLOWS_DIR, PLATFORM_STAGES_DIR } from "./stage_prompt.ts";
+
+const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts");
+/** 活动的头所在的目录（每项活动一份，只有头）与工作流的定义所在的目录。 */
+export const PLATFORM_STAGES_DIR = join(PROMPTS_DIR, "stages");
+export const PLATFORM_FLOWS_DIR = join(PROMPTS_DIR, "flows");
 
 /** 全部活动与流程的头，按 ACTIVITIES 与 FLOW_KEYS 的次序。 */
 export interface Definitions {

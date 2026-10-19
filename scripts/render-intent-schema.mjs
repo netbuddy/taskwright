@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Renders the understanding format (agent/prompts/schemas/user_intent.schema.json) into the platform skill, so the
+// Renders the understanding format (agent/prompts/schemas/user_intent.schema.json) into the platform modules, so the
 // schema the extension checks and the format the executor reads are one text.
 //
 // A generated region is a pair of plain text lines in a Markdown file (not HTML comments: Markdown viewers that
@@ -22,7 +22,7 @@ const BEGIN = /（理解格式说明开始，由 (\S+) 生成，不要手改）\
 const END = "（理解格式说明结束）";
 
 /** The documents that carry a generated region. */
-export const DOCUMENTS = ["agent/prompts/stages/common.md"];
+export const DOCUMENTS = ["agent/prompts/capabilities/dialogue/understanding_full.md", "agent/prompts/capabilities/dialogue/understanding_brief.md"];
 
 /** One act of an example on one line, the way the schema's example is meant to be read. */
 function exampleJson(value) {

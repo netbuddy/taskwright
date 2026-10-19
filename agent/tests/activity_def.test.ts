@@ -14,7 +14,8 @@ import {
 } from "../src/lib/activity_def.ts";
 import { definitions, readDefinitions } from "../src/lib/activity_def_read.ts";
 import { STAGES } from "../src/lib/stage.ts";
-import { PLATFORM_FLOWS_DIR, PLATFORM_STAGES_DIR, composeStagePrompt } from "../src/lib/stage_prompt.ts";
+import { PLATFORM_FLOWS_DIR, PLATFORM_STAGES_DIR } from "../src/lib/activity_def_read.ts";
+import { composeContext } from "../src/lib/context_assemble.ts";
 
 const HEAD = ["activity: reading", "name: 核读材料", "mode: batch", "purpose: 通读材料。", "reads: materials, knowledge", "writes: description", "requires: has_materials", "example: 一句例子。"];
 const withHead = (lines: readonly string[], body = "# 正文\n") => `---\n${lines.join("\n")}\n---\n\n${body}`;
@@ -115,15 +116,15 @@ test("拼系统提示时头去掉：活动那一段从标题起，流程那一�
   const workspace = mkdtempSync(join(tmpdir(), "activity-def-ws-"));
   try {
     for (const stage of STAGES) {
-      const prompt = composeStagePrompt({ stage, workspaceDir: workspace, skills: [], tail: "" });
-      const activity = prompt.parts.find((one) => one.part === "platform_stage")!;
+      const prompt = composeContext({ stage, workspaceDir: workspace, skills: [], tail: "" });
+      const activity = prompt.parts.find((one) => one.part === "template")!;
       assert.ok(activity.text.startsWith("# 现在这个阶段："), stage);
       assert.ok(prompt.parts.find((one) => one.part === "node_exit")!.text.startsWith("## 出口\n"), stage);
-      assert.doesNotMatch(prompt.text, /^(activity|flow|mode|reads|writes|requires|nodes): /m, stage);
+      assert.doesNotMatch(prompt.text, /^(activity|flow|mode|reads|writes|requires|nodes|template|writes_allowed|name|order|when): /m, stage);
       assert.doesNotMatch(prompt.text, /^---$/m, stage);
     }
-    const idle = composeStagePrompt({ stage: "idle", workspaceDir: workspace, skills: [], tail: "" });
-    assert.doesNotMatch(idle.text, /^(activity|mode|reads|writes|requires): /m);
+    const idle = composeContext({ stage: "idle", workspaceDir: workspace, skills: [], tail: "" });
+    assert.doesNotMatch(idle.text, /^(activity|mode|reads|writes|requires|template|writes_allowed|based_on|name|order|when): /m);
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

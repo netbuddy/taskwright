@@ -416,6 +416,11 @@ const ALLOWED: Record<Position, readonly WriteKind[]> = {
   document: ["page", "problem", "publish"],
 };
 
+/** 这个阶段（或者空闲时）助手能做哪几类写入，按 page、problem、diagram、item、review、publish 的次序。 */
+export function allowedWrites(stage: Position): readonly WriteKind[] {
+  return ALLOWED[stage];
+}
+
 /** 这个阶段（或者空闲时）助手能不能做这一类写入。 */
 export function canWrite(stage: Position, kind: WriteKind): boolean {
   return ALLOWED[stage].includes(kind);

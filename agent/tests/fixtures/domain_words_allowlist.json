@@ -3,9 +3,121 @@
     "业务说明": 1,
     "标签": 2,
     "标题": 8,
-    "流程": 6,
+    "流程": 8,
     "状态": 4,
-    "范围": 6
+    "范围": 5
+  },
+  "agent/prompts/capabilities/analysis/problems.md": {
+    "决定": 8,
+    "流程": 1,
+    "状态": 4,
+    "范围": 1
+  },
+  "agent/prompts/capabilities/dialogue/reply_brief.md": {
+    "业务说明": 1,
+    "决定": 2,
+    "标题": 1
+  },
+  "agent/prompts/capabilities/dialogue/reply_full.md": {
+    "业务说明": 1,
+    "决定": 6,
+    "标题": 1,
+    "状态": 6
+  },
+  "agent/prompts/capabilities/dialogue/stage_cards.md": {
+    "例子": 7,
+    "决定": 1,
+    "状态": 4
+  },
+  "agent/prompts/capabilities/dialogue/system_message.md": {
+    "例子": 1,
+    "状态": 1,
+    "目标": 1
+  },
+  "agent/prompts/capabilities/dialogue/understanding_brief.md": {
+    "例子": 2,
+    "决定": 1,
+    "状态": 1
+  },
+  "agent/prompts/capabilities/dialogue/understanding_full.md": {
+    "例子": 4,
+    "决定": 1,
+    "状态": 1
+  },
+  "agent/prompts/capabilities/organizing/diagrams_full.md": {
+    "参与者": 2,
+    "概念": 1,
+    "流程": 6,
+    "状态": 3,
+    "角色": 1
+  },
+  "agent/prompts/capabilities/organizing/pages_brief.md": {
+    "业务说明": 1
+  },
+  "agent/prompts/capabilities/organizing/pages_full.md": {
+    "上级主题": 2,
+    "业务说明": 3,
+    "例子": 1,
+    "假设": 1,
+    "决定": 3,
+    "别名": 3,
+    "在用": 2,
+    "场景": 1,
+    "它是什么": 2,
+    "已废弃": 3,
+    "已经定下的": 5,
+    "改看": 3,
+    "标签": 2,
+    "标题": 3,
+    "概念": 1,
+    "流程": 1,
+    "状态": 4,
+    "目标": 2,
+    "角色": 1
+  },
+  "agent/prompts/capabilities/planning/standalone_exit.md": {
+    "流程": 1
+  },
+  "agent/prompts/capabilities/planning/work_items.md": {
+    "决定": 1,
+    "流程": 2
+  },
+  "agent/prompts/capabilities/reading/knowledge.md": {
+    "状态": 1
+  },
+  "agent/prompts/capabilities/reading/materials.md": {
+    "标题": 2,
+    "状态": 1
+  },
+  "agent/prompts/capabilities/reading/three_facts.md": {
+    "决定": 1,
+    "状态": 2,
+    "约束": 1
+  },
+  "agent/prompts/capabilities/reading/tools_general.md": {
+    "决定": 1,
+    "状态": 1
+  },
+  "agent/prompts/capabilities/reviewing/confirm_publish.md": {
+    "状态": 1
+  },
+  "agent/prompts/capabilities/reviewing/review.md": {
+    "决定": 3,
+    "状态": 2
+  },
+  "agent/prompts/capabilities/writing/items_brief.md": {
+    "已废弃": 1
+  },
+  "agent/prompts/capabilities/writing/items_full.md": {
+    "业务说明": 2,
+    "例子": 1,
+    "在用": 1,
+    "已废弃": 1,
+    "改看": 1,
+    "标签": 2
+  },
+  "agent/prompts/capabilities/writing/sources.md": {
+    "业务说明": 1
   },
   "agent/prompts/flows/analysis.md": {
     "已经定下的": 1,
@@ -76,8 +188,9 @@
     "范围": 3
   },
   "agent/prompts/runtime/stage_prompt.md": {
-    "标题": 2,
-    "流程": 2,
+    "业务说明": 1,
+    "标题": 1,
+    "流程": 3,
     "范围": 6
   },
   "agent/prompts/runtime/status_page.md": {
@@ -103,19 +216,45 @@
     "目标": 1
   },
   "agent/prompts/stages/README.md": {
-    "业务说明": 2,
+    "业务说明": 1,
     "例子": 1,
     "决定": 1,
-    "前置条件": 2,
-    "标题": 1,
-    "流程": 5
+    "前置条件": 2
   },
   "agent/prompts/stages/clarifying.md": {
+    "业务说明": 1,
+    "决定": 1
+  },
+  "agent/prompts/stages/modeling.md": {
+    "业务说明": 1,
+    "流程": 2,
+    "状态": 1
+  },
+  "agent/prompts/stages/publish.md": {
+    "流程": 1
+  },
+  "agent/prompts/stages/reading.md": {
+    "业务对象": 1,
+    "业务流程": 1,
+    "流程": 1,
+    "角色": 1
+  },
+  "agent/prompts/stages/system.md": {
+    "决定": 1
+  },
+  "agent/prompts/stages/writing.md": {
+    "业务说明": 1,
+    "功能用例": 1,
+    "流程": 1,
+    "约束": 1,
+    "非功能需求": 1
+  },
+  "agent/prompts/templates/clarifying.md": {
     "上级主题": 2,
-    "业务说明": 2,
+    "业务说明": 1,
     "例子": 3,
     "假设": 2,
-    "决定": 5,
+    "决定": 4,
     "功能用例": 1,
     "场景": 1,
     "它是什么": 5,
@@ -127,30 +266,7 @@
     "约束": 1,
     "非功能需求": 1
   },
-  "agent/prompts/stages/common.md": {
-    "上级主题": 2,
-    "业务说明": 5,
-    "例子": 13,
-    "假设": 1,
-    "决定": 17,
-    "别名": 3,
-    "参与者": 2,
-    "在用": 2,
-    "场景": 1,
-    "它是什么": 2,
-    "已废弃": 3,
-    "已经定下的": 5,
-    "改看": 3,
-    "标签": 2,
-    "标题": 6,
-    "概念": 2,
-    "流程": 10,
-    "状态": 28,
-    "目标": 3,
-    "约束": 1,
-    "角色": 2
-  },
-  "agent/prompts/stages/document.md": {
+  "agent/prompts/templates/document.md": {
     "业务对象": 2,
     "业务流程": 1,
     "业务目标": 1,
@@ -173,9 +289,9 @@
     "范围": 2,
     "角色": 2
   },
-  "agent/prompts/stages/modeling.md": {
+  "agent/prompts/templates/modeling.md": {
     "上级主题": 2,
-    "业务说明": 2,
+    "业务说明": 1,
     "例子": 1,
     "别名": 2,
     "功能用例": 1,
@@ -185,53 +301,38 @@
     "标签": 5,
     "标题": 2,
     "概念": 8,
-    "流程": 10,
-    "状态": 9,
+    "流程": 8,
+    "状态": 8,
     "约束": 1,
     "角色": 6,
     "非功能需求": 1
   },
-  "agent/prompts/stages/publish.md": {
-    "流程": 1
-  },
-  "agent/prompts/stages/reading.md": {
-    "业务对象": 1,
-    "业务流程": 1,
+  "agent/prompts/templates/reading.md": {
     "例子": 1,
     "功能用例": 1,
     "它是什么": 1,
     "已经定下的": 2,
     "标签": 1,
     "标题": 1,
-    "流程": 2,
+    "流程": 1,
     "状态": 1,
     "目标": 1,
     "约束": 1,
-    "角色": 2,
+    "角色": 1,
     "非功能需求": 1
   },
-  "agent/prompts/stages/reviewing.md": {
+  "agent/prompts/templates/reviewing.md": {
     "改看": 1,
     "状态": 3
   },
-  "agent/prompts/stages/system.md": {
-    "决定": 1
-  },
-  "agent/prompts/stages/writing.md": {
-    "业务说明": 3,
-    "例子": 2,
+  "agent/prompts/templates/writing.md": {
+    "例子": 1,
     "决定": 1,
-    "功能用例": 1,
-    "在用": 1,
     "场景": 1,
-    "已废弃": 1,
     "已经定下的": 2,
-    "改看": 1,
-    "标签": 4,
-    "流程": 2,
-    "状态": 1,
-    "约束": 1,
-    "非功能需求": 1
+    "标签": 2,
+    "流程": 1,
+    "状态": 1
   },
   "agent/prompts/tools/get_item.md": {
     "状态": 1
@@ -329,6 +430,10 @@
     "在用": 2,
     "标签": 7,
     "状态": 12
+  },
+  "agent/src/lib/context_assemble.ts": {
+    "业务说明": 1,
+    "范围": 1
   },
   "agent/src/lib/create_task.ts": {
     "决定": 1,
@@ -580,12 +685,6 @@
     "范围": 4,
     "角色": 3,
     "非功能需求": 1
-  },
-  "agent/src/lib/stage_prompt.ts": {
-    "业务说明": 1,
-    "标题": 10,
-    "流程": 24,
-    "范围": 7
   },
   "agent/src/lib/stage_proposal.ts": {
     "业务说明": 2,

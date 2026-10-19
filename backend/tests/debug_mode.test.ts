@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { DEBUG_ONLY_TEXT } from "../src/debug_prompt.ts";
+import { PART_NAMES, promptDirNames } from "../../agent/src/lib/context_assemble.ts";
 import { dispatch, serviceInfo } from "../src/http.ts";
 import { DEBUG_MODE, ENV_DEBUG_SETTINGS, buildEnvironment } from "../src/launch.ts";
 import { readPromptDir, settingsFile } from "../src/product_settings.ts";
@@ -105,19 +106,21 @@ test("不是调试模式时，调试用的几个接口都答 not_found，并说�
   });
 });
 
-test("提示词目录的读与设：只收存在的目录的绝对路径；存进设置文件顶层的 debug.prompt_dir，别的键原样保留；十六个文件名各自的情形；空串是清掉", async () => {
+test("提示词目录的读与设：只收存在的目录的绝对路径；存进设置文件顶层的 debug.prompt_dir，别的键原样保留；认的每个文件名各自的情形；空串是清掉", async () => {
   const settings = join(tmp, "debug-settings.json");
   writeFileSync(settings, JSON.stringify({ version: 2, pi_dirs: { "/some/agent": { selection: { language: null, embedding: null }, providers: {} } } }), "utf-8");
   const dir = join(tmp, "prompts");
   mkdirSync(join(dir, "task-type"), { recursive: true });
-  writeFileSync(join(dir, "clarifying.md"), "改过的澄清那一段", "utf-8");
+  mkdirSync(join(dir, "templates"), { recursive: true });
+  mkdirSync(join(dir, "stages"), { recursive: true });
+  writeFileSync(join(dir, "templates", "clarifying.md"), "改过的澄清那一段", "utf-8");
   writeFileSync(join(dir, "task-type", "writing.md"), "改过的写条目那一段", "utf-8");
-  symlinkSync(settings, join(dir, "system.md"));
+  symlinkSync(settings, join(dir, "stages", "system.md"));
   await withSettings(settings, async () => {
     const service = new Service(join(tmp, "d1", "tasks"), join(tmp, "d1", "runs"), {}, { debug: true });
     try {
       const empty = (await go(service, "GET", "/api/v1/debug/prompt-dir")).body;
-      assert.deepEqual([empty.prompt_dir, empty.usable, empty.note, empty.files.length], [null, null, null, 16]);
+      assert.deepEqual([empty.prompt_dir, empty.usable, empty.note, empty.files.length], [null, null, null, promptDirNames().length]);
       assert.ok(empty.files.every((one: Dict) => one.state === "absent"));
 
       for (const [path, words] of [["relative/dir", /提示词目录要写绝对路径/], [join(tmp, "没有这个目录"), /这个目录不存在或者不是目录/], [settings, /这个目录不存在或者不是目录/]] as const) {
@@ -131,11 +134,10 @@ test("提示词目录的读与设：只收存在的目录的绝对路径；存�
       const set = await go(service, "POST", "/api/v1/debug/prompt-dir", { path: dir });
       assert.equal(set.status, 200);
       assert.deepEqual([set.body.prompt_dir, set.body.usable, set.body.note], [dir, true, null]);
-      assert.deepEqual(set.body.files.map((one: Dict) => one.name), ["system.md", "common.md", "reading.md", "clarifying.md", "modeling.md", "writing.md", "reviewing.md", "document.md", "flows/analysis.md",
-        "task-type/common.md", "task-type/reading.md", "task-type/clarifying.md", "task-type/modeling.md", "task-type/writing.md", "task-type/reviewing.md", "task-type/document.md"]);
+      assert.deepEqual(set.body.files.map((one: Dict) => one.name), promptDirNames());
       const states = Object.fromEntries(set.body.files.map((one: Dict) => [one.name, one.state]));
-      assert.deepEqual([states["clarifying.md"], states["task-type/writing.md"], states["system.md"], states["common.md"]], ["used", "used", "refused", "absent"]);
-      assert.match(set.body.files.find((one: Dict) => one.name === "system.md").reason, /^它是一个软链接，这一份照旧用原来的。$/);
+      assert.deepEqual([states["templates/clarifying.md"], states["task-type/writing.md"], states["stages/system.md"], states["capabilities/writing/sources.md"]], ["used", "used", "refused", "absent"]);
+      assert.match(set.body.files.find((one: Dict) => one.name === "stages/system.md").reason, /^它是一个软链接，这一份照旧用原来的。$/);
       const stored = JSON.parse(readFileSync(settings, "utf-8"));
       assert.deepEqual(stored.debug, { prompt_dir: dir });
       assert.deepEqual([stored.version, Object.keys(stored.pi_dirs)], [2, ["/some/agent"]]);
@@ -180,25 +182,29 @@ test("调试模式下真的跑一遍：提示词目录里改一句，再问一�
     const first = (await call("GET", `/api/v1/tasks/${taskId}/debug/system-prompt`)).body;
     assert.equal(first.text, systemText(requests()[0]));
     assert.deepEqual([first.available, first.replaced, first.stage, first.stage_name, first.how, first.prompt_dir, first.session_id], [true, true, "reading", "核读材料", "recomposed", null, session]);
-    assert.deepEqual(first.parts.map((one: Dict) => [one.part, one.from]),
-      [["system", "builtin"], ["platform_common", "builtin"], ["task_common", "task"], ["platform_stage", "builtin"], ["node_exit", "builtin"], ["task_stage", "task"], ["tail", "pi"]]);
-    assert.deepEqual(first.parts.map((one: Dict) => one.part_name), ["系统提示", "平台说明的共用部分", "任务类型说明的共用部分", "平台说明里这个阶段的那一段", "这个阶段在流程里的出口", "任务类型说明里这个阶段的那一段", "助手程序接在后面的工作目录等"]);
-    assert.deepEqual(first.parts.map((one: Dict) => one.from_name), ["产品自带", "产品自带", "任务目录", "产品自带", "产品自带", "任务目录", "助手程序"]);
-    assert.equal(first.parts[3].file, "agent/prompts/stages/reading.md");
+    const kinds = first.parts.map((one: Dict) => one.part);
+    assert.deepEqual([kinds.slice(0, 2), kinds.slice(-5)], [["system", "position"], ["template", "task_common", "node_exit", "task_activity", "tail"]]);
+    assert.ok(kinds.slice(2, -5).every((one: string) => one === "module"));
+    for (const one of first.parts) assert.equal(one.part_name, PART_NAMES[one.part as keyof typeof PART_NAMES]);
+    assert.deepEqual(first.parts.map((one: Dict) => one.from_name).filter((one: string, i: number, all: string[]) => all.indexOf(one) === i), ["产品自带", "程序生成", "任务目录", "助手程序"]);
+    const template = (prompt: Dict) => prompt.parts.find((one: Dict) => one.part === "template");
+    assert.equal(template(first).file, "agent/prompts/templates/reading.md");
     for (const one of first.parts) assert.deepEqual([one.lines, one.bytes], [one.text.split("\n").length, Buffer.byteLength(one.text, "utf-8")]);
 
-    // 设目录、放一份改过的核读材料那一段：下一句话就用它。
-    writeFileSync(join(dir, "reading.md"), "# 现在这个阶段：核读材料\n\n调试时改的头一句。\n", "utf-8");
+    // 设目录、放一份改过的核读材料的活动模板：下一句话就用它。
+    const head = "---\ntemplate: reading\nwrites_allowed: page, problem\n---\n\n";
+    mkdirSync(join(dir, "templates"));
+    writeFileSync(join(dir, "templates", "reading.md"), `${head}# 现在这个阶段：核读材料\n\n调试时改的头一句。\n`, "utf-8");
     assert.equal((await call("POST", "/api/v1/debug/prompt-dir", { path: dir })).status, 200);
     await send({ text: "再来一句。", client_id: "c-2" });
     const second = (await call("GET", `/api/v1/tasks/${taskId}/debug/system-prompt`)).body;
     assert.equal(second.text, systemText(requests()[1]));
     assert.ok(second.text.includes("调试时改的头一句。"));
     assert.deepEqual([second.how, second.prompt_dir, second.notes], ["recomposed", dir, []]);
-    assert.deepEqual([second.parts[3].from, second.parts[3].from_name, second.parts[3].file], ["prompt_dir", "提示词目录", "reading.md"]);
+    assert.deepEqual([template(second).from, template(second).from_name, template(second).file], ["prompt_dir", "提示词目录", "templates/reading.md"]);
 
     // 改一句再问一句。
-    writeFileSync(join(dir, "reading.md"), "# 现在这个阶段：核读材料\n\n调试时改的后一句，比头一句长。\n", "utf-8");
+    writeFileSync(join(dir, "templates", "reading.md"), `${head}# 现在这个阶段：核读材料\n\n调试时改的后一句，比头一句长。\n`, "utf-8");
     await send({ text: "第三句。", client_id: "c-3" });
     const third = (await call("GET", `/api/v1/tasks/${taskId}/debug/system-prompt`)).body;
     assert.equal(third.text, systemText(requests()[2]));

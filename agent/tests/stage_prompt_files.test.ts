@@ -1,6 +1,6 @@
 /**
- * 有阶段的任务用的说明文件（agent/prompts/stages/）的内容检查。只读这些文件，不改。
- * 平台说明只有一份：放进系统提示的共用部分（agent/prompts/stages/common.md）。
+ * 有阶段的任务用的说明文件的内容检查：系统提示（agent/prompts/stages/system.md）、平台说明的能力模块（agent/prompts/capabilities/）、
+ * 六份活动模板（agent/prompts/templates/）与需求分析流程的定义。只读这些文件，不改。
  */
 
 import assert from "node:assert/strict";
@@ -16,7 +16,8 @@ import { RULE_CONFLICT_PREFIX } from "../src/lib/overall_views.ts";
 import { PROBLEM_BLOCKING, PROBLEM_BLOCKING_FIELD, PROBLEM_LANDED_FIELD, PROBLEM_NOT_BLOCKING, PROBLEM_REVISIT_FIELD } from "../src/lib/definition.ts";
 import { BACK_OPTIONS, ENTER_OPTIONS, type LampInput, PENDING_MARK, STAGES, STAGE_NAMES, STAY_HERE_OPTION, STAY_OPTIONS, type Stage, type WriteKind, canWrite, nextStage, stageLamps } from "../src/lib/stage.ts";
 import { NO_PROPOSAL_LINE, openCardsLine } from "../src/lib/stage_proposal.ts";
-import { nodeHeading, nodeSection, skillBody } from "../src/lib/stage_prompt.ts";
+import { nodeHeading, nodeSection, skillBody } from "../src/lib/context_assemble.ts";
+import { moduleText, platformText } from "./platform_text.ts";
 import { CARD_TYPED_PREFIX } from "../src/lib/dialogue_acts.ts";
 
 /** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
@@ -27,8 +28,15 @@ const EMPTY_LAMP_INPUT: LampInput = {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const STAGES_DIR = join(ROOT, "agent", "prompts", "stages");
-/** 读 stages 目录里的一份文件。活动的定义开头有一段头（lib/activity_def.ts），拼系统提示时去掉，这里也去掉。 */
-const readRaw = (name: string) => skillBody(readFileSync(join(STAGES_DIR, name), "utf-8"));
+const TEMPLATES_DIR = join(ROOT, "agent", "prompts", "templates");
+/**
+ * 读一份说明文件：common.md 是平台说明的模块接起来的整份，六项活动的名字读活动模板，别的读 stages 目录。开头的头都去掉。
+ */
+const readRaw = (name: string) => {
+  if (name === "common.md") return platformText();
+  const stage = STAGES.find((one) => name === `${one}.md`);
+  return skillBody(readFileSync(join(stage ? TEMPLATES_DIR : STAGES_DIR, name), "utf-8"));
+};
 /** 需求分析这条流程的定义：六个节点各一节，写出口与用户说的话不属于这一段时怎样办。 */
 const FLOW = skillBody(readFileSync(join(ROOT, "agent", "prompts", "flows", "analysis.md"), "utf-8"));
 /**
@@ -40,9 +48,6 @@ const read = (name: string) => {
   return stage ? `${readRaw(name).trimEnd()}\n\n${nodeSection(FLOW, stage)}\n` : readRaw(name);
 };
 
-/** 共用部分的第十节（各阶段都要用的）与第十二节（随时可用的七项能力）。 */
-const SECTION_TEN = "十、";
-const SECTION_TWELVE = "十二、";
 
 /** 去掉开头两行 --- 之间的 frontmatter。 */
 function body(text: string): string {
@@ -63,11 +68,11 @@ test("共用部分不带 frontmatter，不提早先的任务，理解格式那�
   assert.ok(text.startsWith("# 在 Taskwright 里怎样工作\n"));
   assert.doesNotMatch(text, /领域说明|老任务|早先建的任务/);
   assert.doesNotMatch(text, /<!--/);
-  assert.equal(renderDocument(text), text, "common.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");
+  assert.equal(renderDocument(text), text, "模块里的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");
 });
 
-test("共用部分的第十节只写各阶段都要用的：六个阶段、阶段不由助手移动、往前的五张卡片与回退卡片的写法、开着的提议、复述卡片、主题页的四件事、局部不明白时怎么办", () => {
-  const ten = [...sections(read("common.md"))].find(([title]) => title.startsWith(SECTION_TEN))![1];
+test("工作的阶段、业务说明的页、问题条目三个模块只写各阶段都要用的：六个阶段、阶段不由助手移动、往前的五张卡片与回退卡片的写法、开着的提议、复述卡片、主题页的四件事、局部不明白时怎么办", () => {
+  const ten = [moduleText("stage_cards"), moduleText("pages_full"), moduleText("problems")].join("\n\n");
   for (const name of STAGES.map((one) => STAGE_NAMES[one])) assert.ok(ten.includes(name), name);
   assert.ok(ten.includes("1. **工作分六个阶段。**"));
   // 阶段不由助手移动：stage 与 reason 已经停用；退回只在输入大面积不能用时提议，五个退回的键与「留在本段」同程序里的常量。
@@ -88,27 +93,24 @@ test("共用部分的第十节只写各阶段都要用的：六个阶段、阶�
   for (const word of ["`story_ok`", "`story_fix`", "`story_again`"]) assert.ok(ten.includes(word), word);
   for (const word of ["**待核实。**", "**已经定下的每一条都要有出处。**", "**废弃一页。**", "**提到。**"]) assert.ok(ten.includes(word), word);
   // 局部不明白：记问题、标待定、接着做；问题分阻断下游与不阻断；了结时写落实到。字段名与取值同程序里的常量。
-  assert.ok(ten.includes("9. **局部不明白时：记问题、标待定，接着做。**"));
+  assert.ok(ten.includes("**局部不明白时：记问题、标待定，接着做。**"));
   for (const word of [`「${PROBLEM_BLOCKING_FIELD}」必须写`, `「${PROBLEM_BLOCKING}」`, `「${PROBLEM_NOT_BLOCKING}」`, `「${PROBLEM_REVISIT_FIELD}」`, `「${PROBLEM_LANDED_FIELD}」`,
     `图上那个节点的文字以「${PENDING_MARK}：」开头`, "阻断下游的排在最前", "任务定义的问题集合里没有这几个字段时不写它们"]) assert.ok(ten.includes(word), word);
   // 各阶段各自的做法不在这里：它们在六段里，一次只给一段。
   for (const word of ["抓没说清的词", "问为什么", "例外清单", "两种节奏"]) assert.ok(!ten.includes(word), word);
 });
 
-test("共用部分的第十二节：随时可用的七项能力各一条，三条通用的规矩；不超过 40 行", () => {
-  const twelve = [...sections(read("common.md"))].find(([title]) => title.startsWith(SECTION_TWELVE))![1];
-  assert.ok(twelve.startsWith("## 十二、随时可用的七项能力\n"));
-  const items = [...twelve.matchAll(/^(\d)\. \*\*([^*]+)\*\*/gm)].map((m) => `${m[1]} ${m[2]}`);
-  assert.deepEqual(items, ["1 提问与了结。", "2 修订。", "3 确认。", "4 记决定。", "5 复述。", "6 评审。", "7 任务状况。"]);
-  assert.deepEqual(twelve.split("\n").filter((line) => line.startsWith("- ")).map((line) => line.slice(2, line.indexOf("：") === -1 ? line.indexOf("。") : Math.min(line.indexOf("：") , line.length))),
-    ["做这七件事不移动阶段，也不用先发卡片。".slice(0, -1), "做完回到手上的事", "你补的内容一律待核实"]);
-  assert.ok(twelve.split("\n").length <= 40, `第十二节现在 ${twelve.split("\n").length} 行`);
+test("「随时可用的七项能力」一节已删去；其中「记决定」与「你补的内容一律待核实」两句并进业务说明的页", () => {
+  assert.ok(!platformText().includes("随时可用的七项能力"));
+  const pages = moduleText("pages_full");
+  assert.ok(pages.includes("5. **记决定。** 用户拍了板时用：立一页标签为「决定」的主题，写清定了什么、为什么，上级主题写它为的那个目标；用户没说为什么就问一句。"));
+  assert.ok(pages.includes("6. 你补的内容一律待核实：用户没有确认之前不算定下，不要拿它当依据。"));
 });
 
 test("有阶段的任务的系统提示：说明已在下文、不用再读 skill 文件，「现在这个阶段」优先；末尾是底线一节", () => {
   const system = read("system.md");
   assert.match(system, /这几份说明已经在下文，不用再去读 skill 文件。/);
-  assert.match(system, /「现在这个阶段」与前面两份说明不一致时，照「现在这个阶段」做。/);
+  assert.match(system, /「现在这个阶段」与平台说明、任务类型说明不一致时，照「现在这个阶段」做。/);
   assert.doesNotMatch(system, /先用 read 读 taskwright-executor/);
   assert.match(system, /\n## 底线\n/);
 });
@@ -179,14 +181,14 @@ test("整理建模那一段的「用户说的话不属于本段时」：分四�
     ["落在这一段", "落在前面的阶段", "落在后面的阶段", "与这件需求无关"]);
   assert.ok(cases[0].endsWith("照做。"));
   assert.ok(cases[1].includes("直接改相应的主题页并写上来源，不用退回") && cases[1].includes("跟着改图"));
-  assert.ok(cases[1].includes("它引出的疑问记成问题条目，不退回") && cases[1].includes("发提议退回核读材料的卡片（第十节第 2 条），由用户点"));
+  assert.ok(cases[1].includes("它引出的疑问记成问题条目，不退回") && cases[1].includes("发提议退回核读材料的卡片（「工作的阶段」第 2 条），由用户点"));
   assert.ok(cases[2].includes("用一句话说明任务现在在整理建模阶段、下一段要做什么") && cases[2].includes("用户打字说可以不算"));
   assert.ok(cases[3].includes("简短作答，回到手上的事"));
 });
 
-test("整理建模那一段：主动画五种图并写明第十一节第 1 条对这一段不适用；固定的七步；算够的七件与灯的数目相同", () => {
+test("整理建模那一段：主动画五种图并写明「画图」第 1 条对这一段不适用；固定的七步；算够的七件与灯的数目相同", () => {
   const text = read("modeling.md");
-  assert.ok(text.includes("这一段你主动画图，不等用户提出，也不用先提议：第十一节第 1 条「用户提出时画、先提议再画」对这一段不适用。"));
+  assert.ok(text.includes("这一段你主动画图，不等用户提出，也不用先提议：「画图」第 1 条「用户提出时画、先提议再画」对这一段不适用。"));
   assert.ok(read("common.md").includes("整理建模阶段例外：这一段你主动把五种图画出来，不等用户提出，也不用先提议，见「现在这个阶段」。"));
   const steps = [...sections(text).get("这一段做什么")!.matchAll(/^(\d)\. \*\*([^*]+)\*\*/gm)].map((m) => `${m[1]} ${m[2]}`);
   assert.deepEqual(steps, ["1 先画系统边界图（context）。", "2 再画用例图（use_case）。", "3 再画对象关系图（class）。", "4 每一页流程画一张流程图（flowchart）。",
@@ -202,7 +204,8 @@ test("整理建模那一段：主动画五种图并写明第十一节第 1 条�
   assert.ok(writing.get("做到什么算够")!.includes("六件：") && writing.get("做到什么算够")!.includes("每个条目依据的图都是用户看过的"));
   assert.ok(writing.get("做到什么算够")!.includes("没有还没了结的阻断下游的问题") && writing.get("做到什么算够")!.includes("没有还标着「待定」的地方"));
   assert.equal(stageLamps(EMPTY_LAMP_INPUT).writing.length, 6);
-  assert.ok(writing.get("这一段做什么")!.includes("条目也可以依据整理建模阶段画的图：来源种类写「图」，出处写图的编号"));
+  // 条目怎样依据页与图写，挪进了平台说明的模块「条目的写法」。
+  assert.ok(moduleText("items_full").includes("条目也可以依据整理建模阶段画的图：来源种类写「图」，出处写图的编号"));
 });
 
 test("每一段的「出口」：往前都是发卡片由用户点，两个选项的键与文字同程序里的常量；没有自己移动阶段的说法；局部不明白不退回，大面积不能用才发回退卡片", () => {
@@ -229,7 +232,7 @@ test("每一段的「出口」：往前都是发卡片由用户点，两个选�
   // 澄清：材料没写而业务必需的规则也要问；答案直接记、答完的几条一张卡片一起了结；答不上的记问题、不追问；不凭一句泛泛的话立目标页。
   const clarifyDo = sections(read("clarifying.md")).get("这一段做什么")!;
   assert.ok(clarifyDo.includes("二是这件业务要运转起来必须有、而材料没有写的规则"));
-  assert.ok(clarifyDo.includes("不要每记一条就发一张「是否已解决」的卡片：在下一问的开头用一句话带过，答完的几条到最后用一张卡片一起问（第五节第 8 条）"));
+  assert.ok(clarifyDo.includes("不要每记一条就发一张「是否已解决」的卡片：在下一问的开头用一句话带过，答完的几条到最后用一张卡片一起问（「怎样回复」第 8 条）"));
   assert.ok(clarifyDo.includes("记下之后不要换个问法再问同一件事"));
   assert.ok(clarifyDo.includes("不立目标页，也不再追问"));
   // 共用部分：答完的几条一张卡片一起问；进入卡片只点名最要紧的几个；待定的记号只有一种。
@@ -238,10 +241,10 @@ test("每一段的「出口」：往前都是发卡片由用户点，两个选�
   assert.ok(common.includes("只点名最要紧的几个，一般不超过六个"));
   assert.ok(common.includes("不要写成「待澄清」「未定」「TBD」或一个问号，程序只认「待定」两个字"));
   // 局部不明白不退回；整理建模、写条目两段写明大面积不能用时发回退卡片。
-  assert.ok(sections(read("modeling.md")).get("出口")!.includes("不要退回，也不要停下来等。照第十节第 9 条记一条问题条目，在图上那一处标「待定：」，接着画别的"));
-  assert.ok(sections(read("modeling.md")).get("出口")!.includes("发提议退回澄清的卡片（第十节第 2 条），由用户点"));
+  assert.ok(sections(read("modeling.md")).get("出口")!.includes("不要退回，也不要停下来等。照「问题条目」记一条问题条目，在图上那一处标「待定：」，接着画别的"));
+  assert.ok(sections(read("modeling.md")).get("出口")!.includes("发提议退回澄清的卡片（「工作的阶段」第 2 条），由用户点"));
   assert.ok(sections(read("writing.md")).get("出口")!.includes("只是一处不明白：照上面第 3 条记问题、标待定，接着写别的"));
-  assert.ok(sections(read("writing.md")).get("出口")!.includes("发提议退回澄清或整理建模的卡片（第十节第 2 条），由用户点"));
+  assert.ok(sections(read("writing.md")).get("出口")!.includes("发提议退回澄清或整理建模的卡片（「工作的阶段」第 2 条），由用户点"));
   // 进入下一段的卡片里列出没了结的问题，阻断下游的排最前。
   for (const stage of ["reading", "clarifying", "modeling", "writing"] as const) assert.ok(sections(read(`${stage}.md`)).get("出口")!.includes("阻断下游的"), stage);
 });
@@ -285,7 +288,7 @@ test("整理建模那一段：例外清单八种，例外的例子以「例外�
 
 test("写条目与评审确认两段：依据用户看过的页、写完发「进入评审确认」的卡片；评审确认阶段提议进入编写文档，用户不写文档时发布版本", () => {
   const writing = read("writing.md");
-  assert.ok(writing.includes("只依据贴了标签、用户看过的页"));
+  assert.ok(moduleText("items_full").includes("只依据贴了标签、用户看过的页"));
   assert.ok(writing.includes("你不能自己把任务移到评审确认。"));
   const reviewing = read("reviewing.md");
   assert.ok(reviewing.includes("用户点了「已完成，发布版本」，再调用发布版本"));
@@ -294,29 +297,26 @@ test("写条目与评审确认两段：依据用户看过的页、写完发「�
 });
 
 test("卡片之外的话先判断是不是在回答卡片；搁下的卡片不催，提议进入下一段之前一次一张重发；说明里用的名字与程序写的一致", () => {
-  const common = sections(read("common.md"));
-  const section = (title: string) => [...common.entries()].find(([name]) => name.startsWith(title))![1];
-  // 第一节与第八节：卡片文本框里打的字前面的那条说明、它要写理解；开头几个字与扩展写的相同。
-  assert.ok(section("一、").includes(`以「${CARD_TYPED_PREFIX}」开头的说明`));
-  assert.ok(section("八、").includes(`用户在卡片的文本框里打的字不在此列：它前面的说明以「${CARD_TYPED_PREFIX}」开头，那是用户自己的话，要写理解。`));
-  // 第九节：先判断，是就写 responds_to，不是就搁下；重发写 resends。
-  const facts = section("九、");
+  // 系统消息与「先写理解」：卡片文本框里打的字前面的那条说明、它要写理解；开头几个字与扩展写的相同。
+  assert.ok(moduleText("system_message").includes(`以「${CARD_TYPED_PREFIX}」开头的说明`));
+  assert.ok(moduleText("understanding_full").includes(`用户在卡片的文本框里打的字不在此列：它前面的说明以「${CARD_TYPED_PREFIX}」开头，那是用户自己的话，要写理解。`));
+  // 三个事实：先判断，是就写 responds_to，不是就搁下；重发写 resends。
+  const facts = moduleText("three_facts");
   for (const said of ["不一定是在回答卡片，先按上下文判断", "理解里 `responds_to` 指向它，页面据此把那张卡片显示为答过", "那张卡片算暂时搁下",
     "搁下的卡片不要催，不要紧跟着重发，也不要当作用户已经同意", "`act` 里写 `resends`（值是它的编号，只有提问与请选择可以重发）", "提议的卡片不重发"]) {
-    assert.ok(facts.includes(said), `第九节应当写着「${said}」`);
+    assert.ok(facts.includes(said), `「三个事实怎么用」应当写着「${said}」`);
   }
-  // 第十节第 3 条：发进入下一段的卡片之前看任务状态最后一行，一次一张重发，仍不答的记问题条目，重发过一次的不再重发。
-  const stages = section(SECTION_TEN);
+  // 「工作的阶段」第 3 条：发进入下一段的卡片之前看任务状态最后一行，一次一张重发，仍不答的记问题条目，重发过一次的不再重发。
+  const stages = moduleText("stage_cards");
   const line = openCardsLine([{ act_id: "r3-2", function: "ask", summary: "借阅期限是多少天", event_seq: 9 }]);
   const named = /^(这一段还开着的提问与请选择)/.exec(line)![1];
   for (const said of [`先用查询任务状态看最后一行「${named}」`, "先把它们一次一张重发，这时不提议进入下一段", "这个问题前面没有答，这一段结束前请确认",
-    "照第 9 条记成问题条目，写明「阻断下游」或「不阻断」；重发过一次的不再重发。全部过完，才发进入下一段的卡片。"]) {
-    assert.ok(stages.includes(said), `第十节应当写着「${said}」`);
+    "照「问题条目」记成问题条目，写明「阻断下游」或「不阻断」；重发过一次的不再重发。全部过完，才发进入下一段的卡片。"]) {
+    assert.ok(stages.includes(said), `「工作的阶段」应当写着「${said}」`);
   }
-  assert.ok(section(SECTION_TWELVE).includes("这一段还有哪几张提问与请选择的卡片用户没有答"));
 });
 
-test("共用部分第五节新加的那个反例标明了它是错的写法", () => {
+test("共用部分「怎样回复」新加的那个反例标明了它是错的写法", () => {
   assert.ok(read("common.md").includes("是错的：提问的卡片上没有可点的选项"));
 });
 
@@ -330,8 +330,12 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   assert.doesNotMatch(common, /都要整理进条目/);
   assert.doesNotMatch(common, /分拣成/);
   assert.doesNotMatch(common, /一批最多写 4 个条目/);
-  for (const head of ["1. **材料没按块读完不要动笔。**", "2. **含糊的地方不要自己定。**", "3. **问用户与记下答复。**", "4. **「用户决定保留」只认对话里的用户。**",
-    "5. **用户的说法与材料原文对不上时**", "6. **业务说明的每一页怎样填。**"]) assert.ok(common.includes(head), head);
+  for (const head of ["1. **材料没按块读完不要动笔。**", "2. **问用户与记下答复。**", "3. **用户的说法与材料原文对不上时**", "4. **业务说明的每一页怎样填。**"]) {
+    assert.ok(common.includes(head), head);
+  }
+  // 问题条目的写法与「用户决定保留」只认对话里的用户，挪进了平台说明的模块「问题条目」。
+  for (const head of ["1. **含糊的地方不要自己定。**", "2. **「用户决定保留」只认对话里的用户。**"]) assert.ok(moduleText("problems").includes(head), head);
+  assert.ok(!common.includes("含糊的地方不要自己定") && !common.includes("只认对话里的用户"));
   assert.deepEqual(readdirSync(join(SRS_SKILL, "stages")).sort(), ["document.md", "reading.md", "writing.md"]);
   const document = readFileSync(join(SRS_SKILL, "stages", "document.md"), "utf-8");
   assert.ok(document.startsWith("## 这类任务在编写文档阶段\n"));

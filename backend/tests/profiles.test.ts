@@ -106,8 +106,13 @@ test("桌面形态下 pi 的设置文件的 defaultProvider 与 defaultModel 两
     const stageFiles = record["按阶段的说明"] as { 有没有: boolean; 代码仓里的路径: string; 文件: { 路径: string; 字节数: number; 摘要值: string }[] };
     assert.deepEqual([stageFiles.有没有, stageFiles.代码仓里的路径], [true, "agent/prompts/stages"]);
     assert.deepEqual(stageFiles.文件.map((one) => one.路径),
-      ["README.md", "clarifying.md", "common.md", "document.md", "modeling.md", "publish.md", "reading.md", "reviewing.md", "system.md", "writing.md"]);
+      ["README.md", "clarifying.md", "document.md", "modeling.md", "publish.md", "reading.md", "reviewing.md", "system.md", "writing.md"]);
     for (const one of stageFiles.文件) assert.match(one.摘要值, /^[0-9a-f]{16}$/);
+    // 平台说明的模块与活动模板：同样记着每份的字节数与摘要值，模块带着能力目录的名字。
+    const modules = record["平台说明的模块"] as typeof stageFiles, templates = record["活动模板"] as typeof stageFiles;
+    assert.deepEqual([modules.有没有, modules.代码仓里的路径, templates.有没有, templates.代码仓里的路径], [true, "agent/prompts/capabilities", true, "agent/prompts/templates"]);
+    assert.ok(modules.文件.some((one) => one.路径 === join("reading", "materials.md")));
+    assert.deepEqual(templates.文件.map((one) => one.路径), ["clarifying.md", "document.md", "idle.md", "modeling.md", "reading.md", "reviewing.md", "writing.md"]);
 
     writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { local: { models: [{ id: "qwen" }] } } }));
     assert.deepEqual(probeModel(desktop, env), { name: "local/qwen", available: true,

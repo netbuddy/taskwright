@@ -11,10 +11,11 @@ import { dirname, join, relative, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DIAGRAM_KINDS, DIAGRAM_KIND_NAMES } from "../src/lib/diagram.ts";
+import { moduleText, platformText } from "./platform_text.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-/** 平台说明：放进系统提示的共用部分，所有任务类型共用。 */
-const PLATFORM = join(ROOT, "agent", "prompts", "stages", "common.md");
+/** 平台说明：能力模块接起来的整份，所有任务类型共用。 */
+const PLATFORM_TEXT = platformText();
 const TASK_SKILLS = readdirSync(join(ROOT, "task-types"), { withFileTypes: true }).filter((d) => d.isDirectory()).flatMap((type) => {
   const base = join(ROOT, "task-types", type.name, ".pi", "skills");
   if (!existsSync(base)) return [];
@@ -48,7 +49,7 @@ function taskSkillText(path: string): string {
 }
 
 test("平台说明只用修订号，不用版本号", () => {
-  const body = bodyOf(PLATFORM);
+  const body = PLATFORM_TEXT;
   for (const word of ["version_no", "base_version", "版本号是", "新版本", "当前版本"]) assert.ok(!body.includes(word), word);
   assert.doesNotMatch(body, /第 ?[0-9N一二三四五六七八九十]+ ?版/);
   assert.ok(body.includes("base_revision"));
@@ -56,15 +57,15 @@ test("平台说明只用修订号，不用版本号", () => {
 });
 
 test("平台说明不写需求规格任务的专名", () => {
-  const body = bodyOf(PLATFORM);
+  const body = PLATFORM_TEXT;
   // 需求规格任务的问题集合现在叫「问题」，这是个日常词，平台说明也用它说问题条目，所以只拦旧名。
   for (const word of ["功能用例", "非功能需求", "待定与范围外事项", "UC-", "NFR-", "CON-", "TBD-", "requirements-engineering",
     "use-case-writing", "ears-writing", "基本流程", "前置条件"]) assert.ok(!body.includes(word), word);
 });
 
-test("平台说明第四节写明来源的五种：助手补充要写理由、不用填出处、补进的字写在 inserted 里；依据另一个条目时种类写「条目」、依据一张图时种类写「图」，它改了之后会标「依据已变」", () => {
-  const body = bodyOf(PLATFORM);
-  const section = body.slice(body.indexOf("## 四、来源怎样填"), body.indexOf("## 五、"));
+test("平台说明「来源怎样填」写明来源的五种：助手补充要写理由、不用填出处、补进的字写在 inserted 里；依据另一个条目时种类写「条目」、依据一张图时种类写「图」，它改了之后会标「依据已变」", () => {
+  const body = PLATFORM_TEXT;
+  const section = moduleText("sources");
   for (const words of ["种类有五种：", "- **文档原文**：", "- **用户的话**：", "- **助手补充**：", "- **条目**：", "- **图**：",
     "出处写图的编号（例如 D-002）；摘录可以写空文字，也可以逐字抄图里一个节点上的文字", "图之后又改了，界面上这条来源旁同样会标「依据已变」",
     "出处不用填；摘录写一句理由：你为什么这样补、依据的是什么常识或推断，不写理由会被拒绝",
@@ -74,14 +75,14 @@ test("平台说明第四节写明来源的五种：助手补充要写理由、�
     "系统会记下你引用时它是第几次修订：它之后又改了，界面上这条来源旁会标「依据已变」",
     "这时用 get_item 看它改了什么，需要的话更新这个条目并重新写这条来源"]) assert.ok(section.includes(words), words);
   // 早期版本的两个种类名、不再写入也不再显示的「用户直接修改」不留在说明里；来源一节不说「执行者」。
-  for (const words of ["执行者补充", "种类写「领域说明」", "用户直接修改"]) assert.ok(!body.includes(words), words);
+  for (const words of ["执行者补充", "种类写「领域说明」", "用户直接修改"]) assert.ok(!section.includes(words), words);
   assert.ok(!section.includes("执行者"));
 });
 
 test("平台说明有画图一节：核读材料与澄清两段不画、别的阶段用户要求时画或先提议、用保存图这一个工具、六种图的画法、节点写条目编号、来源怎样写、校验不过与改图删图", () => {
-  const body = bodyOf(PLATFORM);
-  const section = body.slice(body.indexOf("## 十一、画图"));
-  assert.ok(body.includes("## 十一、画图"));
+  const body = PLATFORM_TEXT;
+  const section = moduleText("diagrams_full");
+  assert.ok(section.startsWith("## 画图\n"));
   for (const words of ["核读材料与澄清两个阶段不能画图，工具会拒绝", "不要不问就画", "图不是条目，不要用 save_revision 存；图不评审，不算进完成条件",
     "用流程图的写法画，第一行写 `flowchart LR`", "参与者与用例都写成圆角节点，例如 `buyer([\"买家\"])`", "系统边界写成子图", "包含与扩展写在虚线上",
     "不要用 Mermaid 自带的用例图写法", "第一行写 `classDiagram`",
@@ -100,36 +101,36 @@ test("平台说明有画图一节：核读材料与澄清两段不画、别的�
 });
 
 test("平台说明写明被拒之后不删信息换取通过", () => {
-  const body = bodyOf(PLATFORM);
+  const body = PLATFORM_TEXT;
   assert.ok(body.includes("不得为了通过而删掉引用、来源或关联条目"));
   assert.ok(body.includes("删掉信息换取通过是错误做法"));
 });
 
 test("平台说明有评审一节：评审由用户发起，请求评审的工具只在用户要求时用", () => {
-  const body = bodyOf(PLATFORM);
-  assert.ok(body.includes("## 六、评审"));
+  const body = PLATFORM_TEXT;
+  assert.ok(moduleText("review").startsWith("## 评审\n"));
   for (const words of ["评审由用户在界面上发起，你不要主动评审", "用户在对话里要求评审时，才调用请求评审（request_review）",
     "问题类发现照建议改", "建议类发现告诉用户，由用户定", "不得为通过评审删掉内容或来源"]) assert.ok(body.includes(words), words);
 });
 
 test("平台说明写明 PDF 材料怎样读、出处怎样写：读投影、每块一行、表格按行不分格、摘录不跨页、没有文字的页那一行的意思、分段清单按页", () => {
-  const body = bodyOf(PLATFORM);
+  const body = PLATFORM_TEXT;
   for (const words of ["每份 PDF 材料有几页、几块、哪几页没有文字", "PDF 材料只读它的文字版，就是它旁边同名加 .md 的文件（例如 inputs/x.pdf.md），不要 read .pdf 本身",
     "文字版每块一行，行首方括号里是页与块，例如 `[p3-2]` 是第 3 页的第 2 块", "以 `>` 开头的行是页眉页脚，没有页与块，不能作出处",
     "表格按行读，不分格：表格的一行是一块", "写着「（这一页没有文字，可能是扫描件）」的那一行块号是 0，意思是这一页读不出字，它不能作出处",
     "分段清单（同名加 .segments.json）按页分段", "引用时出处写 PDF 文件加页与块，例如 `inputs/x.pdf#p3-2`",
     "摘录不要跨页：一句话跨了两页，就分成两条来源，各写各的页与块", "PDF 文档照材料的办法加页与块（例如 `knowledge/lib-0a1b2c3d/借阅规范.pdf#p3-2`",
-    "PDF 材料每条各写页与块（写法见第二节第 1 条）"]) assert.ok(body.includes(words), words);
+    "PDF 材料每条各写页与块（写法见「先看材料」）"]) assert.ok(body.includes(words), words);
   // 说明里的那句「没有文字」要与投影里写的一字不差（backend/src/pdf_projection.ts 的 NO_TEXT_LINE）。
   assert.ok(body.includes("（这一页没有文字，可能是扫描件）"));
 });
 
 test("平台说明写明知识库什么时候必须查、怎样查（用查找知识库这一个办法，两路并行）、查到的片段怎样照抄、来源怎样记", () => {
-  const body = bodyOf(PLATFORM);
+  const body = PLATFORM_TEXT;
   // 什么时候必须查：材料把具体内容指给别的文档时，不以用户提没提知识库为条件。
   for (const words of ["必须到知识库里把那条具体规定查出来，把规定本身写进条目", "这一条不看用户有没有提到知识库", "保存之前对照材料数一遍"]) assert.ok(body.includes(words), words);
   // 查不到时分两种：公开的常识或法规写进条目并用「助手补充」来源写明理由；别的保留材料原话、记问题条目，不编。
-  for (const words of ["先看它是不是公开的常识或法规（例如七天无理由退货）", "来源种类写「助手补充」并写明理由（写法见第四节）",
+  for (const words of ["先看它是不是公开的常识或法规（例如七天无理由退货）", "来源种类写「助手补充」并写明理由（写法见「来源怎样填」）",
     "另外新增一条问题条目写明「材料指向某某规定，知识库里没有找到」", "不要自己编一个规定填上"]) assert.ok(body.includes(words), words);
   // 「助手补充」是保存修订认的种类名；早期版本的叫法「执行者补充」不能留在说明里。
   assert.ok(!body.includes("执行者补充"));
@@ -147,7 +148,7 @@ test("平台说明写明知识库什么时候必须查、怎样查（用查找�
   for (const words of ["也不能用 ls 看", "会被系统拦下", "读原文核对", "按字面查找（grep）", "可以用 read 整份读", "清单给的绝对路径", "读清单里给的投影", "相邻片段", "相邻的前一个", "最多 5"]) {
     assert.ok(!body.includes(words), words);
   }
-  // 来源怎样记：摘录从条号开始抄；每条知识库来源都写明支持哪一处，第四节同样要求。
+  // 来源怎样记：摘录从条号开始抄；每条知识库来源都写明支持哪一处，「来源怎样填」同样要求。
   for (const words of ["文档里的规定带条号时，摘录从条号开始抄", "每条知识库来源都必须用 `supports` 写明它支持条目的哪个字段、哪一项",
     "条目有两条或更多来源时，每条来源都必须写 `supports`；出处指向知识库的来源一律必须写"]) assert.ok(body.includes(words), words);
   // 说明里一律说「知识库」，不简称「库」；「任务库」是另一样东西。
@@ -173,11 +174,11 @@ test("执行者的工具清单是十二个：含请求评审、查找知识库�
 });
 
 test("同批引用：平台说明写明可以引用同一批里排在前面的新增条目；任务 skill 仍把问题条目放在最后一批", () => {
-  const platform = bodyOf(PLATFORM);
+  const platform = PLATFORM_TEXT;
   assert.ok(platform.includes("问题条目的关联条目只能填已经存在的条目，或者同一批里排在它前面新增的条目"));
   assert.ok(platform.includes("也可以写同一批里排在前面的新增操作将要拿到的编号"));
   // 保存修订已经认同一批里排在前面的新增条目，这句旧说法与工具行为相反，不能再出现。
-  for (const path of [PLATFORM, ...TASK_SKILLS]) assert.ok(!bodyOf(path).includes("同一批里新增的条目还没有编号"), shown(path));
+  for (const [name, text] of [["平台说明", PLATFORM_TEXT], ...TASK_SKILLS.map((path) => [shown(path), bodyOf(path)])]) assert.ok(!text.includes("同一批里新增的条目还没有编号"), name);
   for (const path of TASK_SKILLS) {
     assert.ok(taskSkillText(path).includes("再把问题条目单独放在最后一批保存，不和别的条目放在同一批：每批内容少，出错时好改。"), shown(path));
   }
@@ -199,9 +200,8 @@ test("任务 skill 的正文不含平台层的词", () => {
 });
 
 test("两层 skill 都不提已经退役的工具与角色", () => {
-  for (const path of [PLATFORM, ...TASK_SKILLS]) {
-    const text = readFileSync(path, "utf-8");
-    for (const word of RETIRED_WORDS) assert.ok(!text.includes(word), `${shown(path)} 里还提到已退役的 ${word}`);
+  for (const [name, text] of [["平台说明", PLATFORM_TEXT], ...TASK_SKILLS.map((path) => [shown(path), readFileSync(path, "utf-8")])]) {
+    for (const word of RETIRED_WORDS) assert.ok(!text.includes(word), `${name} 里还提到已退役的 ${word}`);
   }
 });
 
@@ -228,9 +228,9 @@ test("启动配置的系统提示就是有阶段的任务用的那一份，且�
   assert.ok(!text.includes("需求工程"));
 });
 
-test("系统提示一律说「知识库」，不简称「库」，不用写给开发者看的词；知识库的规矩写在平台说明第二节第 4 条", () => {
+test("系统提示一律说「知识库」，不简称「库」，不用写给开发者看的词；知识库的规矩写在平台说明「知识库怎样用」", () => {
   const text = readFileSync(join(ROOT, DEV_PROFILE.system_prompt_file), "utf-8");
   assert.doesNotMatch(text.replaceAll("知识库", ""), /库/);
   for (const word of ["检索", "向量", "进程", "项目", "不能用 grep", "也不能用 ls", "读原文核对"]) assert.ok(!text.includes(word), word);
-  assert.match(bodyOf(PLATFORM), /\n4\. \*\*知识库怎样用。\*\*/);
+  assert.ok(moduleText("knowledge").startsWith("## 知识库怎样用\n"));
 });

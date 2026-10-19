@@ -31,6 +31,7 @@ import { runUserOperation } from "../src/lib/user_ops.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
 import { renderDocument } from "../../scripts/render-intent-schema.mjs";
 import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace, overallDefinition, query, tempDir } from "./helpers.ts";
+import { moduleText, platformText } from "./platform_text.ts";
 import { fillText } from "../src/lib/texts.ts";
 
 const SESSION = "session-test";
@@ -718,23 +719,26 @@ test("续接会话时，任务现状消息列出还在等回应的执行者行�
 test("唯一来源：回复的五种主行为取自 schema；平台共用说明的生成区与 schema 一致", () => {
   assert.deepEqual([...ACT_KINDS], [...EXECUTOR_FUNCTIONS]);
   assert.deepEqual([...EXECUTOR_FUNCTIONS], ["ask", "confirm", "suggest", "choose", "propose"]);
-  const path = join(import.meta.dirname, "..", "prompts", "stages", "common.md");
-  const text = readFileSync(path, "utf-8");
+  // 生成区在两个模块里：先写理解的全文与批处理活动用的精简本，两份都要与 schema 一致。
+  for (const name of ["understanding_full", "understanding_brief"]) {
+    const brief = readFileSync(join(import.meta.dirname, "..", "prompts", "capabilities", "dialogue", `${name}.md`), "utf-8");
+    assert.equal(renderDocument(brief), brief, `${name}.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs`);
+    for (const fn of INTENT_SCHEMA.$defs.user_function.enum) assert.match(brief, new RegExp("`" + fn + "`"));
+  }
+  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "capabilities", "dialogue", "understanding_full.md"), "utf-8");
   assert.match(text, /\n（理解格式说明开始，由 agent\/prompts\/schemas\/user_intent.schema.json 生成，不要手改）\n/);
   assert.match(text, /\n（理解格式说明结束）\n/);
-  // HTML 注释会让按 Markdown 渲染的查看器吞掉后面的内容，生成区的标记用普通文字行；第八节不再要求写在第一段。
+  // HTML 注释会让按 Markdown 渲染的查看器吞掉后面的内容，生成区的标记用普通文字行；「先写理解」不再要求写在第一段。
   assert.doesNotMatch(text, /<!--/);
   assert.doesNotMatch(text, /第一段/);
   // 一句话只写一份理解，不要在后面的消息里重复写。
   assert.match(text, /一句话只写一份理解，写完直接调用工具，不要在后面的消息里重复写；调用保存修订之前先确认这一轮已经写过理解。/);
   // 平台共用说明里的格式说明与识别用的 schema 是同一个文件。
   assert.equal(REGISTERED_OUTPUTS[0].schema, INTENT_SCHEMA);
-  assert.equal(renderDocument(text), text, "common.md 的理解格式生成区过期了，跑 node scripts/render-intent-schema.mjs");
-  for (const fn of INTENT_SCHEMA.$defs.user_function.enum) assert.match(text, new RegExp("`" + fn + "`"));
 });
 
-test("平台共用说明第五节：向用户要回应的判据、三个正例一个反例、告知点名条目；同批引用的编号规矩", () => {
-  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "stages", "common.md"), "utf-8");
+test("平台说明「怎样回复」：向用户要回应的判据、三个正例一个反例、告知点名条目；同批引用的编号规矩", () => {
+  const text = platformText();
   assert.match(text, /向用户要的回应，只在你等用户的一个具体回应、没有它下一步做不了或不该做时才填；它的文字是要用户回应的那句话，不是你的答案。/);
   assert.match(text, /正例一：用户问「材料里写了保留几天吗」，材料没写。你先答「材料没写」，再提问「你希望保留几天？」。/);
   assert.match(text, /正例二：用户问「现在还差什么」。你答完还差哪几项，再请选择「现在完成」还是「还要再改」。/);
@@ -751,7 +755,7 @@ test("平台共用说明第五节：向用户要回应的判据、三个正例�
   assert.doesNotMatch(text, /同一批里新增的条目还没有编号/);
 });
 
-test("功能说明写明三条判据（告知与纠正、请求与纠正、询问与无关）与同意的范围；第八节写明复合回答怎么数，各配例子", () => {
+test("功能说明写明三条判据（告知与纠正、请求与纠正、询问与无关）与同意的范围；「先写理解」写明复合回答怎么数，各配例子", () => {
   const usage = INTENT_SCHEMA.$defs.user_function["x-usage"];
   assert.match(usage.inform, /回答你问的、还没定下来的事，也是告知，即使这个取值要写进条目/);
   assert.match(usage.inform, /指出了现有内容错，才是纠正/);
@@ -764,7 +768,7 @@ test("功能说明写明三条判据（告知与纠正、请求与纠正、询�
   assert.match(usage.clarify, /判据是那个说法出自你刚才的回复/);
   assert.match(usage.affirm, /用户回答你的请选择（选了其中一项）或者说自己看过了，是告知，不是同意/);
   assert.equal(INTENT_SCHEMA.properties.acts.description, "用户这句话里的对话行为，按用户说的先后排，一件事一项。");
-  const text = readFileSync(join(import.meta.dirname, "..", "prompts", "stages", "common.md"), "utf-8");
+  const text = moduleText("understanding_full");
   assert.match(text, /怎么数：按用户话里的分句或分号逐段看，每一段有一个独立的用意就是一项/);
   assert.match(text, /三段话三项的例子：用户说「每人最多借五本；逾期罚款的事先不管；毕业生什么时候注销借书证，材料里写了吗？」，写告知、告知、询问三项。/);
   assert.match(text, /两段话其实是一项的例子：用户说「续借的事我想好了：每本最多续借一次」，前一段只是引出后一段，写一项告知。/);

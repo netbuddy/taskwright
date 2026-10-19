@@ -40,7 +40,8 @@ const ALLOWED: Record<string, string[]> = {
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
   // 末两个是系统提示里两段固定的文字（常量）：任务空闲时的开头、用户单独开展一项活动时代替节点出口的一段；整栈测试拿它们核对模型收到的文字。
-  "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames", "IDLE_OPENING", "STANDALONE_EXIT"],
+  "context_assemble.ts": ["composeContext", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames", "PROMPTS_DIR"],
+  "prompt_modules.ts": ["loadModules"],
   // 图：种类与编号的常量、从库里读图、从 Mermaid 文本里扫条目编号、用户看过哪些图（只读与只做计算的函数，不写库）。
   "diagram.ts": ["DIAGRAM_KINDS", "DiagramRecord", "diagramViewed", "drawnItemIds", "kindName", "latestVersion", "liveDiagrams", "readDiagrams", "viewedDiagramRevisions"],
   // 从 Mermaid 文本里扫东西（只做计算）：系统边界图画没画出系统与系统外面的节点，保存前的校验用。

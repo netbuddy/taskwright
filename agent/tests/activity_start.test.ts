@@ -13,7 +13,7 @@ import { prepareReviews } from "../src/lib/review.ts";
 import { SaveRejected, saveRevision } from "../src/lib/save_revision.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import { BACK_OPTIONS, ENTER_OPTIONS, IDLE, SCOPE_MAX_LENGTH, STAY_HERE_OPTION, STAY_OPTIONS } from "../src/lib/stage.ts";
-import { whereInWorkspace } from "../src/lib/stage_prompt.ts";
+import { whereInWorkspace } from "../src/lib/context_assemble.ts";
 import {
   activeCounts, activityDoneGate, activityDoneOf, activityRecords, archivedSessions, recordStageCardClick, sessionWorkItem, stageLines, stageOf, stageSummary, startActivity,
   workItemSessionName, workItemSessions,

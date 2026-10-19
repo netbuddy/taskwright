@@ -1,6 +1,6 @@
 /**
  * 按阶段换系统提示的挂点：一次运行开始之前（before_agent_start），任务有阶段就把系统提示整份换成
- * 「系统提示、两份共用部分、现在这个阶段的那一段」（怎样拼见 lib/stage_prompt.ts），早先的任务什么都不做。
+ * 按会话选段拼成的那一份（怎样拼见 lib/context_assemble.ts），早先的任务什么都不做。
  *
  * pi 的约定（docs/extensions.md）：这个事件的处理函数返回 systemPrompt，就整份替换这一次运行的系统提示；
  * 下一次运行不返回，用的就是启动参数给的那一份。RPC 形态下同样触发；扩展代用户发的话引起的运行也触发；
@@ -8,7 +8,7 @@
  * 助手在回复里移动阶段时这次运行随即结束，用户点「开始写条目」时扩展先记移动、再代发那句固定的话。
  * 这几条由 backend/tests/stage_prompt_rpc.test.ts 用真的 pi 核对。
  *
- * 不是每次都重读重拼：进程里记着上一份，阶段与文件都没变就原样交回（lib/stage_prompt.ts 的 StagePromptCache）。
+ * 不是每次都重读重拼：进程里记着上一份，阶段与文件都没变就原样交回（lib/context_assemble.ts 的 ContextCache）。
  *
  * 每次换了系统提示都经状态栏报一行短事实给后端（键名 taskwright-stage-prompt）：哪个阶段、这一次是重拼还是沿用、
  * 说明文字与它各部分的摘要值、字节数与行数（不算 pi 接在后面的工作目录那一截），不带文字本身。它不写库。
@@ -19,16 +19,16 @@
  * 给用户看的消息（customType 为 taskwright-stage-prompt-error，文字取自模板 stage_prompt.compose_failed），并把原因报出去。
  * 这一条由 backend/tests/stage_prompt_rpc.test.ts 用真的 pi 核对。
  *
- * 调试模式（后端带 --debug 启动时给了环境变量，见 lib/stage_prompt.ts 的 debugPromptDir）下多做两件事：每次运行开始时读一次设置里的
+ * 调试模式（后端带 --debug 启动时给了环境变量，见 lib/context_assemble.ts 的 debugPromptDir）下多做两件事：每次运行开始时读一次设置里的
  * 「提示词目录」，目录里有的文件代替原来的；报出去的那一行另带每一部分的文字（texts），早先的任务也报一行（启动时给的整份）。
  * 这些文字后端只留在内存里给调试接口用，不写进归档。
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
-  type ComposeHow, type LoadedSkill, type PartFact, type PartKind, type PartOrigin, type StagePrompt, StagePromptCache, debugPromptDir, digestOf, partFact, piTail,
+  type ComposeHow, ContextCache, type LoadedSkill, type PartFact, type PartKind, type PartOrigin, type StagePrompt, debugPromptDir, digestOf, partFact, piTail,
   whereInWorkspace,
-} from "../lib/stage_prompt.ts";
+} from "../lib/context_assemble.ts";
 import type { Position } from "../lib/stage.ts";
 import { fillText } from "../lib/texts.ts";
 
@@ -89,7 +89,7 @@ export interface StopMessage {
  * 处理一次 before_agent_start：返回要换上的系统提示；早先的任务不换，返回 undefined；拼不成时停下这次运行，返回写进会话的那条消息。
  * 单独导出是为了不起 pi 也能测；cache 与 summaries 由 registerStagePrompt 在进程里各留一份。
  */
-export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: StagePromptCache,
+export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: ContextCache,
   summaries: WeakMap<StagePrompt, ReturnType<typeof summarize>>): { systemPrompt: string } | { message: StopMessage } | undefined {
   const report = (fact: StagePromptReport) => ctx.ui.setStatus(STAGE_PROMPT_STATUS_KEY, JSON.stringify(fact));
   const launched = String(event.systemPrompt ?? "");
@@ -122,7 +122,7 @@ export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: Stag
 }
 
 export function registerStagePrompt(pi: ExtensionAPI): void {
-  const cache = new StagePromptCache();
+  const cache = new ContextCache();
   const summaries = new WeakMap<StagePrompt, ReturnType<typeof summarize>>();
   // 拼不成时要停下这次运行。before_agent_start 的时候 pi 还没有开始流式请求，这时调用 abort 不起作用（实测模型照样被调用）；
   // 所以这里只记下「要停」，到这次运行第一个回合开始（turn_start，请求模型之前）再调用 abort：模型一次也不被请求，

@@ -10,9 +10,16 @@
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
-import { IDLE_OPENING, STANDALONE_EXIT } from "../../agent/src/lib/stage_prompt.ts";
+import { join } from "node:path";
+import { PROMPTS_DIR } from "../../agent/src/lib/context_assemble.ts";
+import { loadModules } from "../../agent/src/lib/prompt_modules.ts";
 import { captureConsole, movesSql, sendAndWaitTurn, tempDir } from "./helpers.ts";
 import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
+
+/** 空闲的规矩与单项活动的收尾：平台说明里两个模块的正文。 */
+const moduleBody = (name: string) => loadModules(join(PROMPTS_DIR, "capabilities")).find((one) => one.name === name)!.body;
+const IDLE_OPENING = moduleBody("idle_rules");
+const STANDALONE_EXIT = moduleBody("standalone_exit");
 
 captureConsole();
 process.env.PI_OFFLINE = "1";
