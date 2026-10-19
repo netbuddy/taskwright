@@ -175,6 +175,75 @@
       "·数据按敏感程度分级处理，不同级别的数据采用不同的传输方式。"
     ]
   },
+  "sections": {
+    "cover": "Sample Guide 2025",
+    "pages": [
+      [
+        [
+          32,
+          "Sample Guide 2025"
+        ],
+        [
+          11,
+          "This guide is a sample for the tests."
+        ],
+        [
+          11,
+          "It has no bookmarks at all."
+        ]
+      ],
+      [
+        [
+          20,
+          "Part A: Access"
+        ],
+        [
+          15,
+          "Description"
+        ],
+        [
+          11,
+          "Access is granted per task."
+        ],
+        [
+          11,
+          "Access ends with the task."
+        ]
+      ],
+      [
+        [
+          15,
+          "Examples"
+        ],
+        [
+          11,
+          "A reader asks for a file."
+        ],
+        [
+          11,
+          "The file is opened for reading only."
+        ]
+      ],
+      [
+        [
+          20,
+          "Part B: Audit"
+        ],
+        [
+          15,
+          "Description"
+        ],
+        [
+          11,
+          "Every call is written to the log."
+        ],
+        [
+          11,
+          "The log is kept for three years."
+        ]
+      ]
+    ]
+  },
   "scanned": {
     "header": "读者意见登记表（扫描件样本）",
     "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"

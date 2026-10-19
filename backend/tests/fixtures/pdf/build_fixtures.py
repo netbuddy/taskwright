@@ -24,6 +24,8 @@
                   并把字体说明里「定宽」的标记抹掉（有的文件里等宽字体就是这样的，只能靠字宽认出来）；代码中间有一个空行。
   list.pdf        编号列表与项目符号列表：编号列表每项两行，第二行悬挂缩进到编号之后，每行都排满；列表之后紧跟一条排满的条款「1.5 ……」。
                   项目符号列表每项一行，也排满。各行之间行距相同，只能靠编号与缩进分开。
+  sections.pdf    四页英文，没有书签目录，靠字号分出层次：第 1 页是 32 点的封面标题，第 2、4 页各有一个 20 点的部分标题，
+                  部分标题下面紧跟 15 点的小标题（第 3 页也有一个），正文 11 点。
   scanned.pdf     三页：第 1 页有正文，第 2 页只有页眉与一张图，第 3 页只有一张图。
   quirks.pdf      文字层里的两种毛病：常用汉字写成部首字符（文件里「字形到 Unicode」的对照表被改写过）；字与字之间被撑开。
   english.pdf     英文，左对齐不排满；有一处行末断词的连字符；用标准字体（不嵌入）。
@@ -303,6 +305,30 @@ def list_sample():
     return LIST
 
 
+SECTIONS = {
+    "cover": "Sample Guide 2025",
+    "pages": [
+        [(32, "Sample Guide 2025"), (11, "This guide is a sample for the tests."), (11, "It has no bookmarks at all.")],
+        [(20, "Part A: Access"), (15, "Description"), (11, "Access is granted per task."), (11, "Access ends with the task.")],
+        [(15, "Examples"), (11, "A reader asks for a file."), (11, "The file is opened for reading only.")],
+        [(20, "Part B: Audit"), (15, "Description"), (11, "Every call is written to the log."), (11, "The log is kept for three years.")],
+    ],
+}
+
+
+def sections():
+    c = new_canvas("sections.pdf")
+    for page in SECTIONS["pages"]:
+        y = 760
+        for size, text in page:
+            c.setFont("Helvetica", size)
+            c.drawString(LEFT, y, text)
+            y -= size * 4   # 行与行隔得远，每行单独一块
+        c.showPage()
+    c.save()
+    return SECTIONS
+
+
 SCANNED = {"header": "读者意见登记表（扫描件样本）", "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"}
 
 
@@ -445,7 +471,7 @@ def main():
     if not Path(args.font).is_file():
         raise SystemExit(f"找不到字体文件 {args.font}；用 --font 指出 DroidSansFallbackFull.ttf 的位置")
     pdfmetrics.registerFont(UnicodeCIDFont(SONG))
-    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "wrapped_table": wrapped_table(), "code": code(args.mono_font), "list": list_sample(), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
+    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "wrapped_table": wrapped_table(), "code": code(args.mono_font), "list": list_sample(), "sections": sections(), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
     locked()
     if args.word:
         from_word()

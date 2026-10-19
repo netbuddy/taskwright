@@ -81,7 +81,7 @@ const ALLOWED: Record<string, string[]> = {
   "pdf_normalize.ts": ["comparablePdfText", "tidyPdfText"],
   "pdf_locations.ts": ["PDF_LOCATIONS_SUFFIX", "PDF_LOCATION_RULES_VERSION", "PdfBox", "PdfLocationFile", "PdfPageLocation", "pdfAnchor", "pdfBlockBox",
     "pdfChapterOf", "pdfLocationFile", "pdfLocationsJson"],
-  "pdf_segments.ts": ["PDF_SEGMENTS_SUFFIX", "PdfSegmentList", "buildPdfSegments", "pdfProjectionUnits", "writePdfSegments"],
+  "pdf_segments.ts": ["INFERRED", "PDF_SEGMENTS_SUFFIX", "PdfSegmentList", "buildPdfSegments", "pdfProjectionUnits", "writePdfSegments"],
   // PDF 材料的来源：从投影取各块（只做计算，页面也用它）；知识库切片段时用。
   "pdf_source.ts": ["pdfProjectionUnits"],
   // 任务库的格式版本一侧：现在的版本号与 task.json 的文件名（常量）、拒绝比程序新的数据时的那句话（纯函数，不碰库；数据目录比程序新时

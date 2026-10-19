@@ -23,7 +23,8 @@
  *   写成「> （页眉页脚）……」，没有定位符，不占块号，不能作出处。
  * - 一页除了页眉页脚一块文字都没有时，写一行「[p页-0] （这一页没有文字，可能是扫描件）」，位置表里这一页的 no_text 为真。
  *   这里不看这一页有没有图片（要知道就得把图片解出来，扫描件一页要多花零点几秒），所以空白页也算没有文字。
- * - 不按字号猜标题：投影里不写 #。文件带书签目录时，书签记进位置表的 headings，分段清单按它分段。
+ * - 投影里不按字号猜标题，不写 #。文件带书签目录时，书签记进位置表的 headings，分段清单按它分段；没有书签目录时，
+ *   分段清单可以按字号推断出的小节分段（inferHeadings），推断的标题只写进分段清单，不进投影与位置表。
  *
  * 上限（PDF_LIMITS）：页数、字数与用时，超过任何一项就抛 PdfProjectionError。用时是在页与页之间检查的，某一页自己卡住时停不下来；
  * 要能强行停下，调用的一方得把解析放到另外起的一次运行里（命令行入口 pdf_projection_cli.mts 就是为此准备的）。
@@ -69,6 +70,8 @@ export interface PdfProjection {
   no_text_pages: number[];
   /** 位置表文件的内容。 */
   locations: PdfLocationFile;
+  /** 文件没有书签目录时按字号推断出的小节标题（inferHeadings），给分段清单用；有书签目录时为空。不写进位置表。 */
+  inferred: { page: number; title: string }[];
 }
 
 // ───────────── pdf.js ─────────────
@@ -566,7 +569,8 @@ const round = (v: number) => Math.round(v * 10) / 10;
 /** 页眉页脚只在页面上下各这么宽的边上找（占页高的比例）。 */
 const EDGE = 0.12;
 
-interface PageBlock { text: string; bbox: PdfBox; running: boolean; key: string | null }
+/** size 是这一块里最大的字号。 */
+interface PageBlock { text: string; bbox: PdfBox; running: boolean; key: string | null; size: number }
 interface PageResult { page: number; width: number; height: number; rotate: number; blocks: PageBlock[] }
 
 /** 一页的文字条目 → 这一页的各块（还没有判页眉页脚、没有编块号）。 */
@@ -581,7 +585,7 @@ function pageBlocks(items: TextItem[], styles: TextStyles, viewport: Viewport): 
     const ys = [viewport.convertToViewportPoint(bbox[0], bbox[1])[1], viewport.convertToViewportPoint(bbox[2], bbox[3])[1]];
     const edge = Math.max(...ys) <= EDGE * viewport.height ? "top" : Math.min(...ys) >= (1 - EDGE) * viewport.height ? "bottom" : null;
     const key = edge ? `${edge}|${text.replace(/\s+/g, "").replace(/\d+/g, "#")}` : null;
-    return { text, bbox, running: false, key };
+    return { text, bbox, running: false, key, size: Math.max(...b.lines.map((l) => l.size)) };
   }).filter((b) => b.text);
 }
 
@@ -592,6 +596,38 @@ function markRunningHeads(pages: PageResult[]): void {
   for (const pg of pages) for (const key of new Set(pg.blocks.map((b) => b.key).filter((k): k is string => k !== null))) seen.set(key, (seen.get(key) ?? 0) + 1);
   const enough = Math.ceil((pages.length * 2) / 3);
   for (const pg of pages) for (const b of pg.blocks) if (b.key !== null && (seen.get(b.key) ?? 0) >= enough) b.running = true;
+}
+
+// ───────────── 按字号推断小节 ─────────────
+
+/**
+ * 没有书签目录的文件，按字号推断小节的标题，只给分段清单用（文字版不写 #，位置表的 headings 仍只收书签）：
+ * - 一块算候选的标题：它的字号大于这一页正文字号的 1.2 倍（正文字号是这一页各块按字数算的字号中位数），整块不超过 60 个字，
+ *   并且紧接着的下一块（这一页的最后一块就看下一页的第一块）字号比它小。不要求下一块就是正文：大标题下面常紧跟一个小一号的小标题。
+ * - 候选按字号分档（相差不到半点的算一档）。只用一档开段：在两页以上出现的各档里字号最大的那一档；没有一档在两页以上出现时，用最大的那一档。
+ *   封面上的大字只在一页出现，因此不被选上；各节下面的小标题字号更小，也不选。
+ * 页眉页脚不算块。
+ */
+function inferHeadings(pages: PageResult[]): { page: number; title: string }[] {
+  const flat = pages.flatMap((pg) => pg.blocks.filter((b) => !b.running).map((b) => ({ page: pg.page, block: b })));
+  const body = new Map<number, number>();
+  for (const pg of pages) {
+    const sizes = pg.blocks.filter((b) => !b.running).flatMap((b) => Array<number>([...b.text].length).fill(b.size));
+    body.set(pg.page, median(sizes));
+  }
+  const found: { page: number; title: string; size: number }[] = [];
+  flat.forEach(({ page, block }, i) => {
+    const next = flat[i + 1]?.block;
+    if (block.size > 1.2 * (body.get(page) ?? Infinity) && [...block.text].length <= 60 && next !== undefined && next.size < block.size) {
+      found.push({ page, title: block.text, size: Math.round(block.size * 2) / 2 });
+    }
+  });
+  if (!found.length) return [];
+  const pagesOf = new Map<number, Set<number>>();
+  for (const h of found) pagesOf.set(h.size, (pagesOf.get(h.size) ?? new Set()).add(h.page));
+  const sizes = [...pagesOf.keys()].sort((a, b) => b - a);
+  const chosen = sizes.find((size) => pagesOf.get(size)!.size >= 2) ?? sizes[0];
+  return found.filter((h) => h.size === chosen).map(({ page, title }) => ({ page, title }));
 }
 
 // ───────────── 书签目录 ─────────────
@@ -726,8 +762,9 @@ export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLi
     const info = (await doc.getMetadata().catch(() => ({ info: undefined }))).info ?? {};
     const producer = [info.Producer, info.Creator].find((v): v is string => typeof v === "string" && v.trim() !== "")?.trim() ?? "";
     const { markdown, units, locations, noText } = render(pages, rel);
+    const inferred = headings.length ? [] : inferHeadings(pages);
     return {
-      markdown, pages: pages.length, units, chars, no_text_pages: noText,
+      markdown, pages: pages.length, units, chars, no_text_pages: noText, inferred,
       locations: pdfLocationFile({ source: rel, engine: `pdfjs-dist ${PDFJS_VERSION}`, producer, pages: locations, headings }),
     };
   } catch (error) {
@@ -761,7 +798,7 @@ export async function writePdfProjection(pdf: string, rel: string, segments: Seg
       throw new PdfProjectionError(`文字版没有写成：${(error as Error).message}`);
     }
     try {
-      writePdfSegments(out.segments, buildPdfSegments(result.markdown, segments, rel, rel + PDF_PROJECTION_SUFFIX, result.locations.headings));
+      writePdfSegments(out.segments, buildPdfSegments(result.markdown, segments, rel, rel + PDF_PROJECTION_SUFFIX, result.locations.headings, result.inferred));
     } catch (error) {
       throw new PdfProjectionError(`分段清单没有写成：${(error as Error).message}`);
     }
