@@ -83,6 +83,22 @@ test("表格：一行是一块，各格之间隔两个空格，不分列", async
   assert.deepEqual(unitLines(markdown), [`1-1 ${t.before}`, ...t.rows.map((row: string[], k: number) => `1-${k + 2} ${row.join("  ")}`), `1-6 ${t.after}`]);
 });
 
+test("格里有折行的表格（一格写完再写下一格）：一个表格行连同各格的折行是一块，同一格的折行直接相接；表头只隔一个字宽的两格也分开", async () => {
+  const { markdown } = await project("wrapped-table");
+  const t = expected.wrapped_table;
+  const units = unitLines(markdown);
+  assert.equal(units[0], `1-1 ${t.before}`);
+  assert.deepEqual(units.slice(1, 5), t.cell_wise.map((row: string[], k: number) => `1-${k + 2} ${row.filter((cell) => cell).join("  ")}`));
+});
+
+test("格里有折行的表格（逐行写）：第一列空着的续行并回上一行，接在那一格后面", async () => {
+  const { markdown } = await project("wrapped-table");
+  const t = expected.wrapped_table;
+  const rows = t.line_wise.map((row: string[][]) => row[0].map((cell, c) => row.map((line) => line[c]).join("")).filter((cell) => cell).join("  "));
+  assert.deepEqual(unitLines(markdown).slice(5), [`1-6 ${t.between}`, ...rows.map((row: string, k: number) => `1-${k + 7} ${row}`), `1-9 ${t.after}`]);
+  assert.equal(rows[0], "读者类型  一次最多  借期，遇假期顺延到开学");
+});
+
 test("没有文字的页：写一行块号为 0 的说明，位置表里标出来；只有页眉的页也算", async () => {
   const result = await project("scanned");
   assert.deepEqual(result.no_text_pages, [2, 3]);

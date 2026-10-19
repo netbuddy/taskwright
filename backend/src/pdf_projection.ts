@@ -9,7 +9,8 @@
  *
  * 行与块怎样推（规则版本是 lib/pdf_locations.ts 的 PDF_LOCATION_RULES_VERSION，任何一条改变时那里加一）：
  * - 按文件里写字的先后走，基线相差不到半个字高、横向接得上的条目接成一行；行里横向空隙超过两个字宽的地方切成「格」。
- * - 有两格以上的行是表格的一行：整行单独成一块，各格之间隔两个空格。只按行写，不分列，合并单元格与一格里折成几行的文字不还原。
+ * - 有两格以上、又不是两端对齐的正文的行是表格的一行：它连同各格的折行单独成一块，各格之间隔两个空格，同一格的折行按接行的规矩接上
+ *   （怎样认折行、列边界从哪里来见 tableRows）。只按行写，不分列，合并单元格不还原；表格行跨页、跨栏时照样断开。
  * - 其余的行先按版面切成几段连着的行：往上跳（换栏）、字号相差超过 12%、行距超过这一页常见行距的 1.3 倍、横向跳开很远，都另起一段。
  *   再在每段里找段落的分界：这一行缩进了一个字而上下两行都没有缩进（段落的第一行），或者上一行后面还放得下这一行开头的词
  *   （上一行是段落的最后一行）。分出来的每一截是一块。块不跨页，也不跨栏。
@@ -144,8 +145,11 @@ function loadPdfjs() {
 // ───────────── 行与块 ─────────────
 
 interface Cell { x0: number; x1: number; text: string }
-interface Line { y: number; x0: number; x1: number; right: number; size: number; rotated: boolean; top: number; bottom: number; cells: Cell[]; space: boolean }
-interface Block { lines: Line[]; x0: number; x1: number; row: boolean }
+/** 行里隔着空白的一截文字（中日韩文字连着写的一串、一个英文词）：表格行归格时按它的起点归到列。 */
+interface Piece { x0: number; x1: number; text: string }
+interface Line { y: number; x0: number; x1: number; right: number; size: number; rotated: boolean; top: number; bottom: number; cells: Cell[]; pieces: Piece[]; space: boolean }
+/** 一块：表格的一行（row 为真）时 text 是已经按列拼好的文字。 */
+interface Block { lines: Line[]; x0: number; x1: number; row: boolean; text?: string }
 
 /** 文字条目 → 行（规则见开头的说明）。 */
 function linesOf(items: TextItem[]): Line[] {
@@ -164,11 +168,20 @@ function linesOf(items: TextItem[]): Line[] {
     const same: boolean = !!cur && !rotated && !cur.rotated && Math.abs(y - cur.y) <= 0.5 * Math.max(size, cur.size) && x >= cur.right - 1.2 * size;
     if (cur && same) {
       const gap = x - cur.right;
-      if (gap > 2 * size) cur.cells.push({ x0: x, x1: right, text: it.str });
-      else {
+      if (gap > 2 * size) {
+        cur.cells.push({ x0: x, x1: right, text: it.str });
+        cur.pieces.push({ x0: x, x1: right, text: it.str });
+      } else {
         const cell = cur.cells[cur.cells.length - 1];
-        cell.text += (cur.space || gap > 0.25 * size ? " " : "") + it.str;
+        const apart = cur.space || gap > 0.25 * size;
+        cell.text += (apart ? " " : "") + it.str;
         cell.x1 = right;
+        if (apart) cur.pieces.push({ x0: x, x1: right, text: it.str });
+        else {
+          const piece = cur.pieces[cur.pieces.length - 1];
+          piece.text += it.str;
+          piece.x1 = right;
+        }
       }
       cur.right = right;
       cur.x1 = Math.max(cur.x1, right);
@@ -177,13 +190,15 @@ function linesOf(items: TextItem[]): Line[] {
       cur.bottom = Math.min(cur.bottom, y - size * 0.2);
       cur.space = false;
     } else {
-      cur = { y, x0: x, x1: right, right, size, rotated, top: y + size * 0.85, bottom: y - size * 0.2, cells: [{ x0: x, x1: right, text: it.str }], space: false };
+      cur = { y, x0: x, x1: right, right, size, rotated, top: y + size * 0.85, bottom: y - size * 0.2, cells: [{ x0: x, x1: right, text: it.str }], pieces: [{ x0: x, x1: right, text: it.str }], space: false };
       lines.push(cur);
     }
   }
   for (const line of lines) {
     for (const cell of line.cells) cell.text = cell.text.replace(/\s+/g, " ").trim();
     line.cells = line.cells.filter((cell) => cell.text);
+    for (const piece of line.pieces) piece.text = piece.text.replace(/\s+/g, " ").trim();
+    line.pieces = line.pieces.filter((piece) => piece.text);
   }
   return lines.filter((line) => line.cells.length);
 }
@@ -205,8 +220,160 @@ function firstWordWidth(line: Line): number {
 }
 
 /**
+ * 这一行是不是表格的一行：有两格以上，并且不是两端对齐的正文。两端对齐的英文正文词距被撑开，撑得多的一行每处都超过两个字宽，
+ * 会被切成好几格；认它的办法是词距（相邻两个词段之间的空隙，大小不论）有三处以上、都超过 0.6 个字宽，并且几乎一样大
+ * （最大最小相差不到 0.1 个字宽：排版软件把一行剩下的空白平均分给各处词距）。表格各格的宽窄不同，格与格之间的空隙参差不齐。
+ */
+function isRow(ln: Line): boolean {
+  if (ln.cells.length < 2) return false;
+  const gaps = ln.pieces.slice(1).map((p, k) => p.x0 - ln.pieces[k].x1);
+  const justified = gaps.length >= 3 && Math.min(...gaps) > 0.6 * ln.size && Math.max(...gaps) - Math.min(...gaps) < 0.1 * ln.size;
+  return !justified;
+}
+
+/** 列边界里不大于 x（差 tol 以内也算）的最后一条的下标；比第一条还靠左时是 0。 */
+function columnOf(cols: number[], x: number, tol: number): number {
+  let k = 0;
+  for (let c = 0; c < cols.length; c++) if (cols[c] <= x + tol) k = c;
+  return k;
+}
+
+/**
+ * 一行能不能作某个表格行的折行，只看横向：第一个词段从某条候选列边界起（差 tol 以内）；其余的词段要么也从某条列边界起，
+ * 要么与前一个词段落在同一列里；每个词段都不越过它右边的那条列边界（差 tol 以内）。散文的行一个词段横跨几列，或者词从列中间起，过不了。
+ */
+function fitsColumns(ln: Line, starts: number[]): boolean {
+  const tol = 0.5 * ln.size;
+  const at = (x: number) => starts.some((s) => Math.abs(s - x) <= tol);
+  let prev = -1;
+  for (const p of ln.pieces) {
+    const k = columnOf(starts, p.x0, tol);
+    if (!at(p.x0) && (prev === -1 || k !== prev)) return false;
+    if (k + 1 < starts.length && p.x1 > starts[k + 1] + tol) return false;
+    prev = k;
+  }
+  return true;
+}
+
+/** 几个横向位置按 tol 归并（相差 tol 以内的算同一处，取最左的），从小到大。 */
+function cluster(xs: number[], tol: number): number[] {
+  const out: number[] = [];
+  for (const x of [...xs].sort((a, b) => a - b)) if (!out.length || x - out[out.length - 1] > tol) out.push(x);
+  return out;
+}
+
+/** 一个表格行的文字：各行的词段按列边界归到列，一列里同一行的词段隔一个空格，折行按接行的规矩接上；各列之间隔两个空格，空的列不写。 */
+function rowText(lines: Line[], cols: number[]): string {
+  const columns: string[][] = cols.map(() => []);
+  for (const ln of lines) {
+    const here = new Map<number, string[]>();
+    for (const p of ln.pieces) {
+      const k = columnOf(cols, p.x0, 0.5 * ln.size);
+      if (!here.has(k)) here.set(k, []);
+      here.get(k)!.push(p.text);
+    }
+    for (const [k, texts] of here) columns[k].push(texts.join(" "));
+  }
+  return columns.map(joinLines).filter((text) => text).join("  ");
+}
+
+/**
+ * 表格：从第 i 行（表格的一行，isRow）起认出连着的几个表格行，每个表格行连同它的折行并成一块，文字按列拼好；返回这几块与表格之后那一行的下标。
+ *
+ * pdf.js 按文件里写字的先后给文字。常见的写法（LibreOffice 转出的文件就是）一格写完再写下一格：一格里折成几行时，先往下写完这一格，
+ * 再往上跳回这一行的第一条基线写下一格。所以一个表格行到这里是交错的几行，例如「R01 账号类 重置用户」「口令」「必须审批 用户直属」「主管」。
+ *
+ * 列边界从这几样里来（相差半个字以内的算同一处）：各表格行里隔着两个字宽以上空隙的格的起点；在两行以上的行首出现的位置
+ * （一格里的各行都从这一列的左边起）；第一行里隔着空白、后面有一行的行首从同一处起的词段起点（只看行首，不看行中间的词：
+ * 「查询 ER」「查询 OA」里 ER 与 OA 起点相同，却是一格里的词，不是列）。后两样管的是两格之间空隙不到两个字宽的情形，
+ * 例如表头的「审批要求 审批人」。认折行时用的候选列边界，行首位置从表格开头往下数（到往下跳开三个字高以上、字号变了、转了方向、
+ * 高过表格第一行为止；往下跳按已经到过的最低一行算），不用第一行的词段起点（「查询 ER」这样一格里的词起点会挡住这一格的折行）。
+ * - 一行是下一个表格行：是表格的一行（isRow），从表格的左边起，基线在这一个表格行最低的那条基线之下，相差不到三个字高，
+ *   并且各格的起点都对得上已经并进来的行里某一格的起点、某一行的行首或第一行的某个词段起点（为的是不把页眉那种左右两端各有字的一行与紧接着的表格当成同一张表）。
+ * - 一行是这一个表格行的折行：没有转方向，基线不高过这一行的第一条基线，排得进列里（fitsColumns），并且摆得下：它起头的那一列里
+ *   这一行已经有字时，它紧接在那一列最低的一行之下、不超过一格里折行的行距的 1.15 倍（折行的行距取这张表里同一处起头的相邻两行之差的最小值；
+ *   换一个表格行时还要加上格的上下留白，比它大，所以上一页最后一行折到这一页、排在重复的表头之下的那几行不会并进表头）；还没有字时，
+ *   在这一行已有的上下范围以内（各格顶端对齐、居中对齐都摆得下）。那一列里已经有字时还要那一列的上一行已经排到这一列的右边、
+ *   放不下这一行开头的词（列的右边取这一页上从这一列起点起、不越过下一列起点的词段排到的最右处）：这一条挡住两种误并——
+ *   页眉页脚那种左右两端各有字的行把紧接着的下一行当成它的折行；上一页最后一行折到这一页、排在重复的表头之下的那几个字并进表头。
+ *   第一列空着、别的列有字的一行照此也并进上一行。从表格的左边起、在这一个表格行之下的行不是折行：有两格以上的只能是下一个表格行，
+ *   只有一格的只在这一个表格行到此还只有第一列的字时才算第一列的折行；不然表格到此为止。
+ * - 别的行：表格到此为止。
+ */
+function tableRows(lines: Line[], i: number): { blocks: Block[]; next: number } {
+  const first = lines[i];
+  const tol = 0.5 * first.size;
+  const sameSize = (ln: Line) => !ln.rotated && Math.abs(ln.size - first.size) <= 0.12 * first.size;
+  const recurring = (xs: number[]) => cluster(xs, tol).filter((x) => xs.filter((y) => Math.abs(x - y) <= tol).length >= 2);
+  let end = i + 1;
+  for (let low = first.y; end < lines.length && sameSize(lines[end]) && lines[end].y <= first.y + tol && low - lines[end].y <= 3 * first.size; end++) {
+    low = Math.min(low, lines[end].y);
+  }
+  const window = lines.slice(i, end);
+  const candidates = cluster([...window.filter(isRow).flatMap((l) => l.cells.map((c) => c.x0)),
+    ...recurring(window.map((l) => l.x0))], tol);
+  // 一格里折行的行距：窗口里从同一处起头的行，相邻两行基线之差的最小值（换一个表格行时还要加上格的上下留白，比它大）。
+  const pitches: number[] = [];
+  for (const x of cluster(window.map((l) => l.x0), tol)) {
+    const ys = window.filter((l) => Math.abs(l.x0 - x) <= tol).map((l) => l.y).sort((a, b) => b - a);
+    for (let k = 1; k < ys.length; k++) if (ys[k - 1] - ys[k] > tol) pitches.push(ys[k - 1] - ys[k]);
+  }
+  const wrap = pitches.length ? Math.min(...pitches) : 2 * first.size;
+  // 每一列的文字排到的最右处：这一页上从这一列的起点起、又不越过下一列起点的词段，排到的最右处（散文的一行一截横跨几列，不算）。
+  const rightOf = (k: number) => Math.max(...lines.flatMap((l) => l.pieces)
+    .filter((p) => Math.abs(p.x0 - candidates[k]) <= tol && (k + 1 >= candidates.length || p.x1 <= candidates[k + 1] + tol)).map((p) => p.x1), -Infinity);
+  /**
+   * 这一行在这一个表格行里摆得下：它起头的那一列里已经有字时，它紧接在那一列最低的一行之下、一个折行的行距以内，
+   * 并且那一行已经排到这一列的右边、放不下这一行开头的词（不然那一格在那里就结束了，这一行不是它的折行）；还没有字时，在这一行已有的上下范围以内。
+   */
+  const placed = (ln: Line, row: Line[]) => {
+    const k = columnOf(candidates, ln.pieces[0].x0, tol);
+    const inColumn = (l: Line) => l.pieces.filter((p) => columnOf(candidates, p.x0, 0.5 * l.size) === k);
+    const same = row.filter((l) => inColumn(l).length);
+    if (!same.length) return ln.y <= row[0].y + tol && ln.y >= Math.min(...row.map((l) => l.y)) - tol;
+    const above = same.reduce((a, b) => (b.y < a.y ? b : a));
+    const dy = above.y - ln.y;
+    const end = Math.max(...inColumn(above).map((p) => p.x1));
+    const word = isCjk([...ln.pieces[0].text][0]) ? ln.size : (ln.pieces[0].x1 - ln.pieces[0].x0) * (ln.pieces[0].text.split(" ")[0].length / ln.pieces[0].text.length);
+    return dy > tol && dy <= 1.15 * wrap && end + 0.3 * ln.size + word > rightOf(k) - 0.3 * ln.size;
+  };
+  const rows: Line[][] = [[first]];
+  // 已经并进来的各行的格起点与行首：下一个表格行的各格要对得上它们。
+  const seen = [...first.cells.map((c) => c.x0), ...first.pieces.map((p) => p.x0)];
+  let j = i + 1;
+  for (; j < lines.length; j++) {
+    const ln = lines[j];
+    const row = rows[rows.length - 1];
+    const lowY = Math.min(...row.map((l) => l.y));
+    if (!sameSize(ln)) break;
+    const atLeft = Math.abs(ln.x0 - first.x0) <= tol;
+    const below = ln.y < lowY - tol;
+    if (atLeft && below && isRow(ln)) {
+      if (lowY - ln.y >= 3 * ln.size || !ln.cells.every((c) => seen.some((x) => Math.abs(x - c.x0) <= tol))) break;
+      rows.push([ln]);
+      seen.push(...ln.cells.map((c) => c.x0));
+    } else if (atLeft && below && !row.every((l) => Math.abs(l.x0 - first.x0) <= tol)) break;
+    else if (ln.y <= row[0].y + tol && fitsColumns(ln, candidates) && placed(ln, row)) {
+      row.push(ln);
+      seen.push(ln.x0);
+    } else break;
+  }
+  const group = lines.slice(i, j);
+  const later = group.slice(1).map((l) => l.x0);
+  const cols = cluster([
+    ...rows.flatMap((row) => row[0].cells.map((c) => c.x0)),
+    ...recurring(group.map((l) => l.x0)),
+    ...first.pieces.map((p) => p.x0).filter((x) => later.some((y) => Math.abs(x - y) <= tol)),
+  ], tol);
+  const blocks = rows.map((row): Block => ({
+    lines: row, x0: Math.min(...row.map((l) => l.x0)), x1: Math.max(...row.map((l) => l.x1)), row: true, text: rowText(row, cols),
+  }));
+  return { blocks, next: j };
+}
+
+/**
  * 行 → 块，分两步（规则见开头的说明）。
- * 头一步按版面切成几段连着的行：表格的一行自成一段；往上跳、字号变了、行距明显变大、横向跳开很远、遇到转了方向的字，都另起一段。
+ * 头一步按版面切成几段连着的行：表格行连同它的折行自成一块（tableRows）；往上跳、字号变了、行距明显变大、横向跳开很远、遇到转了方向的字，都另起一段。
  * 后一步在每段连着的行里找段落的分界：首行缩进，或者上一行后面还放得下这一行开头的词（上一行是它那一段的最后一行）。
  */
 function blocksOf(lines: Line[]): Block[] {
@@ -216,12 +383,19 @@ function blocksOf(lines: Line[]): Block[] {
     if (dy > 0 && dy < 3 * lines[i].size && Math.abs(lines[i].size - lines[i - 1].size) < 0.5) pitches.push(dy);
   }
   const pitch = median(pitches);
-  const runs: Line[][] = [];
+  const runs: (Line[] | Block[])[] = [];
   let run: Line[] | null = null;
-  let rowRun = false;
-  for (const ln of lines) {
-    const row = ln.cells.length > 1;
-    let brk = !run || row || rowRun;
+  for (let i = 0; i < lines.length;) {
+    const ln = lines[i];
+    if (isRow(ln)) {
+      const table = tableRows(lines, i);
+      runs.push(table.blocks);
+      run = null;
+      i = table.next;
+      continue;
+    }
+    i++;
+    let brk = !run;
     if (run && !brk) {
       const prev = run[run.length - 1];
       const dy = prev.y - ln.y;
@@ -235,12 +409,16 @@ function blocksOf(lines: Line[]): Block[] {
     if (!run || brk) {
       run = [];
       runs.push(run);
-      rowRun = row;
     }
     run.push(ln);
   }
   const blocks: Block[] = [];
-  for (const each of runs) {
+  for (const part of runs) {
+    if (part.length && "row" in part[0]) {
+      blocks.push(...(part as Block[]));
+      continue;
+    }
+    const each = part as Line[];
     const left = Math.min(...each.map((l) => l.x0));
     let blk: Block | null = null;
     each.forEach((ln, i) => {
@@ -257,7 +435,7 @@ function blocksOf(lines: Line[]): Block[] {
         brk = prevEnded || firstLine;
       }
       if (!blk || brk) {
-        blk = { lines: [], x0: ln.x0, x1: ln.x1, row: ln.cells.length > 1 };
+        blk = { lines: [], x0: ln.x0, x1: ln.x1, row: false };
         blocks.push(blk);
       }
       blk.lines.push(ln);
@@ -288,7 +466,7 @@ interface PageResult { page: number; width: number; height: number; rotate: numb
 /** 一页的文字条目 → 这一页的各块（还没有判页眉页脚、没有编块号）。 */
 function pageBlocks(items: TextItem[], viewport: Viewport): PageBlock[] {
   return blocksOf(linesOf(items)).map((b) => {
-    const text = tidyPdfText(b.row ? b.lines[0].cells.map((c) => c.text).join("  ") : joinLines(b.lines.map((l) => l.cells[0].text)));
+    const text = tidyPdfText(b.row ? b.text ?? "" : joinLines(b.lines.map((l) => l.cells.map((c) => c.text).join(" "))));
     const bbox: PdfBox = [
       round(Math.min(...b.lines.map((l) => l.x0))), round(Math.min(...b.lines.map((l) => l.bottom))),
       round(Math.max(...b.lines.map((l) => l.x1))), round(Math.max(...b.lines.map((l) => l.top))),

@@ -16,6 +16,8 @@
   multipage.pdf   三页中文，不嵌入字体（要靠字符映射表才读得出字）；每页有页眉页脚；段落首行缩进；带两级书签目录。
   two-column.pdf  一页两栏（栏很窄，两栏挨得近），一个段落从左栏底排到右栏顶。
   table.pdf       一张三列的表格，前后各一段。
+  wrapped-table.pdf 两张格里有折行的表格：上一张一格写完再写下一格（LibreOffice 转出的文件是这样写的），表头的后两格只隔一个字宽；
+                  下一张逐行写，一格的折行在下一行，那一行的第一列是空的。
   scanned.pdf     三页：第 1 页有正文，第 2 页只有页眉与一张图，第 3 页只有一张图。
   quirks.pdf      文字层里的两种毛病：常用汉字写成部首字符（文件里「字形到 Unicode」的对照表被改写过）；字与字之间被撑开。
   english.pdf     英文，左对齐不排满；有一处行末断词的连字符；用标准字体（不嵌入）。
@@ -171,6 +173,47 @@ def table():
     return TABLE
 
 
+WRAPPED_TABLE = {
+    "before": "各类操作的审批要求见下表。",
+    "cell_wise": [["编号", "类别", "操作", "审批要求", "审批人"],
+                  ["R01", "账号类", "重置用户口令", "必须审批", "用户直属主管"],
+                  ["R02", "", "解锁被锁定的账号", "必须审批", "信息化部审批人"],
+                  ["R03", "查询类", "查询工单", "无需审批", "不适用"]],
+    "between": "逐行写的表格如下，借期一格折成两行。",
+    "line_wise": [[["读者类型", "一次最多", "借期，遇假期"], ["", "", "顺延到开学"]],
+                  [["教职工", "十本", "六十天"]]],
+    "after": "表后的一段话。",
+}
+
+
+def wrapped_table():
+    c = new_canvas("wrapped-table.pdf")
+    c.setFont(SONG, SIZE)
+    y = paragraph(c, WRAPPED_TABLE["before"], 760) - LEAD
+    # 一格写完再写下一格：每格每行最多 4 个字，折行的行距 16 点；一个表格行的高度是它最多的那一格的行数乘 16 再加 8 点的上下留白。
+    # 「审批要求」排到 304 点，「审批人」从 316 点起：两格之间只隔 12 点（一个字宽），不到切格要的两个字宽。
+    xs = (72, 120, 192, 256, 316)
+    for row in WRAPPED_TABLE["cell_wise"]:
+        parts = [[cell[i:i + 4] for i in range(0, len(cell), 4)] for cell in row]
+        for x, lines in zip(xs, parts):
+            for k, line in enumerate(lines):
+                c.drawString(x, y - 16 * k, line)
+        y -= 16 * max(len(lines) for lines in parts) + 8
+    y = paragraph(c, WRAPPED_TABLE["between"], y - LEAD) - LEAD
+    # 逐行写：一行里从左到右写各格；借期一格折成两行，第二行只有这一格有字。行距 16 点，表格行之间多空 8 点。
+    for row in WRAPPED_TABLE["line_wise"]:
+        for line in row:
+            for x, cell in zip((72, 168, 264), line):
+                if cell:
+                    c.drawString(x, y, cell)
+            y -= 16
+        y -= 8
+    paragraph(c, WRAPPED_TABLE["after"], y - LEAD)
+    c.showPage()
+    c.save()
+    return WRAPPED_TABLE
+
+
 SCANNED = {"header": "读者意见登记表（扫描件样本）", "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"}
 
 
@@ -312,7 +355,7 @@ def main():
     if not Path(args.font).is_file():
         raise SystemExit(f"找不到字体文件 {args.font}；用 --font 指出 DroidSansFallbackFull.ttf 的位置")
     pdfmetrics.registerFont(UnicodeCIDFont(SONG))
-    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
+    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "wrapped_table": wrapped_table(), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
     locked()
     if args.word:
         from_word()
