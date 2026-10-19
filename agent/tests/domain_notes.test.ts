@@ -90,7 +90,7 @@ test("真实的任务类型：这个位置上现在是「业务说明」集合�
   assert.deepEqual(pages.fields.filter((f) => f.sameCollection && f.single).map((f) => f.name), ["上级主题", "改看"]);
   assert.equal(pages.reviewRules ?? null, null);
   assert.deepEqual(definition.completion.业务说明, ["每个条目用户确认"]);
-  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/requirements-engineering.json"), "utf-8")).版本, 4);
+  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/requirements-engineering.json"), "utf-8")).版本, 5);
 });
 
 test("来源种类「条目」：出处是还在的条目时保存，记下引用时它的修订号；出处去掉首尾空白；产出方记作条目", () => {

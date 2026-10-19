@@ -11,6 +11,7 @@ import { appVersion } from "../src/paths.ts";
 import { Service, taskTypeVersion } from "../src/service.ts";
 import { readTaskJson } from "../src/task_json.ts";
 import { ServiceDb } from "../src/service_db.ts";
+import { withPlatformCollections } from "../../agent/src/lib/definition.ts";
 import { MANIFEST_NAME, TaskTypeError, definitionFileOf, listTaskTypes, readManifest, recordSeedRevisions, restoreTaskTypeRevision, revisionNumbers, revisionsDir, saveTaskTypeRevision, seedTaskTypes, taskTypesRoot } from "../src/task_types.ts";
 import { ROOT, captureConsole, tempDir } from "./helpers.ts";
 
@@ -68,7 +69,10 @@ test("任务服务启动时播种；建任务从用户目录复制，任务类�
     assert.deepEqual(listTaskTypes(service.typesRoot), [{ task_type: KEY, name: "需求工程（本单位）" }]);
     const id = service.create({ task_type: KEY, task_name: "借阅" }).task_id as string;
     const dir = join(data, "tasks", id);
-    assert.equal(readFileSync(join(dir, definitionFileOf(KEY)), "utf-8"), readFileSync(file, "utf-8"));
+    // 任务目录里的定义是用户目录那一份补上平台提供的集合（问题集合的占位换成整个集合）之后的全文。
+    const copied = JSON.parse(readFileSync(join(dir, definitionFileOf(KEY)), "utf-8"));
+    assert.deepEqual(copied, withPlatformCollections(JSON.parse(readFileSync(file, "utf-8"))).raw);
+    assert.ok(copied.交付物.条目集合.some((one: { 名称?: string }) => one.名称 === "问题"));
     assert.equal(readTaskJson(dir)?.task_type_version, 99);
     // 记下用的是第几个修订：用户目录里这种类型改过一次（修订 2）之后建的任务记 2。
     assert.equal(readTaskJson(dir)?.task_type_revision, 1);
