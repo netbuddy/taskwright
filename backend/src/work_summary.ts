@@ -692,7 +692,8 @@ export function understandingLines(taskDir: string | null, sessionId: string): M
       out.set(entry, understandingText(acts));
     }
   } catch {
-    return out; // 读不出来只是少这一行，不影响摘要
+    // 读不出来只是少这一行，不影响摘要。事件表与理解的表在能打开的库（格式 8 起）里都有，这里容的是数据（某条事件的内容写得不对），不是缺表。
+    return out;
   } finally {
     db.close();
   }

@@ -495,21 +495,19 @@ export function stageDebugView(taskDir: string, limit = 200) {
 }
 
 /**
- * 每条会话产生了几次修订：修订表按会话编号计数，返回「会话编号 → 次数」。库另开一个只读连接；还没有库、或者读不出来时为空表。
+ * 每条会话产生了几次修订：修订表按会话编号计数，返回「会话编号 → 次数」。库另开一个只读连接；还没有库时为空表。
+ * 能打开的库（格式 8 起）都有修订表，库在而读不出来是真的出了错，照样抛出，不当作没有修订。
  */
 export function revisionCountsBySession(taskDir: string): Map<string, number> {
   const counts = new Map<string, number>();
+  const db = openRo(taskDir);
+  if (db === null) return counts;
   try {
-    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
-    try {
-      for (const row of db.prepare("SELECT session_id, COUNT(*) AS n FROM revision GROUP BY session_id").all() as Row[]) {
-        counts.set(String(row.session_id), Number(row.n));
-      }
-    } finally {
-      db.close();
+    for (const row of db.prepare("SELECT session_id, COUNT(*) AS n FROM revision GROUP BY session_id").all() as Row[]) {
+      counts.set(String(row.session_id), Number(row.n));
     }
-  } catch {
-    counts.clear();
+  } finally {
+    db.close();
   }
   return counts;
 }
@@ -611,14 +609,12 @@ export function reviewInProgress(data: LibraryData, since: number | null): { op_
   return { op_id: p.op_id ?? null, done: p.done ?? null, total: p.total ?? null, current: or(p.current, []) as string[] };
 }
 
-/** 任务库现在的最大事件序号；没有库时为 0。 */
+/** 任务库现在的最大事件序号；没有库时为 0。库在而读不出来时抛出（事件表必有，读错是真的出了错，不当作 0）。 */
 export function maxSeq(taskDir: string): number {
   const db = openRo(taskDir);
   if (db === null) return 0;
   try {
     return Number((db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM event").get() as Row).n);
-  } catch {
-    return 0;
   } finally {
     db.close();
   }
@@ -1169,14 +1165,15 @@ export function libraryEvents(taskDir: string, afterSeq: number, sessionId: stri
   return [out, data.seq];
 }
 
-/** 库里当前最大的事件序号：每次新开连接、查完就关，不留读事务。库不在或读不出时是 0。 */
+/**
+ * 库里当前最大的事件序号：每次新开连接、查完就关，不留读事务。库不在时是 0；库在而读不出来时抛出（事件表必有，读错是真的出了错）。
+ * 事件流的定时轮询（hub.ts）自己接住这里抛出的错。
+ */
 export function currentMax(taskDir: string): number {
   const db = openRo(taskDir);
   if (db === null) return 0;
   try {
     return Number((db.prepare("SELECT COALESCE(MAX(seq), 0) AS n FROM event").get() as Row).n);
-  } catch {
-    return 0;
   } finally {
     db.close();
   }
@@ -1277,13 +1274,8 @@ export function callFacts(taskDir: string | null): {
   const load = () => {
     if (loaded) return;
     loaded = true;
-    const db = (() => {
-      try {
-        return taskDir === null ? null : openRo(taskDir);
-      } catch {
-        return null;
-      }
-    })();
+    // 没有库时什么都查不到；库在而读不出来时抛出：能打开的库（格式 8 起）这几张表都有，读错是真的出了错。
+    const db = taskDir === null ? null : openRo(taskDir);
     if (db === null) return;
     try {
       inReadTransaction(db, () => {
@@ -1295,16 +1287,10 @@ export function callFacts(taskDir: string | null): {
         }
         // 发布了一个版本的调用（早先的完成任务也照样认）。
         for (const row of all(db, "SELECT call_id FROM event WHERE name IN ('VERSION_PUBLISHED', 'TASK_COMPLETED')")) if (row.call_id) completed.add(String(row.call_id));
-        try {
-          for (const row of all(db, "SELECT diagram_id, revision_no, op, name, kind, call_id FROM diagram_version WHERE actor = 'executor'")) {
-            if (row.call_id) diagrams.set(String(row.call_id), { diagram_id: row.diagram_id, revision_no: row.revision_no, op: row.op, name: row.name, kind: row.kind });
-          }
-        } catch {
-          // 还没有图的两张表（没有保存过图的旧任务库）：当作没有图
+        for (const row of all(db, "SELECT diagram_id, revision_no, op, name, kind, call_id FROM diagram_version WHERE actor = 'executor'")) {
+          if (row.call_id) diagrams.set(String(row.call_id), { diagram_id: row.diagram_id, revision_no: row.revision_no, op: row.op, name: row.name, kind: row.kind });
         }
       });
-    } catch {
-      // 旧格式或读不出：当作查不到
     } finally {
       db.close();
     }

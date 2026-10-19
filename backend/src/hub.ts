@@ -114,7 +114,15 @@ export class Hub {
   private poll(): void {
     if (!this.isRunning()) return;
     this.stats.轮询次数 += 1;
-    if (library.currentMax(this.taskDir) > this.forwarded) {
+    // 轮询在定时器里跑：库在而读不出来时 currentMax 抛出，这里接住、记一行、这一轮跳过，不让它变成进程级的未捕获异常。
+    let top: number;
+    try {
+      top = library.currentMax(this.taskDir);
+    } catch (error) {
+      console.log(`任务目录 ${this.taskDir} 的事件轮询读库出错，这一轮跳过：${(error as Error).message}`);
+      return;
+    }
+    if (top > this.forwarded) {
       this.stats.轮询发现新行次数 += 1;
       this.trigger();
     }
