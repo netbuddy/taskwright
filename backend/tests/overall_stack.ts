@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEMO_DEFINITION, ROOT, sqlGet, sqlRun } from "./helpers.ts";
+import { DEMO_DEFINITION, ROOT, sqlGet, sqlRun, placeActivities } from "./helpers.ts";
 
 const BUILD = join(ROOT, "agent", "tests", "fixtures", "build_task_db.mts");
 const USER_OPS = join(ROOT, "agent", "tests", "fixtures", "user_ops.mts");
@@ -43,6 +43,7 @@ export function build(root: string, name: string, definition: unknown, batches: 
   mkdirSync(join(ws, "docs", "task-definitions"), { recursive: true });
   mkdirSync(join(ws, "inputs"), { recursive: true });
   writeFileSync(join(ws, "docs", "task-definitions", "demo.json"), JSON.stringify(definition), "utf-8");
+  placeActivities(ws, definition);
   writeFileSync(join(ws, "inputs", "材料.md"), MATERIAL, "utf-8");
   const done = spawnSync(process.execPath, [BUILD, ws, "docs/task-definitions/demo.json", JSON.stringify([{ stage: "写条目" }, ...batches])], { encoding: "utf-8" });
   assert.equal(done.status, 0, done.stderr);

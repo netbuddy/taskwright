@@ -102,11 +102,10 @@ test("桌面形态下 pi 的设置文件的 defaultProvider 与 defaultModel 两
     assert.equal(record["模型"], "local/qwen");
     assert.equal(record["模型来自"], `助手程序的设置（${settings} 的 defaultProvider 与 defaultModel）`);
     assert.equal("模型来自" in startupRecord(server, serverArgv), false, "服务器形态的启动记录不加这一项");
-    // 有阶段的任务的系统提示用的那几份文件：启动记录里记着每份的字节数与摘要值。
+    // 有阶段的任务的系统提示：启动记录里记着它的字节数与摘要值；活动与流程的声明在任务目录里，记在知识仓库摘要里。
     const stageFiles = record["按阶段的说明"] as { 有没有: boolean; 代码仓里的路径: string; 文件: { 路径: string; 字节数: number; 摘要值: string }[] };
-    assert.deepEqual([stageFiles.有没有, stageFiles.代码仓里的路径], [true, "agent/prompts/stages"]);
-    assert.deepEqual(stageFiles.文件.map((one) => one.路径),
-      ["README.md", "clarifying.md", "document.md", "modeling.md", "publish.md", "reading.md", "reviewing.md", "system.md", "writing.md"]);
+    assert.deepEqual([stageFiles.有没有, stageFiles.代码仓里的路径], [true, "agent/prompts"]);
+    assert.deepEqual(stageFiles.文件.map((one) => one.路径), ["system.md"]);
     for (const one of stageFiles.文件) assert.match(one.摘要值, /^[0-9a-f]{16}$/);
     // 平台说明的模块与活动模板：同样记着每份的字节数与摘要值，模块带着能力目录的名字。
     const modules = record["平台说明的模块"] as typeof stageFiles, templates = record["活动模板"] as typeof stageFiles;

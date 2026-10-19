@@ -112,10 +112,9 @@ test("提示词目录的读与设：只收存在的目录的绝对路径；存�
   const dir = join(tmp, "prompts");
   mkdirSync(join(dir, "task-type"), { recursive: true });
   mkdirSync(join(dir, "templates"), { recursive: true });
-  mkdirSync(join(dir, "stages"), { recursive: true });
   writeFileSync(join(dir, "templates", "clarifying.md"), "改过的澄清那一段", "utf-8");
   writeFileSync(join(dir, "task-type", "writing.md"), "改过的写条目那一段", "utf-8");
-  symlinkSync(settings, join(dir, "stages", "system.md"));
+  symlinkSync(settings, join(dir, "system.md"));
   await withSettings(settings, async () => {
     const service = new Service(join(tmp, "d1", "tasks"), join(tmp, "d1", "runs"), {}, { debug: true });
     try {
@@ -136,8 +135,8 @@ test("提示词目录的读与设：只收存在的目录的绝对路径；存�
       assert.deepEqual([set.body.prompt_dir, set.body.usable, set.body.note], [dir, true, null]);
       assert.deepEqual(set.body.files.map((one: Dict) => one.name), promptDirNames());
       const states = Object.fromEntries(set.body.files.map((one: Dict) => [one.name, one.state]));
-      assert.deepEqual([states["templates/clarifying.md"], states["task-type/writing.md"], states["stages/system.md"], states["capabilities/writing/sources.md"]], ["used", "used", "refused", "absent"]);
-      assert.match(set.body.files.find((one: Dict) => one.name === "stages/system.md").reason, /^它是一个软链接，这一份照旧用原来的。$/);
+      assert.deepEqual([states["templates/clarifying.md"], states["task-type/writing.md"], states["system.md"], states["capabilities/writing/sources.md"]], ["used", "used", "refused", "absent"]);
+      assert.match(set.body.files.find((one: Dict) => one.name === "system.md").reason, /^它是一个软链接，这一份照旧用原来的。$/);
       const stored = JSON.parse(readFileSync(settings, "utf-8"));
       assert.deepEqual(stored.debug, { prompt_dir: dir });
       assert.deepEqual([stored.version, Object.keys(stored.pi_dirs)], [2, ["/some/agent"]]);

@@ -11,19 +11,16 @@
 有阶段的任务每次运行之前，扩展按这条会话的位置把系统提示整份换成拼好的一份（`agent/src/lib/context_assemble.ts`，
 扩展的接线在 `agent/src/hooks/stage_prompt.ts`）。选段看三样输入：活动的头（方式、读、写）、获准能力表（`agent/src/lib/stage.ts` 的 `allowedWrites`）、
 会话的位置（流程的工作项、单项活动的工作项、空闲）。各部分依次是：系统提示、本次会话的位置说明（程序生成）、平台说明里 when 是 always 的模块、
-条件满足的模块（各按次序号）、活动模板、任务类型说明的共用部分、这一站在流程里的出口、任务类型说明里这项活动的补充、本次范围说明、
+条件满足的模块（各按次序号）、活动模板、任务类型说明的共用部分、这一站在流程里的出口（任务类型的 flows/）、这项活动的补充（任务类型的 activities/）、本次范围说明、
 助手程序接在后面的工作目录等。拼不成（模块缺了、头不对、重名、次序号相同、模板或流程的节点不在）时这次运行停下并告诉用户，
 不沿用以前拼好的任何一份。下表的「部分」一栏用这些名字。
 
 | 文件 | 拼在哪里 | 谁读 | 参数 | 钉住它的测试 |
 |---|---|---|---|---|
-| `stages/system.md` | 系统提示（第一部分）；也是启动参数 `--system-prompt` 给的那一份（早先的任务用它） | 模型 | 无 | `agent/tests/stage_prompt_files.test.ts`、`agent/tests/skill_files.test.ts`、`agent/tests/context_assemble.test.ts`、`backend/tests/stage_prompt_rpc.test.ts`、`backend/tests/profiles.test.ts`；固定期望文件 `backend/tests/fixtures/expected/launch_argv.json` 与 `observatory_view.json` 里有它的全文 |
+| `system.md` | 系统提示（第一部分）；也是启动参数 `--system-prompt` 给的那一份（早先的任务用它） | 模型 | 无 | `agent/tests/stage_prompt_files.test.ts`、`agent/tests/skill_files.test.ts`、`agent/tests/context_assemble.test.ts`、`backend/tests/stage_prompt_rpc.test.ts`、`backend/tests/profiles.test.ts`；固定期望文件 `backend/tests/fixtures/expected/launch_argv.json` 与 `observatory_view.json` 里有它的全文 |
 | `capabilities/<能力>/<模块>.md` | 平台说明的模块：七项能力（reading、analysis、organizing、writing、reviewing、dialogue、planning）各一个目录，一个文件一个模块，开头的头写 `name`、`order`、`when`（写法见 `agent/src/lib/prompt_modules.ts`）；同一条规矩只在一个模块里写 | 模型 | 无；`dialogue/understanding_full.md` 与 `understanding_brief.md` 里的理解格式说明由 `scripts/render-intent-schema.mjs` 从 `schemas/user_intent.schema.json` 生成 | `agent/tests/prompt_modules.test.ts`、`agent/tests/context_assemble.test.ts`、`agent/tests/stage_prompt_files.test.ts`、`agent/tests/skill_files.test.ts`、`agent/tests/dialogue_acts.test.ts`、`agent/tests/understanding_eval.test.ts` |
 | `templates/reading.md`、`clarifying.md`、`modeling.md`、`writing.md`、`reviewing.md`、`document.md`、`idle.md` | 活动模板（「现在这个阶段」）：这项活动的工序与特有的做法；头写 `template`（模板的键）与 `writes_allowed`（这个模板允许的写入），`idle.md` 另写 `based_on: clarifying`，正文用澄清的模板去掉开头与出口 | 模型 | 无 | `agent/tests/stage_prompt_files.test.ts`、`agent/tests/context_assemble.test.ts` |
-| `stages/reading.md`、`clarifying.md`、`modeling.md`、`writing.md`、`reviewing.md`、`document.md`、`publish.md` | 不拼：只有活动的头（`agent/src/lib/activity_def.ts` 读），文件名是活动的键 | 用户（活动的名字与说明） | 无 | `agent/tests/activity_def.test.ts` |
-| `stages/README.md` | 不拼，写给改说明的人 | 人 | — | — |
-| `flows/analysis.md` | 这一站在流程里的出口（每个节点一节，标题「# 节点：某阶段」）；文件头是流程的定义 | 模型；文件头里的名字与说明也显示给用户 | 无 | `agent/tests/stage_prompt_files.test.ts`、`agent/tests/context_assemble.test.ts`、`agent/tests/activity_def.test.ts` |
-| `flows/change.md` | 现在只有流程的头，不拼进系统提示 | 用户（流程的名字与说明） | 无 | `agent/tests/activity_def.test.ts` |
+| 任务类型里的 `.pi/skills/<任务类型>/activities/<标识符>.md` 与 `flows/<标识符>.md` | 不在本目录：活动与流程的声明随任务类型走（`agent/src/lib/activity_def_read.ts`）。活动的正文是这类任务在这项活动里的补充，接在流程的出口之后；流程的正文现在是各节点的出口（每个节点一节，标题「# 节点：某阶段」）。任务目录里没有时回退读产品自带的 | 模型；声明里的名字与说明也显示给用户 | 无 | `agent/tests/activity_def.test.ts`、`agent/tests/context_assemble.test.ts`、`agent/tests/stage_prompt_files.test.ts` |
 | `schemas/user_intent.schema.json` | 不直接拼：扩展用它从助手的文字里认出理解（`agent/src/lib/structured_outputs.ts`），「先写理解」两个模块的格式说明由它生成 | 程序；生成的说明给模型 | — | `agent/tests/dialogue_acts.test.ts`、`agent/tests/stage_prompt_files.test.ts` |
 | `review.md` | 评审者的系统提示（`agent/src/lib/review.ts`），不属于执行者的系统提示 | 模型（评审者） | 无 | `agent/tests/overall_review.test.ts` 与评审的测试 |
 

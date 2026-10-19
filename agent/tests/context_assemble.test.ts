@@ -5,7 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
@@ -17,12 +17,15 @@ import {
   whereInWorkspace, withoutOpening, withoutSection,
 } from "../src/lib/context_assemble.ts";
 import { STAGE_PROMPT_ERROR_TYPE, STAGE_PROMPT_STATUS_KEY, type StagePromptReport, type StopMessage, stagePromptFor } from "../src/hooks/stage_prompt.ts";
-import { CALL_SESSION, DEFINITION_PATH, callIn, demoDefinition, idleSessions, enterStage, makeWorkspace, overallDefinition, tempDir } from "./helpers.ts";
+import { readDefinitions } from "../src/lib/activity_def_read.ts";
+import { CALL_SESSION, DEFINITION_PATH, SRS_SKILL_DIR, callIn, demoDefinition, idleSessions, enterStage, makeWorkspace, overallDefinition, tempDir } from "./helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
 const SRS_TYPE = join(ROOT, "task-types", "requirements-engineering");
 const SRS_SKILL = { name: "requirements-engineering", filePath: join(SRS_TYPE, ".pi", "skills", "requirements-engineering", "SKILL.md") };
 const TAIL = "<cwd>\n/somewhere/task\n</cwd>";
+/** 产品自带的需求工程的活动与工作流的声明：没有任务 skill 的测试直接给它。 */
+const DEFS = readDefinitions(SRS_SKILL_DIR);
 
 const temps: string[] = [];
 after(() => { for (const one of temps) rmSync(one, { recursive: true, force: true }); });
@@ -56,11 +59,11 @@ for (const stage of STAGES) {
     assert.deepEqual(kinds(prompt), ["system", "position", ...ALWAYS, ...CONDITIONAL[stage], "template", "task_common", "node_exit",
       ...(WITH_TASK_ACTIVITY.has(stage) ? ["task_activity"] : []), "tail"]);
     const file = (kind: string) => prompt.parts.find((one) => one.part === kind)?.file;
-    assert.equal(file("system"), "agent/prompts/stages/system.md");
+    assert.equal(file("system"), "agent/prompts/system.md");
     assert.equal(file("position"), null);
     assert.equal(file("template"), `agent/prompts/templates/${stage}.md`);
     assert.equal(file("task_common"), ".pi/skills/requirements-engineering/SKILL.md");
-    assert.equal(file("node_exit"), "agent/prompts/flows/analysis.md");
+    assert.equal(file("node_exit"), ".pi/skills/requirements-engineering/flows/analysis.md");
     for (const one of prompt.parts.filter((p) => p.part === "module")) assert.match(one.file!, new RegExp(`^agent/prompts/capabilities/[a-z]+/${one.module}\\.md$`));
     // 活动模板到「做到什么算够」为止；接在任务类型共用之后的是这个节点的一节。
     const template = prompt.parts.find((one) => one.part === "template")!.text;
@@ -128,24 +131,38 @@ test("刚建好的任务没有活动记录，是空闲，有没有材料都一�
   assert.equal(stageInWorkspace(withMaterial, CALL_SESSION), "clarifying");
 });
 
-test("早先复制进任务目录的整份任务 skill（没有 stages 目录）：整份正文当共用部分，没有任务类型的补充", () => {
+test("任务目录里的 skill 没有 activities/（早先建的任务）：回退读产品自带的同一相对路径那一份；产品自带的也没有就拼不成", () => {
   const task = scratchDir();
-  const skillDir = join(task, ".pi", "skills", "old-type");
+  const skillDir = join(task, ".pi", "skills", "requirements-engineering");
   mkdirSync(skillDir, { recursive: true });
-  writeFileSync(join(skillDir, "SKILL.md"), "---\nname: old-type\ndescription: 早先的整份说明\n---\n\n# 早先的整份说明\n\n1. 读材料。\n2. 分拣。\n", "utf-8");
-  const prompt = composeContext({ stage: "writing", workspaceDir: task, skills: [{ name: "old-type", filePath: join(skillDir, "SKILL.md") }], tail: "" });
-  assert.deepEqual(kinds(prompt).slice(-3), ["template", "task_common", "node_exit"]);
-  const common = prompt.parts.find((one) => one.part === "task_common")!;
-  assert.equal(common.text, "# 早先的整份说明\n\n1. 读材料。\n2. 分拣。");
-  assert.equal(common.file, ".pi/skills/old-type/SKILL.md");
+  writeFileSync(join(skillDir, "SKILL.md"), "---\nname: requirements-engineering\ndescription: 早先的整份说明\n---\n\n# 早先的整份说明\n", "utf-8");
+  const prompt = composeContext({ stage: "writing", workspaceDir: task, skills: [{ name: "requirements-engineering", filePath: join(skillDir, "SKILL.md") }], tail: "" });
+  const of = (part: string) => prompt.parts.find((one) => one.part === part)!;
+  assert.deepEqual([of("task_common").from, of("task_common").file, of("task_common").text], ["task", ".pi/skills/requirements-engineering/SKILL.md", "# 早先的整份说明"]);
+  assert.deepEqual([of("task_activity").from, of("task_activity").file], ["builtin", "task-types/requirements-engineering/.pi/skills/requirements-engineering/activities/writing.md"]);
+  assert.deepEqual([of("node_exit").from, of("node_exit").file], ["builtin", "task-types/requirements-engineering/.pi/skills/requirements-engineering/flows/analysis.md"]);
+  const other = join(task, ".pi", "skills", "old-type");
+  mkdirSync(other, { recursive: true });
+  writeFileSync(join(other, "SKILL.md"), "# 早先的整份说明\n", "utf-8");
+  assert.throws(() => composeContext({ stage: "writing", workspaceDir: task, skills: [{ name: "old-type", filePath: join(other, "SKILL.md") }], tail: "" }),
+    (error: Error) => error instanceof PromptAssemblyError && /都没有这份 skill 的活动定义/.test(error.message));
 });
 
-test("一个任务 skill 都没有、或者它的文件不在时，任务类型一级的两部分都不拼", () => {
-  for (const skills of [[], [{ name: "gone", filePath: join(scratchDir(), "SKILL.md") }]]) {
-    const prompt = composeContext({ stage: "clarifying", workspaceDir: scratchDir(), skills, tail: TAIL });
-    assert.deepEqual(kinds(prompt).slice(-3), ["template", "node_exit", "tail"]);
-  }
+test("一个任务 skill 都没有时拼不成；直接给了声明时，任务类型说明的共用部分不拼", () => {
+  assert.throws(() => composeContext({ stage: "clarifying", workspaceDir: scratchDir(), skills: [], tail: TAIL }), /没有任务类型的 skill/);
+  const prompt = composeContext({ stage: "clarifying", workspaceDir: scratchDir(), skills: [], tail: TAIL, definitions: DEFS });
+  assert.deepEqual(kinds(prompt).slice(-3), ["template", "node_exit", "tail"]);
 });
+
+/** 一个临时的任务目录，里面一份任务 skill：产品自带的需求工程那几份活动与工作流的声明，加给定的 SKILL.md。 */
+function skillCopy(common = "任务类型共用"): { task: string; skillDir: string; skills: { name: string; filePath: string }[] } {
+  const task = scratchDir();
+  const skillDir = join(task, ".pi", "skills", "some-type");
+  mkdirSync(skillDir, { recursive: true });
+  for (const sub of ["activities", "flows"]) cpSync(join(SRS_SKILL_DIR, sub), join(skillDir, sub), { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), common, "utf-8");
+  return { task, skillDir, skills: [{ name: "some-type", filePath: join(skillDir, "SKILL.md") }] };
+}
 
 /** 产品自带的提示词目录在临时目录里的一份拷贝，测试可以随意改。 */
 function platformCopy(): string {
@@ -155,17 +172,25 @@ function platformCopy(): string {
 }
 
 test("拼不成就抛错，写明是哪一份：系统提示、活动模板、流程里的节点、必需的模块、模块的头、重名、次序号相同、模板的键", () => {
-  const input = (dir: string, stage: Stage = "reading") => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir });
+  const input = (dir: string, stage: Stage = "reading") => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir, definitions: DEFS });
   const fails = (change: (dir: string) => void, message: RegExp, stage: Stage = "reading") => {
     const dir = platformCopy();
     composeContext(input(dir, stage));
     change(dir);
     assert.throws(() => composeContext(input(dir, stage)), (error: Error) => error instanceof PromptAssemblyError && message.test(error.message), String(message));
   };
-  fails((dir) => rmSync(join(dir, "stages", "system.md")), /拼系统提示要用的文件不在：.*stages.system\.md/);
+  fails((dir) => rmSync(join(dir, "system.md")), /拼系统提示要用的文件不在：.*\/system\.md$/);
   fails((dir) => rmSync(join(dir, "templates", "reading.md")), /拼系统提示要用的文件不在：.*templates.reading\.md/);
-  fails((dir) => rmSync(join(dir, "flows", "analysis.md")), /拼系统提示要用的文件不在：.*flows.analysis\.md/);
-  fails((dir) => writeFileSync(join(dir, "flows", "analysis.md"), "# 节点：澄清\n\n## 出口\n\n澄清的出口\n"), /工作流的定义里没有「# 节点：核读材料」这一节/);
+  // 工作流的文件在任务 skill 的目录里。
+  const flowFails = (change: (flowFile: string) => void, message: RegExp) => {
+    const copy = skillCopy();
+    const flowFile = join(copy.skillDir, "flows", "analysis.md");
+    composeContext({ stage: "reading", workspaceDir: copy.task, skills: copy.skills, tail: "" });
+    change(flowFile);
+    assert.throws(() => composeContext({ stage: "reading", workspaceDir: copy.task, skills: copy.skills, tail: "" }), message);
+  };
+  flowFails((file) => rmSync(file), /拼系统提示要用的文件不在：.*flows.analysis\.md/);
+  flowFails((file) => writeFileSync(file, readFileSync(file, "utf-8").replace(/\n# 节点：核读材料\n[\s\S]*?(?=\n# 节点：)/, "\n")), /工作流的定义里没有「# 节点：核读材料」这一节/);
   // 这次用不着的模块缺了也不行。
   fails((dir) => rmSync(join(dir, "capabilities", "organizing", "diagrams_full.md")), /平台说明缺了这几个模块：diagrams_full/);
   fails((dir) => writeFileSync(join(dir, "capabilities", "reading", "materials.md"), "---\nname: materials\norder: 110\nwhen: reads=everything\n---\n\n正文\n"), /reading\/materials\.md 的头里「when」/);
@@ -174,17 +199,18 @@ test("拼不成就抛错，写明是哪一份：系统提示、活动模板、�
   fails((dir) => writeFileSync(join(dir, "templates", "reading.md"), "---\ntemplate: clarifying\nwrites_allowed: page\n---\n\n正文\n"), /「template」写的是「clarifying」，应当是「reading」/);
   fails((dir) => writeFileSync(join(dir, "templates", "reading.md"), "没有头的模板\n"), /templates.reading\.md 开头没有头/);
   // 单项活动与空闲不用流程的定义：没有它也拼得出来。
-  const dir = platformCopy();
-  rmSync(join(dir, "flows"), { recursive: true });
-  assert.ok(composeContext({ ...input(dir), inFlow: false }).text.includes("本会话的工作项是单项活动"));
-  assert.ok(composeContext(input(dir, IDLE as never)).text.includes("# 现在：自由讨论"));
+  const copy = skillCopy();
+  rmSync(join(copy.skillDir, "flows"), { recursive: true });
+  const alone = { workspaceDir: copy.task, skills: copy.skills, tail: "" };
+  assert.ok(composeContext({ ...alone, stage: "reading", inFlow: false }).text.includes("本会话的工作项是单项活动"));
+  assert.ok(composeContext({ ...alone, stage: IDLE }).text.includes("# 现在：自由讨论"));
   assert.equal(REQUIRED_MODULES.length, 26);
 });
 
 test("新增一个合规的模块：条件满足的位置就多这一段，次序按次序号", () => {
   const dir = platformCopy();
   writeFileSync(join(dir, "capabilities", "analysis", "compare.md"), "---\nname: compare\norder: 515\nwhen: main=description & mode=batch\n---\n\n## 对照\n\n对照的规矩。\n");
-  const input = (stage: Stage) => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir });
+  const input = (stage: Stage) => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir, definitions: DEFS });
   const reading = kinds(composeContext(input("reading")));
   assert.ok(reading.indexOf("compare") === reading.indexOf("pages_full") + 1 && reading.indexOf("compare") === reading.indexOf("problems") - 1);
   assert.ok(!kinds(composeContext(input("clarifying"))).includes("compare"), "澄清是逐项对话，不进");
@@ -254,12 +280,9 @@ test("连续两次运行位置不变：第二次沿用上一份，没有读任�
 
 test("文件改了、模块目录里多了一份文件、任务目录里多了补充、pi 接的那一截变了，都重拼", () => {
   const dir = platformCopy();
-  const task = scratchDir();
-  const skillDir = join(task, ".pi", "skills", "some-type");
-  mkdirSync(skillDir, { recursive: true });
-  writeFileSync(join(skillDir, "SKILL.md"), "任务类型共用", "utf-8");
+  const { task, skillDir, skills } = skillCopy();
   const cache = new ContextCache();
-  const input = { stage: "reading" as const, workspaceDir: task, skills: [{ name: "some-type", filePath: join(skillDir, "SKILL.md") }], tail: TAIL, platformDir: dir };
+  const input = { stage: "reading" as const, workspaceDir: task, skills, tail: TAIL, platformDir: dir };
   assert.equal(cache.get(input).how, "recomposed");
   assert.equal(cache.get(input).how, "reused");
   // 改一句：大小变了。
@@ -277,19 +300,19 @@ test("文件改了、模块目录里多了一份文件、任务目录里多了�
   assert.throws(() => cache.get(input), /planning\/broken\.md 开头没有头/);
   rmSync(join(dir, "capabilities", "planning", "broken.md"));
   assert.equal(cache.get(input).how, "recomposed");
-  // 任务目录里多了这项活动的补充。
-  mkdirSync(join(skillDir, "stages"));
-  writeFileSync(join(skillDir, "stages", "reading.md"), "这类任务在核读材料阶段", "utf-8");
+  // 任务目录里这项活动的补充多了一句。
+  const activity = join(skillDir, "activities", "reading.md");
+  writeFileSync(activity, `${readFileSync(activity, "utf-8")}\n补充的一句。\n`, "utf-8");
   const more = cache.get(input);
   assert.equal(more.how, "recomposed");
-  assert.deepEqual(kinds(more.prompt).slice(-3), ["node_exit", "task_activity", "tail"]);
+  assert.ok(more.prompt.parts.find((one) => one.part === "task_activity")!.text.endsWith("补充的一句。"));
   assert.equal(cache.get({ ...input, tail: "<cwd>\n/elsewhere\n</cwd>" }).how, "recomposed");
 });
 
 test("重拼出错时把错抛出来，不沿用上一份；文件补回来之后照常重拼", () => {
   const dir = platformCopy();
   const cache = new ContextCache();
-  const input = (stage: Stage) => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir });
+  const input = (stage: Stage) => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir, definitions: DEFS });
   cache.get(input("reading"));
   const saved = join(scratchDir(), "clarifying.md");
   cpSync(join(dir, "templates", "clarifying.md"), saved);
@@ -377,10 +400,10 @@ test("事件处理：早先的任务什么都不返回、什么都不报；读�
 
 test("提示词目录认的文件名：系统提示、每个模块、七份活动模板、流程的定义，加任务类型一级的七份", () => {
   const names = promptDirNames();
-  assert.equal(names[0], "stages/system.md");
+  assert.equal(names[0], "system.md");
   assert.equal(names.filter((one) => one.startsWith("capabilities/")).length, REQUIRED_MODULES.length);
   assert.deepEqual(names.filter((one) => one.startsWith("templates/")), [...STAGES, "idle"].map((one) => `templates/${one}.md`));
-  assert.deepEqual(names.slice(-8), ["flows/analysis.md", "task-type/common.md", ...STAGES.map((one) => `task-type/${one}.md`)]);
+  assert.deepEqual(names.slice(-8), ["task-type/flows/analysis.md", "task-type/common.md", ...STAGES.map((one) => `task-type/${one}.md`)]);
 });
 
 test("提示词目录里有哪一份就用哪一份，没有的照旧；空目录的效果与没有设相同；别的文件名不读；模块只能代替、不能改名或换次序", () => {
@@ -421,8 +444,7 @@ test("提示词目录里不用的文件：软链接不跟、目录不读、太�
   const dir = scratchDir();
   const secret = join(scratchDir(), "别处的文件.md");
   writeFileSync(secret, "别处的文字，不该进系统提示", "utf-8");
-  mkdirSync(join(dir, "stages"));
-  symlinkSync(secret, join(dir, "stages", "system.md"));
+  symlinkSync(secret, join(dir, "system.md"));
   mkdirSync(join(dir, "templates", "reading.md"), { recursive: true });
   mkdirSync(join(dir, "capabilities", "reading"), { recursive: true });
   writeFileSync(join(dir, "capabilities", "reading", "materials.md"), "字".repeat(Math.ceil(PROMPT_DIR_MAX_BYTES / 3) + 1), "utf-8");
@@ -432,11 +454,11 @@ test("提示词目录里不用的文件：软链接不跟、目录不读、太�
   const prompt = composeContext({ stage: "reading", workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: TAIL, promptDir: dir }, io);
   assert.equal(prompt.text, compose("reading").text);
   assert.ok(!prompt.text.includes("别处的文字"));
-  assert.ok(!io.reads.includes(join(dir, "stages", "system.md")), "软链接指向的文件没有读");
+  assert.ok(!io.reads.includes(join(dir, "system.md")), "软链接指向的文件没有读");
   assert.ok(!io.reads.includes(join(dir, "capabilities", "reading", "materials.md")), "太大的文件没有读");
-  assert.deepEqual(prompt.notes.map((one) => one.replace(/：.*$/, "")).sort(), ["提示词目录里的 capabilities/reading/materials.md 没有用上", "提示词目录里的 stages/system.md 没有用上",
+  assert.deepEqual(prompt.notes.map((one) => one.replace(/：.*$/, "")).sort(), ["提示词目录里的 capabilities/reading/materials.md 没有用上", "提示词目录里的 system.md 没有用上",
     "提示词目录里的 task-type/common.md 没有用上", "提示词目录里的 templates/reading.md 没有用上"]);
-  assert.ok(prompt.notes.some((one) => /stages\/system\.md 没有用上：它是一个软链接。这一部分照旧用原来的。$/.test(one)));
+  assert.ok(prompt.notes.some((one) => / system\.md 没有用上：它是一个软链接。这一部分照旧用原来的。$/.test(one)));
   assert.ok(prompt.notes.some((one) => /templates\/reading\.md 没有用上：它不是普通文件。/.test(one)));
   assert.ok(prompt.notes.some((one) => /task-type\/common\.md 没有用上：它不是合法的 UTF-8 文字。/.test(one)));
   assert.ok(prompt.notes.some((one) => /materials\.md 没有用上：它有 \d+ 字节，超过了 262144 字节的上限。/.test(one)));
@@ -595,13 +617,10 @@ test("任务空闲时：空闲的规矩紧接在活动模板之前，活动模�
 });
 
 test("任务空闲时：任务类型一级澄清的那一段若有「出口」一节也去掉；共用部分里的同名一节不动", () => {
-  const dir = platformCopy();
-  const task = scratchDir();
-  const skillDir = join(task, ".pi", "skills", "some-type");
-  mkdirSync(join(skillDir, "stages"), { recursive: true });
-  writeFileSync(join(skillDir, "SKILL.md"), "任务类型共用\n\n## 出口\n\n共用部分里的这一节不动。", "utf-8");
-  writeFileSync(join(skillDir, "stages", "clarifying.md"), "## 这类任务在澄清阶段\n\n多问一句。\n\n## 出口\n\n任务类型的出口。", "utf-8");
-  const prompt = composeContext({ stage: IDLE, workspaceDir: task, skills: [{ name: "some-type", filePath: join(skillDir, "SKILL.md") }], tail: TAIL, platformDir: dir });
+  const { task, skillDir, skills } = skillCopy("任务类型共用\n\n## 出口\n\n共用部分里的这一节不动。");
+  const activity = join(skillDir, "activities", "clarifying.md");
+  writeFileSync(activity, `${readFileSync(activity, "utf-8")}\n## 这类任务在澄清阶段\n\n多问一句。\n\n## 出口\n\n任务类型的出口。`, "utf-8");
+  const prompt = composeContext({ stage: IDLE, workspaceDir: task, skills, tail: TAIL });
   assert.equal(prompt.parts.find((one) => one.part === "task_common")!.text, "任务类型共用\n\n## 出口\n\n共用部分里的这一节不动。");
   assert.equal(prompt.parts.find((one) => one.part === "task_activity")!.text, "## 这类任务在澄清阶段\n\n多问一句。");
 });
@@ -609,26 +628,26 @@ test("任务空闲时：任务类型一级澄清的那一段若有「出口」�
 test("读一条会话现在在哪里：流程的工作项、单项活动的工作项、空闲各是什么；同一个任务里不同的会话各看各的；事件处理照它拼并报出去", () => {
   const dir = makeWorkspace(overallDefinition(), { material: true });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
-  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: IDLE, inFlow: false, scope: null });
+  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: IDLE, inFlow: false, flow: null, scope: null });
   enterStage(dir, "modeling");
-  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "modeling", inFlow: true, scope: null });
+  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "modeling", inFlow: true, flow: "analysis", scope: null });
   const cache = new ContextCache(), summaries = new WeakMap<object, any>();
   const flowed = start(dir, cache, summaries).reports[0][1];
   assert.deepEqual([flowed.stage, flowed.in_flow], ["modeling", true]);
   assert.ok(flowed.parts!.some((one) => one.part === "node_exit"));
   runUserOperation({ workspaceDir: dir, sessionId: "sess-alone" }, { op_id: "ui-op-prompt-1", kind: "start_activity", fields: { activity: "澄清", in_flow: false } });
-  assert.deepEqual([whereInWorkspace(dir, "sess-alone"), whereInWorkspace(dir, CALL_SESSION)], [{ stage: "clarifying", inFlow: false, scope: null }, { stage: "modeling", inFlow: true, scope: null }]);
+  assert.deepEqual([whereInWorkspace(dir, "sess-alone"), whereInWorkspace(dir, CALL_SESSION)], [{ stage: "clarifying", inFlow: false, flow: null, scope: null }, { stage: "modeling", inFlow: true, flow: "analysis", scope: null }]);
   const alone = start(dir, cache, summaries, undefined, "sess-alone");
   assert.deepEqual([alone.reports[0][1].stage, alone.reports[0][1].in_flow, alone.reports[0][1].how], ["clarifying", false, "recomposed"]);
   assert.ok(alone.result!.systemPrompt.includes("本会话的工作项是单项活动") && alone.result!.systemPrompt.includes("# 现在这个阶段：澄清\n"));
   assert.ok(!alone.reports[0][1].parts!.some((one) => one.part === "node_exit"));
-  assert.deepEqual(whereInWorkspace(dir, "sess-free"), { stage: IDLE, inFlow: false, scope: null });
+  assert.deepEqual(whereInWorkspace(dir, "sess-free"), { stage: IDLE, inFlow: false, flow: null, scope: null });
   idleSessions(dir);
-  assert.deepEqual([whereInWorkspace(dir, CALL_SESSION), stageInWorkspace(dir, "sess-alone")], [{ stage: IDLE, inFlow: false, scope: null }, IDLE]);
+  assert.deepEqual([whereInWorkspace(dir, CALL_SESSION), stageInWorkspace(dir, "sess-alone")], [{ stage: IDLE, inFlow: false, flow: null, scope: null }, IDLE]);
   const idle = start(dir, cache, summaries);
   assert.deepEqual([idle.reports[0][1].replaced, idle.reports[0][1].stage, idle.reports[0][1].in_flow, idle.reports[0][1].how], [true, "idle", false, "recomposed"]);
   assert.ok(idle.result!.systemPrompt.includes("# 现在：自由讨论\n") && !idle.result!.systemPrompt.includes("# 现在这个阶段："));
-  assert.deepEqual(whereInWorkspace(dir, null), { stage: IDLE, inFlow: false, scope: null });
+  assert.deepEqual(whereInWorkspace(dir, null), { stage: IDLE, inFlow: false, flow: null, scope: null });
 });
 
 test("范围说明：用户启动工作项时写了，这个工作项的会话的系统提示在任务类型的几段后面多一部分；别的工作项的会话、空闲的会话没有；只是范围说明不同也重拼", () => {
@@ -636,7 +655,7 @@ test("范围说明：用户启动工作项时写了，这个工作项的会话�
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   const op = (n: number, session: string, fields: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: session }, { op_id: `ui-op-scope-${n}`, kind: "start_activity", fields });
   op(1, "sess-1", { activity: "澄清", in_flow: false, scope: "只问续借的规则" });
-  assert.deepEqual(whereInWorkspace(dir, "sess-1"), { stage: "clarifying", inFlow: false, scope: "只问续借的规则" });
+  assert.deepEqual(whereInWorkspace(dir, "sess-1"), { stage: "clarifying", inFlow: false, flow: null, scope: "只问续借的规则" });
   const cache = new ContextCache(), summaries = new WeakMap<object, any>();
   const scoped = start(dir, cache, summaries, undefined, "sess-1");
   assert.deepEqual(scoped.reports[0][1].parts!.map((one) => [one.part, one.from, one.file]).at(-1), ["scope", "task", null]);
@@ -651,8 +670,8 @@ test("范围说明：用户启动工作项时写了，这个工作项的会话�
   assert.deepEqual([flowed.reports[0][1].how, flowed.reports[0][1].parts!.map((one) => one.part).slice(-3)], ["recomposed", ["node_exit", "task_activity", "scope"]]);
   assert.ok(flowed.result!.systemPrompt.includes("本次范围说明：先读新补的那一份。") && !flowed.result!.systemPrompt.includes("只问续借的规则"));
   op(3, "sess-3", { activity: "澄清", in_flow: false });
-  assert.deepEqual([whereInWorkspace(dir, "sess-3"), whereInWorkspace(dir, "sess-1")!.scope], [{ stage: "clarifying", inFlow: false, scope: null }, "只问续借的规则"]);
+  assert.deepEqual([whereInWorkspace(dir, "sess-3"), whereInWorkspace(dir, "sess-1")!.scope], [{ stage: "clarifying", inFlow: false, flow: null, scope: null }, "只问续借的规则"]);
   assert.ok(!start(dir, cache, summaries, undefined, "sess-3").result!.systemPrompt.includes("本次范围说明"));
-  const idle = composeContext({ stage: IDLE, scope: "不该出现", workspaceDir: dir, skills: [], tail: "" });
+  const idle = composeContext({ stage: IDLE, scope: "不该出现", workspaceDir: dir, skills: [], tail: "", definitions: DEFS });
   assert.ok(!idle.text.includes("不该出现"));
 });

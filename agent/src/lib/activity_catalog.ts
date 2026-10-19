@@ -153,7 +153,7 @@ export interface Named {
 
 /** 活动目录里的一项单项活动。 */
 export interface CatalogActivity {
-  key: ActivityKey;
+  key: string;
   name: string;
   mode: Mode;
   mode_name: string;
@@ -233,7 +233,8 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
     const blocked = blockedText(one.requires, facts);
     const ready = analysis && blocked === null;
     return {
-      key: one.key, name: one.name, purpose: one.purpose, applies: one.applies, nodes: one.nodes.map((key) => ({ key, name: ACTIVITY_NAMES[key] })), inputs: one.inputs,
+      key: one.key, name: one.name, purpose: one.purpose, applies: one.applies,
+      nodes: one.steps.map((key) => ({ key, name: defs.activities.find((activity) => activity.key === key)?.name ?? key })), inputs: one.inputs,
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
       // 只有需求分析现在能启动；需求变更要有已发布的版本，而且它的各站还没有定义。已有流程工作项时都不能启动。
       enabled: ready && flowItem === null,

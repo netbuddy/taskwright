@@ -1,3 +1,15 @@
+---
+name: 写条目
+mode: batch
+purpose: 依据业务说明与分析模型推导需求条目（功能用例、非功能需求、约束），逐条记录依据。
+reads: description, models
+writes: items
+requires: has_pages, diagrams_viewed
+example: 从「3.1 自助借书」推出 UC-001，依据写该节与其流程图。
+template: writing
+stage: writing
+---
+
 ## 这类任务在写条目阶段
 
 完成条件里「功能用例至少有一个」是完成任务时的最低要求，不是写到一个就可以停：整理建模阶段画出的图与材料里的内容都要整理进条目。

@@ -192,6 +192,8 @@ test("格式早于 8 的库被拒绝，库原样不动：没有编过版本号�
 test("格式 8 升到 9：任务类型「软件需求规格说明编制」改名「需求工程」，任务目录里的定义文件、skill 目录与 task.json、库里的定义路径与快照一起改；再升一次不出错", () => {
   const root = join(import.meta.dirname, "..", "..", "task-types", "requirements-engineering");
   const dir = makeWorkspace();
+  // 演示定义的 skill 目录（测试辅助放进去的活动声明）不属于这个任务。
+  rmSync(join(dir, ".pi", "skills", "demo"), { recursive: true, force: true });
   cpSync(root, dir, { recursive: true });
   rmSync(join(dir, "docs", "task-definitions", "requirements-engineering.json"));
   rmSync(join(dir, ".pi", "skills", "requirements-engineering"), { recursive: true });

@@ -1,11 +1,17 @@
 /**
- * 活动的定义与流程的定义开头那一段结构化的头：写法、取值与校验。不读文件、不读库（读文件的在 lib/activity_def_read.ts）。
+ * 活动的声明与流程的声明：写法、取值与校验。不读文件、不读库（读文件的在 lib/activity_def_read.ts）。
  *
- * 每项活动一份定义文件（agent/prompts/stages/ 下以活动的键命名），每条流程一份（agent/prompts/flows/）。文件开头两行 --- 之间
- * 是头，一行一栏，写成「名字: 值」，与 SKILL.md 的写法相同；其后是给助手看的正文。拼系统提示时头去掉，只用正文
- * （lib/stage_prompt.ts）；任务起点页的活动目录、能不能启动一项活动，取自头。
+ * 活动与流程都由任务类型给出，放在任务 skill 的目录下：activities/<标识符>.md 一项活动一份，flows/<标识符>.md 一条流程一份。
+ * 文件开头两行 --- 之间是声明，一行一栏，写成「名字: 值」，与 SKILL.md 的写法相同；活动的声明之后是这类任务在这项活动里另外要做的事
+ * （拼系统提示时接在活动模板与流程的出口后面）。标识符取自文件名，声明里不再写一遍。
  *
- * 需求资产分六类（ASSETS）。一项活动的头写它读哪几类、写哪几类：能不能启动只看要读的几类里有没有东西，
+ * 活动的声明：name、mode、purpose、reads、writes、requires、example，另有 template（用平台的哪一份活动模板，agent/prompts/templates/）
+ * 与 stage（过渡期的兼容栏：这项活动算作六个阶段里的哪一个；会话的位置、获准能力表、进度条都还按阶段算）。只能由用户发起的活动
+ * （发布）没有模板也没有阶段，两栏都写空。
+ * 流程的声明：flow 之外是 name、purpose、applies、steps（各步的活动标识符，按先后，用逗号隔开）、inputs、requires、example，
+ * 另可以写 note.<活动标识符>：这一步的一句提示。同一项活动在一条流程里只能出现一次。
+ *
+ * 需求资产分六类（ASSETS）。活动声明写它读哪几类、写哪几类：能不能启动只看要读的几类里有没有东西，
  * 与之前做没做过哪一项活动无关。「读」一栏另认两个写法：knowledge（知识库）与 all（全部资产）。
  * 前置条件（requires）是数据条件的键（CONDITIONS），一个都没有就是无前置条件。
  */
@@ -43,9 +49,10 @@ export const MODES = ["batch", "dialogue", "user_only"] as const;
 export type Mode = (typeof MODES)[number];
 export const MODE_NAMES: Record<Mode, string> = { batch: "批处理", dialogue: "逐项对话", user_only: "仅限用户发起" };
 
-/** 两条流程的键。 */
-export const FLOW_KEYS = ["analysis", "change"] as const;
-export type FlowKey = (typeof FLOW_KEYS)[number];
+/** 活动与流程的标识符的写法：小写字母开头，小写字母、数字、短横线与下划线。 */
+export const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_-]*$/;
+/** 流程的标识符；由任务类型的 flows/ 目录里有哪几份文件定。 */
+export type FlowKey = string;
 
 /**
  * 前置条件的键，都是数据条件：has_materials 至少一份材料；has_pages 业务说明至少一节；diagrams_viewed 图都看过（一张图都没有也算）；
@@ -75,9 +82,10 @@ export function prerequisiteText(requires: readonly Condition[]): string {
   return requires.length === 0 ? NO_PREREQUISITE_TEXT : `前置条件：${requires.map((one) => CONDITION_TEXTS[one]).join("，")}。`;
 }
 
-/** 一项活动的头。 */
+/** 一项活动的声明。 */
 export interface ActivityDef {
-  key: ActivityKey;
+  /** 标识符，取自文件名。六个阶段与发布的那几项与它们的键相同。 */
+  key: string;
   name: string;
   mode: Mode;
   /** 一句话目的。 */
@@ -87,17 +95,23 @@ export interface ActivityDef {
   requires: Condition[];
   /** 一句例子。 */
   example: string;
+  /** 用平台的哪一份活动模板；只能由用户发起的活动为 null。 */
+  template: string | null;
+  /** 算作哪个阶段（过渡期的兼容栏）；只能由用户发起的活动为 null。 */
+  stage: Stage | null;
 }
 
-/** 一条流程的头。 */
+/** 一条流程的声明。 */
 export interface FlowDef {
   key: FlowKey;
   name: string;
   purpose: string;
   /** 适用情形，一句。 */
   applies: string;
-  /** 各站，按先后。 */
-  nodes: ActivityKey[];
+  /** 各步的活动标识符，按先后。 */
+  steps: string[];
+  /** 某一步的一句提示，键是活动标识符；没有写的没有。 */
+  notes: Record<string, string>;
   /** 需要什么输入，一句。 */
   inputs: string;
   requires: Condition[];
@@ -157,30 +171,64 @@ function headOf(text: string, file: string): Record<string, string> {
   return head;
 }
 
-/** 读一项活动的头并校验。file 是报错时说的文件名。 */
-export function parseActivityDef(text: string, file: string): ActivityDef {
+/** 读一项活动的声明并校验。key 是取自文件名的标识符，file 是报错时说的文件名。 */
+export function parseActivityDef(text: string, key: string, file: string): ActivityDef {
+  if (!IDENTIFIER_PATTERN.test(key)) throw new DefinitionHeadError(`${file} 的文件名「${key}」不能当活动的标识符：只能是小写字母开头的小写字母、数字、短横线与下划线。`);
   const head = headOf(text, file);
+  const known = new Set(["name", "mode", "purpose", "reads", "writes", "requires", "example", "template", "stage"]);
+  const extra = Object.keys(head).filter((field) => !known.has(field));
+  if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
+  const mode = oneOf(head, "mode", MODES, file);
+  if (head.template === undefined) throw new DefinitionHeadError(`${file} 的声明里缺「template」一栏。`);
+  if (head.stage === undefined) throw new DefinitionHeadError(`${file} 的声明里缺「stage」一栏。`);
+  const template = head.template || null, stageText = head.stage || null;
+  if (template !== null && !IDENTIFIER_PATTERN.test(template)) throw new DefinitionHeadError(`${file} 的声明里「template」写的是「${template}」，不是模板的写法。`);
+  if (stageText !== null && !(STAGES as readonly string[]).includes(stageText)) {
+    throw new DefinitionHeadError(`${file} 的声明里「stage」写的是「${stageText}」，只能是 ${STAGES.join("、")} 之一，或者空着。`);
+  }
+  // 只能由用户发起的活动不进系统提示，没有模板也不算阶段；别的活动两栏都要写。
+  if (mode === "user_only" ? template !== null || stageText !== null : template === null || stageText === null) {
+    throw new DefinitionHeadError(`${file} 的声明里「template」与「stage」：只能由用户发起的活动两栏都空着，别的活动两栏都要写。`);
+  }
   return {
-    key: oneOf(head, "activity", ACTIVITIES, file),
+    key,
     name: need(head, "name", file),
-    mode: oneOf(head, "mode", MODES, file),
+    mode,
     purpose: need(head, "purpose", file),
     reads: listOf(head, "reads", [...ASSETS, READ_KNOWLEDGE, READ_ALL] as readonly ReadKey[], file, true),
     writes: listOf(head, "writes", ASSETS, file, true),
     requires: listOf(head, "requires", CONDITIONS, file, false),
     example: need(head, "example", file),
+    template,
+    stage: stageText as Stage | null,
   };
 }
 
-/** 读一条流程的头并校验。 */
-export function parseFlowDef(text: string, file: string): FlowDef {
+/** 读一条流程的声明并校验。activities 是这个任务类型的全部活动的标识符：各步只能写它们里的，同一项不能写两次。 */
+export function parseFlowDef(text: string, key: string, file: string, activities: readonly string[]): FlowDef {
   const head = headOf(text, file);
+  const flow = need(head, "flow", file);
+  if (flow !== key) throw new DefinitionHeadError(`${file} 的声明里「flow」写的是「${flow}」，应当与文件名相同。`);
+  const steps = listOf(head, "steps", activities, file, true);
+  const twice = steps.find((one, i) => steps.indexOf(one) !== i);
+  if (twice) throw new DefinitionHeadError(`${file} 的声明里「steps」写了两次「${twice}」：同一项活动在一条流程里只能出现一次。`);
+  const notes: Record<string, string> = {};
+  for (const [field, value] of Object.entries(head)) {
+    if (!field.startsWith("note.")) continue;
+    const step = field.slice("note.".length);
+    if (!steps.includes(step)) throw new DefinitionHeadError(`${file} 的声明里「${field}」说的「${step}」不在「steps」里。`);
+    if (value) notes[step] = value;
+  }
+  const known = new Set(["flow", "name", "purpose", "applies", "steps", "inputs", "requires", "example"]);
+  const extra = Object.keys(head).filter((field) => !known.has(field) && !field.startsWith("note."));
+  if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
   return {
-    key: oneOf(head, "flow", FLOW_KEYS, file),
+    key,
     name: need(head, "name", file),
     purpose: need(head, "purpose", file),
     applies: need(head, "applies", file),
-    nodes: listOf(head, "nodes", ACTIVITIES, file, true),
+    steps,
+    notes,
     inputs: need(head, "inputs", file),
     requires: listOf(head, "requires", CONDITIONS, file, false),
     example: need(head, "example", file),

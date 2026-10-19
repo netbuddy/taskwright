@@ -114,7 +114,7 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
       assert.equal((await call("POST", `/api/v1/tasks/${oldId}/messages?session=${oldSession}`, { text: "你好。", client_id: "c-old" })).status, 200);
     });
     const old = systemText(requests()[4]);
-    const legacy = readFileSync(join(ROOT, "agent", "prompts", "stages", "system.md"), "utf-8");
+    const legacy = readFileSync(join(ROOT, "agent", "prompts", "system.md"), "utf-8");
     assert.ok(old.startsWith(legacy), "系统提示的开头就是启动参数给的那一份");
     assert.match(old, /<skills>[\s\S]*<name>requirements-engineering<\/name>[\s\S]*<\/skills>/);
     assert.ok(!old.includes("taskwright-executor"));

@@ -24,7 +24,7 @@
  * versions 是发布过的各版（library.versionView），没有发布过是空列表。
  * assets 是需求资产六类的现状，六格，每格 { key, name, count, unit, text, note, produced_by }（agent/src/lib/activity_catalog.ts 的 AssetCell）。
  * catalog 是任务起点页的活动目录：flows 两条工作流程与 activities 七项单项活动，文字取自活动与流程的定义文件开头的头
- * （agent/prompts/stages/、agent/prompts/flows/），各带现在能不能启动（enabled）、一句状态（state）与工作项个数（active_count）；
+ * （任务 skill 目录里的 activities/ 与 flows/，没有就读产品自带的，见 agent/src/lib/activity_def_read.ts），各带现在能不能启动（enabled）、一句状态（state）与工作项个数（active_count）；
  * 单项活动能不能启动只看数据，已经有工作项不拦；流程另带 work_item（任务里已有的流程工作项），有它时流程不能启动。
  * 定义读不出来时 catalog 为 null。
  * start_page 是任务起点页与活动输入页上的几段文字（startPageTexts）：一段定位的话、「三步开始」主按钮下面的一句、三种常见起点各一张小卡、

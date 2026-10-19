@@ -41,10 +41,10 @@ function frontmatter(text: string): [Record<string, string>, string] {
 }
 const bodyOf = (path: string) => frontmatter(readFileSync(path, "utf-8"))[1];
 const shown = (path: string) => relative(ROOT, path);
-/** 一份任务 skill 的全部文字：SKILL.md 的正文，加上它旁边 stages/ 目录里按阶段分的几段（有的任务类型没有这个目录）。 */
+/** 一份任务 skill 的全部文字：SKILL.md 的正文，加上它旁边 activities/ 目录里各项活动的补充（去掉声明；有的任务类型没有这个目录）。 */
 function taskSkillText(path: string): string {
-  const stages = join(dirname(path), "stages");
-  const parts = existsSync(stages) ? readdirSync(stages).sort().map((name) => readFileSync(join(stages, name), "utf-8")) : [];
+  const activities = join(dirname(path), "activities");
+  const parts = existsSync(activities) ? readdirSync(activities).sort().map((name) => bodyOf(join(activities, name))) : [];
   return [bodyOf(path), ...parts].join("\n");
 }
 
@@ -222,7 +222,7 @@ test("需求规格任务的 skill 用新的集合名「问题」", () => {
 });
 
 test("启动配置的系统提示就是有阶段的任务用的那一份，且不提领域", () => {
-  assert.equal(DEV_PROFILE.system_prompt_file, "agent/prompts/stages/system.md");
+  assert.equal(DEV_PROFILE.system_prompt_file, "agent/prompts/system.md");
   const text = readFileSync(join(ROOT, DEV_PROFILE.system_prompt_file), "utf-8");
   assert.ok(text.startsWith("你是 Taskwright 的执行者"));
   assert.ok(!text.includes("需求工程"));

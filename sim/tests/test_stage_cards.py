@@ -183,10 +183,13 @@ class StageCardsTest(unittest.TestCase):
         self.assertRegex(summary["提示词版本"], r"^[0-9a-f]{12}$")
         self.assertEqual(summary["各遍提示词版本"], [summary["提示词版本"]] * PASSES)
         listed = {one["路径"]: one for one in summary["提示词文件"]}
-        on_disk = sorted(f"agent/prompts/stages/{p.name}" for p in (REPO / "agent" / "prompts" / "stages").iterdir() if p.is_file())
-        self.assertEqual(sorted(path for path in listed if path.startswith("agent/prompts/stages/")), on_disk)
-        for path, where in (("agent/prompts/capabilities/reading/materials.md", "代码仓"), ("agent/prompts/templates/reading.md", "代码仓"), ("agent/prompts/stages/system.md", "代码仓"),
-                            (".pi/skills/requirements-engineering/SKILL.md", "任务目录"), (".pi/skills/requirements-engineering/stages/reading.md", "任务目录")):
+        on_disk = sorted(f"agent/prompts/templates/{p.name}" for p in (REPO / "agent" / "prompts" / "templates").iterdir() if p.is_file())
+        self.assertEqual(sorted(path for path in listed if path.startswith("agent/prompts/templates/")), on_disk)
+        # 活动与流程的声明在任务目录的 skill 里，列在任务目录一栏。
+        self.assertIn(".pi/skills/requirements-engineering/activities/reading.md", listed)
+        self.assertIn(".pi/skills/requirements-engineering/flows/analysis.md", listed)
+        for path, where in (("agent/prompts/capabilities/reading/materials.md", "代码仓"), ("agent/prompts/templates/reading.md", "代码仓"), ("agent/prompts/system.md", "代码仓"),
+                            (".pi/skills/requirements-engineering/SKILL.md", "任务目录"), (".pi/skills/requirements-engineering/activities/reading.md", "任务目录")):
             self.assertEqual((listed[path]["来自"], len(listed[path]["摘要值"])), (where, 16), path)
         self.assertFalse([path for path in listed if path.startswith("docs/") or path.startswith("/") or path.startswith("agent/prompts/skills/")])
         self.assertIn(f"- 提示词版本：{summary['提示词版本']}（每份文件见最后的「提示词」一节）", text)

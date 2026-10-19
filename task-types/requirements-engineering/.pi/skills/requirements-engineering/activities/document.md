@@ -1,3 +1,15 @@
+---
+name: 编写文档
+mode: batch
+purpose: 补写各章导语与术语表，将需求资产编排为可阅读的需求规格说明。
+reads: all
+writes: description, versions
+requires: has_confirmed_items
+example: 为第 3 章补一段导语，术语表收入「副本」「预约」。
+template: document
+stage: document
+---
+
 ## 这类任务在编写文档阶段
 
 - 概述与范围那一章的导语写三段。背景：为什么要做这个系统、现在的业务怎样运转，依据标签为「目标」「假设」的页。读者对象：这份规格说明给哪几种人看、各看哪几章。范围边界：本期做什么、不做什么，依据标签为「范围」的页与种类为「范围外」「后续迭代」的问题条目。

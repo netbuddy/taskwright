@@ -1,5 +1,5 @@
 /**
- * 有阶段的任务用的说明文件的内容检查：系统提示（agent/prompts/stages/system.md）、平台说明的能力模块（agent/prompts/capabilities/）、
+ * 有阶段的任务用的说明文件的内容检查：系统提示（agent/prompts/system.md）、平台说明的能力模块（agent/prompts/capabilities/）、
  * 六份活动模板（agent/prompts/templates/）与需求分析流程的定义。只读这些文件，不改。
  */
 
@@ -27,18 +27,18 @@ const EMPTY_LAMP_INPUT: LampInput = {
 };
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const STAGES_DIR = join(ROOT, "agent", "prompts", "stages");
+const PROMPTS_DIR = join(ROOT, "agent", "prompts");
 const TEMPLATES_DIR = join(ROOT, "agent", "prompts", "templates");
 /**
- * 读一份说明文件：common.md 是平台说明的模块接起来的整份，六项活动的名字读活动模板，别的读 stages 目录。开头的头都去掉。
+ * 读一份说明文件：common.md 是平台说明的模块接起来的整份，六项活动的名字读活动模板，别的读 agent/prompts 目录。开头的头都去掉。
  */
 const readRaw = (name: string) => {
   if (name === "common.md") return platformText();
   const stage = STAGES.find((one) => name === `${one}.md`);
-  return skillBody(readFileSync(join(stage ? TEMPLATES_DIR : STAGES_DIR, name), "utf-8"));
+  return skillBody(readFileSync(join(stage ? TEMPLATES_DIR : PROMPTS_DIR, name), "utf-8"));
 };
 /** 需求分析这条流程的定义：六个节点各一节，写出口与用户说的话不属于这一段时怎样办。 */
-const FLOW = skillBody(readFileSync(join(ROOT, "agent", "prompts", "flows", "analysis.md"), "utf-8"));
+const FLOW = skillBody(readFileSync(join(ROOT, "task-types", "requirements-engineering", ".pi", "skills", "requirements-engineering", "flows", "analysis.md"), "utf-8"));
 /**
  * 读一份说明文件。六项活动的文件读出来的是这个阶段在需求分析流程里拼出来的那一段：活动的说明（做什么、不做什么、做到什么算够）
  * 接上流程定义里它那个节点的一节（出口、用户说的话不属于本段时），与任务在流程里时系统提示里的那一截相同。别的文件原样。
@@ -336,17 +336,20 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   // 问题条目的写法与「用户决定保留」只认对话里的用户，挪进了平台说明的模块「问题条目」。
   for (const head of ["1. **含糊的地方不要自己定。**", "2. **「用户决定保留」只认对话里的用户。**"]) assert.ok(moduleText("problems").includes(head), head);
   assert.ok(!common.includes("含糊的地方不要自己定") && !common.includes("只认对话里的用户"));
-  assert.deepEqual(readdirSync(join(SRS_SKILL, "stages")).sort(), ["document.md", "reading.md", "writing.md"]);
-  const document = readFileSync(join(SRS_SKILL, "stages", "document.md"), "utf-8");
+  // 七项活动各一份声明；有补充段的只有核读材料、写条目与编写文档三项。
+  assert.deepEqual(readdirSync(join(SRS_SKILL, "activities")).sort(), ["clarifying.md", "document.md", "modeling.md", "publish.md", "reading.md", "reviewing.md", "writing.md"]);
+  const supplement = (name: string) => body(readFileSync(join(SRS_SKILL, "activities", `${name}.md`), "utf-8")).replace(/^\n+/, "");
+  assert.deepEqual(STAGES.filter((one) => supplement(one).trim() !== ""), ["reading", "writing", "document"]);
+  const document = supplement("document");
   assert.ok(document.startsWith("## 这类任务在编写文档阶段\n"));
   for (const words of ["概述与范围那一章的导语写三段。背景：", "读者对象：", "范围边界：", "导语只概括各节与已经确认的条目里写下的内容，不写新的规定", "来源写「助手补充」",
     "一次保存最多写 4 页", "「是否阻断下游」照实写，不要改条目"]) assert.ok(document.includes(words), words);
   for (const chapter of CHAPTERS.slice(1)) assert.ok(document.includes(`${chapter.name}：`), chapter.name);
-  const reading = readFileSync(join(SRS_SKILL, "stages", "reading.md"), "utf-8");
+  const reading = supplement("reading");
   assert.ok(reading.startsWith("## 这类任务在核读材料阶段\n"));
   assert.ok(reading.includes("一轮最多 12 页"));
   assert.ok(reading.includes("这几批里不要夹着用例、需求或约束"));
-  const writing = readFileSync(join(SRS_SKILL, "stages", "writing.md"), "utf-8");
+  const writing = supplement("writing");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
   for (const head of ["整理建模阶段画出的图与材料里的内容都要整理进条目", "1. **照图写条目。**", "2. **每条功能用例的来源写两张图。**", "3. **非功能需求不经图。**",
     "4. **含糊的记成问题。**", "5. **一批最多写 4 个条目，问题条目放最后一批。**", "6. **一句话既是解释又是规则时。**", "7. **写完对用户说话。**"]) {
@@ -362,8 +365,6 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   assert.ok(writing.includes("种类写「图」，出处写图的编号（例如 D-002）"));
   assert.ok(writing.includes("任务里只有一张用例图，各条用例都指向它，不要为每条用例另画一张。"));
   assert.ok(writing.includes("这件事不牵涉状态图时，不必为了对应而补写。"));
-  // 任务类型的文件名也只用阶段的键。
-  for (const name of readdirSync(join(SRS_SKILL, "stages"))) assert.ok((STAGES as readonly string[]).includes(name.replace(/\.md$/, "")), name);
 });
 
 test("编写文档那一段：补导语与概括句并写明依据；出口是请用户过目的卡片，不引出运行所以话要一次说完；分四种处理用户的话", () => {

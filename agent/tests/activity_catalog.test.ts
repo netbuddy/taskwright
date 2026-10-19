@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CATALOG_LATER, type AssetFacts, assetCells, assetFacts, blockedByStage, blockedText, catalog, conditionMet } from "../src/lib/activity_catalog.ts";
 import { CONDITIONS } from "../src/lib/activity_def.ts";
-import { definitions } from "../src/lib/activity_def_read.ts";
+import { readDefinitions } from "../src/lib/activity_def_read.ts";
+import { SRS_SKILL_DIR } from "./helpers.ts";
 import { type LampDiagram, type LampInput, type LampItem, type LampPage, type LampQuestion, STAGES } from "../src/lib/stage.ts";
 
 const page = (id: string, more: Partial<LampPage> = {}): LampPage => ({
@@ -24,7 +25,7 @@ const EMPTY: AssetFacts = {
   materials: 0, materialsUnread: 0, sections: 0, sectionsPending: 0, openQuestions: 0, diagrams: 0, diagramsUnviewed: 0,
   items: 0, itemsUnread: 0, itemsPending: 0, itemsConfirmed: 0, reviewRounds: 0, openFindings: 0, versions: 0,
 };
-const DEFS = definitions();
+const DEFS = readDefinitions(SRS_SKILL_DIR);
 const cellsOf = (facts: AssetFacts) => Object.fromEntries(assetCells(facts, DEFS.activities).map((one) => [one.key, [one.text, one.note]]));
 
 test("空任务：六类都是零，材料来自上传所以没有产出它的活动，别的各写由哪些活动产出", () => {

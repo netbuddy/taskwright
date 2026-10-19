@@ -139,7 +139,7 @@ node --test 'tests/*.test.ts'
 `backend/src/launch.ts` 的 `buildCommand`。几点要紧的：
 
 - `--tools` 白名单以 `backend/profiles/dev.json` 为准：read 读文件，ls 列出目录里有哪些文件（两者都是 pi 自带的只读工具），其余是本目录登记的工具。白名单里必须写上自定义工具的名字，漏写时模型看不到它。`create_task` 已从白名单去掉。不开放 find、grep、bash。
-- 系统提示用 `--system-prompt` 整体替换成执行者自己的系统提示（`agent/prompts/stages/system.md`）。每一次运行之前，
+- 系统提示用 `--system-prompt` 整体替换成执行者自己的系统提示（`agent/prompts/system.md`）。每一次运行之前，
   扩展再按这条会话的工作项把系统提示换成拼好的一份（系统提示、平台说明、任务类型说明、现在这个阶段，见 `prompts/stages/README.md`）；
   启动参数里的那一份只在拼不成时沿用，扩展也靠它认出 pi 接在后面的那一截。
 - 启动配置关掉了 pi 的技能自动发现（`--no-skills`），免得本机全局目录里的技能混进来；只用 `--skill <任务目录>/.pi/skills`

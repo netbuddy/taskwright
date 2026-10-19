@@ -93,6 +93,17 @@ function node(args: string[]): void {
 }
 
 /**
+ * 任务定义的「执行方法」那份 skill 的目录里放产品自带的需求工程的活动与流程的声明（agent/src/lib/activity_def_read.ts 读它们），
+ * 与建任务时从任务类型复制来的一样。定义里没有「执行方法」时什么都不做。
+ */
+export function placeActivities(ws: string, definition: unknown): void {
+  const skill = (definition as { 执行方法?: unknown } | null)?.执行方法;
+  if (typeof skill !== "string") return;
+  const from = join(ROOT, "task-types", "requirements-engineering", ".pi", "skills", "requirements-engineering");
+  for (const sub of ["activities", "flows"]) cpSync(join(from, sub), join(ws, dirname(skill), sub), { recursive: true });
+}
+
+/**
  * 演示任务目录。withDb 为真时库由夹具写出：修订 1 新增 UC-001（名称「申请退款」）与 TBD-001；修订 2 把 UC-001 改成
  * 「买家申请退款」、改 TBD-001、新增 UC-002；修订 3 删除 UC-002。事件 1 是创建任务，事件 2 到 4 是三次修订。
  */
@@ -100,6 +111,7 @@ export function makeWorkspace(root: string, name: string, withDb: boolean): stri
   const ws = join(root, name);
   mkdirSync(join(ws, "docs", "task-definitions"), { recursive: true });
   writeFileSync(join(ws, "docs", "task-definitions", "demo.json"), JSON.stringify(DEMO_DEFINITION), "utf-8");
+  placeActivities(ws, DEMO_DEFINITION);
   if (withDb) node([join(FIXTURES, "build_current_db.mts"), ws]);
   return ws;
 }

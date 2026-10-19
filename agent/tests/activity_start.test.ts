@@ -198,7 +198,8 @@ test("守门按会话：助手能写什么、系统提示拼哪一段、能不�
   assert.match(refusal("s-free")!, /请用户从任务起点页启动一个工作项/);
   // 四、系统提示拼哪一段也按会话：流程的、单项活动的（带范围说明）、自由讨论的。
   assert.deepEqual([whereInWorkspace(dir, "s-write"), whereInWorkspace(dir, "s-clarify"), whereInWorkspace(dir, "s-free"), whereInWorkspace(dir, null)],
-    [{ stage: "writing", inFlow: true, scope: null }, { stage: "clarifying", inFlow: false, scope: "只问续借" }, { stage: IDLE, inFlow: false, scope: null }, { stage: IDLE, inFlow: false, scope: null }]);
+    [{ stage: "writing", inFlow: true, flow: "analysis", scope: null }, { stage: "clarifying", inFlow: false, flow: null, scope: "只问续借" },
+      { stage: IDLE, inFlow: false, flow: null, scope: null }, { stage: IDLE, inFlow: false, flow: null, scope: null }]);
   // 五、助手请求评审：写条目的会话过得了阶段这一关，澄清与自由讨论的会话被拦。
   const reviewGate = (session: string) => {
     try {
@@ -218,7 +219,7 @@ test("守门按会话：助手能写什么、系统提示拼哪一段、能不�
   const archived = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-write"))!;
   assert.deepEqual([archived.current, archived.work_item, stageLines(archived)], [IDLE, null,
     ["本会话是自由讨论，不属于任何工作项：你可以立主题页、改主题页、记问题条目，不写需求条目，也不提议进入哪一项活动。启动哪一项活动由用户从任务起点页决定。"]]);
-  assert.deepEqual(whereInWorkspace(dir, "s-write"), { stage: IDLE, inFlow: false, scope: null });
+  assert.deepEqual(whereInWorkspace(dir, "s-write"), { stage: IDLE, inFlow: false, flow: null, scope: null });
   assert.equal(stageIn(dir, taskId, "s-clarify"), "clarifying", "别的工作项不受影响");
 });
 
@@ -310,7 +311,7 @@ test("换一条会话接着做：新会话挂到同一个工作项上，位置�
   assert.equal(count(dir, "event"), before, "挂会话不记事件");
   assert.deepEqual(inDb(dir, (db) => workItemSessions(db, taskId)).map((one) => [one.session_id, one.record_id]), [["s-1", 1], ["s-2", 1]]);
   assert.deepEqual([stageIn(dir, taskId, "s-1"), stageIn(dir, taskId, "s-2")], ["writing", "writing"]);
-  assert.deepEqual(whereInWorkspace(dir, "s-2"), { stage: "writing", inFlow: true, scope: "只做借阅" });
+  assert.deepEqual(whereInWorkspace(dir, "s-2"), { stage: "writing", inFlow: true, flow: "analysis", scope: "只做借阅" });
   // 在新会话里换站，两条会话看到的是同一个位置。
   userOp(dir, "s-2", { kind: "move_stage", fields: { stage: "评审确认" } });
   assert.deepEqual([stageIn(dir, taskId, "s-1"), stageIn(dir, taskId, "s-2")], ["reviewing", "reviewing"]);

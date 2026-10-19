@@ -14,7 +14,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, catalog } from "./activity_catalog.ts";
 import { DefinitionHeadError } from "./activity_def.ts";
-import { type Definitions, definitions } from "./activity_def_read.ts";
+import { type Definitions, definitionsFor } from "./activity_def_read.ts";
 import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { checkCompletion } from "./conditions.ts";
 import { emit, wallClockText } from "./db.ts";
@@ -32,7 +32,7 @@ import { openProposal } from "./stage_proposal.ts";
 import {
   BACK_OPTIONS, ENTER_OPTIONS, FLOW_ANALYSIS, FLOW_NAMES, type FlowItemRef, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
   type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
-  activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, stageBackedBy, stageEnteredBy, stageLamps,
 } from "./stage.ts";
 import { refusalText } from "./texts.ts";
 import { listMaterials } from "./task_status.ts";
@@ -365,12 +365,12 @@ export function moveStage(db: DatabaseSync, workspaceDir: string, who: Who, to: 
 }
 
 /**
- * 产品自带的活动与流程的定义（lib/activity_def_read.ts）。读不出来（文件不在、头缺栏）时不抛错，返回原因：
- * 调用方据此不出活动目录、不让启动任何一项单项活动，别的照常。
+ * 这个任务的活动与流程的声明（lib/activity_def_read.ts：任务 skill 目录里的，没有就回退读产品自带的）。读不出来（文件不在、
+ * 声明缺栏）时不抛错，返回原因：调用方据此不出活动目录、不让启动任何一项单项活动，别的照常。
  */
-export function definitionsOrError(): { defs: Definitions; error: null } | { defs: null; error: string } {
+export function definitionsOrError(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">): { defs: Definitions; error: null } | { defs: null; error: string } {
   try {
-    return { defs: definitions(), error: null };
+    return { defs: definitionsFor(workspaceDir, definition.skillPath), error: null };
   } catch (error) {
     if (error instanceof DefinitionHeadError) return { defs: null, error: error.message };
     throw error;
@@ -389,7 +389,7 @@ function allBlocked(reason: string): Record<Stage, string | null> {
 export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition, sessionId: string | null | undefined, assets?: AssetFacts): LaunchFacts {
   const open = openActivityRecord(db, taskId, sessionId);
   const facts = assets ?? assetFacts(lampInput(db, workspaceDir, taskId, definition));
-  const found = definitionsOrError();
+  const found = definitionsOrError(workspaceDir, definition);
   return {
     position: open?.activity ?? IDLE, inFlow: open !== null && open.flow !== null, flowNode: null, flowItem: flowWorkItem(db, taskId), hasMaterials: facts.materials > 0,
     blocked: found.defs ? blockedByStage(found.defs.activities, facts) : allBlocked(found.error),
@@ -476,13 +476,28 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
         if (from !== null && from !== IDLE && STAGES.indexOf(back) >= STAGES.indexOf(from)) return unmoved("not_back");
         return moveStage(db, workspaceDir, who, back, backReason(back, cardQuestion));
       }
-      if (to !== "writing" && from !== null && from !== IDLE && nextStage(from) !== to) return unmoved("not_next");
+      if (to !== "writing" && from !== null && from !== IDLE && nextStepStage(workspaceDir, validateDefinition(JSON.parse(task.definition_text)), where?.item?.flow ?? null, from) !== to) {
+        return unmoved("not_next");
+      }
       return moveStage(db, workspaceDir, who, to!, enterReason(to!));
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return null;
     throw error;
   }
+}
+
+/**
+ * 一条流程里某个阶段的下一步算作哪个阶段：按流程声明的各步（steps）的先后，取这一步之后的那一项活动的阶段；
+ * 这一步是最后一步、下一项活动只能由用户发起（发布）、或者流程的声明读不出来时是 null。flow 为 null 时按需求分析。
+ */
+export function nextStepStage(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, flow: string | null, from: Stage): Stage | null {
+  const found = definitionsOrError(workspaceDir, definition);
+  if (!found.defs) return null;
+  const steps = found.defs.flows.find((one) => one.key === (flow ?? FLOW_ANALYSIS))?.steps ?? [];
+  const stages = steps.map((key) => found.defs.activities.find((one) => one.key === key)?.stage ?? null);
+  const at = stages.indexOf(from);
+  return at < 0 ? null : stages[at + 1] ?? null;
 }
 
 // ───────────── 现在在哪个阶段、每个阶段还差什么 ─────────────
@@ -684,7 +699,7 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
   const input = lampInput(db, workspaceDir, taskId, definition);
   const assets = assetFacts(input);
   const facts = launchFacts(db, workspaceDir, taskId, definition, sessionId, assets);
-  const found = definitionsOrError();
+  const found = definitionsOrError(workspaceDir, definition);
   const node = open !== null && open.flow !== null ? open.activity : null;
   const moved = open ? lastMove(db, open) : null;
   return {

@@ -181,7 +181,7 @@ test("发话：逐条交出一次运行的事件，直到 agent_settled；扩展
     // 扩展按阶段换系统提示时报的那一行事实：留着最近一份。
     // 调试模式下它带着每一部分的文字：留在内存里。
     assert.deepEqual(pi.lastStagePrompt, { replaced: true, stage: "reading", how: "recomposed", digest: "0123456789abcdef",
-      texts: [{ part: "system", from: "builtin", file: "agent/prompts/stages/system.md", text: "整份文字" }] });
+      texts: [{ part: "system", from: "builtin", file: "agent/prompts/system.md", text: "整份文字" }] });
   } finally {
     await pi.close();
   }

@@ -1,3 +1,15 @@
+---
+name: 核读材料
+mode: batch
+purpose: 通读项目材料，提取角色、业务流程与业务对象，各立一节；材料未说明之处记为待澄清问题。
+reads: materials, knowledge
+writes: description
+requires: has_materials
+example: 补充《读者分类办法》，助手把「教师」「学生」各立一节并引用原文。
+template: reading
+stage: reading
+---
+
 ## 这类任务在核读材料阶段
 
 - 材料里解释一个词、一个角色、现在业务怎么运转、为什么要做这个系统的段落，各立成业务说明的一页主题（每一块怎样填见上文第 6 条）；材料里的术语定义段落也立成主题，标签贴「概念」。

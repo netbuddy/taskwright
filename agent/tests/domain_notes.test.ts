@@ -201,9 +201,9 @@ test("来源种类「图」：出处不是图的编号、任务里没有这张�
 
 test("任务 skill 写了业务说明的做法，不出现平台的内部用词", () => {
   // 任务 skill 里不出现这几个词。
-  // 任务 skill 的文字分三份：每个阶段都要用的在 SKILL.md，核读材料与写条目各有一段在旁边的 stages/ 目录里。
+  // 任务 skill 的文字分三份：每个阶段都要用的在 SKILL.md，核读材料与写条目各有一段在旁边 activities/ 的那两项活动里（原写 stages/ 目录里。
   const taskDir = resolve(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering");
-  const task = ["SKILL.md", "stages/reading.md", "stages/writing.md"].map((name) => readFileSync(resolve(taskDir, name), "utf-8")).join("\n");
+  const task = ["SKILL.md", "activities/reading.md", "activities/writing.md"].map((name) => readFileSync(resolve(taskDir, name), "utf-8")).join("\n");
   for (const word of ["节点", "联系", "要素", "依据门", "派生", "投影", "schema"]) {
     assert.ok(!task.includes(word), `任务 skill 里有「${word}」`);
   }

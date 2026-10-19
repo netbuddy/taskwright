@@ -204,7 +204,7 @@ def pi_concepts() -> list[dict]:
             "pi 的名字": "skill",
             "一句话解释": "一份写在 SKILL.md 里的执行方法说明。pi 启动时只把每个 skill 的名字与描述放进系统提示，"
                           "正文要助手自己用 read 去读。本仓里助手只有一个 skill：任务目录里的任务 skill（这类任务的做法）；"
-                          "有阶段的任务里，它的正文由扩展直接拼进系统提示。所有任务类型共用的平台说明在代码仓的 agent/prompts/stages/ 下，不是 skill。",
+                          "有阶段的任务里，它的正文由扩展直接拼进系统提示。所有任务类型共用的平台说明在代码仓的 agent/prompts/capabilities/ 下（按能力分的模块），不是 skill。",
             "官方原句": "At startup, pi scans skill locations and extracts names and descriptions. "
                         "This is progressive disclosure: only descriptions are always in context, "
                         "full instructions load on-demand.",

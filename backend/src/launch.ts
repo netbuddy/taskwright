@@ -333,7 +333,6 @@ export function startupRecord(profile: Profile, argv: string[]) {
     按阶段的说明: stagePromptRecord(),
     平台说明的模块: dirRecord(CAPABILITY_PROMPTS_DIR, "有阶段的任务这次拼不成系统提示"),
     活动模板: dirRecord(TEMPLATE_PROMPTS_DIR, "有阶段的任务这次拼不成系统提示"),
-    流程的说明: flowPromptRecord(),
   };
 }
 
@@ -343,14 +342,15 @@ function modelSource(profile: Profile): string {
   return resolved.from === "助手程序的设置" ? `助手程序的设置（${resolved.settings} 的 defaultProvider 与 defaultModel）` : "启动配置";
 }
 
-/** 有阶段的任务的系统提示用的那几份文件所在的目录，相对代码仓根目录（系统提示与各项活动的头；扩展在每次运行开始之前拼系统提示，见 agent/src/lib/context_assemble.ts）。 */
-export const STAGE_PROMPTS_DIR = "agent/prompts/stages";
+/** 有阶段的任务的系统提示（拼出来的第一部分，也是启动参数给的那一份），相对代码仓根目录（agent/src/lib/context_assemble.ts）。 */
+export const STAGE_PROMPTS_DIR = "agent/prompts";
+export const SYSTEM_PROMPT_FILE = "system.md";
 
-/** 启动那一刻这个目录里每份文件的字节数与摘要值：两次启动之间哪一段说明改过，从这里看得出来。 */
+/** 启动那一刻系统提示的字节数与摘要值：两次启动之间它改过没有，从这里看得出来。活动与流程的声明在任务目录里，记在知识仓库摘要里。 */
 export function stagePromptRecord() {
   const path = fromRoot(STAGE_PROMPTS_DIR);
-  if (!isDir(path)) return { 有没有: false, 说明: `代码仓里没有 ${STAGE_PROMPTS_DIR} 这个目录，有阶段的任务这次用的是启动参数给的系统提示。` };
-  return { 有没有: true, 代码仓里的路径: STAGE_PROMPTS_DIR, 目录: path, 文件: digestFiles(path, path) };
+  if (!isFile(join(path, SYSTEM_PROMPT_FILE))) return { 有没有: false, 说明: `代码仓里没有 ${STAGE_PROMPTS_DIR}/${SYSTEM_PROMPT_FILE}，有阶段的任务这次拼不成系统提示。` };
+  return { 有没有: true, 代码仓里的路径: STAGE_PROMPTS_DIR, 目录: path, 文件: digestFiles(path, path).filter((one) => one.路径 === SYSTEM_PROMPT_FILE) };
 }
 
 /** 平台说明的能力模块与活动模板所在的目录，相对代码仓根目录（agent/src/lib/context_assemble.ts）。 */
@@ -362,16 +362,6 @@ export function dirRecord(dir: string, consequence: string) {
   const path = fromRoot(dir);
   if (!isDir(path)) return { 有没有: false, 说明: `代码仓里没有 ${dir} 这个目录，${consequence}。` };
   return { 有没有: true, 代码仓里的路径: dir, 目录: path, 文件: digestFiles(path, path) };
-}
-
-/** 流程的定义所在的目录，相对代码仓根目录：任务在一条流程里的某个阶段时，系统提示里那个节点的出口取自这里（agent/src/lib/context_assemble.ts）。 */
-export const FLOW_PROMPTS_DIR = "agent/prompts/flows";
-
-/** 启动那一刻这个目录里每份文件的字节数与摘要值，与按阶段的说明同一个记法。 */
-export function flowPromptRecord() {
-  const path = fromRoot(FLOW_PROMPTS_DIR);
-  if (!isDir(path)) return { 有没有: false, 说明: `代码仓里没有 ${FLOW_PROMPTS_DIR} 这个目录，任务在流程里时拼不出节点的出口。` };
-  return { 有没有: true, 代码仓里的路径: FLOW_PROMPTS_DIR, 目录: path, 文件: digestFiles(path, path) };
 }
 
 // ───────────── 启动那一刻的知识仓库与上下文文件 ─────────────
