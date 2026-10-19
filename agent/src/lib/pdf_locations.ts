@@ -54,7 +54,7 @@ export interface PdfPageLocation {
   height: number;
   /** 页面自己的旋转角度（0、90、180、270）；矩形是旋转之前的坐标，页面显示时由显示库一并换算。 */
   rotate: number;
-  /** 这一页没有读出文字而且画了图片（多半是扫描件）。 */
+  /** 这一页除了页眉页脚没有读出文字（可能是扫描件，也可能是空白页：解析时不看这一页有没有图片）。 */
   no_text: boolean;
   /** 这一页的各块：块号（从 1 起）与矩形。 */
   blocks: { block: number; bbox: PdfBox }[];
