@@ -11,8 +11,13 @@
  * 不是每次都重读重拼：进程里记着上一份，阶段与文件都没变就原样交回（lib/stage_prompt.ts 的 StagePromptCache）。
  *
  * 每次换了系统提示都经状态栏报一行短事实给后端（键名 taskwright-stage-prompt）：哪个阶段、这一次是重拼还是沿用、
- * 说明文字与它各部分的摘要值、字节数与行数（不算 pi 接在后面的工作目录那一截），不带文字本身。出错时不换系统提示（这次运行用启动参数给的那一份，
- * 阶段的守门仍由工具执行），把原因报出去。它不写库。
+ * 说明文字与它各部分的摘要值、字节数与行数（不算 pi 接在后面的工作目录那一截），不带文字本身。它不写库。
+ *
+ * 拼不成时（模块缺了、头写得不对、重名、次序号相同、活动或工作流的定义读不成），这次运行停下：不调用模型，不沿用以前拼好的任何一份，
+ * 也不退回启动参数给的那一份（那一份不知道现在在哪一项活动，照它做会越界）。停下的办法是在这次运行的第一个回合开始时调用 pi 的 abort
+ * （见 registerStagePrompt），同时往会话里写一条
+ * 给用户看的消息（customType 为 taskwright-stage-prompt-error，文字取自模板 stage_prompt.compose_failed），并把原因报出去。
+ * 这一条由 backend/tests/stage_prompt_rpc.test.ts 用真的 pi 核对。
  *
  * 调试模式（后端带 --debug 启动时给了环境变量，见 lib/stage_prompt.ts 的 debugPromptDir）下多做两件事：每次运行开始时读一次设置里的
  * 「提示词目录」，目录里有的文件代替原来的；报出去的那一行另带每一部分的文字（texts），早先的任务也报一行（启动时给的整份）。
@@ -25,13 +30,19 @@ import {
   whereInWorkspace,
 } from "../lib/stage_prompt.ts";
 import type { Position } from "../lib/stage.ts";
+import { fillText } from "../lib/texts.ts";
 
 /** 报这一行事实用的状态栏键名。与 backend/src/pi_session.ts 里的同名常量是一份约定。 */
 export const STAGE_PROMPT_STATUS_KEY = "taskwright-stage-prompt";
 
-/** 报给后端的那一行事实。replaced 为假是这一次没有换系统提示，error 写着原因。 */
+/** 拼不成而停下这次运行时，写进会话给用户看的那条消息的 customType。与 backend/src/pi_session.ts 里的同名常量是一份约定。 */
+export const STAGE_PROMPT_ERROR_TYPE = "taskwright-stage-prompt-error";
+
+/** 报给后端的那一行事实。replaced 为假是这一次没有换系统提示：早先的任务（调试模式下才报），或者拼不成而停下了这次运行（stopped 为真，error 写着原因）。 */
 export interface StagePromptReport {
   replaced: boolean;
+  /** 拼不成而停下了这次运行。 */
+  stopped?: true;
   /** 这一次是为哪个阶段拼的；会话空闲时是 idle（用的是澄清的那一段，去掉了「出口」一节）。 */
   stage?: Position;
   /** 这条会话的工作项是不是流程的工作项：为假是单项活动的工作项（节点的出口换成固定的一段），空闲时也为假。 */
@@ -64,14 +75,22 @@ function summarize(prompt: StagePrompt): Pick<StagePromptReport, "digest" | "byt
 }
 
 type StartEvent = { systemPrompt?: string; systemPromptOptions?: { customPrompt?: string; skills?: LoadedSkill[] } };
-type StartContext = { cwd: string; ui: { setStatus(key: string, text: string): void }; sessionManager?: { getSessionId(): string } };
+type StartContext = { cwd: string; ui: { setStatus(key: string, text: string): void }; sessionManager?: { getSessionId(): string }; abort?(): void };
+
+/** 停下这次运行时写进会话的那条消息。 */
+export interface StopMessage {
+  customType: string;
+  content: string;
+  display: true;
+  details: { reason: string };
+}
 
 /**
- * 处理一次 before_agent_start：返回要换上的系统提示，不换时返回 undefined。
+ * 处理一次 before_agent_start：返回要换上的系统提示；早先的任务不换，返回 undefined；拼不成时停下这次运行，返回写进会话的那条消息。
  * 单独导出是为了不起 pi 也能测；cache 与 summaries 由 registerStagePrompt 在进程里各留一份。
  */
 export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: StagePromptCache,
-  summaries: WeakMap<StagePrompt, ReturnType<typeof summarize>>): { systemPrompt: string } | undefined {
+  summaries: WeakMap<StagePrompt, ReturnType<typeof summarize>>): { systemPrompt: string } | { message: StopMessage } | undefined {
   const report = (fact: StagePromptReport) => ctx.ui.setStatus(STAGE_PROMPT_STATUS_KEY, JSON.stringify(fact));
   const launched = String(event.systemPrompt ?? "");
   try {
@@ -89,20 +108,35 @@ export function stagePromptFor(event: StartEvent, ctx: StartContext, cache: Stag
     const got = cache.get({ stage, inFlow, scope, workspaceDir: ctx.cwd, skills: options.skills ?? [], tail, promptDir: debug.dir });
     let summary = summaries.get(got.prompt);
     if (!summary) summaries.set(got.prompt, (summary = summarize(got.prompt)));
-    // 重拼出错而沿用上一份时，stage 写的是任务现在的阶段，上一份是哪个阶段的看 parts 里那一段的文件名。
     report({
-      replaced: true, stage, in_flow: inFlow, how: got.how, ...(got.error ? { error: got.error } : {}), ...summary,
+      replaced: true, stage, in_flow: inFlow, how: got.how, ...summary,
       ...(debug.debug ? { debug: true as const, prompt_dir: debug.dir, notes: [...(debug.note ? [debug.note] : []), ...got.prompt.notes], texts: got.prompt.parts } : {}),
     });
     return { systemPrompt: got.prompt.text };
   } catch (error) {
-    report({ replaced: false, error: `按阶段换系统提示没有做成，这次运行用启动时给的那一份：${(error as Error).message}` });
-    return undefined;
+    const reason = (error as Error).message;
+    report({ replaced: false, stopped: true, error: `按会话拼系统提示没有拼成，这次运行停下了：${reason}` });
+    ctx.abort?.();
+    return { message: { customType: STAGE_PROMPT_ERROR_TYPE, content: fillText("stage_prompt.compose_failed", { reason }), display: true, details: { reason } } };
   }
 }
 
 export function registerStagePrompt(pi: ExtensionAPI): void {
   const cache = new StagePromptCache();
   const summaries = new WeakMap<StagePrompt, ReturnType<typeof summarize>>();
-  pi.on("before_agent_start", async (event, ctx) => stagePromptFor(event as StartEvent, ctx as unknown as StartContext, cache, summaries));
+  // 拼不成时要停下这次运行。before_agent_start 的时候 pi 还没有开始流式请求，这时调用 abort 不起作用（实测模型照样被调用）；
+  // 所以这里只记下「要停」，到这次运行第一个回合开始（turn_start，请求模型之前）再调用 abort：模型一次也不被请求，
+  // 会话里留下用户那句话、那条报错的消息与一条以 error 结束的空的助手消息（errorMessage 是 This operation was aborted）。
+  let stopAtTurnStart = false;
+  pi.on("before_agent_start", async (event, ctx) => {
+    stopAtTurnStart = false;
+    const given = ctx as unknown as StartContext;
+    const wrapped: StartContext = { cwd: given.cwd, ui: given.ui, sessionManager: given.sessionManager, abort: () => { stopAtTurnStart = true; } };
+    return stagePromptFor(event as StartEvent, wrapped, cache, summaries);
+  });
+  pi.on("turn_start", async (_event, ctx) => {
+    if (!stopAtTurnStart) return;
+    stopAtTurnStart = false;
+    ctx.abort();
+  });
 }

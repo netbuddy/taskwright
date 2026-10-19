@@ -27,7 +27,7 @@
  *
  * 不是每次运行都重读重拼（StagePromptCache）：进程里记着上一次拼的那一份与它用到的每份文件的修改时刻和大小，
  * 下一次只看阶段与这些文件变没变（只查文件的属性，不读内容），没变就把上一份原样交回，变了才重读重拼；
- * 重拼出错时沿用上一份并把原因带出去。
+ * 重拼出错时把错抛给调用方，不沿用上一份（上一份可能是另一个阶段的）。
  *
  * 调试模式下另有一个「提示词目录」（debugPromptDir）：目录里有哪一份，就用那一份代替产品自带的或任务目录里的，没有的照旧。
  * 只认固定的十六个文件名（promptDirNames），软链接不跟、超过 PROMPT_DIR_MAX_BYTES 的不读、不是合法 UTF-8 的不用，
@@ -410,23 +410,21 @@ export function composeStagePrompt(input: ComposeInput, io: PromptIo = NODE_IO):
   return fromSlots(input, slots(input, io), io);
 }
 
-/** 这一次拿到的系统提示是怎样来的：重读重拼的、沿用上一份的、重拼出错而沿用上一份的。 */
-export type ComposeHow = "recomposed" | "reused" | "kept_after_error";
+/** 这一次拿到的系统提示是怎样来的：重读重拼的、沿用上一份的。 */
+export type ComposeHow = "recomposed" | "reused";
 
 /** 给人看的说法。 */
-export const HOW_NAMES: Record<ComposeHow, string> = { recomposed: "重拼", reused: "沿用", kept_after_error: "重拼出错，沿用上一份" };
+export const HOW_NAMES: Record<ComposeHow, string> = { recomposed: "重拼", reused: "沿用" };
 
 export interface CachedPrompt {
   prompt: StagePrompt;
   how: ComposeHow;
-  /** 重拼出错时的原因；别的情形没有这一项。 */
-  error?: string;
 }
 
 /**
  * 记着上一次拼的那一份。每次要系统提示时只看阶段、pi 接的那一截与各份文件的修改时刻和大小变没变：
- * 没变就把上一份原样交回（不读任何文件的内容），变了才重读重拼。重拼出错而手里有上一份时沿用上一份，并带上原因；
- * 手里什么都没有时把错抛给调用方。一个 pi 进程（一条任务的会话）用一个实例。
+ * 没变就把上一份原样交回（不读任何文件的内容），变了才重读重拼。重拼出错时把错抛给调用方并忘掉上一份：
+ * 不沿用，下一次照样重读重拼。一个 pi 进程（一条任务的会话）用一个实例。
  */
 export class StagePromptCache {
   private last: { key: string; prompt: StagePrompt } | null = null;
@@ -441,14 +439,10 @@ export class StagePromptCache {
     const all = slots(input, this.io);
     const key = JSON.stringify([input.stage, input.inFlow ?? true, input.scope ?? null, input.tail, input.promptDir ?? null, all.map((one) => one.stamps)]);
     if (this.last && this.last.key === key) return { prompt: this.last.prompt, how: "reused" };
-    try {
-      const prompt = fromSlots(input, all, this.io);
-      this.last = { key, prompt };
-      return { prompt, how: "recomposed" };
-    } catch (error) {
-      if (!this.last) throw error;
-      return { prompt: this.last.prompt, how: "kept_after_error", error: (error as Error).message };
-    }
+    this.last = null;
+    const prompt = fromSlots(input, all, this.io);
+    this.last = { key, prompt };
+    return { prompt, how: "recomposed" };
   }
 }
 

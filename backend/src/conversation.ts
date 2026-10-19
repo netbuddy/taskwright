@@ -10,6 +10,7 @@
  *   一段用户消息之后没有成功的回复、只有助手正文的，取这段里最后一条有正文的助手消息，via_reply_tool 为假。
  * - taskwright-user-edit → ui_action_noted；taskwright-task-status → system_note（kind 为 task_status；文字换成页面上的说法，
  *   见 taskStatusDisplayText；另带这条消息的 details，见 taskStatusDisplayDetails）。兜底追加的那句也是 system_note，kind 为 reply_fallback。
+ *   taskwright-stage-prompt-error（拼系统提示没有拼成、这次运行停下了）→ system_note，kind 为 stage_prompt_error，文字照原样。
  *
  * 每次工作的过程摘要（work_summary）由 work_summary.ts 从同一批条目算，插在这次工作的回复之前（messages）。
  */
@@ -38,6 +39,8 @@ export function typedAnnotation(details: Record<string, any>, noteId: unknown): 
 }
 export const USER_EDIT = "taskwright-user-edit";
 export const TASK_STATUS = "taskwright-task-status";
+/** 拼系统提示没有拼成而停下这次运行时扩展写的那条消息（agent/src/hooks/stage_prompt.ts 的 STAGE_PROMPT_ERROR_TYPE）。 */
+export const STAGE_PROMPT_ERROR = "taskwright-stage-prompt-error";
 export const REPLY_TOOL = "reply";
 /** 卡片上点「这几条都看过了」之后替用户发给执行者的那句话的开头；早期版本是「我已经在界面上确认了：」。 */
 export const NOTIFY_PREFIXES = [textPrefix("ui_ops.viewed_notice"), "我已经在界面上确认了："];
@@ -132,9 +135,10 @@ export function taskStatusDisplayText(text: string): string {
   return TASK_STATUS_WORDING.reduce((out, [pattern, replacement]) => out.replace(pattern, replacement), text);
 }
 
-/** system_note 的两种：任务现状消息，与「回复」工具的兜底扩展追加的那句固定文字。 */
+/** system_note 的三种：任务现状消息、「回复」工具的兜底扩展追加的那句固定文字、拼系统提示没有拼成时停下运行的那条消息。 */
 export const NOTE_TASK_STATUS = "task_status";
 export const NOTE_REPLY_FALLBACK = "reply_fallback";
+export const NOTE_STAGE_PROMPT_ERROR = "stage_prompt_error";
 
 /**
  * 任务现状消息的 details 给页面的样子（页面拿它写折叠起来的那一行要点）；不是对象时是 null。照原样给，只动两处：
@@ -304,6 +308,8 @@ export function messagesOfPath(path: Entry[], sessionId: string): Record<string,
           type: "system_note", session_id: sessionId, message_id: e.id, at, kind: NOTE_TASK_STATUS,
           text: taskStatusDisplayText(textOf(e.content ?? null)), details: taskStatusDisplayDetails(e.details ?? null),
         });
+      } else if (ctype === STAGE_PROMPT_ERROR) {
+        out.push({ type: "system_note", session_id: sessionId, message_id: e.id, at, kind: NOTE_STAGE_PROMPT_ERROR, text: textOf(e.content ?? null) });
       }
       continue;
     }

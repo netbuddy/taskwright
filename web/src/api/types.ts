@@ -1286,8 +1286,8 @@ export interface DebugSystemPrompt {
   replaced?: boolean;
   stage?: StageKey | null;
   stage_name?: string | null;
-  /** recomposed 重新读文件拼的；reused 沿用上一次的；kept_after_error 重拼出错而沿用上一次的。 */
-  how?: "recomposed" | "reused" | "kept_after_error" | null;
+  /** recomposed 重新读文件拼的；reused 沿用上一次的。 */
+  how?: "recomposed" | "reused" | null;
   error?: string | null;
   prompt_dir?: string | null;
   notes?: string[];

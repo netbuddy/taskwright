@@ -15,7 +15,7 @@ import {
   StagePromptCache, composeStagePrompt, debugPromptDir, digestOf, partFact, piTail, promptDirName, promptDirNames, skillBody, stageFile, stageInWorkspace, whereInWorkspace, withoutOpening, withoutSection,
   IDLE_OPENING, STANDALONE_EXIT, nodeHeading, nodeSection, scopeSection,
 } from "../src/lib/stage_prompt.ts";
-import { STAGE_PROMPT_STATUS_KEY, type StagePromptReport, stagePromptFor } from "../src/hooks/stage_prompt.ts";
+import { STAGE_PROMPT_ERROR_TYPE, STAGE_PROMPT_STATUS_KEY, type StagePromptReport, type StopMessage, stagePromptFor } from "../src/hooks/stage_prompt.ts";
 import { CALL_SESSION, DEFINITION_PATH, callIn, demoDefinition, idleSessions, enterStage, makeWorkspace, overallDefinition, tempDir } from "./helpers.ts";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
@@ -259,21 +259,19 @@ test("文件改了（修改时刻或大小变了）、任务目录里多了这�
   assert.equal(cache.get({ ...input, tail: "<cwd>\n/elsewhere\n</cwd>" }).how, "recomposed");
 });
 
-test("重拼出错时沿用上一份并带上原因；手里什么都没有时把错抛出来", () => {
+test("重拼出错时把错抛出来，不沿用上一份；文件补回来之后照常重拼", () => {
   const dir = platformCopy();
   const cache = new StagePromptCache();
   const input = (stage: (typeof STAGES)[number]) => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir });
-  const good = cache.get(input("reading"));
+  cache.get(input("reading"));
   rmSync(join(dir, stageFile("clarifying")));
-  const kept = cache.get(input("clarifying"));
-  assert.equal(kept.how, "kept_after_error");
-  assert.equal(kept.prompt, good.prompt);
-  assert.match(kept.error!, /拼系统提示要用的文件不在：.*clarifying\.md/);
-  // 文件补回来之后照常重拼。
+  assert.throws(() => cache.get(input("clarifying")), /拼系统提示要用的文件不在：.*clarifying\.md/);
+  // 上一份已经忘掉：核读材料那一份没变也要重拼，不是沿用出错之前的那一份。
+  assert.equal(cache.get(input("reading")).how, "recomposed");
   writeFileSync(join(dir, stageFile("clarifying")), "澄清那一段", "utf-8");
   assert.equal(cache.get(input("clarifying")).how, "recomposed");
   assert.throws(() => new StagePromptCache().get({ ...input("reading"), platformDir: scratchDir() }), /拼系统提示要用的文件不在/);
-  assert.deepEqual(Object.keys(HOW_NAMES).sort(), ["kept_after_error", "recomposed", "reused"]);
+  assert.deepEqual(Object.keys(HOW_NAMES).sort(), ["recomposed", "reused"]);
 });
 
 // ───────────── 挂在事件上的那一半（hooks/stage_prompt.ts） ─────────────
@@ -283,8 +281,11 @@ function start(workspaceDir: string, cache: StagePromptCache, summaries: WeakMap
   const reports: [string, StagePromptReport][] = [];
   const custom = "启动参数给的系统提示";
   const event = { systemPrompt: `${custom}\n\n<skills>\n清单\n</skills>\n\n<cwd>\n${workspaceDir}\n</cwd>`, systemPromptOptions: { customPrompt: custom, skills } };
-  const ctx = { cwd: workspaceDir, ui: { setStatus: (key: string, text: string) => { reports.push([key, JSON.parse(text)]); } }, sessionManager: { getSessionId: () => session } };
-  return { result: stagePromptFor(event, ctx, cache, summaries as any), reports };
+  let aborted = 0;
+  const ctx = { cwd: workspaceDir, ui: { setStatus: (key: string, text: string) => { reports.push([key, JSON.parse(text)]); } }, sessionManager: { getSessionId: () => session },
+    abort: () => { aborted += 1; } };
+  const result = stagePromptFor(event, ctx, cache, summaries as any);
+  return { result: result as { systemPrompt: string } | undefined, raw: result, reports, aborted };
 }
 
 test("事件处理：有阶段的任务返回拼好的系统提示并报一行事实；连续两次阶段不变，第二次报「沿用」；阶段变了报「重拼」", () => {
@@ -324,7 +325,7 @@ test("事件处理：有阶段的任务返回拼好的系统提示并报一行�
   assert.notEqual(third.reports[0][1].digest, report.digest);
 });
 
-test("事件处理：早先的任务什么都不返回、什么都不报；任务库读不出时不换系统提示并报出原因", () => {
+test("事件处理：早先的任务什么都不返回、什么都不报；任务库读不出时停下这次运行，写一条消息给用户并报出原因，不用启动时给的那一份", () => {
   const old = makeWorkspace(demoDefinition());
   createTask(callIn(old), { definition_path: DEFINITION_PATH });
   const quiet = start(old, new StagePromptCache(), new WeakMap());
@@ -334,10 +335,16 @@ test("事件处理：早先的任务什么都不返回、什么都不报；任�
   const broken = scratchDir();
   writeFileSync(join(broken, "task.sqlite"), "这不是一个数据库文件", "utf-8");
   const failed = start(broken, new StagePromptCache(), new WeakMap());
-  assert.equal(failed.result, undefined);
+  assert.equal(failed.aborted, 1);
+  assert.ok(failed.raw && "message" in failed.raw && !("systemPrompt" in failed.raw));
+  const message = (failed.raw as { message: StopMessage }).message;
+  assert.equal(message.customType, STAGE_PROMPT_ERROR_TYPE);
+  assert.equal(message.display, true);
+  assert.match(message.content, /^这一次助手没有开始工作：拼它的工作说明时出了错，没有拼成。原因：.+ 说明文件修好之前/);
   assert.equal(failed.reports.length, 1);
-  assert.equal(failed.reports[0][1].replaced, false);
-  assert.match(failed.reports[0][1].error!, /^按阶段换系统提示没有做成，这次运行用启动时给的那一份：/);
+  assert.deepEqual([failed.reports[0][1].replaced, failed.reports[0][1].stopped], [false, true]);
+  assert.match(failed.reports[0][1].error!, /^按会话拼系统提示没有拼成，这次运行停下了：/);
+  assert.ok(failed.reports[0][1].error!.endsWith(message.details.reason));
 });
 
 // ───────────── 调试模式的提示词目录 ─────────────
