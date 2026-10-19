@@ -1,6 +1,7 @@
 /**
- * 知识库：整理材料时用来参考的资料，与任务的输入材料是两样东西。知识库分成若干个库，每个任务选用其中几个；
- * 「通用知识库」（编号 general）每个任务默认选用，不能删除、不能改名，服务启动时没有就建出来。
+ * 知识库：整理材料时用来参考的资料，与任务的输入材料是两样东西。知识库分成若干个库，每个任务选用其中几个，也可以一个都不选；
+ * 所有的库一样对待，都可以改名、可以删除。先前的版本有一个写死的「通用知识库」（编号 general），每个任务默认选用、不能删不能改名；
+ * 服务启动时把它就地升级掉：空的删掉，有文档的留成普通的库（ensure）。
  *
  * 存放（根目录由启动参数 --knowledge 给，缺省在用户数据目录下，与任务目录并列）：
  *   <根>/libraries.json                  {version: 1, libraries: [{id, name, created_at}]}
@@ -9,8 +10,9 @@
  *                                        换算好的数字串也在文档旁边（<文件名>.embeddings.json 与 .embeddings.bin，见 knowledge_embeddings.ts），同样不列。
  * 两个 JSON 文件都先写临时文件再改名。文档没有版本：一份文档改了，就当作一份新文件上传。
  *
- * 任务选用了哪些库记在任务目录的 knowledge.json（{version: 1, libraries: [库编号], notes: [{at, text}]}），新建任务时写 ["general"]；
- * 没有这个文件的旧任务按只选用通用知识库算，用户改选用之前不写文件。删除一个库时，选用了它的任务改为不再选用它，并在 notes 里记一句。
+ * 任务选用了哪些库记在任务目录的 knowledge.json（{version: 1, libraries: [库编号], notes: [{at, text}]}），新建任务时写 []；
+ * 没有这个文件的旧任务按只选用以前的通用知识库算（它已经删掉时等于什么都没选；选用的库不在清单里时各处都跳过它），
+ * 用户改选用之前不写文件。删除一个库时，选用了它的任务改为不再选用它，并在 notes 里记一句。
  */
 
 import { randomBytes, randomUUID, createHash } from "node:crypto";
@@ -27,6 +29,7 @@ import { PDF_DERIVED_SUFFIXES, ProjectionError, isReserved, projectionPath, proj
 import { SEGMENT_DEFAULTS, type SegmentParams } from "../../agent/src/lib/segments.ts";
 import { SELECTION_FILE } from "../../agent/src/lib/knowledge.ts";
 import { GENERAL, KINDS, KIND_NAMES, type Kind, knowledgeLocator } from "../../agent/src/lib/knowledge_locator.ts";
+import { MB, UPLOAD_DEFAULT_MB, readUploadLimits } from "./product_settings.ts";
 import { UPLOADING_DIR, UPLOAD_TYPES, resolvePath, sameMaterialName, unsupportedTypeText } from "./service.ts";
 
 // 编号、种类与任务目录里记选用的文件名，助手一侧也要用，定义在 agent/src/lib 下，这里原样交出去。
@@ -35,9 +38,11 @@ export { GENERAL, KINDS, KIND_NAMES, SELECTION_FILE, type Kind };
 export const GENERAL_NAME = "通用知识库";
 export const LEGACY_GENERAL_NAME = "通用库";
 
-/** 知识库文档的上传上限（材料的 5 MB 上限不变）。 */
-export const KNOWLEDGE_MAX_UPLOAD = 20 * 1024 * 1024;
-export const KNOWLEDGE_TOO_LARGE_TEXT = `单个文件不能超过 ${KNOWLEDGE_MAX_UPLOAD / 1024 / 1024} MB。`;
+/** 知识库文档单个文件的上限没有设过时的缺省值（字节）。 */
+export const KNOWLEDGE_MAX_UPLOAD = UPLOAD_DEFAULT_MB.knowledge * MB;
+/** 知识库文档单个文件现在的上限（字节）：按设置文件现读，设置页可改。 */
+export const knowledgeMaxUpload = (): number => readUploadLimits().knowledge_mb * MB;
+export const knowledgeTooLargeText = (): string => `单个文件不能超过 ${readUploadLimits().knowledge_mb} MB。`;
 
 /** 上传的内容与这个库里已有的某份文档完全相同时的那句话（错误码 duplicate_content）。 */
 export const docDuplicateText = (name: string) => `这份文件与这个知识库里已有的文档《${name}》内容完全相同，没有重复保存。`;
@@ -83,25 +88,29 @@ export class KnowledgeStore {
   }
 
   /**
-   * 建出根目录；libraries.json 不存在时写一份只有通用知识库的。已有的清单里通用知识库那一项还叫旧名「通用库」时，
-   * 改成现在的名字再写回去（先写临时文件再改名）；用户自己起的名字不动。清单读不出来（文件损坏）或写不回去时
-   * 跳过这一步，服务照常启动，知识库的接口到用的时候再报错。各库的文档目录里换算留下的半成品（上一次服务停下时正算到一半的）顺手清掉。
+   * 建出根目录；libraries.json 不存在时写一份空的清单。已有的清单里有以前的通用知识库（编号 general）时就地升级：
+   * 它是空的（没有文档，文件目录里也没有文件）就从清单里去掉并删掉它的目录，在日志里记一句；有文档的留下，成为普通的库，
+   * 名字还是旧名「通用库」时改成「通用知识库」。清单读不出来（文件损坏）或写不回去时跳过这一步，服务照常启动，
+   * 知识库的接口到用的时候再报错。各库的文档目录里向量化留下的半成品（上一次服务停下时正算到一半的）顺手清掉。
    */
   ensure(): void {
     mkdirSync(this.root, { recursive: true });
     if (!existsSync(this.librariesFile())) {
-      writeJson(this.librariesFile(), { version: 1, libraries: [{ id: GENERAL, name: GENERAL_NAME, created_at: clock.now() }] });
+      writeJson(this.librariesFile(), { version: 1, libraries: [] });
     } else {
       try {
         const rows = this.libraries();
-        if (rows.some((one) => one.id === GENERAL && one.name === LEGACY_GENERAL_NAME)) {
+        if (rows.some((one) => one.id === GENERAL) && this.isEmpty(GENERAL)) {
+          this.saveLibraries(rows.filter((one) => one.id !== GENERAL));
+          rmSync(this.libraryDir(GENERAL), { recursive: true, force: true });
+          console.log("知识库：以前的通用知识库是空的，已经删掉。");
+        } else if (rows.some((one) => one.id === GENERAL && one.name === LEGACY_GENERAL_NAME)) {
           this.saveLibraries(rows.map((one) => (one.id === GENERAL && one.name === LEGACY_GENERAL_NAME ? { ...one, name: GENERAL_NAME } : one)));
         }
       } catch {
-        // 清单读不出来或写不回去：不修正，也不让服务因此起不来
+        // 清单读不出来或写不回去：不升级，也不让服务因此起不来
       }
     }
-    mkdirSync(this.filesDir(GENERAL), { recursive: true });
     try {
       for (const lib of this.libraries()) sweepLeftovers(this.filesDir(lib.id));
     } catch {
@@ -191,14 +200,14 @@ export class KnowledgeStore {
 
   /**
    * 把一个从数据包导入的库记进清单；库的目录由调用方事先放到位（data_pack.ts 的导入）。清单里已经有这个编号时换成这一条
-   * （调用方只在原来那个库是空的时才这样做）。名字与别的库重名时在后面加「（导入）」，还重名就再加序号；通用知识库的名字不变。
+   * （调用方只在原来那个库是空的时才这样做）。名字与别的库重名时在后面加「（导入）」，还重名就再加序号。
    * 返回记进清单的那一条。
    */
   adopt(row: LibraryRow): LibraryRow {
     const others = this.libraries().filter((one) => one.id !== row.id);
     const taken = (name: string) => others.some((one) => sameMaterialName(name, one.name));
-    let name = row.id === GENERAL ? GENERAL_NAME : row.name.trim() || row.id;
-    if (row.id !== GENERAL && taken(name)) {
+    let name = row.name.trim() || row.id;
+    if (taken(name)) {
       const base = `${name}（导入）`;
       name = base;
       for (let n = 2; taken(name); n++) name = `${base}${n}`;
@@ -213,7 +222,6 @@ export class KnowledgeStore {
 
   rename(id: string, name: unknown): LibraryRow {
     this.library(id);
-    if (id === GENERAL) throw new ApiError("rejected", "通用知识库不能改名。");
     const text = this.checkName(name, id);
     const rows = this.libraries().map((one) => (one.id === id ? { ...one, name: text } : one));
     this.saveLibraries(rows);
@@ -223,7 +231,6 @@ export class KnowledgeStore {
   /** 删除库：先从清单里去掉，再删它的目录（文档一并删除）。 */
   remove(id: string): LibraryRow {
     const row = this.library(id);
-    if (id === GENERAL) throw new ApiError("rejected", "通用知识库不能删除。");
     this.saveLibraries(this.libraries().filter((one) => one.id !== id));
     rmSync(this.libraryDir(id), { recursive: true, force: true });
     return row;
@@ -252,7 +259,7 @@ export class KnowledgeStore {
     }
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", unsupportedTypeText());
     if (isReserved(filename)) throw new ApiError("bad_request", reservedNameText("文档"));
-    if (data.length > KNOWLEDGE_MAX_UPLOAD) throw new ApiError("too_large", KNOWLEDGE_TOO_LARGE_TEXT);
+    if (data.length > knowledgeMaxUpload()) throw new ApiError("too_large", knowledgeTooLargeText());
     if (typeof kind !== "string" || !(KINDS as readonly string[]).includes(kind)) {
       throw new ApiError("bad_request", `资料的种类只能是${KINDS.map((k) => `「${KIND_NAMES[k]}」`).join("、")}之一。`);
     }
@@ -412,7 +419,7 @@ function readSelectionFile(taskDir: string): Selection | null {
   }
 }
 
-/** 任务选用的库；没有 knowledge.json（旧任务）或读不出来时按只选用通用知识库算。 */
+/** 任务选用的库；没有 knowledge.json（旧任务）或读不出来时按只选用以前的通用知识库算（它已经删掉时各处都跳过它）。 */
 export function selectedLibraries(taskDir: string): string[] {
   return readSelectionFile(taskDir)?.libraries ?? [GENERAL];
 }
@@ -424,7 +431,7 @@ export function writeSelection(taskDir: string, libraries: string[], note: strin
   writeJson(join(taskDir, SELECTION_FILE), { version: 1, libraries, notes });
 }
 
-/** 新建任务时写的内容：只选用通用知识库。 */
+/** 新建任务时写的内容：一个库都不选用，由用户在任务页或活动输入页上选。 */
 export function initialSelection(): Selection {
-  return { version: 1, libraries: [GENERAL], notes: [] };
+  return { version: 1, libraries: [], notes: [] };
 }

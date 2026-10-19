@@ -77,9 +77,9 @@
 
 ## `result.search.reason_timeout`
 
-用途：只按字面找的原因：换算要找的话时到时间没有算完。
+用途：只按字面找的原因：把要找的话向量化时到时间没有算完。
 
-按意思那一路没有做成：把要找的话换算成数字串时，到时间没有算完
+按意思那一路没有做成：把要找的话向量化成数字串时，到时间没有算完
 
 ## `result.search.reason_unreachable`
 
@@ -113,7 +113,7 @@
 
 ## `result.search.opening`
 
-用途：开头的一句：这一次在多大的范围里、按哪一路找的。way 是 result.search.way_*；后面可能接还没有换算好、没有查到的几份文档。
+用途：开头的一句：这一次在多大的范围里、按哪一路找的。way 是 result.search.way_*；后面可能接还没有向量化、没有查到的几份文档。
 
 查找「{{query}}」：在这个任务选用的 {{libraries}} 个知识库、{{documents}} 份文档、{{chunks}} 个片段里{{way}}。
 
@@ -131,9 +131,9 @@
 
 ## `result.search.partial`
 
-用途：有几份文档还没有换算好、这一次对它们只按字面找了。pronoun 是 result.search.it 或 result.search.them。
+用途：有几份文档还没有向量化、这一次对它们只按字面找了。pronoun 是 result.search.it 或 result.search.them。
 
-{{documents}}还没有换算好，这一次对{{pronoun}}只按字面找了。
+{{documents}}还没有向量化，这一次对{{pronoun}}只按字面找了。
 
 ## `result.search.missed`
 
@@ -263,9 +263,9 @@
 
 ## `result.search.rank_keyword_unconverted`
 
-用途：只按字面命中、这份文档还没有换算好时的排名。
+用途：只按字面命中、这份文档还没有向量化时的排名。
 
-按字面排第 {{keyword}}，按意思没有比（这份文档还没有换算好）
+按字面排第 {{keyword}}，按意思没有比（这份文档还没有向量化）
 
 ## `result.search.hit_head`
 

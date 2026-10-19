@@ -159,15 +159,15 @@ describe("「文档与版本」页签在条目区里", () => {
     expect(screen.getByTestId("docs-latest")).toHaveTextContent("还没有发布过");
   });
 
-  it("发布前检查里点「去补」：未解决的问题切到需求条目页签的问题子页签；评审没通过切到评审与确认页签", () => {
+  it("发布前检查里点「去补」：未解决的问题切到问题页签；评审没通过切到评审与确认页签", () => {
     const cond = (collection: string, name: string, missing: string[]) => ({ collection, name, met: false, state: "unmet", done: 0, total: 0, missing, note: "" });
     const t = overallTask({ completion: { all_met: false, unmet_count: 2, hints: [], conditions: [
       cond("功能用例", "每个条目评审通过", ["UC-002"]), cond("问题", "没有状态为未解决的条目", ["TBD-001"])] } } as unknown as Partial<Task>);
     render(<Panel t={t} />);
     fireEvent.click(screen.getByTestId("pane-docs"));
     fireEvent.click(screen.getByTestId("go-问题/没有状态为未解决的条目"));
-    expect(screen.getByTestId("pane-items")).toHaveClass("on");
-    expect(screen.getByTestId("item-tabs").querySelector(".itab.on")!.firstChild!.textContent).toBe("问题");
+    expect(screen.getByTestId("pane-issues")).toHaveClass("on");
+    expect(screen.getByTestId("item-TBD-001")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("pane-docs"));
     fireEvent.click(screen.getByTestId("go-功能用例/每个条目评审通过"));
     expect(screen.getByTestId("pane-review")).toHaveClass("on");

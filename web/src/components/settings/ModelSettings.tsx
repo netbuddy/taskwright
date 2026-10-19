@@ -1,7 +1,7 @@
 // 设置页面的「模型」一栏：上半部分「现在用的模型」两行，下半部分「模型服务」（左边清单按用途分组，右边选中的那一个的详情）。
 // 「添加模型服务」换成添加的画面；添加成功之后回到这里，右边打开新的那一个，并随即获取一次它的模型列表。
 // editable 为假时整栏只读，顶上是后端给的那句说明。现在的后端 editable 恒为 true（从哪台电脑打开都能改），这条只读的路留着。
-// 两行各有「测试」。语言模型：后端起一次助手，让模型读一个小文件并回答一句，结果连同问与答写在这一行下面。嵌入模型：后端把一句话送去换算，
+// 两行各有「测试」。语言模型：后端起一次助手，让模型读一个小文件并回答一句，结果连同问与答写在这一行下面。嵌入模型：后端把一句话送去向量化，
 // 结果写送去的那句话与算出来的数字串有多长。同一时间只测一种；更换了哪一种模型就清掉哪一种的结果，刷新页面两种都清掉。
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
@@ -160,6 +160,7 @@ export function ModelSettings() {
       {config.copied_from_pi && (
         <p className="muted small" data-testid="copied-from-pi">
           已从本机 pi 的配置复制（{config.copied_from_pi.from}，{formatTime(config.copied_from_pi.at)}）。之后在这里的修改只写在 Taskwright 自己的目录里，不改本机 pi 的配置。
+          {!!config.copied_from_pi.skipped?.length && `本机 pi 里别的模型服务登记没有复制：${config.copied_from_pi.skipped.join("、")}；要在这里用它们，请在下面添加。`}
         </p>
       )}
 

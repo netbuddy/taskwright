@@ -360,12 +360,12 @@ export function view(ctx: Context) {
     const resolved = resolveModel(ctx.profile, ctx.env);
     fallback = { model: resolved.model, from: resolved.from };
   }
-  // 桌面包首次启动时从本机 pi 的配置复制过来的（desktop_dirs.ts 的 adoptPiConfig）：从哪里、什么时候。
+  // 桌面包首次启动时从本机 pi 的配置复制过来的（desktop_dirs.ts 的 adoptPiConfig）：从哪里、什么时候、哪些别的服务登记没有复制。
   const copied = readCopiedMark(agentDir(ctx));
   return {
     ok: true, editable: true, notice: null, selection, fallback,
     providers: [...providers, ...externalViews(models, dir)],
-    copied_from_pi: copied ? { from: copied.from, at: copied.at } : null,
+    copied_from_pi: copied ? { from: copied.from, at: copied.at, skipped: copied.skipped } : null,
   };
 }
 
@@ -476,8 +476,15 @@ async function syncKey(ctx: Context, id: string, key: string | null): Promise<vo
   }, 0o600);
 }
 
+/**
+ * 孤项：模型登记文件里服务名带产品前缀、却不在产品设置名单上的项。它是产品以前写下的，名单上已经没有了（例如名单所在的设置文件换了），
+ * 设置页认不出它，只能当成用户自己写的列出来。新加模型服务时孤项的服务名不算占用：新的一项照用这个服务名，把孤项连同它的密钥一起换掉。
+ */
+const isOrphan = (id: string, dir: PiDirSettings) => id.startsWith(ID_PREFIX) && !Object.hasOwn(dir.providers, id);
+
 function newId(kind: Kind, purpose: Purpose, dir: PiDirSettings, models: Record<string, any> | null): string {
-  return newProviderId(kind, purpose, new Set([...Object.keys(dir.providers), ...Object.keys(models?.providers ?? {})]));
+  const registered = Object.keys(models?.providers ?? {}).filter((id) => !isOrphan(id, dir));
+  return newProviderId(kind, purpose, new Set([...Object.keys(dir.providers), ...registered]));
 }
 
 function textField(body: Record<string, any>, name: string): string | undefined {
@@ -537,10 +544,12 @@ export async function addProvider(ctx: Context, body: Record<string, any>) {
     return fresh;
   }, ctx.env);
   if (kind !== "codex") {
+    // 用的是一个孤项的服务名：先删掉孤项再写新的一项，孤项留下的密钥也删掉（这一次给了密钥就换成新的）。
+    const orphan = Object.hasOwn(models?.providers ?? {}, id);
     try {
       const dir = readPiDirSettings(agentDir(ctx), ctx.env);
-      await syncModels(ctx, dir, [id]);
-      if (key !== null) await syncKey(ctx, id, key);
+      await syncModels(ctx, dir, [id], orphan ? [id] : []);
+      if (key !== null || orphan) await syncKey(ctx, id, key);
     } catch (error) {
       // 共用文件没有写成（例如锁等不到）：撤回产品设置里的这一项和已经写进模型登记文件的那一项，免得名单与文件对不上。
       await updatePiDirSettings(agentDir(ctx), (d) => void delete d.providers[id], ctx.env).catch(() => undefined);

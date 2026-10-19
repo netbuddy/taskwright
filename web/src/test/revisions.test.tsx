@@ -368,7 +368,7 @@ describe("右侧栏「修订」页签", () => {
     expect(screen.getByTestId("item-UC-001")).toHaveClass("sw-hit");
     expect(screen.getByTestId("item-UC-002")).not.toHaveClass("sw-hit");
     expect(screen.getByTestId("hit-count-用例")).toHaveTextContent("1");
-    expect(screen.getByTestId("hit-count-问题")).toHaveTextContent("1");
+    expect(screen.getByTestId("hit-count-issues")).toHaveTextContent("1");
     fireEvent.click(screen.getByTestId("hit-note"));
     expect(screen.getByTestId("hit-note")).toHaveTextContent("修订 4 碰到的条目 ✕");
     expect(onClear).toHaveBeenCalled();

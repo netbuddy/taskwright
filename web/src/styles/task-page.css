@@ -240,6 +240,9 @@
 .tp-in-sum { margin-top: 0.857rem; max-width: 54rem; font-size: 0.929rem; }
 .tp-in-sum + .tp-lead { margin-top: 0.857rem; }
 .tp-in-sum ~ .tp-pair { margin-top: 1.286rem; }
+.tp-in-split { margin: 1.286rem 0 0; max-width: 54rem; font-size: 0.893rem; color: var(--text2); }
+.tp-in-split b { color: var(--ink); font-weight: 600; margin-right: 0.5rem; }
+.tp-in-split + .tp-pair { margin-top: 0.714rem; }
 /* 页面现在要用户先看的那一块：黑边 */
 .tp-pane.marked { border-color: var(--ink); box-shadow: var(--card-shadow); }
 .tp-in-wrap { display: flex; flex-direction: column; min-width: 0; }

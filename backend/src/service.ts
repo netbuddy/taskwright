@@ -33,11 +33,13 @@ import { TASK_TYPES_DIR, appVersion } from "./paths.ts";
 import { readTaskJson, writeTaskJson } from "./task_json.ts";
 import type { PendingUpgrade } from "./data_upgrade.ts";
 import type { ServiceDb } from "./service_db.ts";
-import { GENERAL, KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
+import { KnowledgeStore, SELECTION_FILE, initialSelection, selectedLibraries, writeSelection } from "./knowledge.ts";
 import { KnowledgeEmbedder } from "./knowledge_embedder.ts";
+import { MB, readUploadLimits } from "./product_settings.ts";
 import { searchKnowledge, searchRequest } from "./knowledge_search.ts";
 
-export const MAX_UPLOAD = 5 * 1024 * 1024;
+/** 任务材料单个文件的上限（字节）：按设置文件现读，设置页可改（product_settings.ts 的 readUploadLimits）。 */
+export const maxUpload = (): number => readUploadLimits().material_mb * MB;
 
 /** 上传的内容与本任务已有的某份材料完全相同时的那句话（错误码 duplicate_content）。 */
 export const duplicateContentText = (name: string) => `这份文件与已有的材料《${name}》内容完全相同，没有重复保存。`;
@@ -65,7 +67,7 @@ function nameKey(name: string): string {
 
 const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex");
 /** 上传的文件超过上限时给用户看的那句话。服务信息接口把上限与这句话一起给前端，前端在发送之前就能拦下。 */
-export const TOO_LARGE_TEXT = `单个文件不能超过 ${MAX_UPLOAD / 1024 / 1024} MB。`;
+export const tooLargeText = (): string => `单个文件不能超过 ${readUploadLimits().material_mb} MB。`;
 /** 删除一份已经进入对话的材料时的拒绝说明。 */
 export const ENTERED_CONVERSATION_TEXT = "这份材料已经进入了对话，不能删除。";
 /** 替换一份已经进入对话的材料时的拒绝说明。 */
@@ -683,7 +685,7 @@ export class Service {
     }
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", unsupportedTypeText());
     if (isReserved(filename)) throw new ApiError("bad_request", reservedNameText("材料"));
-    if (data.length > MAX_UPLOAD) throw new ApiError("too_large", TOO_LARGE_TEXT);
+    if (data.length > maxUpload()) throw new ApiError("too_large", tooLargeText());
     const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const folder = join(t.dir, folderRel);
     mkdirSync(folder, { recursive: true });
@@ -1013,7 +1015,7 @@ export class Service {
    */
   removeLibrary(id: string) {
     const store = this.requireKnowledge();
-    if (id !== GENERAL && store.has(id)) this.embedder!.forget(id);
+    if (store.has(id)) this.embedder!.forget(id);
     const row = store.remove(id);
     this.scan();
     for (const t of this.tasks.values()) {
@@ -1023,14 +1025,14 @@ export class Service {
     return { ok: true, id };
   }
 
-  /** 改任务选用的库：不存在的库以 rejected 拒绝；通用知识库每个任务都选用，没写时补在最前面。 */
+  /** 改任务选用的库：不存在的库以 rejected 拒绝；可以一个都不选。 */
   setTaskKnowledge(t: Task, body: Record<string, any>) {
     const store = this.requireKnowledge();
     const given = body.libraries;
     if (!Array.isArray(given) || !given.every((one) => typeof one === "string")) throw new ApiError("bad_request", "libraries 应当是知识库编号的列表。");
     const unknown = given.filter((one) => !store.has(one));
     if (unknown.length) throw new ApiError("rejected", `没有这个知识库：${unknown.join("、")}。`, { unknown });
-    const ids = [GENERAL, ...new Set(given.filter((one) => one !== GENERAL))];
+    const ids = [...new Set(given)];
     writeSelection(t.dir, ids);
     return { ok: true, libraries: ids };
   }

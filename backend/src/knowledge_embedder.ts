@@ -1,5 +1,5 @@
 /**
- * 知识库文档的后台换算：把还没有换算好的文档排成队，一份一份地切成片段、送去嵌入模型、把拿回来的数字串存到文档旁边
+ * 知识库文档的后台向量化：把还没有向量化的文档排成队，一份一份地切成片段、送去嵌入模型、把拿回来的数字串存到文档旁边
  * （切法见 knowledge_chunks.ts，存放见 knowledge_embeddings.ts，调嵌入模型见 embedding.ts）。
  *
  * 同一时间只算一份文档、只发一个请求；队里的文档按知识库在清单里的先后、再按文档在库里的先后算。一份文档的各片段分批送去
@@ -8,10 +8,10 @@
  * 一份文档现在是什么状态每次现看，不另外登记：
  *   done    成品在，而且是用现在选定的嵌入模型、对着现在这份内容算的；
  *   running 正在算；queued 在队里；failed 上一次没算成（原因记在内存里，服务重启就忘了）；
- *   none    其余的：没有选嵌入模型、换了嵌入模型、还没有人让它开始、上一次整个换算停下了。
+ *   none    其余的：没有选嵌入模型、换了嵌入模型、还没有人让它开始、上一次整个向量化停下了。
  * 所以服务重启之后，正在算的与排着队的都回到 none，等用户再点一次；换了嵌入模型之后，全部文档自然都是 none。
  *
- * 没算成分两种。与文档无关的（连不上、到时间没有回答、密钥被拒绝、选定的模型服务不在了或者没有嵌入模型）：整个换算停下，
+ * 没算成分两种。与文档无关的（连不上、到时间没有回答、密钥被拒绝、选定的模型服务不在了或者没有嵌入模型）：整个向量化停下，
  * 队清空，原因记在 stopped_reason 里，文档不记成失败。只关这一份文档的（模型服务回答了错误，例如文字超过它一次能收的长度；
  * 回答的数字串不对；文档读不出来）：这一份记成 failed 带上原因，接着算下一份。
  *
@@ -29,7 +29,7 @@ import { type Context, embeddingTarget } from "./model_config.ts";
 
 export type EmbeddingStatus = "none" | "queued" | "running" | "done" | "failed";
 
-/** 一份文档的换算状态（GET /api/v1/knowledge 里每份文档的 embedding）。 */
+/** 一份文档的向量化状态（GET /api/v1/knowledge 里每份文档的 embedding）。 */
 export interface DocumentEmbedding {
   status: EmbeddingStatus;
   /** done、running、failed 时是用的嵌入模型（「服务名/型号」）；none、queued 时是旁边留着的成品所用的模型，没有成品是 null。 */
@@ -41,19 +41,19 @@ export interface DocumentEmbedding {
   total: number | null;
 }
 
-/** 若干个知识库合起来的换算情况。 */
+/** 若干个知识库合起来的向量化情况。 */
 export interface EmbeddingOverview {
   /** 现在选定的嵌入模型；没有选是 null。 */
   model: string | null;
   /** 有文档正在算或者在队里。 */
   running: boolean;
-  /** 选了嵌入模型，而且这些库里的文档全都换算好了（一份文档也没有时也算）。按意思查找据此决定能不能用。 */
+  /** 选了嵌入模型，而且这些库里的文档全都向量化完成（一份文档也没有时也算）。按意思查找据此决定能不能用。 */
   ready: boolean;
-  /** 还没有换算好的文档份数（正在算的、在队里的、没算成的都算在内）。 */
+  /** 还没有向量化的文档份数（正在算的、在队里的、没算成的都算在内）。 */
   pending: number;
   /** 文档一共多少份。 */
   total: number;
-  /** 上一次整个换算停下的原因；没有停下过，或者之后又开始了，是 null。 */
+  /** 上一次整个向量化停下的原因；没有停下过，或者之后又开始了，是 null。 */
   stopped_reason: string | null;
 }
 
@@ -113,7 +113,7 @@ export class KnowledgeEmbedder {
     return join(this.store.filesDir(library), name);
   }
 
-  /** 一份文档的换算状态。model 是现在选定的嵌入模型，调用的一方已经取过时传进来，免得每份文档读一次设置。 */
+  /** 一份文档的向量化状态。model 是现在选定的嵌入模型，调用的一方已经取过时传进来，免得每份文档读一次设置。 */
   documentState(library: string, row: DocumentRow, model: string | null = this.model()): DocumentEmbedding {
     const path = this.path(library, row.name);
     const head = readHead(path);
@@ -127,7 +127,7 @@ export class KnowledgeEmbedder {
     return { status: "none", model: kept, error: null, done: null, total: null };
   }
 
-  /** 这些知识库合起来的换算情况；不给时是全部知识库。清单里没有的编号不算。 */
+  /** 这些知识库合起来的向量化情况；不给时是全部知识库。清单里没有的编号不算。 */
   overview(libraries?: string[]): EmbeddingOverview {
     const model = this.model();
     const known = this.store.libraries().map((lib) => lib.id);
@@ -144,7 +144,7 @@ export class KnowledgeEmbedder {
   }
 
   /**
-   * 把现在选定的嵌入模型下还没有换算好的文档排进队，开始算；返回这一次新排进去几份。不给范围是全部知识库，给 library 是那一个库，
+   * 把现在选定的嵌入模型下还没有向量化的文档排进队，开始算；返回这一次新排进去几份。不给范围是全部知识库，给 library 是那一个库，
    * 再给 name 是那一份文档（没算成之后重试用）。已经在算或者已经在队里的不重复排；上一次停下的原因与这些文档上一次没算成的原因随之清掉。
    * 没有选嵌入模型时以 rejected 拒绝；没有那个库或那份文档时 not_found。
    */
@@ -216,7 +216,7 @@ export class KnowledgeEmbedder {
     }
   }
 
-  /** 算一份文档。返回假表示整个换算要停下（原因已经记在 stopped 里，或者是没有选嵌入模型了）。 */
+  /** 算一份文档。返回假表示整个向量化要停下（原因已经记在 stopped 里，或者是没有选嵌入模型了）。 */
   private async embedOne(job: Job): Promise<boolean> {
     const model = this.model();
     if (model === null) return false;
@@ -257,18 +257,18 @@ export class KnowledgeEmbedder {
       if (cur.abort.signal.aborted || !now || now.sha256 !== row.sha256) return true;
       writeEmbeddings(path, row.sha256, model, chunks, vectors);
       this.failed.delete(key);
-      console.log(`知识库文档《${job.name}》换算好了：${chunks.length} 个片段，用了 ${((Date.now() - started) / 1000).toFixed(1)} 秒。`);
+      console.log(`知识库文档《${job.name}》向量化完成：${chunks.length} 个片段，用了 ${((Date.now() - started) / 1000).toFixed(1)} 秒。`);
       return true;
     } catch (error) {
       if (cur.abort.signal.aborted) return true;
       const message = error instanceof Error ? error.message : String(error);
       if (error instanceof EmbeddingError && STOPPING.has(error.kind)) {
         this.stopped = message;
-        console.log(`知识库文档的换算停下了：${message}`);
+        console.log(`知识库文档的向量化停下了：${message}`);
         return false;
       }
       this.failed.set(key, { sha256: row.sha256, model, error: message });
-      console.log(`知识库文档《${job.name}》没有换算成：${message}`);
+      console.log(`知识库文档《${job.name}》向量化失败：${message}`);
       return true;
     } finally {
       if (this.current === cur) this.current = null;

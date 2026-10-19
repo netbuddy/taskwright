@@ -115,7 +115,7 @@ const openaiReply = (_: string, body: Dict): Reply => ({
   body: { object: "list", model: body.model, data: body.input.map((t: string, index: number) => ({ object: "embedding", index, embedding: vectorOf(t) })) },
 });
 
-/** 换算应当没有做成：返回抛出来的那个错误的种类与那句话。 */
+/** 向量化应当没有做成：返回抛出来的那个错误的种类与那句话。 */
 async function failure(texts: string[] = ["一句话"], timeoutMs?: number): Promise<[string, string]> {
   try {
     await embed(ctx(), texts, "query", { timeoutMs });
@@ -184,11 +184,11 @@ test("段数超过这一种模型服务一次能收的上限时不发请求：�
   assert.deepEqual(BATCH_LIMIT, { ollama: 32, llamacpp: 32, vllm: 32, deepseek: 32, aliyun: 10, openai_compatible: 32 });
   const texts = (n: number) => Array.from({ length: n }, (_, i) => `第 ${i} 段`);
   await choose("aliyun", { base: `${fake.url}/v1` });
-  assert.deepEqual(await failure(texts(11)), ["too_many", "一次最多换算 10 段文字，这一次送来了 11 段。"]);
+  assert.deepEqual(await failure(texts(11)), ["too_many", "一次最多向量化 10 段文字，这一次送来了 11 段。"]);
   assert.deepEqual(fake.hits, []);
   assert.equal((await embed(ctx(), texts(10), "document")).vectors.length, 10);
   await choose("vllm");
-  assert.deepEqual(await failure(texts(33)), ["too_many", "一次最多换算 32 段文字，这一次送来了 33 段。"]);
+  assert.deepEqual(await failure(texts(33)), ["too_many", "一次最多向量化 32 段文字，这一次送来了 33 段。"]);
   assert.equal((await embed(ctx(), texts(32), "document")).vectors.length, 32);
   await assert.rejects(embed(ctx(), [], "document"), TypeError);
 });

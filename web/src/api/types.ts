@@ -1038,8 +1038,8 @@ export interface KnowledgeLibrary {
 }
 
 /**
- * 一份文档的换算状态。按意思查找之前，文档要先切成片段、用嵌入模型换算成数字串。none：未换算；queued：等待换算；running：换算中；
- * done：已换算；failed：换算失败，error 是原因。done 与 total 是片段数：已换算时两个数相同，换算中是算完了几个、一共几个
+ * 一份文档的向量化状态。按意思查找之前，文档要先切成片段、用嵌入模型向量化成数字串。none：未向量化；queued：等待向量化；running：向量化中；
+ * done：已向量化；failed：向量化失败，error 是原因。done 与 total 是片段数：已向量化时两个数相同，向量化中是算完了几个、一共几个
  * （还没有切好时 total 是 null），别的状态是 null。model 是用的嵌入模型「服务名/型号」，没有时是 null。
  */
 export interface DocumentEmbedding {
@@ -1051,8 +1051,8 @@ export interface DocumentEmbedding {
 }
 
 /**
- * 全部知识库合起来的换算情况。model 是现在选定的嵌入模型「服务名/型号」，没有选是 null；running 是有文档正在算或者在队里；
- * ready 是选了嵌入模型而且文档都换算好了；pending 是还没有换算好的份数，total 是文档一共多少份；stopped_reason 是上一次整个换算停下的原因。
+ * 全部知识库合起来的向量化情况。model 是现在选定的嵌入模型「服务名/型号」，没有选是 null；running 是有文档正在算或者在队里；
+ * ready 是选了嵌入模型而且文档都向量化完成；pending 是还没有向量化的份数，total 是文档一共多少份；stopped_reason 是上一次整个向量化停下的原因。
  */
 export interface KnowledgeEmbedding {
   model: string | null;
@@ -1063,7 +1063,7 @@ export interface KnowledgeEmbedding {
   stopped_reason: string | null;
 }
 
-/** 知识库页面用的清单（GET /api/v1/knowledge 的全部内容）：每个知识库另带「换算好了几份、一共几份」，每份文档另带换算状态。 */
+/** 知识库页面用的清单（GET /api/v1/knowledge 的全部内容）：每个知识库另带「向量化完成几份、一共几份」，每份文档另带向量化状态。 */
 export interface EmbeddedDocument extends KnowledgeDocument {
   embedding: DocumentEmbedding;
 }
@@ -1099,7 +1099,7 @@ export interface KnowledgeSearchHit {
 }
 
 /**
- * 按意思查找的结果。ready 为假是这几个知识库里的文档还没有都换算好，这时不查，hits 是空的，pending 是还差几份；
+ * 按意思查找的结果。ready 为假是这几个知识库里的文档还没有都向量化，这时不查，hits 是空的，pending 是还差几份；
  * libraries 与 chunks 是比了几个知识库、几个片段。
  */
 export interface KnowledgeSearchResult {
@@ -1303,6 +1303,14 @@ export interface DebugStage {
   latest_work_id: string | null;
 }
 
+/** 上传上限（GET 与 POST /api/v1/settings/uploads 的回答）：任务材料与知识库文档单个文件的上限，cap_mb 是最大能设多少，defaults 是没有改过时的值，都是 MB。 */
+export interface UploadLimitsView {
+  material_mb: number;
+  knowledge_mb: number;
+  cap_mb: number;
+  defaults: { material_mb: number; knowledge_mb: number };
+}
+
 /** 调试模式的提示词目录：现在设的是什么，以及固定的十五个文件名各自在目录里的情形。 */
 export interface PromptDirView {
   /** 设置里写的目录；没有设时是 null。 */
@@ -1399,8 +1407,11 @@ export interface ModelConfig {
   /** 没有选定语言模型时助手启动用的模型；from 是后端给的来源（「启动配置」或「助手程序的设置」），页面原样显示。 */
   fallback: { model: string; from: string } | null;
   providers: Provider[];
-  /** 桌面包首次启动时从本机 pi 的配置（一般是 ~/.pi/agent）复制过来的：从哪个目录、什么时候；不是时为 null，早先的后端不给。 */
-  copied_from_pi?: { from: string; at: string } | null;
+  /**
+   * 桌面包首次启动时从本机 pi 的配置（一般是 ~/.pi/agent）复制过来的：从哪个目录、什么时候，skipped 是没有复制的别的模型服务登记
+   * （用户本人在本机 pi 里登记的服务名）；不是时为 null，早先的后端不给。
+   */
+  copied_from_pi?: { from: string; at: string; skipped?: string[] } | null;
 }
 
 /** POST /api/v1/model-config/providers/{id}/refresh-catalog：联网更新一次模型目录的结果；没有成功时 message 是原因。 */
@@ -1419,7 +1430,7 @@ export interface FetchModelsResult {
 
 /**
  * 测试模型的结果，这一次通过还是没有通过。测试语言模型是让模型读一个小文件并回答文件里写的一个数，结果带 tool_calls 与 reply；
- * 测试嵌入模型是把一句话换算成一串数字，结果带 dimensions。
+ * 测试嵌入模型是把一句话向量化，得到一串数字，结果带 dimensions。
  */
 export interface ModelTestResult {
   ok: true;
@@ -1430,7 +1441,7 @@ export interface ModelTestResult {
   seconds: number;
   /** 只有语言模型的结果有：模型调用了几次工具。 */
   tool_calls?: number;
-  /** 语言模型：问模型的那句话。嵌入模型：送去换算的那句话（前面带着查询前缀）。 */
+  /** 语言模型：问模型的那句话。嵌入模型：送去向量化的那句话（前面带着查询前缀）。 */
   question: string;
   /** 只有语言模型的结果有：模型最后一句回复，最多 200 个字；没有回复时是空串。 */
   reply?: string;

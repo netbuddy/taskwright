@@ -32,25 +32,28 @@ test("根目录的缺省值各平台一例；根下 pi/ 与 cache/；PI_CODING_A
   assert.deepEqual([given.pi, given.piGiven, given.cache], ["/opt/pi-config", true, "/var/cache/tw"]);
 });
 
-test("首次复制：自己的 pi/ 是空的而本机 pi 的配置里有模型登记与密钥时复制一份（不是链接），产品设置里的那一份跟着记过来，留下记号；之后不再复制", async () => {
+test("首次复制：自己的 pi/ 是空的而本机 pi 的配置里有模型登记与密钥时复制一份（不是链接），密钥整份复制，模型登记只留产品登记的服务，产品设置里的那一份跟着记过来，留下记号；之后不再复制", async () => {
   const root = fresh("root");
   const legacy = join(fresh("home"), ".pi", "agent");
   mkdirSync(legacy, { recursive: true });
-  writeFileSync(join(legacy, "models.json"), '{"providers":{"local":{}}}\n');
-  writeFileSync(join(legacy, "auth.json"), '{"local":{"type":"api_key","key":"k"}}\n', { mode: 0o644 });
-  writeFileSync(join(legacy, "settings.json"), '{"defaultProvider":"local","defaultModel":"m"}\n');
+  const auth = '{"taskwright-ollama":{"type":"api_key","key":"k"},"other-llm":{"type":"api_key","key":"k2"}}\n';
+  writeFileSync(join(legacy, "models.json"), JSON.stringify({ providers: { "taskwright-ollama": { baseUrl: "http://a/v1", models: [{ id: "m" }] }, "other-llm": { baseUrl: "http://b/v1", models: [{ id: "q" }] }, "taskwright-old": { models: [] } }, extra: 1 }));
+  writeFileSync(join(legacy, "auth.json"), auth, { mode: 0o644 });
+  writeFileSync(join(legacy, "settings.json"), '{"defaultProvider":"taskwright-ollama","defaultModel":"m","theme":"dark"}\n');
   writeFileSync(join(legacy, "models-store.json"), "{}\n");
   const settings = join(root, "settings.json");
-  writeFileSync(settings, JSON.stringify({ version: 2, pi_dirs: { [legacy]: { selection: { language: { provider: "local", model: "m" } }, providers: {} } } }));
+  const ollama = { kind: "ollama", purpose: "language", name: "ollama", base_url: "http://a", models_fetched_at: null, status: null, models: [] };
+  writeFileSync(settings, JSON.stringify({ version: 2, pi_dirs: { [legacy]: { selection: { language: { provider: "taskwright-ollama", model: "m" } }, providers: { "taskwright-ollama": ollama } } } }));
   const env = { TASKWRIGHT_SETTINGS_FILE: settings };
   const pi = join(root, "pi");
 
   const mark = await adoptPiConfig(pi, legacy, env, () => new Date("2026-10-14T03:00:00Z"));
-  assert.deepEqual(mark, { from: legacy, at: "2026-10-14T03:00:00.000Z", files: ["models.json", "auth.json", "settings.json"] });
-  for (const name of ["models.json", "auth.json", "settings.json"]) {
-    assert.equal(readFileSync(join(pi, name), "utf-8"), readFileSync(join(legacy, name), "utf-8"), name);
-    assert.equal(lstatSync(join(pi, name)).isSymbolicLink(), false, `${name} 是复制的，不是链接`);
-  }
+  assert.deepEqual(mark, { from: legacy, at: "2026-10-14T03:00:00.000Z", files: ["models.json", "auth.json", "settings.json"], skipped: ["other-llm", "taskwright-old"] });
+  assert.deepEqual(JSON.parse(readFileSync(join(pi, "models.json"), "utf-8")), { providers: { "taskwright-ollama": { baseUrl: "http://a/v1", models: [{ id: "m" }] } }, extra: 1 },
+    "用户本人登记的 other-llm 与产品名单上没有的 taskwright-old 都不复制；文件里别的内容照留");
+  assert.equal(readFileSync(join(pi, "auth.json"), "utf-8"), auth, "凭据整份复制");
+  assert.deepEqual(JSON.parse(readFileSync(join(pi, "settings.json"), "utf-8")), { defaultProvider: "taskwright-ollama", defaultModel: "m", theme: "dark" }, "缺省服务复制过来了，照留");
+  for (const name of ["models.json", "auth.json", "settings.json"]) assert.equal(lstatSync(join(pi, name)).isSymbolicLink(), false, `${name} 是复制的，不是链接`);
   assert.equal(existsSync(join(pi, "models-store.json")), false, "只复制三个文件");
   assert.equal(statSync(join(pi, "auth.json")).mode & 0o777, 0o600);
   const dirs = JSON.parse(readFileSync(settings, "utf-8")).pi_dirs;
@@ -59,12 +62,34 @@ test("首次复制：自己的 pi/ 是空的而本机 pi 的配置里有模型�
   assert.ok(existsSync(join(pi, COPIED_MARK)));
 
   // 之后：自己的 pi/ 里已经有了，不再复制；本机 pi 的配置后来改了也不跟。
+  const before = readFileSync(join(pi, "models.json"), "utf-8");
   writeFileSync(join(legacy, "models.json"), '{"providers":{"changed":{}}}\n');
   assert.equal(await adoptPiConfig(pi, legacy, env), null);
-  assert.equal(readFileSync(join(pi, "models.json"), "utf-8"), '{"providers":{"local":{}}}\n');
+  assert.equal(readFileSync(join(pi, "models.json"), "utf-8"), before);
   // 本机 pi 的配置里没有模型登记与密钥时什么都不做。
   const empty = fresh("empty");
   assert.equal(await adoptPiConfig(join(fresh("root2"), "pi"), empty, env), null);
+});
+
+test("首次复制：pi 的缺省服务是没有复制过来的服务时，去掉缺省服务与缺省模型；没有产品设置时模型登记一项都不复制；模型登记读不出来时不复制它", async () => {
+  const legacy = join(fresh("home"), ".pi", "agent");
+  mkdirSync(legacy, { recursive: true });
+  writeFileSync(join(legacy, "models.json"), JSON.stringify({ providers: { "other-llm": { models: [{ id: "q" }] } } }));
+  writeFileSync(join(legacy, "settings.json"), '{"defaultProvider":"other-llm","defaultModel":"q","theme":"dark"}\n');
+  const pi = join(fresh("root"), "pi");
+  const mark = await adoptPiConfig(pi, legacy, { TASKWRIGHT_SETTINGS_FILE: join(fresh("none"), "settings.json") });
+  assert.deepEqual([mark!.files, mark!.skipped], [["models.json", "settings.json"], ["other-llm"]]);
+  assert.deepEqual(JSON.parse(readFileSync(join(pi, "models.json"), "utf-8")), { providers: {} });
+  assert.deepEqual(JSON.parse(readFileSync(join(pi, "settings.json"), "utf-8")), { theme: "dark" });
+
+  const broken = join(fresh("home"), ".pi", "agent");
+  mkdirSync(broken, { recursive: true });
+  writeFileSync(join(broken, "models.json"), "{不是 JSON");
+  writeFileSync(join(broken, "auth.json"), "{}\n");
+  const pi2 = join(fresh("root"), "pi");
+  const second = await adoptPiConfig(pi2, broken, { TASKWRIGHT_SETTINGS_FILE: join(fresh("none"), "settings.json") });
+  assert.deepEqual([second!.files, second!.skipped], [["auth.json"], []]);
+  assert.equal(existsSync(join(pi2, "models.json")), false);
 });
 
 test("旧构建清理：cache/payload/ 下只留现在这个构建，cache/ 下只留现在这个 agent-<构建号>；正在解压或复制的不动", () => {

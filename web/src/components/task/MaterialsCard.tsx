@@ -75,9 +75,12 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
         </table>
       )}
       <div className="tp-drop">
+        {/* 可以一次选几份。filter: "native" 只让文件选择框按类型过滤：拖进来的几份照样交给上传处理，类型不符的由它报那句话，
+            不被悄悄丢掉（多选时上传组件默认按 accept 筛掉拖进来的文件）。 */}
         <Upload.Dragger
-          accept={uploadAccept(info)}
+          accept={{ format: uploadAccept(info) ?? "", filter: "native" }}
           showUploadList={false}
+          multiple
           customRequest={ops.upload}
         >
           <UploadOutlined className="up" />

@@ -127,11 +127,10 @@ describe("目录", () => {
 });
 
 describe("材料区里的 PDF 材料", () => {
-  it("文件名一行只写正在看的这一份（不列材料清单）；PDF 交给显示部件，文件名一行写页数与有几页没有可读的文字，下面是说明与目录", async () => {
+  it("文件名一行的下拉框选着正在看的这一份；PDF 交给显示部件，文件名一行写页数与有几页没有可读的文字，下面是说明与目录", async () => {
     const content = serve();
     render(<Wrap><MaterialPane taskId="TASK-1" materials={MATERIALS} /></Wrap>);
-    expect(screen.getByTestId("material-name").textContent).toBe("借阅管理办法.pdf");
-    expect(screen.queryByTestId("material-select")).toBeNull();
+    expect((screen.getByTestId("material-select") as HTMLSelectElement).value).toBe(PDF);
     expect(screen.getByTestId("pdf-paper-stub")).toBeTruthy();
     expect(paper.mock.calls[0][0].path).toBe(PDF);
     expect(screen.getByTestId("pdf-pages-chip").textContent).toBe("5 页");
@@ -181,7 +180,7 @@ describe("材料区里的 PDF 材料", () => {
     expect(screen.queryByTestId("pdf-paper-stub")).toBeNull();
     view.rerender(<Wrap><MaterialPane taskId="TASK-1" materials={[MATERIALS[4], ...MATERIALS.slice(0, 4)]} locate={first} /></Wrap>);
     await screen.findByTestId("pdf-paper-stub");
-    expect(screen.getByTestId("material-name").textContent).toBe("借阅管理办法.pdf");
+    expect((screen.getByTestId("material-select") as HTMLSelectElement).value).toBe(PDF);
     expect(paper.mock.lastCall![0].locate).toEqual(first);
     // 文本材料那一套「找到就高亮、找不到就提示」不用在 PDF 上。
     expect(screen.queryByTestId("locate-miss")).toBeNull();

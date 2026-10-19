@@ -17,7 +17,7 @@ import { PDF_NO_TEXT, PdfUploadError, runPdfProjection } from "../src/pdf_upload
 import { reservedNameText } from "../src/projection.ts";
 import { Service, UPLOADING_DIR, UPLOAD_TYPES, unsupportedTypeText } from "../src/service.ts";
 import { SEGMENT_DEFAULTS } from "../../agent/src/lib/segments.ts";
-import { ROOT, captureConsole, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, keepGeneral, tempDir } from "./helpers.ts";
 
 captureConsole();
 
@@ -36,6 +36,7 @@ let n = 0;
 async function withTask(body: (service: Service, t: ReturnType<Service["task"]>) => Promise<void>, profile: Record<string, unknown> = {}) {
   const root = join(tmp, `case-${++n}`);
   const service = new Service(join(root, "tasks"), join(root, "runs"), profile, { port: 1, knowledgeDir: join(root, "knowledge") });
+  keepGeneral(service.knowledge!.root);
   try {
     await body(service, service.task(service.create({ task_type: "requirements-engineering", task_name: "PDF 材料" }).task_id));
   } finally {

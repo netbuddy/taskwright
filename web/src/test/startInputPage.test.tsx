@@ -166,6 +166,7 @@ describe("活动输入页：需求分析", () => {
     expect(text(screen.getByTestId("start-steps"))).toBe("提供输入›核读材料›澄清›整理建模›发布");
     expect([...screen.getByTestId("start-summary").querySelectorAll("dt, dd")].map(text)).toEqual(["目的", "需求分析的目的。", "适用", "项目尚无需求资产。", "前提", "无前置条件；可从空白开始。"]);
     expect(screen.getByTestId("start-lead")).toHaveTextContent("项目材料与目标系统描述至少提供一项。");
+    expect(text(screen.getByTestId("start-split"))).toBe("材料与知识库的分工材料是本任务的几份一手证据，助手逐句引用；规范、接口说明、法规、旧文档等参考资料放进知识库，可供多个任务选用。");
     const materials = screen.getByTestId("materials-card");
     expect(text(materials.querySelector(".tp-sec-h"))).toBe("项目材料0 份可选 · 推荐");
     expect([...materials.querySelectorAll(".tp-in-kinds li")].map(text)).toEqual(["需求调研记录、访谈纪要", "现行制度、业务规则、办法"]);
@@ -225,17 +226,20 @@ describe("活动输入页：需求分析", () => {
     expect(screen.getByTestId("start-open-flow-session")).toHaveAttribute("href", "#/tasks/TASK-P/sessions/S-flow");
   });
 
-  it("勾选一个知识库：当场改这个任务选用的知识库；通用知识库勾着、不能去掉；服务没有知识库时没有这一块", async () => {
+  it("勾选一个知识库：当场改这个任务选用的知识库；每个知识库都可以勾上或去掉；服务没有知识库时没有这一块", async () => {
     const calls = page("analysis");
     await submit();
     const general = await screen.findByTestId("kb-check-general");
-    expect([(general as HTMLInputElement).checked, (general as HTMLInputElement).disabled]).toEqual([true, true]);
+    expect([(general as HTMLInputElement).checked, (general as HTMLInputElement).disabled]).toEqual([true, false]);
     fireEvent.click(screen.getByTestId("kb-check-lib-hy"));
     await waitFor(() => expect(calls.select).toHaveBeenCalledWith("TASK-P", ["general", "lib-hy"]));
+    fireEvent.click(general);
+    await waitFor(() => expect(calls.select).toHaveBeenLastCalledWith("TASK-P", []));
     cleanup(); vi.restoreAllMocks();
     page("analysis", detail(), statusOf(), { knowledge: false });
     await submit();
     expect(screen.queryByTestId("knowledge-choice")).toBeNull();
+    expect(screen.queryByTestId("start-split")).toBeNull();
     expect(screen.getByTestId("materials-card")).toBeInTheDocument();
   });
 

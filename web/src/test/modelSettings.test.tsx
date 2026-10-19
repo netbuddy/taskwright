@@ -1,4 +1,4 @@
-// 设置页面的「模型」一栏：添加时先选用途、清单按用途分组、只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型、测试嵌入模型、更换嵌入模型时知识库里的文档要重新换算。
+// 设置页面的「模型」一栏：添加时先选用途、清单按用途分组、只读、添加时被拒、删除被占用的模型服务、更换时的可选范围、添加之后随即获取模型列表、模型很多时的收法、测试语言模型、测试嵌入模型、更换嵌入模型时知识库里的文档要重新向量化。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -92,6 +92,10 @@ describe("设置页面的「模型」一栏", () => {
   it("桌面包首次启动时从本机 pi 的配置复制过来的：写一句从哪里复制、什么时候，之后的修改不改本机 pi 的配置；不是复制来的不写", async () => {
     page(config({ copied_from_pi: { from: "/u/.pi/agent", at: "2026-10-14T03:00:00Z" } }));
     expect(await screen.findByTestId("copied-from-pi")).toHaveTextContent(/^已从本机 pi 的配置复制（\/u\/\.pi\/agent，.+）。之后在这里的修改只写在 Taskwright 自己的目录里，不改本机 pi 的配置。$/);
+    cleanup();
+    // 有没有复制的别的服务登记时，接着写出它们的服务名。
+    page(config({ copied_from_pi: { from: "/u/.pi/agent", at: "2026-10-14T03:00:00Z", skipped: ["other-llm", "my-llm"] } }));
+    expect(await screen.findByTestId("copied-from-pi")).toHaveTextContent(/不改本机 pi 的配置。本机 pi 里别的模型服务登记没有复制：other-llm、my-llm；要在这里用它们，请在下面添加。$/);
     cleanup();
     page(config());
     await screen.findByTestId("model-settings");
@@ -491,20 +495,20 @@ describe("设置页面的「模型」一栏", () => {
     expect(screen.queryByTestId("test-language-result")).toBeNull();
   });
 
-  it("嵌入模型点「测试」先问一句，写明是把一句话换算成一串数字、会发一次真实的请求与可能的费用；点取消不发请求", async () => {
+  it("嵌入模型点「测试」先问一句，写明是把一句话向量化，得到一串数字、会发一次真实的请求与可能的费用；点取消不发请求", async () => {
     page(config(bothChosen), withTest);
     const run = vi.spyOn(api, "testModel").mockResolvedValue(embedded());
     fireEvent.click(await screen.findByTestId("test-embedding-button"));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("测试嵌入模型");
-    expect(dialog).toHaveTextContent("会用「embed:large」发一次真实的请求：把一句话换算成一串数字。商业接口可能产生很少的费用。");
+    expect(dialog).toHaveTextContent("会用「embed:large」发一次真实的请求：把一句话向量化，得到一串数字。商业接口可能产生很少的费用。");
     expect(within(dialog).getByRole("button", { name: "开始测试" })).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     expect(run).not.toHaveBeenCalled();
     expect(screen.queryByTestId("test-embedding-result")).toBeNull();
   });
 
-  it("嵌入模型测试当中按钮写「正在测试……」，两行的「测试」与「更换」都不能点；通过之后写这一次通过与用时、送去换算的话（前缀里的换行保留）、数字串的长度", async () => {
+  it("嵌入模型测试当中按钮写「正在测试……」，两行的「测试」与「更换」都不能点；通过之后写这一次通过与用时、送去向量化的话（前缀里的换行保留）、数字串的长度", async () => {
     page(config(bothChosen), withTest);
     let finish: (r: ModelTestResult) => void = () => {};
     const run = vi.spyOn(api, "testModel").mockReturnValue(new Promise((ok) => { finish = ok; }));
@@ -523,7 +527,7 @@ describe("设置页面的「模型」一栏", () => {
     const result = await screen.findByTestId("test-embedding-result");
     expect(result.querySelector(".th")).toHaveTextContent(/^这一次测试通过，用时 0.4 秒。$/);
     const sent = screen.getByTestId("test-embedding-question");
-    expect(sent.textContent).toBe("送去换算的话：Instruct: 找相关段落\nQuery:这批货一共有 42 箱。");
+    expect(sent.textContent).toBe("送去向量化的话：Instruct: 找相关段落\nQuery:这批货一共有 42 箱。");
     expect(sent).toHaveClass("sent");
     expect(screen.getByTestId("test-embedding-dimensions")).toHaveTextContent(/^算出来的数字串长度：1024$/);
     expect(result).toHaveClass("ok");
@@ -622,7 +626,7 @@ describe("设置页面的「模型」一栏", () => {
     }
   });
 
-  describe("更换嵌入模型时知识库里的文档要重新换算", () => {
+  describe("更换嵌入模型时知识库里的文档要重新向量化", () => {
     const NOTE = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
     const withKnowledge: ServiceInfo = { ...service, capabilities: { ...service.capabilities, knowledge: true } };
     const two = embedder({ models: ["embed:large", "embed:small"].map((id) => ({ id, enabled: true, context_window: null, context_source: null })) });
@@ -645,14 +649,14 @@ describe("设置页面的「模型」一栏", () => {
       return { load, overview, select, embed, dialog };
     }
 
-    it("换成另一个嵌入模型：点「用这个模型」先问一句，写明几份文档要重新换算与可能的费用；取消不保存；确定之后先保存选择，再开始换算并提示", async () => {
+    it("换成另一个嵌入模型：点「用这个模型」先问一句，写明几份文档要重新向量化与可能的费用；取消不保存；确定之后先保存选择，再开始向量化并提示", async () => {
       const { overview, select, embed, dialog } = await open(large, 3);
       expect(overview).toHaveBeenCalledTimes(1);
       fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:small"));
       fireEvent.click(screen.getByTestId("use-model"));
       // 只弹出一个确认框，但界面库把它的标题写在两处（标题栏与那句话上方），所以按「至少有一处」看。
       expect((await screen.findAllByText("更换嵌入模型？")).length).toBeGreaterThan(0);
-      expect(screen.getByText("换了嵌入模型后，知识库里的 3 份文档要重新换算，换算完成前按意思查找暂时不可用。商业接口可能产生费用。")).toBeInTheDocument();
+      expect(screen.getByText("换了嵌入模型后，知识库里的 3 份文档要重新向量化，向量化完成前按意思查找暂时不可用。商业接口可能产生费用。")).toBeInTheDocument();
       expect(select).not.toHaveBeenCalled();
       fireEvent.click(screen.getAllByRole("button", { name: "取消" }).at(-1)!);
       await new Promise((r) => setTimeout(r, 20));
@@ -660,26 +664,26 @@ describe("设置页面的「模型」一栏", () => {
       expect(embed).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByTestId("use-model"));
-      await waitFor(() => expect(screen.getAllByRole("button", { name: "更换并重新换算" }).length).toBeGreaterThan(0));
-      fireEvent.click(screen.getAllByRole("button", { name: "更换并重新换算" }).at(-1)!);
+      await waitFor(() => expect(screen.getAllByRole("button", { name: "更换并重新向量化" }).length).toBeGreaterThan(0));
+      fireEvent.click(screen.getAllByRole("button", { name: "更换并重新向量化" }).at(-1)!);
       await waitFor(() => expect(select).toHaveBeenCalledWith({ language: chosen.selection.language, embedding: small }));
       await waitFor(() => expect(embed).toHaveBeenCalledWith());
       expect(select.mock.invocationCallOrder[0]).toBeLessThan(embed.mock.invocationCallOrder[0]);
-      expect(await screen.findByText("已开始换算知识库里的 3 份文档，进度在知识库页面上看。")).toBeInTheDocument();
+      expect(await screen.findByText("已开始向量化知识库里的 3 份文档，进度在知识库页面上看。")).toBeInTheDocument();
     });
 
-    it("第一次选定嵌入模型、知识库里已经有文档：同样先问，那句话写的是要先换算，也写明可能的费用", async () => {
+    it("第一次选定嵌入模型、知识库里已经有文档：同样先问，那句话写的是要先向量化，也写明可能的费用", async () => {
       const { select, embed, dialog } = await open(null, 2);
       fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:large"));
       fireEvent.click(screen.getByTestId("use-model"));
       expect((await screen.findAllByText("选定嵌入模型？")).length).toBeGreaterThan(0);
-      expect(screen.getByText("选定嵌入模型后，知识库里的 2 份文档要先换算，换算完成后才能按意思查找。商业接口可能产生费用。")).toBeInTheDocument();
-      fireEvent.click(screen.getByRole("button", { name: "选定并开始换算" }));
+      expect(screen.getByText("选定嵌入模型后，知识库里的 2 份文档要先向量化，向量化完成后才能按意思查找。商业接口可能产生费用。")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "选定并开始向量化" }));
       await waitFor(() => expect(select).toHaveBeenCalledWith({ language: chosen.selection.language, embedding: large }));
       await waitFor(() => expect(embed).toHaveBeenCalledTimes(1));
     });
 
-    it("不问的几种：知识库里没有文档、取不到文档的份数、只改查询前缀、改成不用嵌入模型，都直接保存，不开始换算", async () => {
+    it("不问的几种：知识库里没有文档、取不到文档的份数、只改查询前缀、改成不用嵌入模型，都直接保存，不开始向量化", async () => {
       for (const [documents, change, saved] of [
         [0, (d: HTMLElement) => fireEvent.click(within(d).getByTestId("pick-taskwright-ollama-embedding-embed:small")), small],
         [null, (d: HTMLElement) => fireEvent.click(within(d).getByTestId("pick-taskwright-ollama-embedding-embed:small")), small],
@@ -706,15 +710,15 @@ describe("设置页面的「模型」一栏", () => {
       expect(embed).not.toHaveBeenCalled();
     });
 
-    it("选择保存了、换算却没能开始：提示一句，选择照样算数", async () => {
+    it("选择保存了、向量化却没能开始：提示一句，选择照样算数", async () => {
       const { load, select, embed, dialog } = await open(large, 3);
       embed.mockRejectedValue(new ApiError("rejected", "还没有选嵌入模型。", 422));
       fireEvent.click(within(dialog).getByTestId("pick-taskwright-ollama-embedding-embed:small"));
       load.mockResolvedValue(cfg(small));
       fireEvent.click(screen.getByTestId("use-model"));
-      fireEvent.click(await screen.findByRole("button", { name: "更换并重新换算" }));
+      fireEvent.click(await screen.findByRole("button", { name: "更换并重新向量化" }));
       await waitFor(() => expect(select).toHaveBeenCalledTimes(1));
-      expect(await screen.findByText("没能开始换算知识库里的文档：还没有选嵌入模型。")).toBeInTheDocument();
+      expect(await screen.findByText("没能开始向量化知识库里的文档：还没有选嵌入模型。")).toBeInTheDocument();
       expect(await screen.findByText("embed:small", { selector: ".mname" })).toBeInTheDocument();
     });
   });

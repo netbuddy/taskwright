@@ -101,6 +101,7 @@ export const NOT_IN_TABLE: {
     model_selection: { reason: "outside_task" },
     model_test: { reason: "outside_task" },
     debug_prompt_dir_set: { reason: "outside_task" },
+    upload_limits_set: { reason: "outside_task" },
     validate_diagram: { reason: "outside_task", note: "只核对图的写法，不写库" },
     documents: { reason: "outside_task", note: "文档的预览与下载，不写库" },
     embed_knowledge: { reason: "outside_task" },

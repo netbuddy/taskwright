@@ -20,7 +20,7 @@ import { ZERO_VECTOR_TEXT } from "../src/knowledge_embedder.ts";
 import { EMBEDDINGS_SUFFIX, readEmbeddings, readHead } from "../src/knowledge_embeddings.ts";
 import { type StoredProvider, updatePiDirSettings } from "../src/product_settings.ts";
 import { Service } from "../src/service.ts";
-import { ROOT, captureConsole, tempDir, within } from "./helpers.ts";
+import { ROOT, captureConsole, keepGeneral, tempDir, within } from "./helpers.ts";
 
 captureConsole();
 
@@ -148,7 +148,9 @@ async function chooseEmbedding(model: string | null = "bge-m3", options: { base?
 }
 
 function fresh(root = join(tmp, `case-${++n}`)): Service {
-  return new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: join(root, "knowledge") });
+  const service = new Service(join(root, "tasks"), join(root, "runs"), {}, { port: 1, knowledgeDir: join(root, "knowledge") });
+  keepGeneral(service.knowledge!.root);
+  return service;
 }
 
 async function call(service: Service, method: string, path: string, body: Dict | Buffer | null = null, headers: Dict = {}) {
@@ -239,6 +241,7 @@ test("上传之后自动换算：文档依次是换算中、等待换算、已�
 
   // 任务这一侧：按任务选用的知识库算。
   const task = service.task(service.create({ task_type: "requirements-engineering", task_name: "任务" }).task_id);
+  service.setTaskKnowledge(task, { libraries: [GENERAL] });
   assert.deepEqual((await call(service, "GET", `/api/v1/tasks/${task.taskId}/knowledge`)).json, { ok: true, libraries: [GENERAL], embedding: { model: MODEL, ready: true, pending: 0 } });
   await service.close();
 });
@@ -253,6 +256,7 @@ test("没有选嵌入模型：上传的文档是未换算，不发请求；开�
   const refused = await call(service, "POST", "/api/v1/knowledge/embed", {});
   assert.deepEqual([refused.status, refused.json.error.code, refused.json.error.message], [422, "rejected", NOT_SELECTED_TEXT]);
   const task = service.task(service.create({ task_type: "requirements-engineering", task_name: "任务" }).task_id);
+  service.setTaskKnowledge(task, { libraries: [GENERAL] });
   assert.deepEqual((await call(service, "GET", `/api/v1/tasks/${task.taskId}/knowledge`)).json.embedding, { model: null, ready: false, pending: 1 });
   assert.equal(fake.hits.length, 0);
   // 选了之后，这份文档经开始换算的接口算出来；范围写错的请求被拒绝。

@@ -12,6 +12,7 @@ import { completionLines, completionScore, emptyLineText } from "../model/comple
 import { formatTimeShort } from "../model/format";
 import { allAssetsEmpty, openTask, stateLine, taskEntryHref } from "../model/startPage";
 import { TaskPage, taskTypeVersionNote } from "../pages/TaskPage";
+import { TaskKnowledgeCard } from "../components/TaskKnowledgeCard";
 import { docxEntry, resetDocxStore } from "../state/docxStore";
 import { pdfBytesEntry, resetPdfStore } from "../state/pdfStore";
 
@@ -941,14 +942,13 @@ describe("材料", () => {
 });
 
 describe("选用的知识库", () => {
-  it("列出选用的知识库与个数：通用知识库注明每个任务都会用到、没有「不再选用」；别的知识库可以不再选用", async () => {
+  it("列出选用的知识库与个数：每个知识库都可以查看、不再选用，升级留下的通用知识库也一样", async () => {
     const calls = page();
     const card = await screen.findByTestId("task-knowledge");
     const general = await within(card).findByTestId("kb-row-general");
     expect(screen.getByTestId("kb-count").textContent).toBe("2 个");
     expect(document.querySelector(".tp-pair")).not.toHaveClass("single");
-    expect(text(general)).toBe("通用知识库3 份文档每个任务都会用到。查看");
-    expect(general).toHaveClass("general");
+    expect(text(general)).toBe("通用知识库3 份文档查看不再选用");
     expect(within(general).getByText("查看")).toHaveAttribute("href", "#/knowledge/general");
     const other = within(card).getByTestId("kb-row-lib-cb");
     expect(text(other)).toBe("城北区图书馆的资料5 份文档查看不再选用");
@@ -957,18 +957,27 @@ describe("选用的知识库", () => {
     await waitFor(() => expect(calls.select).toHaveBeenCalledWith("TASK-P", ["general"]));
   });
 
-  it("「选用别的知识库」勾上一个、确定之后整体改选用；通用知识库勾着、不能去掉", async () => {
+  it("「选用别的知识库」勾上一个、去掉一个，确定之后整体改选用；哪个都可以去掉", async () => {
     const calls = page();
     await screen.findByTestId("kb-row-general");
     expect(screen.getByTestId("kb-pick")).toHaveTextContent("选用别的知识库");
     fireEvent.click(screen.getByTestId("kb-pick"));
     const picker = await screen.findByTestId("kb-picker");
     const boxes = within(picker).getAllByRole("checkbox") as HTMLInputElement[];
-    expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[true, true], [false, false], [true, false]]);
+    expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[true, false], [false, false], [true, false]]);
     expect(picker.textContent).toContain("城北区图书馆的资料5 份文档 · 没有任务在用");
     fireEvent.click(boxes[1]);
+    fireEvent.click(boxes[0]);
     fireEvent.click(within(picker).getByTestId("kb-pick-ok"));
-    await waitFor(() => expect(calls.select).toHaveBeenCalledWith("TASK-P", ["general", "lib-hy", "lib-cb"]));
+    await waitFor(() => expect(calls.select).toHaveBeenCalledWith("TASK-P", ["lib-hy", "lib-cb"]));
+  });
+});
+
+describe("一个知识库都没有选用", () => {
+  it("任务页的知识库卡写明还没有选用、助手查不到参考资料，个数是 0", () => {
+    render(<AntApp><TaskKnowledgeCard libraries={[]} selected={[]} readOnly={false} onChange={async () => true} /></AntApp>);
+    expect(screen.getByTestId("kb-count").textContent).toBe("0 个");
+    expect(screen.getByTestId("kb-none").textContent).toBe("这个任务还没有选用知识库，助手查不到参考资料。");
   });
 });
 

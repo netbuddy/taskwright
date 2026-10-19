@@ -17,7 +17,7 @@ import { after, test } from "node:test";
 import { crc32 } from "node:zlib";
 import { ApiError } from "../src/errors.ts";
 import { dispatch, makeServer } from "../src/http.ts";
-import { ENTERED_CONVERSATION_REPLACE_TEXT, MAX_UPLOAD, REPLACING_DIR, SAME_AS_REPLACED_TEXT, Service, TOO_LARGE_TEXT, unsupportedTypeText } from "../src/service.ts";
+import { ENTERED_CONVERSATION_REPLACE_TEXT, REPLACING_DIR, SAME_AS_REPLACED_TEXT, Service, maxUpload, tooLargeText, unsupportedTypeText } from "../src/service.ts";
 import { ROOT, captureConsole, sqlRun, tempDir } from "./helpers.ts";
 
 captureConsole();
@@ -175,8 +175,8 @@ test("新文件没有存成时旧材料原样还在、不发事件：类型不�
   const attempt = (name: string, data: Buffer) => rejected(service.replaceMaterial(t, "inputs/需求.docx", name, data));
   const wrongType = await attempt("需求.xlsx", Buffer.from("x"));
   assert.deepEqual([wrongType.code, wrongType.message], ["unsupported_type", unsupportedTypeText()]);
-  const tooLarge = await attempt("需求.md", Buffer.alloc(MAX_UPLOAD + 1));
-  assert.deepEqual([tooLarge.code, tooLarge.message], ["too_large", TOO_LARGE_TEXT]);
+  const tooLarge = await attempt("需求.md", Buffer.alloc(maxUpload() + 1));
+  assert.deepEqual([tooLarge.code, tooLarge.message], ["too_large", tooLargeText()]);
   assert.equal((await attempt("别的.docx.md", Buffer.from("x"))).code, "bad_request");
   assert.equal((await attempt("a/b.md", Buffer.from("x"))).code, "bad_request");
   const nameTaken = await attempt("补充.md", Buffer.from("另一份补充。"));
@@ -381,9 +381,9 @@ test("经 HTTP：超过上限的替换请求不读请求体就以 too_large 拒�
     req.end();
   });
   try {
-    const big = await send(`/api/v1/tasks/${t.taskId}/materials/replace?path=inputs/a.md`, 6 * 1024 * 1024);
-    assert.deepEqual([big.status, JSON.parse(big.body).error.message], [413, TOO_LARGE_TEXT]);
-    const missing = await send("/api/v1/tasks/T-none/materials/replace?path=inputs/a.md", 6 * 1024 * 1024);
+    const big = await send(`/api/v1/tasks/${t.taskId}/materials/replace?path=inputs/a.md`, 11 * 1024 * 1024);
+    assert.deepEqual([big.status, JSON.parse(big.body).error.message], [413, tooLargeText()]);
+    const missing = await send("/api/v1/tasks/T-none/materials/replace?path=inputs/a.md", 11 * 1024 * 1024);
     assert.equal(JSON.parse(missing.body).error.code === "too_large", false);
   } finally {
     server.closeAllConnections();
