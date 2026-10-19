@@ -436,7 +436,15 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (isEmptyValue(chapter) || isDeprecated(fields)) return;
       const owners = introOwners(chapter, self);
       if (owners.length === 0) return;
-      errors.push(problem(refusalText("save_revision.overall_intro_duplicate", { chapter: String(chapter), owners: owners.join("、") })));
+      // 库里已有的先说；都是这一批前面新增的，就说是第几个操作立的：那些编号还没存进库，助手查不到，不能写成「已经有」。
+      const stored = owners.filter((id) => items.has(id));
+      if (stored.length > 0) {
+        errors.push(problem(refusalText("save_revision.overall_intro_duplicate", { chapter: String(chapter), owners: stored.join("、") })));
+        return;
+      }
+      errors.push(problem(refusalText("save_revision.overall_intro_duplicate_in_batch", {
+        chapter: String(chapter), ops: owners.map((id) => addedAt.get(id)).join("、"), owners: owners.join("、"),
+      })));
     };
     const plain = fillText("part.op_label", { no: number });
     if (!isObject(raw)) {

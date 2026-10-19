@@ -316,6 +316,18 @@ fields 应当是一个对象，只写要改的字段
 
 一章只立一页导语页，请改那一页，不要另立
 
+## `save_revision.overall_intro_duplicate_in_batch`
+
+用途：同一批里前面的操作已经给这一章新增了一页导语页。ops 是那几个操作的序号，owners 是它们新增后会得到的编号（还没有存进库）。
+
+「{{chapter}}」这一章的导语页，这一批里第 {{ops}} 个操作已经在新增（新增后编号会是 {{owners}}；这一批被拒，它还没有存进库，查看条目查不到）
+
+## `save_revision.overall_intro_duplicate_in_batch.guide`
+
+用途：上一条的指引。
+
+一章只立一页导语页：这一批里只让一页当这一章的导语页，别的页讲的是这一章里的内容，不当导语页
+
 ## `save_revision.problem_edit_restricted`
 
 用途：问题条目写下之后改了只能改的几个字段之外的字段。fields 是改到的字段（各加引号），editable 是能改的字段。
