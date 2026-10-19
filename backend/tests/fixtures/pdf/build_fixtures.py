@@ -7,10 +7,12 @@
     （例如 uv venv /tmp/pdf-fixtures && uv pip install --python /tmp/pdf-fixtures/bin/python reportlab==5.0.1 pikepdf==10.16.0 pillow==12.3.0）
   - 字体 Droid Sans Fallback（DroidSansFallbackFull.ttf，许可证 Apache License 2.0；Debian 与 Ubuntu 的 fonts-droid-fallback 包）。
     quirks.pdf 里嵌入了它的一个子集（用到的三十几个字）。字体不在缺省路径时用 --font 指出。
+  - 等宽字体 DejaVu Sans Mono（DejaVuSansMono.ttf，许可证是 Bitstream Vera 的自由许可；Debian 与 Ubuntu 的 fonts-dejavu-core 包）。
+    code.pdf 里嵌入了它的一个子集。字体不在缺省路径时用 --mono-font 指出。
   - 可选：LibreOffice（命令 soffice）。带 --word 时把 web/src/test/fixtures/loc-numbering.docx 转成 from-word.pdf；
     转出的文件里嵌着本机字体的子集，换一台机器结果不会逐字节相同，所以不带 --word 时不动这一份。
 
-用法：python3 build_fixtures.py [--font <ttf 文件>] [--word]
+用法：python3 build_fixtures.py [--font <ttf 文件>] [--mono-font <ttf 文件>] [--word]
 
 各样本的用意（文字内容同时写进 expected.json，测试对着它核对）：
   multipage.pdf   三页中文，不嵌入字体（要靠字符映射表才读得出字）；每页有页眉页脚；段落首行缩进；带两级书签目录。
@@ -18,6 +20,8 @@
   table.pdf       一张三列的表格，前后各一段。
   wrapped-table.pdf 两张格里有折行的表格：上一张一格写完再写下一格（LibreOffice 转出的文件是这样写的），表头的后两格只隔一个字宽；
                   下一张逐行写，一格的折行在下一行，那一行的第一列是空的。
+  code.pdf        英文正文中间两段带缩进的代码：前一段用标准字体 Courier（字体声明自己是等宽的），后一段用嵌入的 DejaVu Sans Mono，
+                  并把字体说明里「定宽」的标记抹掉（有的文件里等宽字体就是这样的，只能靠字宽认出来）；代码中间有一个空行。
   scanned.pdf     三页：第 1 页有正文，第 2 页只有页眉与一张图，第 3 页只有一张图。
   quirks.pdf      文字层里的两种毛病：常用汉字写成部首字符（文件里「字形到 Unicode」的对照表被改写过）；字与字之间被撑开。
   english.pdf     英文，左对齐不排满；有一处行末断词的连字符；用标准字体（不嵌入）。
@@ -214,6 +218,50 @@ def wrapped_table():
     return WRAPPED_TABLE
 
 
+CODE = {
+    "first": "The reference implementation is shown below.",
+    "code": ["def sign(secret, body):", "    ts = str(int(time.time()))", "    if ts:", "        return ts", "", "    return None"],
+    "second": "The same code again, in a monospaced font that does not declare itself fixed pitch:",
+    "third": "Both listings keep their indentation.",
+}
+
+
+def code(mono_font_path):
+    pdfmetrics.registerFont(TTFont("DejaVuSansMono", mono_font_path))
+    plain = HERE / "code.plain.pdf"
+    c = canvas.Canvas(str(plain), pagesize=A4, invariant=1)
+    y = 760
+    for font, before in (("Courier", CODE["first"]), ("DejaVuSansMono", CODE["second"])):
+        c.setFont("Helvetica", SIZE)
+        c.drawString(LEFT, y, before)
+        y -= 28
+        c.setFont(font, 10)
+        for line in CODE["code"]:
+            if line:
+                indent = len(line) - len(line.lstrip(" "))
+                c.drawString(LEFT + 6 * indent, y, line.lstrip(" "))   # 两种字体每个字都是 6 点宽（10 点字号的 0.6）
+            y -= 13
+        y -= 15
+    c.setFont("Helvetica", SIZE)
+    c.drawString(LEFT, y, CODE["third"])
+    c.showPage()
+    c.save()
+    # 让读的一方从字体说明里看不出它是等宽的：抹掉「定宽」的标记（Flags 的第 1 位），再在字宽表末尾添一个用不到的、宽度不同的字
+    # （pdf.js 见字宽表里每个字一样宽，会自己补上这个标记；中日韩等宽字体里半角与全角宽度不同，就是这种情形）。
+    pdf = pikepdf.open(plain)
+    for obj in pdf.objects:
+        if not isinstance(obj, pikepdf.Dictionary):
+            continue
+        if obj.get("/Type") == "/FontDescriptor" and "DejaVuSansMono" in str(obj.get("/FontName")):
+            obj.Flags = int(obj.Flags) & ~1
+        if obj.get("/Type") == "/Font" and "DejaVuSansMono" in str(obj.get("/BaseFont")) and "/Widths" in obj:
+            obj.Widths.append(300)
+            obj.LastChar = int(obj.LastChar) + 1
+    pdf.save(HERE / "code.pdf", static_id=True)
+    plain.unlink()
+    return CODE
+
+
 SCANNED = {"header": "读者意见登记表（扫描件样本）", "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"}
 
 
@@ -350,12 +398,13 @@ def from_word():
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--font", default="/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf", help="Droid Sans Fallback 的 ttf 文件")
+    parser.add_argument("--mono-font", default="/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", help="DejaVu Sans Mono 的 ttf 文件")
     parser.add_argument("--word", action="store_true", help="同时用 LibreOffice 重新生成 from-word.pdf")
     args = parser.parse_args()
     if not Path(args.font).is_file():
         raise SystemExit(f"找不到字体文件 {args.font}；用 --font 指出 DroidSansFallbackFull.ttf 的位置")
     pdfmetrics.registerFont(UnicodeCIDFont(SONG))
-    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "wrapped_table": wrapped_table(), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
+    expected = {"multipage": multipage(), "two_column": two_column(), "table": table(), "wrapped_table": wrapped_table(), "code": code(args.mono_font), "scanned": scanned(), "quirks": quirks(args.font), "english": english()}
     locked()
     if args.word:
         from_word()

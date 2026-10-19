@@ -99,6 +99,20 @@ test("格里有折行的表格（逐行写）：第一列空着的续行并回�
   assert.equal(rows[0], "读者类型  一次最多  借期，遇假期顺延到开学");
 });
 
+test("等宽字体的代码：每行一块，行首按缩进补空格；字体声明了等宽的、没有声明而只能靠字宽认出的，两段都一样；代码里的空行不出块", async () => {
+  const { markdown } = await project("code");
+  const t = expected.code;
+  const listing = (t.code as string[]).filter((line) => line);
+  assert.deepEqual(pdfProjectionUnits(markdown).map((u) => u.text), [t.first, ...listing, t.second, ...listing, t.third]);
+});
+
+test("非等宽字体的正文不补空格：英文、中文、由 Word 转出的几份样本里没有一块以空格开头", async () => {
+  for (const name of ["english", "multipage", "from-word"]) {
+    const { markdown } = await project(name);
+    for (const u of pdfProjectionUnits(markdown)) assert.ok(!u.text.startsWith(" "), `${name} ${u.page}-${u.block}：${u.text}`);
+  }
+});
+
 test("没有文字的页：写一行块号为 0 的说明，位置表里标出来；只有页眉的页也算", async () => {
   const result = await project("scanned");
   assert.deepEqual(result.no_text_pages, [2, 3]);

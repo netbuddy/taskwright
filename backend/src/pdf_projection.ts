@@ -14,6 +14,7 @@
  * - 其余的行先按版面切成几段连着的行：往上跳（换栏）、字号相差超过 12%、行距超过这一页常见行距的 1.3 倍、横向跳开很远，都另起一段。
  *   再在每段里找段落的分界：这一行缩进了一个字而上下两行都没有缩进（段落的第一行），或者上一行后面还放得下这一行开头的词
  *   （上一行是段落的最后一行）。分出来的每一截是一块。块不跨页，也不跨栏。
+ * - 等宽字体的行（多半是代码，怎样认见 monospaceLines）每行单独一块，行首补上缩进的空格（markIndents）；它不当作表格的一行。
  * - 行接成一块时，前后有一边是中日韩字符就直接接上，否则中间加一个空格；行末的连字符原样留着。接好以后做一次整理
  *   （lib/pdf_normalize.ts 的 tidyPdfText：部首字符换成通用汉字等）。
  * - 页眉页脚：整块落在页面上边或下边 12% 以内（A4 纸上约 3.5 厘米，常见的页边距都在这以内），去掉数字与空白后的文字相同，并且在三分之二以上的页里出现（至少 3 页的文件才判），
@@ -70,9 +71,11 @@ export interface PdfProjection {
 
 // ───────────── pdf.js ─────────────
 
-interface TextItem { str?: string; transform: number[]; width: number; height: number }
+interface TextItem { str?: string; transform: number[]; width: number; height: number; fontName?: string }
+/** 文字条目所用字体的说明：pdf.js 只给出字体族（serif、sans-serif、monospace），不给字体的真名。 */
+type TextStyles = Record<string, { fontFamily?: string } | undefined>;
 interface Viewport { width: number; height: number; convertToViewportPoint(x: number, y: number): number[] }
-interface PdfPage { rotate: number; getViewport(options: { scale: number }): Viewport; getTextContent(): Promise<{ items: TextItem[] }>; cleanup(): void }
+interface PdfPage { rotate: number; getViewport(options: { scale: number }): Viewport; getTextContent(): Promise<{ items: TextItem[]; styles?: TextStyles }>; cleanup(): void }
 interface OutlineNode { title: string; dest: string | unknown[] | null; items?: OutlineNode[] }
 interface PdfDocument {
   numPages: number;
@@ -147,12 +150,22 @@ function loadPdfjs() {
 interface Cell { x0: number; x1: number; text: string }
 /** 行里隔着空白的一截文字（中日韩文字连着写的一串、一个英文词）：表格行归格时按它的起点归到列。 */
 interface Piece { x0: number; x1: number; text: string }
-interface Line { y: number; x0: number; x1: number; right: number; size: number; rotated: boolean; top: number; bottom: number; cells: Cell[]; pieces: Piece[]; space: boolean }
+interface Line {
+  y: number; x0: number; x1: number; right: number; size: number; rotated: boolean; top: number; bottom: number; cells: Cell[]; pieces: Piece[]; space: boolean;
+  /** 这一行的文字条目是不是都用 pdf.js 标为等宽（monospace）的字体。 */
+  fixed: boolean;
+  /** 这一行里只有拉丁字符的文字条目，各自的字数与每个字占多宽（条目宽度除以字数）。 */
+  advances: { n: number; width: number }[];
+  /** 这一行里有没有不全是拉丁字符的文字条目。 */
+  other: boolean;
+  /** 等宽字体的行行首要补的空格数（见 markIndents）；别的行是 0。 */
+  indent: number;
+}
 /** 一块：表格的一行（row 为真）时 text 是已经按列拼好的文字。 */
 interface Block { lines: Line[]; x0: number; x1: number; row: boolean; text?: string }
 
 /** 文字条目 → 行（规则见开头的说明）。 */
-function linesOf(items: TextItem[]): Line[] {
+function linesOf(items: TextItem[], styles: TextStyles = {}): Line[] {
   const lines: Line[] = [];
   let cur: Line | null = null;
   for (const it of items) {
@@ -165,6 +178,8 @@ function linesOf(items: TextItem[]): Line[] {
     const size = Math.hypot(a, b) || Math.abs(d) || it.height || 10;
     const rotated = Math.abs(b) > 0.01 * Math.max(Math.abs(a), 1);
     const right = x + it.width;
+    const fixed = styles[it.fontName ?? ""]?.fontFamily === "monospace";
+    const latin = /^[\x20-\x7e]+$/.test(it.str) ? { n: it.str.length, width: it.width / it.str.length } : null;
     const same: boolean = !!cur && !rotated && !cur.rotated && Math.abs(y - cur.y) <= 0.5 * Math.max(size, cur.size) && x >= cur.right - 1.2 * size;
     if (cur && same) {
       const gap = x - cur.right;
@@ -183,6 +198,9 @@ function linesOf(items: TextItem[]): Line[] {
           piece.x1 = right;
         }
       }
+      cur.fixed &&= fixed;
+      if (latin !== null) cur.advances.push(latin);
+      else cur.other = true;
       cur.right = right;
       cur.x1 = Math.max(cur.x1, right);
       cur.size = Math.max(cur.size, size);
@@ -190,7 +208,8 @@ function linesOf(items: TextItem[]): Line[] {
       cur.bottom = Math.min(cur.bottom, y - size * 0.2);
       cur.space = false;
     } else {
-      cur = { y, x0: x, x1: right, right, size, rotated, top: y + size * 0.85, bottom: y - size * 0.2, cells: [{ x0: x, x1: right, text: it.str }], pieces: [{ x0: x, x1: right, text: it.str }], space: false };
+      cur = { y, x0: x, x1: right, right, size, rotated, top: y + size * 0.85, bottom: y - size * 0.2, cells: [{ x0: x, x1: right, text: it.str }], pieces: [{ x0: x, x1: right, text: it.str }], space: false,
+        fixed, advances: latin === null ? [] : [latin], other: latin === null, indent: 0 };
       lines.push(cur);
     }
   }
@@ -217,6 +236,68 @@ function firstWordWidth(line: Line): number {
   if (isCjk([...text][0])) return line.size;
   const word = text.split(" ")[0];
   return (line.cells[0].x1 - line.cells[0].x0) * (word.length / Math.max(text.length, 1));
+}
+
+/**
+ * 各行是不是用等宽字体排的（多半是代码）。两条满足一条就算：
+ * - pdf.js 把这一行的文字条目都标为等宽字体（monospace；它依据的是字体自己声明的「定宽」标记。pdf.js 拿不到字体的真名，
+ *   没法按名字里有没有 Mono、Courier 判断）；
+ * - 有的等宽字体没有声明这个标记（例如 Noto Sans Mono CJK 在一些文件里被标成 sans-serif），所以再看字宽：按文件里写字的先后，
+ *   连着几行（遇到往上跳、字号变了就断开）全是拉丁字符的条目，三个以上、至少有两种字数，每个字的宽度（条目宽度除以字数）
+ *   彼此相差不到 0.3%，并且在 0.45 到 0.65 个字号之间，这几行都算；夹在等宽的行中间、连着不超过三行、字号相同的行也算（代码里带中文的注释与字符串）。等宽字体每个字一样宽，宽度除以字数严格相等
+ *   （西文等宽字体约 0.6 个字号，中日韩等宽字体里的拉丁字符是半角，0.5 个字号）；非等宽字体换一个词就变。
+ */
+function monospaceLines(lines: Line[]): boolean[] {
+  const mono = lines.map((ln) => ln.fixed);
+  const latinOnly = (ln: Line) => !ln.other && ln.advances.length > 0;
+  for (let i = 0; i < lines.length;) {
+    if (!latinOnly(lines[i])) {
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    while (j < lines.length && latinOnly(lines[j]) && lines[j].y <= lines[j - 1].y + 0.5 * lines[j].size && Math.abs(lines[j].size - lines[i].size) <= 0.01 * lines[i].size) j++;
+    const all = lines.slice(i, j).flatMap((l) => l.advances);
+    const lo = Math.min(...all.map((a) => a.width));
+    const hi = Math.max(...all.map((a) => a.width));
+    if (all.length >= 3 && new Set(all.map((a) => a.n)).size >= 2 && hi - lo < 0.003 * lo && lo >= 0.45 * lines[i].size && hi <= 0.65 * lines[i].size) {
+      for (let k = i; k < j; k++) mono[k] = true;
+    }
+    i = j;
+  }
+  // 代码里夹着带中文的行（例如注释、字符串），它们不全是拉丁字符，量不了字宽：前后都是等宽的行、连着不超过三行、
+  // 字号相同、自上而下排着时也算。
+  for (let k = 1; k < lines.length; k++) {
+    if (mono[k] || !mono[k - 1]) continue;
+    let e = k;
+    while (e < lines.length && !mono[e] && e - k < 3) e++;
+    if (e >= lines.length || !mono[e]) continue;
+    const span = lines.slice(k - 1, e + 1);
+    if (span.every((l, m) => Math.abs(l.size - lines[k - 1].size) <= 0.01 * l.size && (m === 0 || l.y < span[m - 1].y))) for (let m = k; m < e; m++) mono[m] = true;
+  }
+  return mono;
+}
+
+/**
+ * 等宽字体的行要补的行首空格（代码的缩进）：按文件里写字的先后，连着的等宽字体的行算一段代码（遇到别的行、往上跳、字号变了就断开），
+ * 每行行首比这一段最靠左的行多出来的横向距离，除以每个字的宽度（这一段里量得到的字宽的中位数，量不到时取 0.6 个字号）后四舍五入。
+ * 段里空着的行在 PDF 里本来就没有文字，不打断这一段，所以空行之后缩进着的行照样量得出缩进。
+ */
+function markIndents(lines: Line[], mono: boolean[]): void {
+  for (let i = 0; i < lines.length;) {
+    if (!mono[i]) {
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    while (j < lines.length && mono[j] && lines[j].y <= lines[j - 1].y + 0.5 * lines[j].size && Math.abs(lines[j].size - lines[i].size) <= 0.12 * lines[i].size) j++;
+    const run = lines.slice(i, j);
+    const left = Math.min(...run.map((l) => l.x0));
+    const measured = run.flatMap((l) => l.advances.map((a) => a.width));
+    const width = measured.length ? median(measured) : 0.6 * lines[i].size;
+    for (const ln of run) ln.indent = Math.max(0, Math.round((ln.x0 - left) / width));
+    i = j;
+  }
 }
 
 /**
@@ -383,10 +464,19 @@ function blocksOf(lines: Line[]): Block[] {
     if (dy > 0 && dy < 3 * lines[i].size && Math.abs(lines[i].size - lines[i - 1].size) < 0.5) pitches.push(dy);
   }
   const pitch = median(pitches);
+  const mono = monospaceLines(lines);
+  markIndents(lines, mono);
   const runs: (Line[] | Block[])[] = [];
   let run: Line[] | null = null;
   for (let i = 0; i < lines.length;) {
     const ln = lines[i];
+    // 等宽字体的行（代码）每行单独一块，行首补上缩进的空格；代码里为了对齐留的大空隙不当作表格的格。
+    if (mono[i]) {
+      runs.push([{ lines: [ln], x0: ln.x0, x1: ln.x1, row: false, text: " ".repeat(ln.indent) + ln.cells.map((c) => c.text).join(" ") }]);
+      run = null;
+      i++;
+      continue;
+    }
     if (isRow(ln)) {
       const table = tableRows(lines, i);
       runs.push(table.blocks);
@@ -414,7 +504,7 @@ function blocksOf(lines: Line[]): Block[] {
   }
   const blocks: Block[] = [];
   for (const part of runs) {
-    if (part.length && "row" in part[0]) {
+    if (part.length && "lines" in part[0]) {
       blocks.push(...(part as Block[]));
       continue;
     }
@@ -464,9 +554,9 @@ interface PageBlock { text: string; bbox: PdfBox; running: boolean; key: string 
 interface PageResult { page: number; width: number; height: number; rotate: number; blocks: PageBlock[] }
 
 /** 一页的文字条目 → 这一页的各块（还没有判页眉页脚、没有编块号）。 */
-function pageBlocks(items: TextItem[], viewport: Viewport): PageBlock[] {
-  return blocksOf(linesOf(items)).map((b) => {
-    const text = tidyPdfText(b.row ? b.text ?? "" : joinLines(b.lines.map((l) => l.cells.map((c) => c.text).join(" "))));
+function pageBlocks(items: TextItem[], styles: TextStyles, viewport: Viewport): PageBlock[] {
+  return blocksOf(linesOf(items, styles)).map((b) => {
+    const text = tidyPdfText(b.text ?? joinLines(b.lines.map((l) => l.cells.map((c) => c.text).join(" "))));
     const bbox: PdfBox = [
       round(Math.min(...b.lines.map((l) => l.x0))), round(Math.min(...b.lines.map((l) => l.bottom))),
       round(Math.max(...b.lines.map((l) => l.x1))), round(Math.max(...b.lines.map((l) => l.top))),
@@ -606,11 +696,11 @@ export async function pdfProjection(data: Uint8Array, rel: string, limits: PdfLi
       if (expired()) throw new PdfProjectionError(tooSlowText(performance.now() - started, n - 1, doc.numPages));
       const page = await doc.getPage(n);
       const viewport = page.getViewport({ scale: 1 });
-      const { items } = await page.getTextContent();
+      const { items, styles = {} } = await page.getTextContent();
       const own = items.reduce((sum, it) => sum + (it.str ?? "").replace(/\s+/g, "").length, 0);
       chars += own;
       if (chars > limits.chars) throw new PdfProjectionError(`这份 PDF 的文字超过上限 ${limits.chars} 字，在第 ${n} 页停下了`);
-      pages.push({ page: n, width: viewport.width, height: viewport.height, rotate: page.rotate, blocks: pageBlocks(items, viewport) });
+      pages.push({ page: n, width: viewport.width, height: viewport.height, rotate: page.rotate, blocks: pageBlocks(items, styles, viewport) });
       page.cleanup();
       progress?.(n, doc.numPages);
     }

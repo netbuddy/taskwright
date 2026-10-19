@@ -141,6 +141,19 @@
     ],
     "after": "表后的一段话。"
   },
+  "code": {
+    "first": "The reference implementation is shown below.",
+    "code": [
+      "def sign(secret, body):",
+      "    ts = str(int(time.time()))",
+      "    if ts:",
+      "        return ts",
+      "",
+      "    return None"
+    ],
+    "second": "The same code again, in a monospaced font that does not declare itself fixed pitch:",
+    "third": "Both listings keep their indentation."
+  },
   "scanned": {
     "header": "读者意见登记表（扫描件样本）",
     "text": "下面两页是手写登记表的扫描件，没有可以读出的文字。"
