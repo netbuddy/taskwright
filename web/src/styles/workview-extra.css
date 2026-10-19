@@ -173,7 +173,6 @@
 .app .sw-fs { margin-left: auto; display: flex; align-items: center; gap: .25rem; font-size: 0.857rem; color: var(--mut); }
 .app .sw-fs a { border: 1px solid var(--line2); border-radius: .4rem; padding: 0 .45rem; cursor: pointer; background: var(--card); color: var(--text1); }
 .app .sw-fs a.on { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
-.app .topbar .sw-fs + .smenu-btn { margin-left: .5rem; }
 
 /* 未读：用户还没看过这个条目现在的样子（打开详情就记为已读）。像邮件一样加粗编号与标题。 */
 .app .lrow.unread .lid, .app .lrow.unread .lname { font-weight: 700; color: var(--ink); }
@@ -368,10 +367,6 @@
 .app .rl-row .rid { font-family: var(--mono, monospace); font-size: .857rem; color: var(--text1); }
 .app .rl-off { color: var(--mut); font-size: .857rem; padding: .25rem 0 .05rem; border-top: 1px dotted var(--line2); }
 
-/* 顶栏的「设置」：样子与「会话 ▾」一样，前面一个齿轮，放在「会话 ▾」与「本机用户 ▾」之间 */
-.app .topbar .set-btn { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--line2); border-radius: .5rem; background: var(--card);
-  font-size: .897rem; padding: .12rem .6rem; cursor: pointer; white-space: nowrap; }
-.app .topbar .set-btn:hover { border-color: var(--ink); }
 
 /* 业务说明里的图（components/work/overall/Figure.tsx）：画图的那一块、改图时的预览提示、图下展开的「文本」「来源」两个页签。 */
 .app .dg-figure { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -399,11 +394,6 @@
 /* 图表组件里的按钮是 antd 的：工作视图的全局清零把它们的内边距清掉了，这里补回来。 */
 .app .diagram-view .ant-btn { padding: 0 .75rem; }
 .app .diagram-view .ant-btn.ant-btn-sm { padding: 0 .5rem; }
-/* 会话菜单：归档的会话变淡；底部「显示已归档的会话」开关 */
-.app .smenu .srow.archived .sn { color: var(--mut); font-weight: 400; }
-.app .smenu .sarch { display: flex; align-items: flex-start; gap: .4rem; border-top: 1px dotted var(--line2); margin-top: .25rem; padding: .4rem .5rem .2rem; font-size: 0.881rem; color: var(--mut); cursor: pointer; }
-.app .smenu .sarch input { margin-top: .2rem; }
-.app .smenu .sarch small { display: block; font-size: 0.82rem; }
 /* 修订页签顶上的「版本」一节：发布过的各版，每版一张小卡；没有存档的下载灰着 */
 .app .sw-versions { background: var(--card); border: 1px solid var(--line2); border-radius: .55rem; padding: .45rem .6rem .5rem; display: flex; flex-direction: column; gap: .35rem; }
 .app .sw-versions .vh { display: flex; align-items: baseline; gap: .5rem; font-size: 0.929rem; }

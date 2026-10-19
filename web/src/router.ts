@@ -1,6 +1,6 @@
 // 各页的地址，用井号路由，不引入路由库：
 //   #/tasks                                  任务列表页
-//   #/tasks/{task_id}                        任务起点页
+//   #/tasks/{task_id}                        任务起点页；后面可以带 ?focus=pending，打开后滚到「待处理事项」一节（左边导航栏的「待决定」点过来）
 //   #/tasks/{task_id}/start/{键}             活动输入页：键是一条工作流程或一项单项活动的键；后面可以带 ?case=序号，
 //                                            是从起点页三种常见起点里的第几种进来的（从 0 起），输入页据此先看那一块；
 //                                            澄清的输入页还可以带 ?pick=编号,编号，是从起点页「待处理事项」进来时预先勾好的问题与待决定事项
@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 
 export type Route =
   | { page: "tasks" }
-  | { page: "task"; taskId: string }
+  | { page: "task"; taskId: string; focus?: "pending" }
   | { page: "start"; taskId: string; key: string; startCase: number | null; pick?: string[] }
   | { page: "work"; taskId: string; sessionId: string; collection: string | null; diagrams: boolean; diagram: string | null }
   | { page: "knowledge"; libraryId: string | null }
@@ -34,7 +34,7 @@ export function parseRoute(hash: string): Route {
     return { page: "start", taskId: parts[1], key: parts[3], startCase: startCase !== null && /^[0-9]+$/.test(startCase) ? Number(startCase) : null,
       ...(pick.length ? { pick } : {}) };
   }
-  if (parts[0] === "tasks" && parts[1]) return { page: "task", taskId: parts[1] };
+  if (parts[0] === "tasks" && parts[1]) return { page: "task", taskId: parts[1], ...(query.get("focus") === "pending" ? { focus: "pending" as const } : {}) };
   if (parts[0] === "knowledge") return { page: "knowledge", libraryId: parts[1] ?? null };
   if (parts[0] === "settings") return { page: "settings", section: "models" };
   return { page: "tasks" };
@@ -42,7 +42,7 @@ export function parseRoute(hash: string): Route {
 
 export const href = {
   tasks: () => "#/tasks",
-  task: (taskId: string) => `#/tasks/${encodeURIComponent(taskId)}`,
+  task: (taskId: string, focus?: "pending") => `#/tasks/${encodeURIComponent(taskId)}${focus ? `?focus=${focus}` : ""}`,
   /** 活动输入页；startCase 是从三种常见起点里的第几种进来的，pick 是预先勾好的问题与待决定事项的编号（澄清的输入页用）。 */
   start: (taskId: string, key: string, startCase?: number | null, pick?: string[]) => {
     const query = [startCase === undefined || startCase === null ? "" : `case=${startCase}`, pick?.length ? `pick=${pick.map(encodeURIComponent).join(",")}` : ""].filter(Boolean);

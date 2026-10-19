@@ -1,5 +1,5 @@
 // 工作视图顶上的无模型提示与设置入口：capabilities.model 为 false 时顶上出「还没有选定语言模型」与「去配置模型」；
-// 顶栏的「设置」与左边竖栏底部的图标都进设置页面。
+// 左边导航栏底部的「设置」进设置页面；顶栏不再有「设置」按钮。
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -42,15 +42,14 @@ describe("工作视图顶上的无模型提示与设置入口", () => {
     expect(window.location.hash).toBe("#/settings/models");
   });
 
-  it("有可用模型时不出提示；顶栏的「设置」与竖栏底部的图标都进设置页面", async () => {
+  it("有可用模型时不出提示；导航栏底部的「设置」进设置页面，顶栏没有「设置」按钮", async () => {
     const service = page(true);
     await vi.waitFor(() => expect(service).toHaveBeenCalled());
-    await screen.findByTestId("open-settings");
+    await screen.findByTestId("rail-settings");
     expect(screen.queryByTestId("no-model-banner")).toBeNull();
-    for (const id of ["open-settings", "rail-settings"]) {
-      window.location.hash = "#/tasks/TASK-001/sessions/S-1";
-      fireEvent.click(screen.getByTestId(id));
-      expect(window.location.hash).toBe("#/settings/models");
-    }
+    expect(screen.queryByTestId("open-settings")).toBeNull();
+    window.location.hash = "#/tasks/TASK-001/sessions/S-1";
+    fireEvent.click(screen.getByTestId("rail-settings"));
+    expect(window.location.hash).toBe("#/settings/models");
   });
 });

@@ -8,7 +8,7 @@ import { Alert, Button, Dropdown, Table, Tag } from "antd";
 import { EllipsisOutlined, PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { TaskListEntry } from "../api/types";
-import { NewTaskModal, Shell, TASKS_CHANGED, sortByActivity } from "../components/Shell";
+import { NewTaskModal, Shell, sortByActivity } from "../components/Shell";
 import { DeleteTaskModal } from "../components/task/DeleteTaskModal";
 import { formatTime } from "../model/format";
 import { openTask } from "../model/startPage";
@@ -82,7 +82,7 @@ export function TaskListPage() {
       />
       <NewTaskModal open={open} onClose={() => setOpen(false)} />
       <DeleteTaskModal taskId={deleting?.task_id ?? null} taskName={deleting?.task_name ?? ""} onClose={() => setDeleting(null)}
-        onDeleted={(id) => { setDeleting(null); setTasks((list) => list?.filter((one) => one.task_id !== id) ?? null); window.dispatchEvent(new Event(TASKS_CHANGED)); }} />
+        onDeleted={(id) => { setDeleting(null); setTasks((list) => list?.filter((one) => one.task_id !== id) ?? null); }} />
     </Shell>
   );
 }

@@ -164,16 +164,18 @@ describe("任务头", () => {
     const frame = screen.getByTestId("task-frame");
     expect(text(frame.querySelector(".topbar .tname"))).toBe("退款需求走查");
     expect(text(frame.querySelector(".topbar .sname"))).toBe("任务起点");
-    expect(frame.querySelector(".rail .ico.on")).toHaveAttribute("href", "#/tasks/TASK-P");
+    expect(screen.getByTestId("nav-task")).toHaveAttribute("href", "#/tasks/TASK-P");
+    expect(screen.getByTestId("nav-task")).toHaveTextContent("退款需求走查");
     // 这一页没有对话区，也没有原来任务页的「生成文档」「新建会话」两个按钮。
     expect(frame.querySelector(".chat")).toBeNull();
     expect(screen.queryByRole("button", { name: "生成文档" })).toBeNull();
     expect(screen.queryByRole("button", { name: /新建会话/ })).toBeNull();
-    // 「会话」菜单列出这个任务的会话，点一条进它的工作台。
-    fireEvent.click(screen.getByTestId("session-menu-button"));
-    const rows = [...screen.getByTestId("session-menu").querySelectorAll(".srow")];
-    expect(rows.map((one) => text(one.querySelector(".sn")))).toEqual(["第一句", "第二句"]);
-    fireEvent.click(rows[1]);
+    // 左边导航栏的会话一段列出这个任务的会话（按建立时间倒序；这一页没有当前会话），点一条进它的工作台；顶栏没有「会话 ▾」菜单。
+    expect(screen.queryByTestId("session-menu-button")).toBeNull();
+    expect(screen.queryByTestId("nav-current-session")).toBeNull();
+    const rows = screen.getAllByTestId("nav-session");
+    expect(rows.map((one) => one.getAttribute("title"))).toEqual(["第二句", "第一句"]);
+    fireEvent.click(rows[0]);
     expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S2");
   });
 

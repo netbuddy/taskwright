@@ -24,25 +24,6 @@
 .app .topbar .tname{font-size:0.96rem;font-weight:700}
 .app .topbar .tsep{color:var(--line2);font-size:0.96rem}
 .app .topbar .sname{font-size:0.936rem;color:var(--text2)}
-.app .topbar .smenu-btn{margin-left:auto;border:1px solid var(--line2);border-radius:.5rem;background:var(--card);
-  font-size:0.897rem;padding:.12rem .6rem;cursor:pointer;white-space:nowrap}
-.app .topbar .smenu-btn:hover{border-color:var(--ink)}
-.app .smenu{position:absolute;right:.8rem;top:calc(100% + .25rem);z-index:80;width:22rem;background:var(--card);
-  border:1px solid var(--line2);border-radius:.6rem;box-shadow:0 0.714rem 1.857rem var(--shadow-3);padding:.35rem;display:none}
-.app .smenu.show{display:block}
-.app .smenu .mh{font-size:0.881rem;color:var(--mut);padding:.2rem .5rem .3rem}
-.app .smenu .srow{display:flex;align-items:center;gap:.4rem;padding:.3rem .5rem;border-radius:.45rem;
-  font-size:0.913rem;cursor:pointer;flex-wrap:wrap}
-.app .smenu .srow:hover{background:var(--dark3)}
-.app .smenu .srow .sn{font-weight:600}
-.app .smenu .srow .st{font-size:0.873rem;color:var(--mut);width:100%}
-.app .smenu .newrow{border-top:1px dotted var(--line2);margin-top:.25rem;padding-top:.4rem;color:var(--blue)}
-.app .rail{width:var(--w-rail);flex:none;background:var(--dark);border-right:1px solid var(--line);
-  display:flex;flex-direction:column;align-items:center;padding:.6rem 0;gap:.9rem}
-.app .rail .ico{width:1.8rem;height:1.8rem;border-radius:.5rem;display:flex;align-items:center;justify-content:center;
-  color:var(--mut);font-size:0.98rem;cursor:default}
-.app .rail .ico.on{background:var(--dark3);color:var(--ink)}
-.app .rail .sp{flex:1}
 .app .chat{width:var(--w-chat);flex:none;background:var(--dark);display:flex;flex-direction:column;
   min-height:0;border-right:1px solid var(--line)}
 .app .chat-h{padding:.5rem .8rem;border-bottom:1px solid var(--line);flex:none;display:flex;gap:.4rem;

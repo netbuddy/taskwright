@@ -26,7 +26,7 @@ import { ownMaterials } from "../model/docx";
 import {
   SCOPE_MAX_LENGTH, blockedLine, existingFlowItem, firstMessage, inputBlocks, missingInput, prerequisiteBody, startButton, startFields, startSubtitle, startTarget, targetName,
 } from "../model/startInput";
-import { composeScope, pickRows, pickedScope } from "../model/pendingWork";
+import { composeScope, pickRows, pickedScope, showsPendingWork } from "../model/pendingWork";
 import { go, href } from "../router";
 import "../styles/task-page.css";
 
@@ -79,7 +79,7 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
 
   const back = <div className="tp-back"><a href={href.task(taskId)} data-testid="back-to-start">‹ 返回任务起点</a></div>;
   const frame = (name: string | undefined, where: string, body: React.ReactNode) => (
-    <TaskFrame taskId={taskId} taskName={name} where={where} sessions={task?.sessions ?? []}>
+    <TaskFrame taskId={taskId} taskName={name} where={where} sessions={task?.sessions ?? []} task={task} pending={!!task && showsPendingWork(task, status)}>
       <div className="tp-page" data-testid="start-input-page">{back}{body}</div>
     </TaskFrame>
   );
