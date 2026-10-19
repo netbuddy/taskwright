@@ -51,7 +51,7 @@
  * 就不再核对也不再写入，原样交回第一次的结果并注明「之前已经保存过」（savedBefore）；修订表上另有唯一索引兜底（schema.ts）。
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER, EVENT_REVISION_SAVED, databasePath, dump, emit, load, wallClockText } from "./db.ts";
@@ -78,7 +78,7 @@ import {
 import { DIAGRAM_ID, type DiagramRecord, latestVersion as latestDiagramVersion, readDiagrams } from "./diagram.ts";
 import { parsePdfLocator } from "./pdf_locations.ts";
 import { PDF_SPAN_LIMIT, pdfProjectionUnits, pdfUnitIndex, pdfUnitsWith, placePdfExcerpt } from "./pdf_source.ts";
-import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, withTaskDatabase } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, EXECUTOR_SOURCE_KINDS, NoDatabaseYet, SOURCE_DOCUMENT, ELEMENT_ITEM, SOURCE_FIGURE, SOURCE_ITEM, SOURCE_SUPPLEMENT, SOURCE_KINDS, SOURCE_USER_EDIT, SOURCE_USER_WORDS, supportOf, supportedTexts, withTaskDatabase } from "./schema.ts";
 import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
@@ -95,6 +95,8 @@ import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 export interface Support {
   field: string;
   index?: number;
+  /** 只有种类为「助手补充」时有：这一处补进正文的字串，每个都逐字出现在这一处的正文里；页面据此标出哪里是助手补的。 */
+  inserted?: string[];
 }
 
 /** 一条来源：种类、出处、摘录，以及它支持哪几处。supports 为空列表表示支持整个条目。 */
@@ -154,6 +156,7 @@ interface SourceRow {
   field_index: number | null;
   normalized_value: string | null;
   depends_revision?: number | null;
+  inserted?: string | null;
 }
 
 /** 发起方写成中文。拒绝原因的事实一层也给人看，所以执行者写作「助手」。 */
@@ -165,7 +168,7 @@ function actorText(actor: string): string {
 
 /** 核对通过之后，一个操作要写进库里的样子。 */
 type Planned =
-  | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[] }
+  | { op: "add"; collection: CollectionDef; fields: Fields; sources: Source[]; notes: string[] }
   | { op: "update"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes: string[] }
   | { op: "delete"; itemId: string; collection: string; fromRevision: number }
   | { op: "restore"; itemId: string; collection: string; fromRevision: number; fields: Fields; sources: Source[]; notes: string[] };
@@ -324,7 +327,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const sourcesOf = (itemId: string, revisionNo: number): Source[] => {
     const rows = db
       .prepare(
-        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision FROM item_source " +
+        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision, inserted FROM item_source " +
           "WHERE task_id = ? AND item_id = ? AND revision_no = ? AND element_kind = ? ORDER BY position, support_no",
       )
       .all(taskId, itemId, revisionNo, ELEMENT_ITEM) as unknown as SourceRow[];
@@ -337,9 +340,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         if (row.depends_revision !== null && row.depends_revision !== undefined) source.depends_revision = row.depends_revision;
         byPosition.set(row.position, source);
       }
-      if (row.field !== null) {
-        source.supports.push(row.field_index === null ? { field: row.field } : { field: row.field, index: row.field_index });
-      }
+      if (row.field !== null) source.supports.push(supportOf(row.field, row.field_index, row.inserted ?? null));
     }
     return [...byPosition.values()];
   };
@@ -496,20 +497,22 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         }
       }
       if (raw.base_revision !== undefined) errors.push(problem(refusalText("save_revision.add_base_revision_given")));
-      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, null));
+      const notes: string[] = [];
+      const sources = checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, null), undefined, [], false,
+        relocatedNote(number, notes));
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
       if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER) {
         for (const one of pageProblems(fields, sources)) errors.push(problemText(one));
       }
       if (sources && call.actor !== ACTOR_USER && keepPendingField(collection) === null) {
-        for (const one of quotedProblems(fields, sources)) errors.push(problemText(one));
+        for (const one of insertedProblems(fields, sources)) errors.push(problemText(one));
       }
       if (errors.length > 0) {
         problems.push(reasonOf(label, fillText("part.subject_add", { collection: collection.name }), errors));
         return;
       }
-      planned.push({ op: "add", collection, fields, sources: sources! });
+      planned.push({ op: "add", collection, fields, sources: sources!, notes });
       const newId = [...addedAt].find(([, at]) => at === number)?.[0];
       if (newId) written.set(newId, { collection: collection.name, fields });
       return;
@@ -601,10 +604,11 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     // 旧的「用户直接修改」当作不存在（见文件开头）。用户的操作（直接修改、撤销）都交来完整的来源，不经这里沿用，撤销照原样恢复。
     const previousSources = sourcesOf(itemId, current.revision_no).filter((one) => one.kind !== SOURCE_USER_EDIT);
     const inherited = raw.sources === undefined;
-    const given = inherited ? null
-      : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, itemId), undefined, previousSources);
-    let sources = inherited ? previousSources : given;
     const notes: string[] = [];
+    const given = inherited ? null
+      : checkSources(raw.sources, true, errors, call.sessionId, userMessages, call.actor, materialText, itemSources(number, itemId), undefined, previousSources, false,
+        relocatedNote(number, notes));
+    let sources = inherited ? previousSources : given;
     const editsFields = isObject(raw.fields) && Object.keys(raw.fields).length > 0;
     if (call.actor !== ACTOR_USER && editsFields && (inherited || given)) {
       // 执行者修改字段：原来的来源按内容跟着走（lib/source_carry.ts），没改的内容来源一律保留，删掉的项上的去掉，
@@ -628,7 +632,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     }
     // 只核对这次新给的来源；沿用下来的不重新核对。
     if (given && call.actor !== ACTOR_USER && op !== "restore" && keepPendingField(collection) === null) {
-      for (const one of quotedProblems(merged, given)) errors.push(problemText(one));
+      for (const one of insertedProblems(merged, given)) errors.push(problemText(one));
     }
     if (op !== "restore" && errors.length === 0 && sameJson(merged, before) && sameJson(sources, previousSources)) {
       errors.push(problem(refusalText("save_revision.update_noop", { item: itemId, revision: current.revision_no })));
@@ -831,40 +835,40 @@ function listFieldsOf(collection: CollectionDef): Set<string> {
   return new Set(collection.fields.filter((one) => one.type === FIELD_TEXT_LIST || one.type === FIELD_ITEM_REF).map((one) => one.name));
 }
 
-/** 理由里用直角引号引出的各段字；空的不算。 */
-const QUOTED = /「([^「」]+)」/g;
-
 /**
- * 助手补充的来源，理由里用直角引号引出的字要逐字出现在它支持的那几处正文里（没有写支持哪几处时，在这个条目任何一个字段的文字里）：
- * 页面靠这几个字在正文里标出哪里是助手补的，引的与正文不一样就标不出来。理由里没有直角引号的不核对。
- * 问题条目不核对（那里的助手补充写的是发现了什么，不是补进正文的字），由调用方跳过。返回不对的地方，每处是原因码与两层文字。
+ * 助手补充的来源要说清它往正文里补了什么：supports 里至少一处带非空的 inserted，每个字串逐字出现在那一处的正文里
+ * （字段，或列表型字段的那一项）。页面靠 inserted 在正文里标出哪里是助手补的。理由是随意写的话，不再从里面解析引号。
  */
-export function quotedProblems(fields: Fields, sources: readonly Source[]): RefusalText[] {
-  const textsOf = (value: unknown): string[] =>
-    typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((one): one is string => typeof one === "string") : [];
+export function insertedProblems(fields: Fields, sources: readonly Source[]): RefusalText[] {
   const out: RefusalText[] = [];
   for (const source of sources) {
     if (source.kind !== SOURCE_SUPPLEMENT) continue;
-    const places = source.supports.length === 0 ? Object.values(fields).flatMap(textsOf)
-      : source.supports.flatMap((at) => {
-        const value = fields[at.field];
-        return at.index === undefined || !Array.isArray(value) ? textsOf(value) : textsOf(value[at.index]);
-      });
-    const where = source.supports.length === 0 ? fillText("part.where_item_text") : fillText("part.where_supported_text");
-    for (const [, quoted] of source.excerpt.matchAll(QUOTED)) {
-      if (places.some((text) => text.includes(quoted))) continue;
-      out.push(refusalText("save_revision.supplement_quote_not_in_text", { source: quoteLabel(source), quoted, where }));
+    if (!source.supports.some((at) => at.inserted?.length)) {
+      out.push(refusalText("save_revision.supplement_inserted_missing", { source: quoteLabel(source) }));
+      continue;
+    }
+    for (const at of source.supports) {
+      const texts = supportedTexts(fields, at.field, at.index);
+      const place = at.index === undefined ? fillText("result.save_revision.field_place", { field: at.field })
+        : fillText("result.save_revision.field_item_place", { field: at.field, no: at.index + 1 });
+      for (const one of at.inserted ?? []) {
+        if (!texts.some((text) => text.includes(one))) out.push(refusalText("save_revision.supplement_inserted_not_in_text", { source: quoteLabel(source), inserted: one, place }));
+      }
     }
   }
   return out;
 }
 
-/** 结果里说到一条来源：摘录（长的只引前 30 字）加种类。 */
 function quoteLabel(source: Source): string {
   return fillText("part.quote_label", { excerpt: quoteOf(source.excerpt), kind: source.kind });
 }
 
 /** 执行者改写了的内容上还留着原来的来源时，写在保存结果末尾的一句提醒：哪几处、哪几条，以及怎样去掉。 */
+/** 第 no 个操作里一条 Word 来源的出处被代改到同一行另一格时，记进保存结果末尾的那句话。 */
+function relocatedNote(no: number, notes: string[]): Relocate {
+  return (where, from, n, excerpt) => notes.push(fillText("result.save_revision.locator_moved", { no, where, from, n, excerpt }));
+}
+
 function rewrittenNote(itemId: string, list: RewrittenSupport[]): string {
   const where = (one: Support) => (one.index === undefined
     ? fillText("result.save_revision.field_place", { field: one.field }) : fillText("result.save_revision.field_item_place", { field: one.field, no: one.index + 1 }));
@@ -1042,7 +1046,16 @@ function checkFields(
  * 按出处读文件全文；knowledgeProblem 说明一条知识库出处为什么读不到：返回一条带键的错误（where 与 locator 是拒绝语里的两个值），
  * 读得到或不是知识库出处时为 null。
  */
-type MaterialReader = ((locator: string) => string | null) & { knowledgeProblem: (locator: string, where: string, shown: string) => string | null };
+type MaterialReader = ((locator: string) => string | null) & {
+  knowledgeProblem: (locator: string, where: string, shown: string) => string | null;
+  /** 材料目录第一层里除 path 所指那份之外的材料原件（Word、PDF、文本；派生的文字版与分段清单不算），按文件名排；出处写法是「材料目录/文件名」。 */
+  others?: (path: string) => { name: string; locator: string }[];
+};
+
+/** 材料目录第一层里算作材料原件的文件：Word、PDF、文本。 */
+const MATERIAL_FILE = /\.(docx|pdf|md|txt)$/i;
+/** 材料旁边派生的文字版（Word 的 .docx.md、旧的 .docx.txt，PDF 的 .pdf.md），不算一份材料。 */
+const DERIVED_FILE = /\.(docx\.(md|txt)|pdf\.md)$/i;
 
 /** 知识库出处读不到时「怎么办」一层常用的一句。 */
 const copyKnowledgeLocator = () => fillText("part.copy_kb_locator");
@@ -1108,6 +1121,21 @@ function materialReader(workspaceDir: string, materialsDir: string, knowledgeRoo
     const parsed = parseKnowledgeLocator(locator)!;
     return problem(refusalText("source.knowledge_locator_unreadable", { where, locator: shown, document: parsed.name, name: knowledge().names.get(parsed.library)!, copy: copyKnowledgeLocator() }));
   };
+  // 材料目录的清单，用到时读一次；各份的文字版经上面的 reader 读，同一次保存里每份只读一遍。
+  const dir = materialsDir.replace(/\/+$/, "");
+  let listing: string[] | null = null;
+  reader.others = (path) => {
+    if (listing === null) {
+      try {
+        listing = readdirSync(join(base, dir), { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => entry.name)
+          .filter((name) => MATERIAL_FILE.test(name) && !DERIVED_FILE.test(name)).sort();
+      } catch {
+        listing = [];
+      }
+    }
+    const self = basename(path);
+    return listing.filter((name) => name !== self).map((name) => ({ name, locator: `${dir}/${name}` }));
+  };
   return reader;
 }
 
@@ -1146,6 +1174,54 @@ function quoteOf(excerpt: string): string {
   return flat.length > EXCERPT_QUOTE_LIMIT ? `${flat.slice(0, EXCERPT_QUOTE_LIMIT)}…` : flat;
 }
 
+/** 摘录在出处那一份材料里找不到、在另一份材料里找到的一处：哪份、第几段或第几页第几块（文本材料没有位置）、出处的写法。 */
+interface OtherPlace {
+  name: string;
+  label: string;
+  locator: string;
+}
+
+/** 摘录在另一份材料里找到时，拒绝文字里最多列出这么多处。 */
+const OTHER_FILE_LIMIT = 3;
+
+/**
+ * 出处那一份材料里找不到摘录时，到材料目录第一层的其余材料里逐字找：Word 材料按段（与 checkDocxSource 同一个比法），
+ * PDF 材料按页与块（与 checkPdfSource 同一个比法），文本材料在全文里找。知识库的出处不调用它：不跨库找。
+ */
+function otherFilePlaces(materialText: MaterialReader, path: string, raw: string): OtherPlace[] {
+  const excerpt = raw.replace(/\r\n/g, "\n").trim();
+  const places: OtherPlace[] = [];
+  for (const other of materialText.others?.(path) ?? []) {
+    if (/\.docx$/i.test(other.name)) {
+      const suffix = PROJECTION_SUFFIXES.find((s) => materialText(`${other.locator}${s}`) !== null);
+      if (!suffix) continue;
+      for (const n of paragraphsWith(projectionParagraphs(materialText(`${other.locator}${suffix}`)!), excerpt)) {
+        places.push({ name: other.name, label: fillText("part.docx_label", { n }), locator: `${other.locator}#p${n}` });
+      }
+    } else if (/\.pdf$/i.test(other.name)) {
+      const projection = materialText(`${other.locator}.md`);
+      if (projection === null) continue;
+      for (const one of pdfUnitsWith(pdfProjectionUnits(projection), excerpt)) {
+        places.push({ name: other.name, label: fillText("part.pdf_label", one), locator: `${other.locator}#p${one.page}-${one.block}` });
+      }
+    } else {
+      const text = materialText(other.locator);
+      if (text !== null && lineEndsOnly(text).includes(lineEndsOnly(excerpt).trim())) places.push({ name: other.name, label: "", locator: other.locator });
+    }
+  }
+  return places;
+}
+
+/** 摘录在另一份材料里找到时拒绝文字要的几个值：列出前几处，指引写第一处的出处，有好几处时请执行者按上下文确认。 */
+function otherFileValues(places: OtherPlace[]): { places: string; more: string; locator: string; confirm: string } {
+  return {
+    places: places.slice(0, OTHER_FILE_LIMIT).map((one) => fillText("part.other_file_place", { name: one.name, label: one.label })).join("、"),
+    more: places.length > OTHER_FILE_LIMIT ? fillText("part.more_places", { count: places.length }) : "",
+    locator: places[0].locator,
+    confirm: places.length > 1 ? fillText("part.other_file_confirm") : "",
+  };
+}
+
 /**
  * 核对来源列表：至少一条，每条三项齐全、种类是三者之一，supports 的形状对。通过就返回整理好的列表。
  * 种类为「用户的话」的来源，出处在这里代填（见文件开头的说明）；supports 所指的字段是否存在、
@@ -1174,6 +1250,7 @@ function checkSources(
   whereOf: (index: number) => string = (index) => fillText("part.source_no", { no: index + 1 }),
   previous: readonly Source[] = [],
   figure = false,
+  relocate?: Relocate,
 ): Source[] | null {
   if (raw === undefined || raw === null) {
     if (required) errors.push(problem(refusalText("source.missing")));
@@ -1245,6 +1322,11 @@ function checkSources(
     }
     if (figure && supports.length > 0) {
       errors.push(problem(refusalText("source.supports_in_figure", { where })));
+      ok = false;
+      return;
+    }
+    if (!supplement && supports.some((at) => at.inserted)) {
+      errors.push(problem(refusalText("source.inserted_not_supplement", { where, kind: SOURCE_SUPPLEMENT })));
       ok = false;
       return;
     }
@@ -1333,7 +1415,8 @@ function checkSources(
       return;
     }
     if (one.kind === SOURCE_DOCUMENT && actor !== ACTOR_USER && materialText && docx) {
-      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors, noun);
+      const found = checkDocxSource(docx[1], docx[2] ? Number(docx[2]) : null, one.excerpt as string, where, materialText, errors, noun,
+        relocate && ((from, n, excerpt) => relocate(where, from, n, excerpt)));
       if (found === null) {
         ok = false;
         return;
@@ -1356,7 +1439,10 @@ function checkSources(
       }
       if (!lineEndsOnly(text).includes(excerpt)) {
         const how = { noun, exact: exactExcerpt(noun), several: severalPlaces(noun) };
-        errors.push(BLANK_LINE.test(excerpt)
+        const others = inKnowledge ? [] : otherFilePlaces(materialText, locator, excerpt);
+        errors.push(others.length > 0
+          ? problem(refusalText("source.material_excerpt_in_other_file", { where, excerpt: quoteOf(excerpt), file: basename(locator), ...otherFileValues(others) }))
+          : BLANK_LINE.test(excerpt)
           ? problem(refusalText("source.material_excerpt_not_contiguous", { where, file: basename(locator), ...how }))
           : problem(refusalText("source.material_excerpt_not_found", { where, excerpt: quoteOf(excerpt), file: basename(locator), ...how })));
         ok = false;
@@ -1370,6 +1456,16 @@ function checkSources(
 }
 
 /**
+ * 保存修订核对 Word 来源时，摘录不在写的那一段、只在同一表格行的另一格里（全文件只此一处）：不拒绝，把出处改到那一段，
+ * 并经这个函数在保存结果末尾说一句。where 是说到第几条来源的那几个字，from 是原来的出处，n 是改到的段落号，excerpt 是引给执行者看的摘录。
+ * 保存图与回复的依据不给它，照旧拒绝。
+ */
+type Relocate = (where: string, from: string, n: number, excerpt: string) => void;
+
+/** 表格里一段的位置「表 t 行 r 列 c」拆成行（表与行）与列。 */
+const TABLE_CELL = /^(表 \d+ 行 \d+) 列 (\d+)$/;
+
+/**
  * 核对一条出处是 Word 材料的来源：出处要带段落号，摘录要在那一段里（或从那一段起跨到其后相邻至多 5 段），比较时去掉全部空白。
  * 不在那里就拒绝：摘录是一段连续的原文时，指出它在别处的段落号（只有一处时）或按远近列几处请执行者确认；摘录里有空行、
  * 又不是连续的一段时，说明引几处要写几条来源。通过时返回规范写法的出处（x.docx#pN），不通过时把原因记进 errors 并返回 null。
@@ -1379,9 +1475,10 @@ function checkDocxSource(
   n: number | null,
   raw: string,
   where: string,
-  materialText: (locator: string) => string | null,
+  materialText: MaterialReader,
   errors: string[],
   noun: Noun = "材料",
+  relocate?: (from: string, n: number, excerpt: string) => void,
 ): string | null {
   const name = basename(path);
   const suffix = PROJECTION_SUFFIXES.find((s) => materialText(`${path}${s}`) !== null);
@@ -1412,12 +1509,22 @@ function checkDocxSource(
   const labelOf = (m: number) => `${fillText("part.docx_label", { n: m })}${positions.has(m) ? `·${positions.get(m)}` : ""}`;
   const elsewhere = paragraphsWith(paragraphs, excerpt).filter((m) => m !== n);
   const head = fillText("part.docx_head", { where, excerpt: quoteOf(excerpt), name, label: labelOf(n) });
+  let others: OtherPlace[] | undefined;
+  // 表格一行每格一个段落号，执行者隔几轮凭记忆回填常错到同一行的另一格：只此一处又在同一行时，替它改过来。
+  const cell = (m: number) => TABLE_CELL.exec(positions.get(m) ?? "");
+  const [here, there] = elsewhere.length === 1 ? [cell(n), cell(elsewhere[0])] : [null, null];
+  if (relocate && here && there && here[1] === there[1] && here[2] !== there[2]) {
+    relocate(`${path}#p${n}`, elsewhere[0], quoteOf(excerpt));
+    return `${path}#p${elsewhere[0]}`;
+  }
   if (elsewhere.length === 1) {
     errors.push(problem(refusalText("source.docx_excerpt_elsewhere_one", { head, label: labelOf(elsewhere[0]), path, n: elsewhere[0] })));
   } else if (elsewhere.length > 1) {
     const near = [...elsewhere].sort((a, b) => Math.abs(a - n) - Math.abs(b - n) || a - b).slice(0, NEARBY_LIMIT).sort((a, b) => a - b);
     const more = elsewhere.length > near.length ? fillText("part.more_places", { count: elsewhere.length }) : "";
     errors.push(problem(refusalText("source.docx_excerpt_elsewhere_many", { head, labels: near.map(labelOf).join("、"), more })));
+  } else if (noun === "材料" && (others ??= otherFilePlaces(materialText, path, excerpt)).length > 0) {
+    errors.push(problem(refusalText("source.docx_excerpt_in_other_file", { head, ...otherFileValues(others) })));
   } else if (BLANK_LINE.test(excerpt)) {
     // 摘录里有空行、整段在材料里哪儿都不是连续的一段：多半是把不相邻的几处写进了一条来源。
     errors.push(problem(refusalText("source.docx_excerpt_not_contiguous", { where, name, n, span: SPAN_LIMIT, several: severalPlaces(noun) })));
@@ -1442,7 +1549,7 @@ function checkPdfSource(
   path: string,
   raw: string,
   where: string,
-  materialText: (locator: string) => string | null,
+  materialText: MaterialReader,
   errors: string[],
   noun: Noun = "材料",
 ): string | null {
@@ -1491,6 +1598,7 @@ function checkPdfSource(
   // 摘录在别处：只有一处时指给它；有好几处时不替模型挑，按离出处那一块的远近列出几处，请它按上下文确认。
   const here = pdfUnitIndex(units, page, block);
   const elsewhere = pdfUnitsWith(units, excerpt).filter((one) => !(one.page === page && one.block === block));
+  let others: OtherPlace[] | undefined;
   if (elsewhere.length === 1) {
     errors.push(problem(refusalText("source.pdf_excerpt_elsewhere_one", { head, label: labelOf(elsewhere[0]), path, page: elsewhere[0].page, block: elsewhere[0].block })));
   } else if (elsewhere.length > 1) {
@@ -1499,6 +1607,8 @@ function checkPdfSource(
       .sort((a, b) => pdfUnitIndex(units, a.page, a.block) - pdfUnitIndex(units, b.page, b.block));
     const more = elsewhere.length > near.length ? fillText("part.more_places", { count: elsewhere.length }) : "";
     errors.push(problem(refusalText("source.pdf_excerpt_elsewhere_many", { head, labels: near.map(labelOf).join("、"), more })));
+  } else if (noun === "材料" && (others ??= otherFilePlaces(materialText, path, excerpt)).length > 0) {
+    errors.push(problem(refusalText("source.pdf_excerpt_in_other_file", { head, ...otherFileValues(others) })));
   } else if (BLANK_LINE.test(excerpt)) {
     errors.push(problem(refusalText("source.pdf_excerpt_not_contiguous", { where, name, label: labelOf({ page, block }), span: PDF_SPAN_LIMIT, several: severalPlaces(noun) })));
   } else {
@@ -1523,16 +1633,24 @@ function checkSupportShape(raw: unknown, where: string, errors: string[]): Suppo
       ok = false;
       return;
     }
+    const support: Support = { field: one.field };
     if (one.index !== undefined && one.index !== null) {
       if (typeof one.index !== "number" || !Number.isInteger(one.index) || one.index < 0) {
         errors.push(problem(refusalText("source.supports_index_invalid", { at, given: String(JSON.stringify(one.index)) })));
         ok = false;
         return;
       }
-      kept.push({ field: one.field, index: one.index });
-    } else {
-      kept.push({ field: one.field });
+      support.index = one.index;
     }
+    if (one.inserted !== undefined && one.inserted !== null) {
+      if (!Array.isArray(one.inserted) || one.inserted.some((text) => typeof text !== "string" || text.trim() === "")) {
+        errors.push(problem(refusalText("source.supports_inserted_invalid", { at })));
+        ok = false;
+        return;
+      }
+      if (one.inserted.length > 0) support.inserted = one.inserted as string[];
+    }
+    kept.push(support);
   });
   return ok ? kept : null;
 }
@@ -1665,8 +1783,8 @@ function write(
     "INSERT INTO item_version (task_id, item_id, revision_no, fields, event_seq) VALUES (?, ?, ?, ?, ?)",
   );
   const insertSource = db.prepare(
-    "INSERT INTO item_source (task_id, element_kind, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value, depends_revision) " +
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO item_source (task_id, element_kind, item_id, revision_no, position, support_no, kind, locator, excerpt, field, field_index, event_seq, normalized_value, depends_revision, inserted) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const markDeleted = db.prepare(
     "UPDATE item SET deleted_in_revision = ?, deleted_event_seq = ? WHERE task_id = ? AND item_id = ?",
@@ -1695,12 +1813,13 @@ function write(
           source.kind, source.locator, source.excerpt, support?.field ?? null, support?.index ?? null, seq, source.normalized_value ?? null,
           // 依据的条目在这一次保存里才新增或修改：它的修订号就是这一次的。
           source.depends_revision === THIS_REVISION ? revisionNo : source.depends_revision ?? null,
+          support?.inserted ? JSON.stringify(support.inserted) : null,
         );
       });
     });
   });
 
-  const notes = planned.flatMap((one) => (one.op === "update" || one.op === "restore" ? one.notes : []));
+  const notes = planned.flatMap((one) => (one.op === "delete" ? [] : one.notes));
   return {
     text: savedText(taskId, revisionNo, outcomes) + notes.map((one) => `\n${one}`).join(""),
     details: {

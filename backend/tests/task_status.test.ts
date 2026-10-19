@@ -81,7 +81,7 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   // 工作项：就是夹具启动的那一个，带属于它的会话与最近有动静的那一条；没有状态、没有结束的时刻，也没有最近结束的一列。
   assert.deepEqual(status.work_items.map(({ started_at: _at, ...one }) => one), [{
     record_id: 1, kind: "flow", name: "需求分析", activity: "writing", activity_name: "写条目", node: "writing", ordinal: 4, flow: "analysis", scope: null,
-    session_ids: ["s"], session_count: 1, latest_session: sessions[0], last_active_at: "2026-10-12T09:00:00+08:00", session_name: "需求分析 · 写条目" }]);
+    session_ids: ["s"], session_count: 1, latest_session: sessions[0], last_active_at: "2026-10-12T09:00:00+08:00", session_name: "需求分析" }]);
   assert.match(String(status.work_items[0].started_at), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   assert.equal("recent_done" in status, false);
   // 不给会话时按自由讨论的会话算：当前活动是空闲、没有提议；工作项照样列出来，只是不知道哪些会话还在，全部算上，没有名字与动静。
@@ -171,7 +171,7 @@ test("工作项的清单：全部工作项按最近有动静的倒序，各带�
   // 两个工作项，按最近有动静的倒序：需求分析有两条会话，最近有动静的是 s3；澄清的那条会话还没有说过话，取它自己，按启动的时刻（更早）排在后面。
   assert.deepEqual(alone.work_items.map((one) => [one.record_id, one.kind, one.name, one.node, one.ordinal, one.scope, one.session_ids, one.session_count,
     one.latest_session, one.last_active_at, one.session_name]), [
-    [1, "flow", "需求分析", "writing", 4, null, ["s", "s3"], 2, sessions[1], "2026-10-12T12:00:00+08:00", "需求分析 · 写条目"],
+    [1, "flow", "需求分析", "writing", 4, null, ["s", "s3"], 2, sessions[1], "2026-10-12T12:00:00+08:00", "需求分析"],
     [2, "activity", "澄清", null, null, "只问续借", ["s2"], 1, sessions[2], null, "澄清 · 只问续借"]]);
   // 活动目录里澄清与需求分析各带一个工作项：澄清照样可以再启动，流程都不能启动，带着现有的那一个。
   assert.deepEqual([alone.catalog!.activities[1].active_count, alone.catalog!.activities[1].enabled, alone.catalog!.flows[0].active_count, alone.catalog!.flows[0].enabled,

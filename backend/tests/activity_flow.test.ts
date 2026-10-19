@@ -108,7 +108,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     const rowOf = async (id: string) => (await sessions()).find((one) => one.session_id === id)!;
     // 那条新会话在建立时就按工作项起了名；任务状况里它的当前活动是需求分析的核读材料。
     assert.deepEqual([(await rowOf(flowSession)).name, (await rowOf(flowSession)).work_item],
-      ["需求分析 · 核读材料", { record_id: 1, kind: "flow", name: "需求分析", activity: "reading", flow: "analysis" }]);
+      ["需求分析", { record_id: 1, kind: "flow", name: "需求分析", activity: "reading", flow: "analysis" }]);
     const inFlow = await status(flowSession);
     assert.deepEqual([inFlow.activity.kind, inFlow.activity.key, inFlow.activity.ordinal, inFlow.activity.flow, inFlow.activity.moved_by], ["stage", "reading", 1, "analysis", "user"]);
 
@@ -127,7 +127,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     assert.deepEqual([reading.current, reading.node, reading.flow, reading.moved_by, reading.reason, reading.work_item.record_id, reading.work_item.kind, reading.work_item.name, "status" in reading.work_item],
       ["reading", "reading", "analysis", "user", "", 1, "flow", "需求分析", false]);
     // 说过话、会话文件写出来之后，名字仍是按工作项起的那一个，没有被第一句话顶掉。
-    assert.equal((await rowOf(flowSession)).name, "需求分析 · 核读材料");
+    assert.equal((await rowOf(flowSession)).name, "需求分析");
     // 原来那条会话照旧是自由讨论，不属于任何工作项。
     assert.deepEqual([(await stageOf(session)).current, (await rowOf(session)).work_item], ["idle", null]);
 
@@ -179,7 +179,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     const made = (await call("POST", `/api/v1/tasks/${taskId}/sessions`, { activity_record_id: 1 })).body as Dict;
     const nextSession = made.session_id as string;
     assert.deepEqual([made.activity_record_id, [flowSession, aloneSession, session].includes(nextSession)], [1, false]);
-    assert.deepEqual([(await rowOf(nextSession)).name, (await rowOf(nextSession)).work_item.record_id, (await status(nextSession)).activity.key], ["需求分析 · 核读材料", 1, "reading"]);
+    assert.deepEqual([(await rowOf(nextSession)).name, (await rowOf(nextSession)).work_item.record_id, (await status(nextSession)).activity.key], ["需求分析", 1, "reading"]);
     await sayIn(nextSession, "接着读。", "c-5");
     assert.ok(systemText(requests().at(-1)!).includes("# 现在这个阶段：核读材料\n"));
     const inNext = await messagesOf(nextSession);

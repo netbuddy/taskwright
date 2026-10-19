@@ -23,7 +23,9 @@ function workspace(definition: unknown = overallDefinition()): string {
 /** 新增一页主题：没写的必填项给缺省值，没写来源就是一条文档原文（整页都出自它）。 */
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
   ({ op: "add", collection: "业务说明", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
-const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
+/** 助手补充的来源：补进正文的字串写在第一处支持上。 */
+const SUPPLEMENT = (supports: Record<string, unknown>[], inserted = "保留期") =>
+  ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports: supports.map((one, i) => (i === 0 ? { ...one, inserted: [inserted] } : one)) });
 const fieldsOf = (dir: string, id: string) =>
   JSON.parse(query<{ fields: string }>(dir, "SELECT fields FROM item_version WHERE item_id = ? ORDER BY revision_no DESC LIMIT 1", id)[0].fields);
 const taskId = (dir: string) => query<{ task_id: string }>(dir, "SELECT task_id FROM task")[0].task_id;
@@ -75,20 +77,20 @@ test("已经定下的每一条都要有出处：来源指到那一条、指到�
   ])] });
   // 第二条没有来源指到。
   assert.throws(() => saveRevision(callIn(dir), { operations: [page({ 标题: "续借", 已经定下的: settled }, [
-    { ...SOURCE, supports: [{ field: "它是什么" }, { field: "已经定下的", index: 0 }] }, SUPPLEMENT([{ field: "标题" }]),
+    { ...SOURCE, supports: [{ field: "它是什么" }, { field: "已经定下的", index: 0 }] }, SUPPLEMENT([{ field: "标题" }], "续借"),
   ])] }), /「已经定下的」的第 2 条「保留期是 3 天。」没有出处[^]*怎么办：每一条已经定下的都要有出处：在它出自的那条来源的 supports 里写 \{"field": "已经定下的", "index": 1\}/);
   // 修改时加了一条已定而没有给它出处：沿用下来的来源各有所指，新的一条没有，拒绝；给了就过。
   const more = [...settled, "保留期内这本书不能借给别人。"];
   assert.throws(() => saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-002", base_revision: 2, fields: { 已经定下的: more } }] }),
     /「已经定下的」的第 3 条「保留期内这本书不能借给别人。」没有出处/);
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-002", base_revision: 2, fields: { 已经定下的: more },
-    sources: [{ kind: "助手补充", excerpt: "由「保留」的意思推出来的，等用户确认。", supports: [{ field: "已经定下的", index: 2 }] }] }] });
+    sources: [{ kind: "助手补充", excerpt: "由「保留」的意思推出来的，等用户确认。", supports: [{ field: "已经定下的", index: 2, inserted: ["不能借给别人"] }] }] }] });
   assert.equal(fieldsOf(dir, "OA-002").已经定下的.length, 3);
   // 别的集合的列表字段没有这条要求（先有一页合格的主题，别的集合才能新增条目）。
   saveRevision(callIn(dir), { operations: [READY_PAGE] });
   viewReadyPage(dir);
   saveRevision(callIn(dir), { operations: [{ op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["选书", "预约"] },
-    sources: [{ ...SOURCE, supports: [{ field: "名称" }] }, SUPPLEMENT([{ field: "步骤", index: 0 }])] }] });
+    sources: [{ ...SOURCE, supports: [{ field: "名称" }] }, SUPPLEMENT([{ field: "步骤", index: 0 }], "选书")] }] });
 });
 
 test("完成条件之外的提示：业务说明里在用而还没有贴标签的主题；贴了标签、已废弃的不算；没有这个集合的任务没有这一种提示", () => {

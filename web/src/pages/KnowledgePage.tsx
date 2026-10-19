@@ -11,6 +11,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
 import type { EmbeddedLibrary, KnowledgeKind, KnowledgeOverview } from "../api/types";
 import { KnowledgeSearchBox } from "../components/KnowledgeSearchBox";
+import { KnowledgeDocModal } from "../components/work/KnowledgeDocModal";
 import { Shell } from "../components/Shell";
 import { useToast } from "../components/Toasts";
 import { useService } from "../components/ServiceControls";
@@ -20,6 +21,7 @@ import {
   usageText,
 } from "../model/knowledge";
 import { go, href } from "../router";
+import { knowledgeLocator } from "../../../agent/src/lib/knowledge_locator.ts";
 
 /** 新建库与改名共用的填名字对话框。 */
 type NameDialog = { mode: "create" } | { mode: "rename"; id: string; name: string };
@@ -31,6 +33,8 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
   const [name, setName] = useState("");
   const [removingLib, setRemovingLib] = useState<EmbeddedLibrary | null>(null);
   const [removingDoc, setRemovingDoc] = useState<string | null>(null);
+  // 「查看」打开的那份文档的出处（knowledge/知识库编号/文档名）：Word 与 PDF 按原样分页显示，与点来源看原文同一个对话框。
+  const [viewing, setViewing] = useState<string | null>(null);
   const toast = useToast();
   const service = useService();
   const kinds = service.info?.knowledge_upload?.kinds ?? [];
@@ -216,7 +220,10 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
                               {embeddingStatusText(d.embedding)}
                               {failed && embedding.model !== null && <a role="button" className="retry" onClick={() => void embed(current.id, d.name)}>重试</a>}
                             </td>
-                            <td><a role="button" onClick={() => setRemovingDoc(d.name)}>删除</a></td>
+                            <td className="ops">
+                              <a role="button" onClick={() => setViewing(knowledgeLocator(current.id, d.name))} data-testid={`kb-doc-view-${d.name}`}>查看</a>
+                              <a role="button" onClick={() => setRemovingDoc(d.name)}>删除</a>
+                            </td>
                           </tr>
                           {failed && <tr className="why"><td colSpan={6} data-testid={`kb-doc-embedding-error-${d.name}`}>{d.embedding.error}</td></tr>}
                         </Fragment>
@@ -244,6 +251,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
         onOk={() => void removeDocument()} okText="删除" cancelText="取消" destroyOnHidden>
         <p>删除之后，已经引用它的条目上的来源仍然保留，出处旁会写明这份文档已经不在知识库里。</p>
       </Modal>
+      <KnowledgeDocModal request={viewing ? { locator: viewing, excerpt: "" } : null} libraries={libs} onClose={() => setViewing(null)} />
     </Shell>
   );
 }

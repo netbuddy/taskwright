@@ -27,7 +27,7 @@ const PAGES = [
   page({ 标题: "读者", 它是什么: "办了借书证、来馆里借书的人。", 标签: ["角色"] }),
   page({ 标题: "借阅记录", 它是什么: "读者借一本书留下的记录，有在借与已还两种状态。", 标签: ["概念"] }),
   page({ 标题: "借书证", 它是什么: "读者在馆里的身份凭证。", 标签: ["概念"], 已经定下的: ["一人一证。"] },
-    [{ ...FROM_MATERIAL, supports: [{ field: "它是什么" }] }, { kind: "助手补充", excerpt: "图书馆通常这样规定，我补了「一人一证。」", supports: [{ field: "已经定下的", index: 0 }] }]),
+    [{ ...FROM_MATERIAL, supports: [{ field: "它是什么" }] }, { kind: "助手补充", excerpt: "图书馆通常这样规定，我补了「一人一证。」", supports: [{ field: "已经定下的", index: 0, inserted: ["一人一证。"] }] }]),
 ];
 const from = (...ids: string[]) => ids.map((id) => ({ kind: "条目", locator: id }));
 /** 五种图各一张，写法照平台说明第十一节：节点文字最前面写页的编号，来源写它画自的页。 */

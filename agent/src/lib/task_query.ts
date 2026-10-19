@@ -24,7 +24,7 @@ import { type TaskDefinition, keepPendingField, validateDefinition } from "./def
 import { mentionLines, overallState, pendingSummary, verificationLines } from "./overall_read.ts";
 import { stageLines, stageSummary } from "./stage_read.ts";
 import { cardsOpenInStage, openCardsLine, openProposal, proposalLine } from "./stage_proposal.ts";
-import { BUSY_TIMEOUT_MS, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, elementClause } from "./schema.ts";
+import { BUSY_TIMEOUT_MS, SOURCE_USER_EDIT, ELEMENT_FIGURE, SOURCE_ITEM, elementClause, supportOf } from "./schema.ts";
 import { titleOf } from "./tool_render.ts";
 import { dialogueFactLines, dialogueFacts, unansweredActs } from "./dialogue_acts.ts";
 import { DIAGRAM_ID, type DiagramRecord, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams } from "./diagram.ts";
@@ -186,17 +186,17 @@ export function getItem(workspaceDir: string, params: { item_id?: unknown; revis
     const fields = load(row.fields) as Record<string, unknown>;
     const sources = (db
       .prepare(
-        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value " +
+        "SELECT position, kind, locator, excerpt, field, field_index, normalized_value, inserted " +
           `FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND kind <> ?${elementClause()} ORDER BY position, support_no`,
       )
-      .all(task.task_id, itemId, shown, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null }[])
-      .reduce<{ kind: string; locator: string; excerpt: string; supports: { field: string; index?: number }[]; normalized_value?: string }[]>((list, one) => {
+      .all(task.task_id, itemId, shown, SOURCE_USER_EDIT) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null; inserted: string | null }[])
+      .reduce<{ kind: string; locator: string; excerpt: string; supports: ReturnType<typeof supportOf>[]; normalized_value?: string }[]>((list, one) => {
         let source = list[one.position - 1];
         if (!source) {
           list[one.position - 1] = source = { kind: one.kind, locator: one.locator, excerpt: one.excerpt, supports: [] };
           if (one.normalized_value !== null) source.normalized_value = one.normalized_value;
         }
-        if (one.field !== null) source.supports.push(one.field_index === null ? { field: one.field } : { field: one.field, index: one.field_index });
+        if (one.field !== null) source.supports.push(supportOf(one.field, one.field_index, one.inserted));
         return list;
       }, [])
       // 早期版本写下的「用户直接修改」不读出，它的位置号留下的空位去掉。

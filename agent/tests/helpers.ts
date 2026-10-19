@@ -352,10 +352,21 @@ export function problemClicksOn(workspaceDir: string, sessionId: string, branch:
 }
 
 /**
- * 把一个现在格式（9）的任务库退回格式 8 的样子：工具拒绝表去掉原因码两列，版本号记 8。格式 8 与 9 只差这两列。
+ * 把一个现在格式（10）的任务库退回格式 9 的样子：来源表去掉 inserted 一列，版本号记 9。格式 9 与 10 只差这一列。
  * 直接开库改，不经 withTaskDatabase（它一打开就会升级）。
  */
+export function asFormat9(workspaceDir: string): void {
+  const db = new DatabaseSync(databasePath(workspaceDir));
+  try {
+    db.exec("ALTER TABLE item_source DROP COLUMN inserted; PRAGMA user_version = 9");
+  } finally {
+    db.close();
+  }
+}
+
+/** 再退回格式 8 的样子：工具拒绝表也去掉原因码两列，版本号记 8。格式 8 与 9 只差这两列。 */
 export function asFormat8(workspaceDir: string): void {
+  asFormat9(workspaceDir);
   const db = new DatabaseSync(databasePath(workspaceDir));
   try {
     db.exec("ALTER TABLE tool_rejection DROP COLUMN reason_codes; ALTER TABLE tool_rejection DROP COLUMN reason_code; PRAGMA user_version = 8");

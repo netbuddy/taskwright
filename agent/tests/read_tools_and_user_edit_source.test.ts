@@ -33,7 +33,7 @@ function fixture(): string {
         op: "add", collection: "用例", fields: { 名称: "登录", 步骤: ["打开页面", "输入口令"] },
         sources: [
           { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。", supports: [{ field: "名称" }] },
-          { kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }, { field: "名称" }] },
+          { kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1, inserted: ["输入口令"] }, { field: "名称" }] },
         ],
       },
       { op: "add", collection: "用例", fields: { 名称: "注销", 步骤: ["点注销"] }, sources: [SOURCE] },
@@ -61,7 +61,7 @@ test("查看条目：最新内容的全部字段、来源、评审与确认；�
   assert.deepEqual(outcome.details.fields, { 名称: "登录", 步骤: ["打开页面", "输入口令"] });
   assert.deepEqual(outcome.details.sources, [
     { kind: "文档原文", locator: "inputs/材料.md", excerpt: "用户可以登录。", supports: [{ field: "名称" }] },
-    { kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1 }, { field: "名称" }] },
+    { kind: "助手补充", locator: "助手补充", excerpt: "登录总要输入口令。", supports: [{ field: "步骤", index: 1, inserted: ["输入口令"] }, { field: "名称" }] },
   ]);
   assert.equal(outcome.details.review, "还没有评审记录");
   assert.equal(outcome.details.confirm, "未读（用户从没看过）");

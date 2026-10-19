@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { databasePath } from "./db.ts";
+import { keepPendingField, validateDefinition } from "./definition.ts";
 import { EXECUTOR_FUNCTIONS, understandingGateOf } from "./intent_schema.ts";
 import { type TurnCall, isBlank, isObject, lastAssistantTurn, requireAlone } from "./speak.ts";
 import { ToolRejection, codesOf, withCodes } from "./tool_rejection.ts";
@@ -153,6 +154,11 @@ export interface ReplyFacts {
    * （lib/stage.ts 的 activityDoneRefusal）。不给时不核对，给直接调用本函数的单元测试用。
    */
   activityDoneRefusal?: () => Refusal | null;
+  /**
+   * 某个条目是不是问题条目（所在集合由 lib/definition.ts 的 keepPendingField 认出）。提问点名的问题条目多于一个就拒绝。
+   * 不给时不按条目核对，给直接调用本函数的单元测试用。
+   */
+  problemItem?: (itemId: string) => boolean;
 }
 
 /** 键名里带引号、冒号或空白时，多半是模型把 JSON 写坏了（例如写成「text': 」）；拒绝理由里点明这一点。 */
@@ -269,6 +275,21 @@ export function closedQuestion(text: string): boolean {
   return bare.endsWith("吗") || CLOSED_WORDS.some((word) => bare.includes(word));
 }
 
+/** 分句开头的序号：「1）」「2)」「1.」「2．」这样的写法；前面是开头、空白或标点，「1.5」这样的小数不算。 */
+const NUMBERED = /(?:^|[\s\p{P}])\d+[）)．.](?!\d)/gu;
+
+/**
+ * 一张提问卡片问了几件事：点名的问题条目有几个（多于一个才算）、正文里有几个序号起头的分句（两个以上才算）、有几个问号（两个以上才算），
+ * 取其中最大的；只问了一件事时是 1。
+ */
+export function askedCount(text: string, items: readonly unknown[], problemItem?: (itemId: string) => boolean): number {
+  const problems = problemItem
+    ? items.filter((one) => isObject(one) && typeof one.item_id === "string" && problemItem(one.item_id)).length : 0;
+  const numbered = [...text.matchAll(NUMBERED)].length;
+  const marks = [...text.matchAll(/[？?]/g)].length;
+  return Math.max(1, problems > 1 ? problems : 0, numbered >= 2 ? numbered : 0, marks >= 2 ? marks : 0);
+}
+
 /** 比对文字时去掉空白与标点，只看剩下的字。 */
 function bareText(text: string): string {
   return text.replace(/[\s\p{P}]/gu, "");
@@ -317,6 +338,9 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
     const said = raw.text.trim();
     errors.push(problem(refusalText("reply.ask_closed_question", { said: [...said].length > 40 ? `${[...said].slice(0, 40).join("")}…` : said })));
   }
+  // 提问一次只问一件事：点名了几个问题条目、正文里列了几问，都算问了几件（见 askedCount）。
+  const asked = k === "ask" && typeof raw.text === "string" ? askedCount(raw.text, Array.isArray(raw.items) ? raw.items : [], facts.problemItem) : 1;
+  if (asked > 1) errors.push(problem(refusalText("reply.ask_many_questions", { count: asked })));
 
   // 重发：写了 resends 就要指向一张还开着的、同一种的卡片。
   if ((k === "ask" || k === "choose") && "resends" in raw) {
@@ -562,15 +586,27 @@ function textOfContent(content: unknown): string {
 export function openRevisionLookup(workspaceDir: string): {
   revisionFact: ReplyFacts["revisionFact"];
   currentRevisionOf: (itemId: string) => number | null;
+  problemItem: (itemId: string) => boolean;
   close: () => void;
 } {
   const path = databasePath(workspaceDir);
-  if (!existsSync(path)) return { revisionFact: () => "还没有库", currentRevisionOf: () => null, close: () => {} };
+  if (!existsSync(path)) return { revisionFact: () => "还没有库", currentRevisionOf: () => null, problemItem: () => false, close: () => {} };
   const db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
   const itemRow = db.prepare("SELECT deleted_in_revision FROM item WHERE item_id = ?");
   const revisionRow = db.prepare("SELECT 1 FROM item_version WHERE item_id = ? AND revision_no = ?");
   const latestRow = db.prepare("SELECT MAX(revision_no) AS v FROM item_version WHERE item_id = ?");
   const currentRevisionOf = (itemId: string) => ((latestRow.get(itemId) as { v: number | null } | undefined)?.v ?? null);
+  // 问题条目所在的集合：照任务定义，keepPendingField 认得的那些。用到时读一次定义。
+  let problemSets: Set<string> | null = null;
+  const collectionRow = db.prepare("SELECT collection FROM item WHERE item_id = ?");
+  const problemItem = (itemId: string) => {
+    if (problemSets === null) {
+      const task = db.prepare("SELECT definition_text FROM task LIMIT 1").get() as { definition_text: string } | undefined;
+      problemSets = new Set(task ? validateDefinition(JSON.parse(task.definition_text)).collections.filter((one) => keepPendingField(one)).map((one) => one.name) : []);
+    }
+    const row = collectionRow.get(itemId) as { collection: string } | undefined;
+    return row !== undefined && problemSets.has(row.collection);
+  };
   return {
     revisionFact(itemId, revisionNo) {
       const item = itemRow.get(itemId) as { deleted_in_revision: number | null } | undefined;
@@ -580,6 +616,7 @@ export function openRevisionLookup(workspaceDir: string): {
       return currentRevisionOf(itemId) === revisionNo ? "是当前所在的修订" : "不是当前所在的修订";
     },
     currentRevisionOf,
+    problemItem,
     close: () => db.close(),
   };
 }

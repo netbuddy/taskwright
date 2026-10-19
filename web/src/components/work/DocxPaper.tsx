@@ -1,4 +1,5 @@
 // 材料区里的 Word 材料：按原版式分页显示（model/docx.ts），被条目引用的句子画浅蓝底线，点来源时按段落号定位。
+// 知识库里的 Word 文档也用它（taskId 写知识库文档的所属，见 state/docSource.ts）。
 //
 // 定位的四种结果：段内找到，那几个字蓝底黑框高亮；从出处那一段起跨到后面几段，这几段整段淡黄底标出并提示；
 // 找不到，只提示「没有在第 3 页 · 2.3 借阅上限 · 页上附近找到这段原文」，不滚动；表格单元格里的段落与正文一样处理。
@@ -35,6 +36,7 @@ function paragraphOf(t: DocxTable, excerpt: string): number | null {
 }
 
 export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, onMouseUp, onCitedCount, onNote, onUnavailable, jump }: {
+  /** 文件属于哪个任务（任务编号）；知识库文档写 knowledgeOwner(知识库编号)（state/docSource.ts）。 */
   taskId: string;
   path: string;
   items: Item[];

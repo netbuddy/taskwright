@@ -22,10 +22,14 @@ from taskwright_observatory.tests.test_current_format import ROOT, make_workspac
 BUILD_TASK = ROOT / "agent" / "tests" / "fixtures" / "build_task_db.mts"
 SAID = "把登录和退出画成一张用例图"
 MERMAID = 'flowchart LR\n  a(["UC-001 登录"])\n  b(["UC-002 退出"])'
-SOURCE = {"kind": "助手补充", "excerpt": "演示用"}
+def supplement(name: str) -> dict:
+    """助手补充的来源：理由是自由文字，补进正文的字写在 supports 那一处的 inserted 里。"""
+    return {"kind": "助手补充", "excerpt": "演示用", "supports": [{"field": "名称", "inserted": [name]}]}
+
+
 BATCHES = [
-    [{"op": "add", "collection": "用例", "fields": {"名称": "登录", "步骤": ["打开页面"]}, "sources": [SOURCE]},
-     {"op": "add", "collection": "用例", "fields": {"名称": "退出", "步骤": ["点退出"]}, "sources": [SOURCE]}],
+    [{"op": "add", "collection": "用例", "fields": {"名称": "登录", "步骤": ["打开页面"]}, "sources": [supplement("登录")]},
+     {"op": "add", "collection": "用例", "fields": {"名称": "退出", "步骤": ["点退出"]}, "sources": [supplement("退出")]}],
     {"said": SAID, "diagram": {"name": "登录与退出", "kind": "use_case", "mermaid": MERMAID, "note": "两件事。",
                                "sources": [{"kind": "用户的话", "excerpt": SAID}, {"kind": "条目", "locator": "UC-001"}, {"kind": "条目", "locator": "UC-002"}]}},
     {"diagram": {"diagram": "D-001", "base_revision": 1, "name": "读者的两件事"}},

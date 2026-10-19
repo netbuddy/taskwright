@@ -94,7 +94,7 @@ test("走一小段：立页、记问题、移动、用户看过、写用例，�
 
   // 助手补一条例外的例子（助手补的，待核实）；用户还没有看过这一页。进入写条目之后助手依据它写一条用例：用例因依据的页而待核实。
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-001", base_revision: 1, fields: { 例子: ["登录总要输入口令。", "例外：口令输错时不能登录。"] },
-    sources: [{ kind: "助手补充", excerpt: "口令不对自然登录不了，我补了「例外：口令输错时不能登录。」", supports: [{ field: "例子", index: 1 }] }] }] });
+    sources: [{ kind: "助手补充", excerpt: "口令不对自然登录不了，我补了「例外：口令输错时不能登录。」", supports: [{ field: "例子", index: 1, inserted: ["例外：口令输错时不能登录。"] }] }] }] });
   userOp(dir, { kind: "mark_viewed", targets: [{ item_id: "OA-001", base_revision: 2 }] });
   saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-001", base_revision: 2, fields: { 别名: ["登入"] } }] });
   enterStage(dir, "writing");

@@ -1,12 +1,14 @@
 // Word 材料的原始字节、派生表与位置表，按「任务编号 + 材料路径」各读一次、缓存起来（材料上传后不再改：同名的文件再上传会被拒绝，不会覆盖）。
 // 例外是删除与替换：还没有进入对话的材料可以删掉、可以换成另一个文件（可以同名），做成之后由材料卡调 forgetDocx 丢掉这一项。
+// 知识库里的 Word 文档也用这里读：「任务编号」换成知识库文档的所属写法（state/docSource.ts），同一套读法。
 // 条目区的来源标签要写「第几页 · 哪一节 · 页上中下」：页码与页内位置取自派生表（材料区不一定正显示这份材料，所以在页面外的元素里
 // 渲染一遍算出来），章节取自后端上传时写的位置表（x.docx.locations.json）。材料区显示时拿同一份字节另渲染一遍。
 
 import { createContext, useSyncExternalStore } from "react";
-import { api, ApiError } from "../api/client";
+import { ApiError } from "../api/client";
 import { renderDocx, tableOf, tablePositions, type DocxTable } from "../model/docx";
 import { LOCATIONS_SUFFIX, type LocationFile } from "../../../agent/src/lib/docx_locations";
+import { fileRaw, fileText } from "./docSource";
 
 export interface DocxEntry {
   /** error：读不到文件（接口出错），error 是后端给的说明；unrenderable：文件读到了，但排版库画不出来。 */
@@ -51,10 +53,10 @@ async function load(taskId: string, path: string, key: string, started: DocxEntr
   // 位置表单独接住：读不到（例如位置表出现之前建的任务）时只是来源标签不写章节，不影响材料的显示与页码。
   // 两种失败分开：读不到文件时显示后端的说明；读到了但排版库画不出来时，页面只显示一句固定的中文说明，错误原文写进浏览器的控制台。
   // 两种情况都留着位置表，来源标签照样写章节；表格里的段落的位置取自投影，画不出来时也留着。
-  const locations = api.materialContent(taskId, `${path}${LOCATIONS_SUFFIX}`).then((r) => parseLocations(r.text), () => null);
+  const locations = fileText(taskId, `${path}${LOCATIONS_SUFFIX}`).then((r) => parseLocations(r.text), () => null);
   let bytes: ArrayBuffer, content: { text: string };
   try {
-    [bytes, content] = await Promise.all([api.materialRaw(taskId, path), api.materialContent(taskId, path)]);
+    [bytes, content] = await Promise.all([fileRaw(taskId, path), fileText(taskId, path)]);
   } catch (e) {
     settle(key, started, { status: "error", error: e instanceof ApiError ? e.message : String(e), locations: await locations });
     return;

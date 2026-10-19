@@ -29,7 +29,7 @@ const PAGE = topicPage("口令", "读者登录时输入的一串字符", SOURCE)
 const BATCHES = [
   [
     { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者", "管理员"], 基本流程: ["输入口令", "系统核对口令"] },
-      sources: [{ ...SOURCE, supports: [{ field: "用例功能" }] }, { kind: "助手补充", excerpt: "登录失败的处理材料没有写，按常识补充。", supports: [{ field: "基本流程", index: 1 }] }] },
+      sources: [{ ...SOURCE, supports: [{ field: "用例功能" }] }, { kind: "助手补充", excerpt: "登录失败的处理材料没有写，按常识补充。", supports: [{ field: "基本流程", index: 1, inserted: ["系统核对口令"] }] }] },
     { op: "add", collection: "功能用例", fields: { 用例名称: "借出图书", 用例功能: "读者在服务台借出图书。", 参与者: ["读者"], 基本流程: ["管理员扫描借书证"] }, sources: [SOURCE] },
   ],
   [{ op: "add", collection: "非功能需求", fields: { 类别: "性能", 句式类型: "普遍型", 需求语句: "系统应在 2 秒内给出登录结果。" }, sources: [SOURCE] }],
@@ -210,7 +210,7 @@ test("下载接口：format 写 docx 回 Word 文件与文件名；只能下载�
   // 后端不写库：任务与条目由夹具在任务根目录里建好，任务服务只读它；任务编号从这个任务的库里读。
   const root = join(tmp, "service");
   const dir = makePagedTask(join(root, "tasks"), { "材料.md": "读者凭口令登录。" }, [PAGE], [[
-    { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] }, sources: [{ kind: "助手补充", excerpt: "试验用。" }] },
+    { op: "add", collection: "功能用例", fields: { 用例名称: "登录", 用例功能: "读者登录系统。", 参与者: ["读者"], 基本流程: ["输入口令"] }, sources: [{ kind: "助手补充", excerpt: "试验用。", supports: [{ field: "基本流程", index: 0, inserted: ["输入口令"] }] }] },
   ]]);
   sqlRun(dir, [["UPDATE task SET task_name = ?", "图书馆借还"]]);   // 夹具不另起任务名，这里给它起一个
   const taskId = library.libraryOf(dir).taskId;

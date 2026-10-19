@@ -67,7 +67,7 @@ import { DefinitionError, FIELD_ITEM_REF, FIELD_TEXT_LIST, KEEP_PENDING_STATUS, 
 import { currentRulesHash, reviewSpecOf, verdictAt } from "./review_state.ts";
 import { SaveRejected, type Source, type Support, isEmptyValue, saveRevision } from "./save_revision.ts";
 import { carrySources } from "./source_carry.ts";
-import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, elementClause, withTaskDatabase, ELEMENT_ITEM } from "./schema.ts";
+import { NoDatabaseYet, SOURCE_SUPPLEMENT, SOURCE_USER_EDIT, elementClause, withTaskDatabase, ELEMENT_ITEM, supportOf } from "./schema.ts";
 import { publishVersion } from "./publish_version.ts";
 import { fillText, textPrefix } from "./texts.ts";
 import { ToolRejection } from "./tool_rejection.ts";
@@ -315,8 +315,8 @@ interface Inspected {
 /** 从库里读某个条目在某次修订下的来源，按条目来源的形状整理（一条来源支持的几处合回一条）。 */
 function readSources(db: DatabaseSync, taskId: string, itemId: string, revisionNo: number): Source[] {
   const rows = db
-    .prepare("SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND element_kind = ? ORDER BY position, support_no")
-    .all(taskId, itemId, revisionNo, ELEMENT_ITEM) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null; depends_revision: number | null }[];
+    .prepare("SELECT position, kind, locator, excerpt, field, field_index, normalized_value, depends_revision, inserted FROM item_source WHERE task_id = ? AND item_id = ? AND revision_no = ? AND element_kind = ? ORDER BY position, support_no")
+    .all(taskId, itemId, revisionNo, ELEMENT_ITEM) as { position: number; kind: string; locator: string; excerpt: string; field: string | null; field_index: number | null; normalized_value: string | null; depends_revision: number | null; inserted: string | null }[];
   const byPosition = new Map<number, Source>();
   for (const row of rows) {
     let source = byPosition.get(row.position);
@@ -327,7 +327,8 @@ function readSources(db: DatabaseSync, taskId: string, itemId: string, revisionN
       // 依据条目的来源原来记的修订号也跟着回去：用户改字段、撤销都不算重新引用。
       if (row.depends_revision !== null) source.depends_revision = row.depends_revision;
     }
-    if (row.field !== null) source.supports.push(row.field_index === null ? { field: row.field } : { field: row.field, index: row.field_index });
+    // 助手补充补进正文的字串也跟着回去。
+    if (row.field !== null) source.supports.push(supportOf(row.field, row.field_index, row.inserted));
   }
   return [...byPosition.values()];
 }

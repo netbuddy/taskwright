@@ -20,7 +20,7 @@ const write = <T>(dir: string, body: (db: DatabaseSync) => T) => withTaskDatabas
 test("新建的库带着版本记录表；记一次发布写一条事件与一行记录，版本号从 1 起递增；读出来按版本号从小到大", () => {
   const { dir, taskId } = workspace();
   assert.equal(query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version, TASK_DB_VERSION);
-  assert.equal(TASK_DB_VERSION, 9);
+  assert.equal(TASK_DB_VERSION, 10);
   assert.deepEqual(write(dir, (db) => [versionRecords(db, taskId), versionCount(db, taskId), nextVersionNo(db, taskId)]), [[], 0, 1]);
   const first = write(dir, (db) => recordVersion(db, { taskId, sessionId: "sess-1", callId: "ui-op-1", actor: "user", revisionNo: 4, note: "  首版 ",
     markdownPath: "versions/v1/document.md", docxPath: "versions/v1/document.docx", figures: { count: 3, pictures: 2 } }));

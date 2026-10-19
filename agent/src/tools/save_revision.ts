@@ -28,6 +28,9 @@ const support = Type.Object(
     index: Type.Optional(
       Type.Integer({ description: fillText("save_revision.param.operations.sources.supports.index") }),
     ),
+    inserted: Type.Optional(
+      Type.Array(Type.String(), { description: fillText("save_revision.param.operations.sources.supports.inserted") }),
+    ),
   },
   { additionalProperties: true },
 );

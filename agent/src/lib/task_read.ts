@@ -123,7 +123,7 @@ export interface SourceRow {
   摘录: string;
   第几条: number;
   事件序号: number;
-  支持: { 字段: string; 第几项: number | null }[];
+  支持: { 字段: string; 第几项: number | null; 补进正文?: string[] }[];
   对话出处?: { 会话编号: string; 条目编号: string } | null;
   /** 只有种类为「条目」或「图」时有：引用那一刻对方的修订号；库里没有记下时为 null。 */
   依据的修订?: number | null;
@@ -153,7 +153,11 @@ export function readSources(db: DatabaseSync, taskId: string, elementKind: strin
       }
       bucket.push(one);
     }
-    if (row.field !== null) bucket[bucket.length - 1]["支持"].push({ 字段: row.field, 第几项: row.field_index });
+    if (row.field !== null) {
+      // 助手补充补进这一处正文的字串（格式 10 起有；旧行抽不出的没有这一项）。
+      const inserted = row.inserted ? (JSON.parse(row.inserted) as string[]) : null;
+      bucket[bucket.length - 1]["支持"].push({ 字段: row.field, 第几项: row.field_index, ...(inserted ? { 补进正文: inserted } : {}) });
+    }
   }
   return grouped;
 }

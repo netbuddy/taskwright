@@ -304,6 +304,31 @@ test("经接口：新建、改名、上传（带种类）、清单、正文与�
   await service.close();
 });
 
+test("原样内容：PDF 文档给上传时的原始字节，页面按原样分页显示要用的位置表照正文的办法取得到", async () => {
+  const service = fresh();
+  const id = service.knowledge!.create("国家标准").id;
+  await service.uploadDocument(id, "安全要求.pdf", readFileSync(PDF_SAMPLE), "standard");
+  const raw = await call(service, "GET", `/api/v1/knowledge/libraries/${id}/documents/raw?name=${encodeURIComponent("安全要求.pdf")}`);
+  assert.equal(raw.status, 200);
+  assert.ok(raw.body.equals(readFileSync(PDF_SAMPLE)), "原始字节与上传的文件一致");
+  const located = await call(service, "GET", `/api/v1/knowledge/libraries/${id}/documents/content?name=${encodeURIComponent("安全要求.pdf.locations.json")}`);
+  assert.ok(Array.isArray(JSON.parse(located.json.text).pages), "位置表取得到");
+  await service.close();
+});
+
+test("原样内容：路径越出这个知识库的 files/ 时以 bad_request 拒绝，不给任何字节", async () => {
+  const service = fresh();
+  const store = service.knowledge!;
+  const id = store.create("国家标准").id;
+  const other = store.create("行业规范").id;
+  await service.uploadDocument(other, "安全要求.pdf", readFileSync(PDF_SAMPLE), "standard");
+  for (const name of ["../documents.json", `../../${other}/files/安全要求.pdf`]) {
+    const raw = await call(service, "GET", `/api/v1/knowledge/libraries/${id}/documents/raw?name=${encodeURIComponent(name)}`);
+    assert.deepEqual([raw.status, raw.json?.error.code], [400, "bad_request"], name);
+  }
+  await service.close();
+});
+
 test("经 HTTP：超过 20 MB 的知识库上传不读请求体就以 too_large 拒绝；没有的知识库先报 not_found", async () => {
   const service = fresh();
   const server = makeServer(service).listen(0, "127.0.0.1");

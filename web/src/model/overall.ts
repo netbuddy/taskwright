@@ -184,7 +184,21 @@ export function markPassage(text: string, quotes: readonly { quote: string; mark
   return parts;
 }
 
-/** 助手写理由时用直角引号引出来的、它补进正文的那几个字（两个字以上的才算）。 */
+/**
+ * 助手补进某个字段正文的那几个字：助手补充的来源在指到这个字段的那几处 inserted 里写的字串。
+ * 旧数据的来源一处 inserted 都没有时，退回从它的理由里取直角引号引出来的字（只用于显示）。
+ */
+export function addedWords(item: Item, field: string): string[] {
+  const supplements = item.sources.filter((s) => String(s.kind) === SOURCE_SUPPLEMENT);
+  const words = supplements.flatMap((s) => {
+    const supports = s.supports ?? [];
+    if (!supports.some((p) => p.inserted?.length)) return addedQuotes([s.excerpt]);
+    return supports.filter((p) => p.field === field).flatMap((p) => p.inserted ?? []);
+  });
+  return [...new Set(words)];
+}
+
+/** 助手写理由时用直角引号引出来的、它补进正文的那几个字（两个字以上的才算）。旧数据没有 inserted 时才用它。 */
 export function addedQuotes(reasons: readonly string[]): string[] {
   return [...new Set(reasons.flatMap((reason) => [...reason.matchAll(/「([^」]{2,})」/g)].map((m) => m[1])))];
 }

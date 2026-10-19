@@ -12,7 +12,9 @@ import { SaveRejected, saveRevision } from "../src/lib/save_revision.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, SOURCE, callIn, count, demoDefinition, makeWorkspace, overallDefinition, startWriting } from "./helpers.ts";
 
-const SUPPLEMENT = (supports: unknown[]) => ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports });
+/** 助手补充的来源：补进正文的字串写在第一处支持上。 */
+const SUPPLEMENT = (supports: Record<string, unknown>[], inserted = "保留期") =>
+  ({ kind: "助手补充", excerpt: "高校图书馆常见的做法，等用户确认。", supports: supports.map((one, i) => (i === 0 ? { ...one, inserted: [inserted] } : one)) });
 const page = (fields: Record<string, unknown>, sources: unknown[] = [SOURCE]) =>
   ({ op: "add", collection: "业务说明", fields: { 标题: "预约取书", 它是什么: "读者对在架的书办预约。", 状态: "在用", ...fields }, sources });
 const useCase = (name = "预约图书", sources: unknown[] = [SOURCE]) => ({ op: "add", collection: "用例", fields: { 名称: name, 步骤: ["选书", "预约"] }, sources });
@@ -50,7 +52,7 @@ test("最低门的四种情形：没有页；有页没有例子；有页有例�
   saveRevision(callIn(dir), { operations: [page({ 标签: ["流程"] })] });
   assert.match(refusal(dir, [useCase()])!, /还没有一页贴了标签、写了例子、用户又看过的主题（最接近的是 OA-001，它还没有例子、用户还没有看过）/);
   // 加了例子（例子是助手补的），用户还没有看过。
-  saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-001", base_revision: 1, fields: { 例子: [EXAMPLE] }, sources: [SUPPLEMENT([{ field: "例子", index: 0 }])] }] });
+  saveRevision(callIn(dir), { operations: [{ op: "update", item: "OA-001", base_revision: 1, fields: { 例子: [EXAMPLE] }, sources: [SUPPLEMENT([{ field: "例子", index: 0 }], "周二来取")] }] });
   assert.match(refusal(dir, [useCase()])!, /最接近的是 OA-001，它用户还没有看过）/);
   // 用户看过确认了：合格，条目存得进去。
   view(dir, "OA-001", 2);

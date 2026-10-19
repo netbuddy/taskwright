@@ -239,7 +239,7 @@ export interface SourceView {
   kind: string;
   locator: string;
   excerpt: string;
-  supports: { field: string; index: number | null }[];
+  supports: { field: string; index: number | null; inserted?: string[] }[];
   /** 引用那一刻对方的修订号；库里没有记下时为 null。 */
   depends_revision?: number | null;
   /** 对方现在的修订号；对方已经删除（或者找不到）时为 null。 */
@@ -251,7 +251,7 @@ export interface SourceView {
 export function sourceView(one: SourceRow): SourceView {
   return {
     kind: one["种类"], locator: one["出处"], excerpt: one["摘录"],
-    supports: (one["支持"] || []).map((s) => ({ field: s["字段"], index: s["第几项"] })),
+    supports: (one["支持"] || []).map((s) => ({ field: s["字段"], index: s["第几项"], ...(s["补进正文"] ? { inserted: s["补进正文"] } : {}) })),
     ...(one["依据的修订"] !== undefined ? { depends_revision: one["依据的修订"] } : {}),
   };
 }
