@@ -301,7 +301,12 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   assert.ok(reading.startsWith("## 这类任务在核读材料阶段\n"));
   assert.ok(!reading.includes("12 页"));
   for (const words of ["这几批里不要夹着用例、需求或约束", "一次保存最多写 4 页主题", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
-    "7. 人工怎样接管", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "「例子」写两条"]) assert.ok(reading.includes(words), words);
+    "「风险、假设与运维」这一维度的七个问题逐项问", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "「例子」写两条"]) assert.ok(reading.includes(words), words);
+  // 领域参照的七问在任务类型的分析提纲里，是最后一个分析维度的七个节点。
+  const outline = readFileSync(join(SRS_SKILL, "outline.md"), "utf-8");
+  for (const words of ["outline: requirements-engineering", "unsorted: 未归类的发现", "overview: 总体观察", "## 风险、假设与运维", "人工怎样接管，接管的情况怎样统计、怎样回流改进？"]) {
+    assert.ok(outline.includes(words), words);
+  }
   const writing = supplement("writing");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
   for (const head of ["整理建模阶段画出的图与材料里的内容都要整理进条目", "1. **照图写条目。**", "2. **每条功能用例的来源写两张图。**", "3. **非功能需求不经图。**",
