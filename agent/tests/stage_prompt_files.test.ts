@@ -309,11 +309,11 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   }
   // 领域参照的七问在任务类型的分析提纲里，是最后一个分析维度的七个节点。
   const outline = readFileSync(join(SRS_SKILL, "outline.md"), "utf-8");
-  for (const words of ["outline: requirements-engineering", "unsorted: 未归类的发现", "overview: 总体观察", "## 风险、假设与运维", "人工怎样接管，接管的情况怎样统计、怎样回流改进？"]) {
+  for (const words of ["outline: requirements-engineering", "unsorted: 未归类的发现", "ideas: 解决方案创意", "judgement: 目前的判断", "overview: 总体观察", "- 业务事件与时间 —— ", "## 风险、假设与运维", "人工怎样接管，接管的情况怎样统计、怎样回流改进？"]) {
     assert.ok(outline.includes(words), words);
   }
   // 提纲条目写的每个方法，在同一目录的 methods/ 下都有同名的文件，文件里有三个必有的节。
-  const named = [...outline.matchAll(/—— 方法：(.+)$/gm)].map((one) => one[1].trim());
+  const named = [...outline.matchAll(/—— 方法：(.+)$/gm)].flatMap((one) => one[1].split("、").map((name) => name.trim()));
   assert.ok(named.length > 0);
   for (const name of new Set(named)) {
     const method = readFileSync(join(SRS_SKILL, "methods", `${name}.md`), "utf-8");
