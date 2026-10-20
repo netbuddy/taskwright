@@ -57,14 +57,15 @@ const brief = (summary: StageSummary, key: string) => [lamp(summary, key).ok, la
 let ui = 0;
 const userOp = (dir: string, body: Record<string, unknown>) => runUserOperation({ workspaceDir: dir, sessionId: "sess-ui" }, { op_id: `ui-op-sum-${++ui}`, ...body });
 
-test("刚建好、有材料的任务：空闲，没有人开展过活动；材料还没有被引用，核读材料那一盏不通过", () => {
+test("刚建好、有材料的任务：空闲，没有人开展过活动；核读材料那一盏只报数（材料还没有被引用）", () => {
   const { summary } = workspace();
   const now = summary()!;
   assert.deepEqual([now.current, now.node, now.flow_node, now.moved_by, now.moved_at, now.reason], ["idle", null, null, null, null, null]);
   // 开展一项活动那一节：没有正在进行的；需求分析从核读材料启动（有材料）；还没有页、没有条目的三项不能单独开展。
   assert.deepEqual([now.launch.current, now.launch.flows.map((one) => [one.label, one.state]), now.launch.activities.map((one) => one.enabled)],
     [null, [["启动需求分析", "从核读材料开始"]], [true, true, false, false, false, false]]);
-  assert.deepEqual(brief(now, "materials_cited"), [false, ["inputs/材料.md"]]);
+  assert.deepEqual(brief(now, "materials_cited"), [null, []]);
+  assert.equal(lamp(now, "materials_cited").summary, "只报数、不判：材料 1 份：inputs/材料.md 被引用 0 处。页 0 页，例子共 0 项。问题条目 0 条。");
   assert.deepEqual(Object.keys(now.lamps), ["reading", "clarifying", "modeling", "writing", "reviewing", "document"]);
 });
 
@@ -76,7 +77,8 @@ test("走一小段：立页、记问题、移动、用户看过、写用例，�
     { op: "add", collection: "问题", fields: { 事项: "口令输错几次要锁定？", 状态: "未解决", 关联条目: ["OA-001"] }, sources: [SOURCE] },
   ] });
   let now = summary()!;
-  assert.deepEqual(brief(now, "materials_cited"), [true, []]);
+  assert.deepEqual(brief(now, "materials_cited"), [null, []]);
+  assert.match(lamp(now, "materials_cited").summary, /inputs\/材料\.md 被引用 2 处。页 1 页（按标签：流程 1），例子共 1 项。问题条目 1 条（没写种类 1）。$/);
   assert.deepEqual(brief(now, "tagged_pages_no_open_questions"), [false, ["OA-001"]]);
   assert.deepEqual(brief(now, "flows_have_flowchart_with_branch"), [false, ["OA-001"]]);
   assert.deepEqual(brief(now, "no_untagged_pages"), [true, []]);
@@ -208,10 +210,10 @@ test("查询任务状态的末尾写现在在哪个阶段、这一段还差什�
   let out = getTaskStatus(dir);
   assert.match(out.text, /\n\n本会话是自由讨论，不属于任何工作项：你可以立主题页、改主题页、记问题条目，不写需求条目，也不提议进入哪一项活动。启动哪一项活动由用户从任务起点页决定。\n没有开着的提议。$/);
   assert.equal((out.details as any).stage.current, "idle");
-  // 用户启动需求分析：核读材料，材料还没有被引用。
+  // 用户启动需求分析：核读材料，那一盏只报数（材料还没有被引用）。
   userOp(dir, { kind: "start_activity", fields: { activity: "核读材料", in_flow: true } });
   out = getTaskStatus(dir, "sess-ui");
-  assert.match(out.text, /\n\n本会话的工作项是工作流程「需求分析」，现在在核读材料阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 到这一站的）。\n核读材料这一段还差 1 项：\n  - 有 1 份材料还没有被任何一页主题或问题引用：inputs\/材料\.md。\n没有开着的提议。\n这一段没有还开着的提问与请选择。$/);
+  assert.match(out.text, /\n\n本会话的工作项是工作流程「需求分析」，现在在核读材料阶段（用户在 \d{4}-\d{2}-\d{2} \d{2}:\d{2} 到这一站的）。\n核读材料这一段只报数、不判是否做够：\n  - 只报数、不判：材料 1 份：inputs\/材料\.md 被引用 0 处。页 0 页，例子共 0 项。问题条目 0 条。\n没有开着的提议。\n这一段没有还开着的提问与请选择。$/);
   // 同一时刻在别的会话里问：那条会话是自由讨论，不说这个工作项。
   assert.equal((getTaskStatus(dir, "sess-other").details as any).stage.current, "idle");
   assert.equal((out.details as any).stage.current, "reading");

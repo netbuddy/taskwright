@@ -25,7 +25,7 @@ import type { Act, ActKind, ActionRequest, MessageRequest, Task } from "../../ap
 import { CONFIRM_CONDITION, SOURCE_ITEM, conditionState, isUnread, itemContext, lastViewedRevision, reviewState, unreadItems } from "../../model/items";
 import { storyPlace } from "../../model/overall";
 import {
-  DOCUMENT_REVIEWED_KEY, ENTER_KEYS, REVIEWED_HINT, isActingKey, isQuietKey, proposalCardKind, quietChoiceText, quietHint, quietText, stageUnmovedLine,
+  DOCUMENT_REVIEWED_KEY, REVIEWED_HINT, forwardTarget, isActingKey, isForwardOption, isQuietKey, proposalCardKind, quietChoiceText, quietHint, quietText, stageUnmovedLine,
   type ProposalCardKind,
 } from "../../model/stage";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -65,11 +65,11 @@ export const TEMPLATES = {
  * 而征求同意的是提议。助手一侧的说明、回复工具的返回里仍把这种行为写作「请确认」，指的是同一种。
  */
 /** 助手提议进入下一个阶段的那张请选择卡片的标题。 */
-export const STAGE_CARD_TITLE = "进入下一阶段 · 请决定";
+export const STAGE_CARD_TITLE = "进入下一步 · 请决定";
 /** 任务空闲时助手提议开始核读材料的那张卡片的标题：这时没有「下一阶段」，是启动需求分析。 */
 export const START_CARD_TITLE = "开始核读材料 · 请决定";
 /** 助手提议退回前面的阶段的卡片、编写文档阶段请用户过目补写的页的卡片的标题。 */
-export const BACK_CARD_TITLE = "退回前面的阶段 · 请决定";
+export const BACK_CARD_TITLE = "退回前面的一步 · 请决定";
 export const REVIEW_CARD_TITLE = "补写的内容 · 请过目";
 const PROPOSAL_TITLES: Record<ProposalCardKind, string> = { enter: STAGE_CARD_TITLE, back: BACK_CARD_TITLE, review: REVIEW_CARD_TITLE };
 /** 提议的卡片上点名的页前面那一行小字。 */
@@ -94,9 +94,9 @@ export interface CardHandlers {
 
 export type ReviewedHandler = (replyMessageId: string, items: { item_id: string; revision_no?: number | null }[]) => boolean | Promise<boolean>;
 
-/** 一张卡片是不是助手提议进入下一个阶段的：请选择，其中一个选项的键是「进入」某个阶段的键。 */
+/** 一张卡片是不是助手提议往前走的：请选择，其中一个选项是进入下一步或者转到后面的某一步。 */
 export function stageCardOf(act: Act): boolean {
-  return act.kind === "choose" && (act.options ?? []).some((o) => o.key in ENTER_KEYS);
+  return act.kind === "choose" && (act.options ?? []).some(isForwardOption);
 }
 
 /** 一张卡片是助手的哪一种提议：进入下一个阶段、退回前面的阶段、请用户过目补写的页；不是提议是 null。 */
@@ -110,7 +110,7 @@ function onlyUnreadLeft(task: Task | null): boolean {
   return unmet.length > 0 && unmet.every((c) => c.name === CONFIRM_CONDITION);
 }
 
-export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, stayed = false, stayedKey = null, unmovedAt = null, unmovedWhy = null, handlers, onOpenItem, onLocate }: {
+export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled, hold = false, holdText = HOLD_TEXT, writesOff = false, answered, stayed = false, stayedKey = null, unmovedAt = null, unmovedWhy = null, unmovedBlocked = null, handlers, onOpenItem, onLocate }: {
   /** 这张卡片是用户选了「继续本阶段」答过的（对话记录里有那条界面操作通知）：两个选项留着，进入的那一项变淡，「继续本阶段」带勾。 */
   stayed?: boolean;
   /** 对话记录里那条界面操作通知记的是点了哪一项（「留在本段」「需要修改」「看过了，生成文档」）；早先的通知没有记，不给。 */
@@ -134,6 +134,8 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   unmovedAt?: string | null;
   /** 那次点击没有移动的原因（not_in_flow：任务当时不在需求分析流程里）；别的情形不给。 */
   unmovedWhy?: string | null;
+  /** 同上 not_ready 时缺的是什么。 */
+  unmovedBlocked?: string | null;
   handlers: CardHandlers;
   onOpenItem?: (itemId: string) => void;
   /** 点「依据：材料原文」小标签，文档区滚到这句原文。 */
@@ -230,13 +232,13 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   // 助手复述的卡片（请选择，三个选项是「采纳为例子」「有误，需修改」「换一个例子重述」，键是 story_ok、story_fix、story_again）：
   // 故事画成故事的样子，卡片本身不要底色。
   const story = storyPlace(act, replyText);
-  // 助手提议往前走的卡片（请选择，其中一个选项的键是「进入」某个阶段的四个键之一）：标题写「进入下一阶段 · 请决定」，
+  // 助手提议往前走的卡片（请选择，其中一个选项的键是「进入」某个阶段的四个键之一）：标题写「进入下一步 · 请决定」，
   // 进入的那个选项画成主按钮，点名的条目前面写「请先看：」。用户点了进入，系统替用户记移动，阶段条随库事件变。
   const stageCard = !story && stageCardOf(act);
   // 另两种提议的卡片：提议退回前面的阶段（「退回某阶段」「留在本段」）、编写文档阶段请用户过目（「看过了，生成文档」「需要修改」）。
   const proposal = story ? null : proposalKind;
   // 任务空闲时提议开始核读材料的卡片：进入的那一项是「开始核读材料」。
-  const startsReading = (act.options ?? []).some((one) => ENTER_KEYS[one.key] === "reading");
+  const startsReading = (act.options ?? []).some((one) => forwardTarget(one) === "reading");
 
   return (
     <div className={`act${story ? " retell" : ""}`} data-kind={act.kind} data-testid={`act-${act.kind}`} data-story={story ?? undefined}
@@ -386,7 +388,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
       )}
       {done && !wasStayed && <div className={`done${done === RESENT_TEXT ? " pale" : ""}`} data-testid="card-done">{done === RESENT_TEXT ? done : `✓ ${done}`}</div>}
       {done && wasReviewed && <div className="done pale" data-testid="card-reviewed-hint">{REVIEWED_HINT}</div>}
-      {done && unmovedAt && <div className="done pale" data-testid="card-stage-unmoved">{stageUnmovedLine(unmovedAt, unmovedWhy)}</div>}
+      {done && unmovedAt && <div className="done pale" data-testid="card-stage-unmoved">{stageUnmovedLine(unmovedAt, unmovedWhy, unmovedBlocked)}</div>}
       {showUnread && (
         <div className="sw-unread-hint" data-testid="card-unread">
           还有 {unread.length} 条未读

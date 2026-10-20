@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  LAMP_KEYS, type Lamp, type LampDiagram, type LampInput, type LampItem, type LampPage, type LampQuestion, STAGES, hasPendingMark, lampLines, lampPage, lampQuestion, stageLamps,
+  LAMP_KEYS, type Lamp, type LampDiagram, type LampInput, type LampItem, type LampPage, type LampQuestion, REPORT_ONLY_LAMPS, STAGES, clarifyKind, hasPendingMark, lampLines, lampPage, lampQuestion, stageLamps,
 } from "../src/lib/stage.ts";
 
 const page = (id: string, over: Partial<LampPage> = {}): LampPage =>
@@ -45,13 +45,25 @@ test("二十一盏灯按阶段分组，键与次序固定；什么都没有的�
   for (const one of Object.values(lamps).flat()) assert.match(one.summary, /。$/, `${one.key} 的说明是一句完整的话`);
 });
 
-test("materials_cited：每份材料都被至少一页主题或一条问题引用；出处带位置的去掉位置再比", () => {
+test("materials_cited：只报数、不判（恒为 null）——各份材料的块数与有引用的块数，页按标签分，例子总数，问题条目按种类分", () => {
+  assert.ok(REPORT_ONLY_LAMPS.has("materials_cited"));
   const materials = ["inputs/需求.md", "inputs/访谈.docx", "inputs/制度.pdf"];
-  assert.deepEqual(brief(lampOf("materials_cited", { materials, citedDocuments: ["inputs/需求.md", "inputs/访谈.docx#p12", "inputs/制度.pdf#p3-2", "kb:general/术语表.md"] })), [true, []]);
-  const missing = lampOf("materials_cited", { materials, citedDocuments: ["inputs/需求.md"] });
-  assert.deepEqual(brief(missing), [false, ["inputs/访谈.docx", "inputs/制度.pdf"]]);
-  assert.equal(missing.summary, "有 2 份材料还没有被任何一页主题或问题引用：inputs/访谈.docx、inputs/制度.pdf。");
-  assert.deepEqual([lampOf("materials_cited", {}).ok, lampOf("materials_cited", {}).summary], [null, "任务里没有材料。"]);
+  const coverage = [
+    { path: "inputs/需求.md", blocks: null, cited_blocks: null, citations: 3 },
+    { path: "inputs/访谈.docx", blocks: 12, cited_blocks: 9, citations: 0 },
+  ];
+  const pages = [page("OA-001", { tags: ["流程"], examples: ["甲", "例外：乙"] }), page("OA-002", { tags: ["角色", "流程"], examples: ["丙"] }), page("OA-003"),
+    page("OA-004", { tags: ["概念"], examples: ["丁"], deprecated: true })];
+  const questions = [question("TBD-001", { kind: "待澄清" }), question("TBD-002", { kind: "冲突" }), question("TBD-003", { kind: "待澄清" }), question("TBD-004")];
+  const all = lampOf("materials_cited", { materials, coverage, citedDocuments: ["inputs/需求.md", "inputs/访谈.docx#p12"], pages, questions });
+  assert.deepEqual(brief(all), [null, []]);
+  assert.equal(all.summary, "只报数、不判：材料 3 份：inputs/需求.md 被引用 3 处；inputs/访谈.docx 共 12 块，9 块有引用、3 块没有；inputs/制度.pdf 没有引用。"
+    + "页 3 页（按标签：流程 2、角色 1；没贴标签的 1 页），例子共 3 项。问题条目 4 条（待澄清 2、冲突 1、没写种类 1）。");
+  // 没有材料、没有页、没有问题：照样只报数。
+  assert.deepEqual(brief(lampOf("materials_cited", {})), [null, []]);
+  assert.equal(lampOf("materials_cited", {}).summary, "只报数、不判：任务里没有材料。页 0 页，例子共 0 项。问题条目 0 条。");
+  // 没有给块数时按出处说有没有引用（出处带位置的去掉位置再比）。
+  assert.match(lampOf("materials_cited", { materials, citedDocuments: ["inputs/制度.pdf#p3-2"] }).summary, /inputs\/需求\.md 没有引用；inputs\/访谈\.docx 没有引用；inputs\/制度\.pdf 有引用。/);
 });
 
 test("tagged_pages_no_open_questions：贴了标签的页没有挂着未解决的待澄清问题", () => {
@@ -242,13 +254,16 @@ test("从字段内容取算灯要的几样：一页主题、一条问题", () =>
     stateful({ 它是什么: "从三月起执行。押金另算，不变为积分。" }),
   ], [true, true, true, false, false]);
   const q = (fields: Record<string, unknown>) => lampQuestion("TBD-001", fields, "状态");
-  assert.deepEqual(q({ 种类: "待澄清", 状态: "未解决", 关联条目: ["OA-001", "UC-002"] }), { item_id: "TBD-001", open: true, related: ["OA-001", "UC-002"], unresolved: true, blocking: false });
+  assert.deepEqual(q({ 种类: "待澄清", 状态: "未解决", 关联条目: ["OA-001", "UC-002"] }), { item_id: "TBD-001", open: true, related: ["OA-001", "UC-002"], unresolved: true, blocking: false, kind: "待澄清" });
   // 未解决不分种类；是否阻断下游只认「阻断下游」这个取值。
   assert.deepEqual([q({ 种类: "范围外", 状态: "未解决", 是否阻断下游: "阻断下游" }).unresolved, q({ 种类: "范围外", 状态: "未解决", 是否阻断下游: "阻断下游" }).blocking,
     q({ 状态: "已解决", 是否阻断下游: "阻断下游" }).unresolved, q({ 状态: "未解决", 是否阻断下游: "不阻断" }).blocking], [true, true, false, false]);
   assert.deepEqual([q({ 种类: "范围外", 状态: "未解决" }).open, q({ 种类: "待澄清", 状态: "已解决" }).open, q({ 种类: "待澄清", 状态: "用户决定保留" }).open], [false, false, false]);
   // 集合没有「种类」这个字段时只看状态。
-  assert.deepEqual(q({ 状态: "未解决" }), { item_id: "TBD-001", open: true, related: [], unresolved: true, blocking: false });
+  assert.deepEqual(q({ 状态: "未解决" }), { item_id: "TBD-001", open: true, related: [], unresolved: true, blocking: false, kind: null });
+  // 要澄清的种类：待澄清、冲突、缺失（核读时记下的两处说法对不上、该有而没有的），没写种类的也算；范围外、后续迭代不算。
+  assert.deepEqual(["待澄清", "冲突", "缺失", "范围外", "后续迭代"].map((kind) => q({ 种类: kind, 状态: "未解决" }).open), [true, true, true, false, false]);
+  assert.deepEqual([clarifyKind(undefined), clarifyKind(null), clarifyKind("冲突"), clarifyKind("范围外")], [true, true, true, false]);
 });
 
 test("「这一段还差什么」的几行：不通过的灯各一句；都通过或不适用时写一句都齐了", () => {
@@ -258,7 +273,8 @@ test("「这一段还差什么」的几行：不通过的灯各一句；都通�
     "  - 有 1 页标签为「流程」的主题还没有带判断分叉的流程图：OA-001（还没有以它为来源的流程图）。",
     "  - 有 1 页主题还没有贴标签：OA-002。",
   ]);
-  assert.deepEqual(lampLines("reading", lamps.reading), ["核读材料这一段的几项都齐了。"]);
+  // 核读材料只有一盏只报数的灯：不说「都齐了」，写它报的数。
+  assert.deepEqual(lampLines("reading", lamps.reading), ["核读材料这一段只报数、不判是否做够：", `  - ${lamps.reading[0].summary}`]);
 });
 
 // ───────────── 写条目与编写文档新加的五盏 ─────────────

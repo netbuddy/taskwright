@@ -1,4 +1,4 @@
-// 工作台中栏的页签，按需求资产六类分：材料与证据、业务说明、分析模型、需求条目、评审与确认、文档与版本；任务定义里有问题条目
+// 工作台中栏的页签，按需求资产六类分，名字取任务定义的资产显示名；任务定义里有问题条目
 // 一类的集合时，「需求条目」后面另有一个与它们并列的页签，名字是那个集合的名字，页签上的数是未解决的有几条。
 // 业务说明、需求条目与问题三个页签里是集合（业务说明是那一个集合，问题是问题条目一类的集合，需求条目是其余的集合，排成子页签）；
 // 另外四个页签不是集合，各有自己的一页。这里只算：页签的次序与名字、页签上的数、「材料与证据」页上每份材料与每个知识库被引用了几处。
@@ -12,14 +12,18 @@ import { keepPendingField } from "./items";
 /** 页签的键：六类资产，加上问题。 */
 export type AssetPane = "materials" | "description" | "models" | "items" | "issues" | "review" | "docs";
 
-export const ASSET_PANES: { key: AssetPane; label: string }[] = [
-  { key: "materials", label: "材料与证据" },
-  { key: "description", label: "业务说明" },
-  { key: "models", label: "分析模型" },
-  { key: "items", label: "需求条目" },
-  { key: "review", label: "评审与确认" },
-  { key: "docs", label: "文档与版本" },
+/** 六类资产的页签，按次序；asset 是任务定义「资产显示名」里的键（文档与版本那一类的键是 versions）。 */
+export const ASSET_PANES: { key: AssetPane; asset: string }[] = [
+  { key: "materials", asset: "materials" },
+  { key: "description", asset: "description" },
+  { key: "models", asset: "models" },
+  { key: "items", asset: "items" },
+  { key: "review", asset: "review" },
+  { key: "docs", asset: "versions" },
 ];
+
+/** 一类资产的页签上写什么：任务定义给的资产显示名；没有给时写键。 */
+export const paneLabel = (task: Pick<Task, "definition">, pane: { asset: string }): string => task.definition.asset_names?.[pane.asset] ?? pane.asset;
 
 /** 问题条目一类的集合（有取值「用户决定保留」的枚举字段，见 items.ts 的 keepPendingField），照任务定义的先后。 */
 export const issueCollections = (task: Task) => task.definition.collections.filter((one) => !isOverall(one.name) && keepPendingField(task, one.name) !== null);
@@ -30,7 +34,10 @@ export const issueCollections = (task: Task) => task.definition.collections.filt
  */
 export function assetPanes(task: Task): { key: AssetPane; label: string }[] {
   const issues = issueCollections(task);
-  return ASSET_PANES.flatMap((one) => (one.key === "items" && issues.length > 0 ? [one, { key: "issues" as const, label: issues[0].name }] : [one]));
+  return ASSET_PANES.flatMap((one) => {
+    const pane = { key: one.key, label: paneLabel(task, one) };
+    return one.key === "items" && issues.length > 0 ? [pane, { key: "issues" as const, label: issues[0].name }] : [pane];
+  });
 }
 
 /** 不是集合的四个页签记在浏览器里时存的值（集合页签存集合名）。 */

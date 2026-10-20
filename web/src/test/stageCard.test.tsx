@@ -1,6 +1,6 @@
 // 助手提议进入下一个阶段的卡片（请选择，其中一个选项的键是 enter_clarify、enter_consolidate、start_items、enter_review 之一）：
-// 按键认出；标题写「进入下一阶段 · 请决定」；进入的那个选项是主按钮，另一个是普通按钮；点名的条目前面写「请先看：」并且可以点开；
-// 点进入的那一项照现有的做法替用户发一句与选项相同的话，带上选项的键；留在这一段的那一项（按四个固定的键认）一律写成「继续本阶段」，
+// 按键认出；标题写「进入下一步 · 请决定」；进入的那个选项是主按钮，另一个是普通按钮；点名的条目前面写「请先看：」并且可以点开；
+// 点进入的那一项照现有的做法替用户发一句与选项相同的话，带上选项的键；留在这一步的那一项（stay，早先的固定键也认）一律写成「继续本步」，
 // 点了怎样见 stayCard.test.tsx。别的请选择卡片与复述的卡片照旧。
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +23,9 @@ function card(act: Act, over: Record<string, unknown> = {}) {
 }
 const PAGE = overallTask().items.find((i) => i.collection === "业务说明")!;
 const CARDS: [string, string, string, string][] = [
+  ["next_step", "进入下一步：澄清", "stay", "再核读一遍"],
+  ["goto:writing", "转到：写条目", "stay", "先不转"],
+  // 早先的键照样认。
   ["enter_clarify", "进入澄清", "continue_reading", "再核读一遍"],
   ["enter_consolidate", "进入整理建模", "continue_clarify", "继续澄清"],
   ["start_items", "开始写条目", "continue_consolidate", "再整理一遍"],
@@ -30,15 +33,15 @@ const CARDS: [string, string, string, string][] = [
 ];
 
 describe("提议进入下一个阶段的卡片", () => {
-  it.each(CARDS)("选项键 %s：标题是「进入下一阶段 · 请决定」，「%s」是主按钮；键是 %s 的那一项不管助手写成「%s」还是别的，都显示成「继续本阶段」", (enterKey, enterText, stayKey, stayText) => {
+  it.each(CARDS)("选项键 %s：标题是「进入下一步 · 请决定」，「%s」是主按钮；键是 %s 的那一项不管助手写成「%s」还是别的，都显示成「继续本步」", (enterKey, enterText, stayKey, stayText) => {
     card({ kind: "choose", text: "这一段做完了，接下来做下一段。", options: [{ key: enterKey, text: enterText }, { key: stayKey, text: stayText }] });
     const act = screen.getByTestId("act-choose");
     expect(act.querySelector(".tt")).toHaveTextContent(STAGE_CARD_TITLE);
-    expect(STAGE_CARD_TITLE).toBe("进入下一阶段 · 请决定");
+    expect(STAGE_CARD_TITLE).toBe("进入下一步 · 请决定");
     expect(act).toHaveAttribute("data-stage-card", "true");
     expect(screen.getByTestId(`card-option-${enterKey}`)).toHaveTextContent(enterText);
     expect(screen.getByTestId(`card-option-${enterKey}`)).toHaveClass("pri");
-    expect(screen.getByTestId(`card-option-${stayKey}`)).toHaveTextContent(/^继续本阶段$/);
+    expect(screen.getByTestId(`card-option-${stayKey}`)).toHaveTextContent(/^继续本步$/);
     expect(screen.getByTestId(`card-option-${stayKey}`)).not.toHaveClass("pri");
   });
 

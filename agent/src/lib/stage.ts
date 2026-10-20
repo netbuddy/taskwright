@@ -63,7 +63,7 @@ export function stageByName(name: unknown): Stage | null {
  * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它已经归档（它的工作项被删除了）。它不是一个阶段，
  * 不排在 STAGES 的次序里，也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「这条会话现在在哪里」的那几处。它与 null 不是一回事：
  * null 是早先建的任务（任务定义里没有「业务说明」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
- * 空闲时助手能写什么与澄清阶段相同（见 ALLOWED）。启动哪一项活动由用户在任务起点页上定。
+ * 空闲时助手能写什么取空闲模板头里的「writes_allowed」（见 AllowedTable）。启动哪一项活动由用户在任务起点页上定。
  */
 export const IDLE = "idle";
 export const IDLE_NAME = "空闲";
@@ -89,92 +89,119 @@ export function gateStage(position: Position): Stage {
 // ───────────── 移动 ─────────────
 
 /**
- * 往前进入下一个阶段要由用户在卡片上点：助手做完这一段，发一张请选择卡片说清下一段要做什么，卡片上固定两个选项，
- * 「进入下一段」与「留在这一段」，键与文字都是固定的。用户点了「进入」，系统替用户记一次移动。
- * 进入写条目的那个键沿用早先的名字 start_items。
+ * 工作流里的转移由用户在卡片上点：助手做完这一步，发一张请选择卡片提议，用户点了生效的那一项，系统替用户把工作项移过去。
+ * 卡片的键是通用的三种，不再按阶段各写一个：
+ * - next_step「进入下一步：某活动」：进入工作流里的下一步（哪一步由工作流声明的 steps 推出来）；
+ * - goto:<活动标识符>「回到：某活动」或「转到：某活动」：退回前面的某一步，或者跳到后面的某一步；
+ * - stay「继续本步」：不移动，只把卡片标为已选，提议仍然开着。
+ * 过渡期活动的标识符与阶段的键相同，所以这里按阶段写；工作流的各步与阶段的先后相同（需求分析）。
+ * 早先的卡片用的是按阶段的固定键（enter_clarify、start_items、back_to_reading、continue_reading、stay_in_stage 之类），
+ * 任务库里还开着的旧卡片照样认：LEGACY_CARD_MOVES 把它们换成上面三种，只读，不再用来发新卡片。
  */
-export const START_ITEMS_KEY = "start_items";
-export const START_ITEMS_TEXT = "开始写条目";
-export const CONTINUE_CLARIFY_KEY = "continue_clarify";
-/** 留在这一段的那个选项的文字：五张卡片上都是这一句。 */
-export const STAY_TEXT = "继续本阶段";
-export const CONTINUE_CLARIFY_TEXT = STAY_TEXT;
+export const NEXT_STEP_KEY = "next_step";
+export const STAY_KEY = "stay";
+export const GOTO_PREFIX = "goto:";
+/** 留在这一步的那个选项的文字：所有提议卡片上都是这一句。 */
+export const STAY_TEXT = "继续本步";
 
 export interface CardOption {
   key: string;
   text: string;
 }
 
-/**
- * 进入某个阶段的那个选项。核读材料是第一段，在流程里没有「进入」它的卡片；它的这一项是早先任务空闲时用的（现在启动一律从任务起点页做，点了不算数）：
- * 用户上传了材料，助手用请选择卡片提议开始核读材料，卡片上另一项是「先不开始」（STAY_IDLE_OPTION）。
- */
-export const ENTER_OPTIONS: Record<Stage, CardOption> = {
-  reading: { key: "enter_reading", text: "开始核读材料" },
-  clarifying: { key: "enter_clarify", text: "进入澄清" },
-  modeling: { key: "enter_consolidate", text: "进入整理建模" },
-  writing: { key: START_ITEMS_KEY, text: START_ITEMS_TEXT },
-  reviewing: { key: "enter_review", text: "进入评审确认" },
-  document: { key: "enter_document", text: "进入编写文档" },
-};
+/** 留在这一步的那个选项。 */
+export const STAY_OPTION: CardOption = { key: STAY_KEY, text: STAY_TEXT };
+
+/** 进入下一步的那个选项：文字里带下一步的名字。 */
+export function nextStepOption(to: Stage): CardOption {
+  return { key: NEXT_STEP_KEY, text: `进入下一步：${STAGE_NAMES[to]}` };
+}
+
+/** 转到工作流里某一步的那个选项：在现在这一步之前的写「回到」，之后的写「转到」。from 不是阶段（空闲、不知道）时写「转到」。 */
+export function gotoOption(to: Stage, from: Position | null): CardOption {
+  const back = from !== null && from !== IDLE && STAGES.indexOf(to) < STAGES.indexOf(from);
+  return { key: `${GOTO_PREFIX}${to}`, text: `${back ? "回到" : "转到"}：${STAGE_NAMES[to]}` };
+}
 
 /**
- * 留在某个阶段的那个选项（编写文档是最后一段，没有往前的卡片）。五张卡片上文字相同、键各不相同：页面按键认出这一项，
- * 不管助手在卡片里把它写成什么都显示成这一句；点它只把卡片标为已选，不替用户发话（lib/user_stage.ts）。
+ * 卡片上一个选项键的意思：进入下一步、转到某一步、留在这一步。转到某一步的，早先的固定键自己带着方向（back：back_to_ 开头的是退回，
+ * 别的是往前）；新键没有，方向看它与现在所在的那一步谁前谁后。
  */
-export const STAY_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
-  reading: { key: "continue_reading", text: STAY_TEXT },
-  clarifying: { key: CONTINUE_CLARIFY_KEY, text: STAY_TEXT },
-  modeling: { key: "continue_consolidate", text: STAY_TEXT },
-  writing: { key: "continue_writing", text: STAY_TEXT },
-  reviewing: { key: "continue_review", text: STAY_TEXT },
+export type CardMove = { kind: "next" } | { kind: "goto"; to: Stage; back?: boolean } | { kind: "stay" };
+
+/** 早先按阶段的固定键，只读：任务库里还开着的旧卡片照样认。 */
+export const LEGACY_CARD_MOVES: Readonly<Record<string, CardMove>> = {
+  enter_reading: { kind: "goto", to: "reading", back: false },
+  enter_clarify: { kind: "goto", to: "clarifying", back: false },
+  enter_consolidate: { kind: "goto", to: "modeling", back: false },
+  start_items: { kind: "goto", to: "writing", back: false },
+  enter_review: { kind: "goto", to: "reviewing", back: false },
+  enter_document: { kind: "goto", to: "document", back: false },
+  back_to_reading: { kind: "goto", to: "reading", back: true },
+  back_to_clarify: { kind: "goto", to: "clarifying", back: true },
+  back_to_consolidate: { kind: "goto", to: "modeling", back: true },
+  back_to_writing: { kind: "goto", to: "writing", back: true },
+  back_to_review: { kind: "goto", to: "reviewing", back: true },
+  continue_reading: { kind: "stay" },
+  continue_clarify: { kind: "stay" },
+  continue_consolidate: { kind: "stay" },
+  continue_writing: { kind: "stay" },
+  continue_review: { kind: "stay" },
+  stay_in_stage: { kind: "stay" },
+  stay_idle: { kind: "stay" },
 };
 
-/**
- * 早先任务空闲时助手提议开始核读材料的那张卡片上不生效的那一项：空闲时没有阶段可以「继续」，所以另写一句。
- * 点它只把卡片标为已选，不替用户发话，提议仍然开着。
- */
-export const STAY_IDLE_OPTION: CardOption = { key: "stay_idle", text: "先不开始" };
+/** 一个选项键是三种里的哪一种；不是转移卡片的键时返回 null。早先的固定键照 LEGACY_CARD_MOVES 换。 */
+export function cardMove(key: unknown): CardMove | null {
+  if (typeof key !== "string") return null;
+  if (key === NEXT_STEP_KEY) return { kind: "next" };
+  if (key === STAY_KEY) return { kind: "stay" };
+  if (key.startsWith(GOTO_PREFIX)) {
+    const to = key.slice(GOTO_PREFIX.length);
+    return isStage(to) ? { kind: "goto", to } : null;
+  }
+  return LEGACY_CARD_MOVES[key] ?? null;
+}
+
+/** 这个选项键是不是留在这一步的那一项（含早先的「继续本阶段」「留在本段」「先不开始」）。 */
+export function isStayCardKey(key: unknown): boolean {
+  return cardMove(key)?.kind === "stay";
+}
 
 /**
- * 退回前面的阶段也由用户决定：助手认为这一段的输入大面积不能用了（用户放进了新材料、几页的理解互相矛盾），用一张请选择卡片
- * 提议退回并写明原因，卡片上固定两个选项，「退回某段」与「留在本段」。用户点了「退回」，系统替用户记一次移动。
- * 局部不明白的地方不退回：记一条问题条目、在那一处标「待定」、接着做这一段。
- * 退回某个阶段的那个选项（编写文档是最后一段，没有「退回」到它的卡片）。
+ * 卡片上的一个选项键是不是往前走、走到哪个阶段：进入下一步（下一步是现在这一步的下一个阶段），或者转到现在这一步之后的某一步；
+ * from 不是阶段（空闲、不知道）时，转到哪一步都算往前。不是往前的键时返回 null。
  */
-export const BACK_OPTIONS: Record<Exclude<Stage, "document">, CardOption> = {
-  reading: { key: "back_to_reading", text: "退回核读材料" },
-  clarifying: { key: "back_to_clarify", text: "退回澄清" },
-  modeling: { key: "back_to_consolidate", text: "退回整理建模" },
-  writing: { key: "back_to_writing", text: "退回写条目" },
-  reviewing: { key: "back_to_review", text: "退回评审确认" },
-};
-/** 回退卡片上留在这一段的那个选项：点它只把卡片标为已选，不替用户发话，提议仍然开着。 */
-export const STAY_HERE_OPTION: CardOption = { key: "stay_in_stage", text: "留在本段" };
+export function stageEnteredBy(key: unknown, from: Position | null): Stage | null {
+  const move = cardMove(key);
+  if (move === null || move.kind === "stay") return null;
+  if (move.kind === "next") return from !== null && from !== IDLE ? nextStage(from) : null;
+  if (move.back !== undefined) return move.back ? null : move.to;
+  if (from === null || from === IDLE) return move.to;
+  return STAGES.indexOf(move.to) > STAGES.indexOf(from) ? move.to : null;
+}
+
+/** 卡片上的一个选项键是不是往回退、退到哪个阶段：转到现在这一步之前的某一步。from 不是阶段时不算退回。 */
+export function stageBackedBy(key: unknown, from: Position | null): Stage | null {
+  const move = cardMove(key);
+  if (move === null || move.kind !== "goto") return null;
+  if (move.back !== undefined) return move.back ? move.to : null;
+  if (from === null || from === IDLE) return null;
+  return STAGES.indexOf(move.to) < STAGES.indexOf(from) ? move.to : null;
+}
 
 /**
  * 编写文档阶段请用户过目的那张卡片的两个选项。点「看过了，生成文档」不移动阶段、不引出助手的运行：页面把卡片点名的页记为看过，
- * 再打开生成文档；点「需要修改」只把卡片标为已选，用户接着说要改哪里。
+ * 再打开生成文档；点「需要修改」只把卡片标为已选，用户接着说要改哪里。这两项不是工作流的转移，键照旧。
  */
 export const DOCUMENT_REVIEWED_OPTION: CardOption = { key: "document_reviewed", text: "看过了，生成文档" };
 export const DOCUMENT_REVISE_OPTION: CardOption = { key: "document_revise", text: "需要修改" };
 
-/** 卡片上的一个选项键是「退回」哪个阶段的；不是这样的键时返回 null。 */
-export function stageBackedBy(key: unknown): Exclude<Stage, "document"> | null {
-  const found = (Object.keys(BACK_OPTIONS) as Exclude<Stage, "document">[]).find((stage) => BACK_OPTIONS[stage].key === key);
-  return found ?? null;
+/** 怎样提议退回某个阶段：告诉助手用哪张卡片、两个选项怎样写。from 是现在所在的阶段。 */
+export function backCardGuidance(to: Stage, from: Position | null = null): string {
+  const back = gotoOption(to, from ?? STAGES[STAGES.length - 1]);
+  return fillText("part.back_card", { back_key: back.key, back_text: back.text, stay_key: STAY_OPTION.key, stay_text: STAY_OPTION.text });
 }
-
-/** 怎样提议退回某个阶段：告诉助手用哪张卡片、两个选项怎样写。 */
-export function backCardGuidance(to: Exclude<Stage, "document">): string {
-  const back = BACK_OPTIONS[to];
-  return fillText("part.back_card", { back_key: back.key, back_text: back.text, stay_key: STAY_HERE_OPTION.key, stay_text: STAY_HERE_OPTION.text });
-}
-
-/** 回复里写了已经停用的 stage 时的拒绝：原因码、事实与怎么办。 */
-export const STAGE_PARAM_RETIRED: Refusal = refusalText("reply.stage_param_retired", {
-  back_options: Object.values(BACK_OPTIONS).map((one) => `${one.key}「${one.text}」`).join("、"), stay_key: STAY_HERE_OPTION.key, stay_text: STAY_HERE_OPTION.text,
-});
 
 /**
  * 业务说明还没有一页主题时页面上的两个开头（「通读材料起草」「逐项澄清」）替用户发给助手的两句固定的话。
@@ -208,26 +235,14 @@ export function nextStage(stage: Stage): Stage | null {
   return STAGES[STAGES.indexOf(stage) + 1] ?? null;
 }
 
-/** 卡片上的一个选项键是「进入」哪个阶段的（「开始核读材料」算进入核读材料）；不是这样的键时返回 null。 */
-export function stageEnteredBy(key: unknown): Stage | null {
-  const found = (Object.keys(ENTER_OPTIONS) as Stage[]).find((stage) => ENTER_OPTIONS[stage].key === key);
-  return found ?? null;
-}
-
-/** 早先任务空闲时怎样提议开始核读材料：告诉助手用哪张卡片、两个选项怎样写。现在的说明不再教助手发这张卡片。 */
-export function startReadingCardGuidance(): string {
-  const enter = ENTER_OPTIONS.reading;
-  return `请用请选择卡片提议，两个选项的键与文字是 ${enter.key}「${enter.text}」、${STAY_IDLE_OPTION.key}「${STAY_IDLE_OPTION.text}」`;
-}
-
 /**
  * 在某个阶段怎样提议进入下一段：告诉助手用哪张卡片、两个选项怎样写。编写文档是最后一段，没有下一段，返回空串。
  */
 export function forwardCardGuidance(from: Stage): string {
   const next = nextStage(from);
   if (next === null || from === "document") return "";
-  const enter = ENTER_OPTIONS[next], stay = STAY_OPTIONS[from];
-  return fillText("part.forward_card", { enter_key: enter.key, enter_text: enter.text, stay_key: stay.key, stay_text: stay.text });
+  const enter = nextStepOption(next);
+  return fillText("part.forward_card", { enter_key: enter.key, enter_text: enter.text, stay_key: STAY_OPTION.key, stay_text: STAY_OPTION.text });
 }
 
 /**
@@ -400,25 +415,19 @@ export function launchView(facts: LaunchFacts): LaunchView {
  * review 请求评审；publish 发布版本。
  */
 export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "publish";
+/** 全部写入种类，按这个次序。 */
+export const WRITE_KINDS: readonly WriteKind[] = ["page", "problem", "diagram", "item", "review", "publish"];
 
 /**
- * 每个阶段助手能做哪几类写入。页与问题任何阶段都可以写（评审确认阶段对页另有限制，见 pageRefusal）。
- * 编写文档排在最后，却不能写条目、不能画图、不能请求评审，所以这里一个阶段一个阶段列出来，不按先后推。
- * 空闲时与澄清相同：只能写页与问题。
+ * 获准能力表：每个位置助手能做哪几类写入。表的内容不在这里写：六个阶段取各自代表活动的声明里的「writes_allowed」，
+ * 空闲取空闲模板头里的那一栏（lib/activity_def_read.ts 读声明时生成，随声明一起记着）。这里只是消费它。
+ * 页与问题的限制另见 pageRefusal（评审确认阶段对页另有限制）。
  */
-const ALLOWED: Record<Position, readonly WriteKind[]> = {
-  idle: ["page", "problem"],
-  reading: ["page", "problem"],
-  clarifying: ["page", "problem"],
-  modeling: ["page", "problem", "diagram"],
-  writing: ["page", "problem", "diagram", "item", "review"],
-  reviewing: ["page", "problem", "diagram", "item", "review", "publish"],
-  document: ["page", "problem", "publish"],
-};
+export type AllowedTable = Readonly<Record<Position, readonly WriteKind[]>>;
 
-/** 这个阶段（或者空闲时）助手能不能做这一类写入。 */
-export function canWrite(stage: Position, kind: WriteKind): boolean {
-  return ALLOWED[stage].includes(kind);
+/** 给定这个位置获准的写入种类，能不能做这一类写入。 */
+export function canWrite(allowed: readonly WriteKind[], kind: WriteKind): boolean {
+  return allowed.includes(kind);
 }
 
 /** 拒绝的原因码与两层文字：事实（现在在哪个阶段、拦下的是什么）与怎么办（这一步要先做什么、谁能移动）。 */
@@ -442,15 +451,15 @@ const howToLeaveIdle = (): string => fillText("part.leave_idle");
 
 /** 还没到写条目时，怎样才能到：这一句写在几种拒绝的「怎么办」里。 */
 function howToReachWriting(): string {
-  return fillText("part.reach_writing", { start_items: START_ITEMS_TEXT });
+  return fillText("part.reach_writing", { start_items: gotoOption("writing", null).text });
 }
 
 /**
- * 助手新增、修改或删除别的集合（不是业务说明、也不是问题）的条目：写条目之前的阶段都拦，空闲时也拦。
+ * 助手新增、修改或删除别的集合（不是业务说明、也不是问题）的条目：这个位置获准的写入（allowed）里没有 item 就拦。
  * 可以写时返回 null。
  */
-export function itemRefusal(stage: Position, op: string, collection: string): Refusal | null {
-  if (canWrite(stage, "item")) return null;
+export function itemRefusal(stage: Position, allowed: readonly WriteKind[], op: string, collection: string): Refusal | null {
+  if (canWrite(allowed, "item")) return null;
   const words = { op: OP_WORDS[op] ?? "写", collection };
   if (stage === IDLE) return refusalText("gate.stage_item_write.idle", { ...words, leave_idle: howToLeaveIdle() });
   if (stage === "document") return refusalText("gate.stage_item_write.document", { ...words, stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("reviewing") });
@@ -478,30 +487,30 @@ export function pageRefusal(stage: Position, op: string, changed: readonly strin
  * 助手新画、修改或删除一张图：整理建模之前的阶段都拦，空闲时也拦。可以时返回 null。
  * 「怎么办」里说的是怎样走到整理建模：往前进入下一段要由用户在卡片上点，助手只能发卡片提议（forwardCardGuidance）。
  */
-export function diagramRefusal(stage: Position): Refusal | null {
-  if (canWrite(stage, "diagram")) return null;
+export function diagramRefusal(stage: Position, allowed: readonly WriteKind[]): Refusal | null {
+  if (canWrite(allowed, "diagram")) return null;
   if (stage === IDLE) return refusalText("gate.stage_diagram.idle", { leave_idle: howToLeaveIdle() });
   if (stage === "document") return refusalText("gate.stage_diagram.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("modeling") });
-  const enterModeling = ENTER_OPTIONS.modeling.text;
+  const enterModeling = nextStepOption("modeling").text;
   return stage === "reading"
     ? refusalText("gate.stage_diagram.reading", { stage: STAGE_NAMES[stage], forward: forwardCardGuidance("reading"), enter_modeling: enterModeling })
     : refusalText("gate.stage_diagram", { stage: STAGE_NAMES[stage], forward: forwardCardGuidance("clarifying"), enter_modeling: enterModeling });
 }
 
 /** 助手请求评审：写条目之前的阶段都拦，空闲时也拦。可以时返回 null。 */
-export function reviewRefusal(stage: Position): Refusal | null {
-  if (canWrite(stage, "review")) return null;
+export function reviewRefusal(stage: Position, allowed: readonly WriteKind[]): Refusal | null {
+  if (canWrite(allowed, "review")) return null;
   if (stage === IDLE) return refusalText("gate.stage_review.idle", { leave_idle: howToLeaveIdle() });
   if (stage === "document") return refusalText("gate.stage_review.document", { stage: STAGE_NAMES[stage], leave_document: howToLeaveDocument("reviewing") });
   return refusalText("gate.stage_review", { stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
 /** 助手发布版本：评审确认与编写文档两个阶段可以，空闲时不可以。可以时返回 null。 */
-export function publishRefusal(stage: Position): Refusal | null {
-  if (canWrite(stage, "publish")) return null;
+export function publishRefusal(stage: Position, allowed: readonly WriteKind[]): Refusal | null {
+  if (canWrite(allowed, "publish")) return null;
   if (stage === IDLE) return refusalText("gate.stage_publish.idle", { leave_idle: howToLeaveIdle() });
   return stage === "writing"
-    ? refusalText("gate.stage_publish.writing", { stage: STAGE_NAMES[stage], enter_reviewing: ENTER_OPTIONS.reviewing.text, forward: forwardCardGuidance("writing") })
+    ? refusalText("gate.stage_publish.writing", { stage: STAGE_NAMES[stage], enter_reviewing: nextStepOption("reviewing").text, forward: forwardCardGuidance("writing") })
     : refusalText("gate.stage_publish", { stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
@@ -523,6 +532,12 @@ export const USE_CASE_COLLECTION = "功能用例";
 /** 问题条目里说明它是哪一种的字段与「待澄清」这个取值；状态字段里表示还没解决的取值；指到相关条目的字段。 */
 export const QUESTION_KIND_FIELD = "种类";
 export const QUESTION_KIND_CLARIFY = "待澄清";
+/** 要在澄清时逐条问用户的问题种类：待澄清，以及核读时记下的冲突与缺失。 */
+export const QUESTION_KINDS_TO_CLARIFY: readonly string[] = [QUESTION_KIND_CLARIFY, "冲突", "缺失"];
+/** 一条问题条目的种类算不算要澄清的：没有写种类（集合没有这个字段，或早先的条目）的也算。 */
+export function clarifyKind(kind: unknown): boolean {
+  return kind === undefined || kind === null || QUESTION_KINDS_TO_CLARIFY.includes(String(kind));
+}
 export const QUESTION_OPEN_STATUS = "未解决";
 export const QUESTION_RELATED_FIELD = "关联条目";
 /** 问题条目里写打算怎样处理的字段。 */
@@ -620,6 +635,21 @@ export interface LampQuestion {
   unresolved: boolean;
   /** 是否阻断下游：写的是「阻断下游」为真，「不阻断」或者没有写为假。 */
   blocking: boolean;
+  /** 「种类」写的什么；没有写（或集合没有这个字段）是 null。只用来报数。没有给当作 null。 */
+  kind?: string | null;
+}
+
+/**
+ * 一份材料被引用的情况（只用来报数）：Word 与 PDF 材料按分段清单的块数，几块里有被引用的段落；文本材料没有块，只有被引用几处。
+ */
+export interface MaterialCoverage {
+  path: string;
+  /** 分段清单里的块数；文本材料、或者清单读不到时是 null。 */
+  blocks: number | null;
+  /** 有被引用的段落（或页内的块）的块数；blocks 为 null 时也是 null。 */
+  cited_blocks: number | null;
+  /** 文本材料被引用的条数（「文档原文」来源的条数）；Word 与 PDF 材料是 0，看块数。 */
+  citations: number;
 }
 
 /** 算灯要的全部事实。助手一侧与后端各自从任务库里读出来填，算法只在这里。 */
@@ -650,6 +680,8 @@ export interface LampInput {
   declared?: { intro: boolean; blocking: boolean };
   /** 发过几版（版本记录的行数）；没有给当作没有发布过。 */
   versions?: number;
+  /** 每份材料被引用的情况，按 materials 的次序（核读材料那一盏只报数时用）；没有给时按 citedDocuments 只报有没有被引用。 */
+  coverage?: MaterialCoverage[];
 }
 
 const texts = (value: unknown): string[] => (Array.isArray(value) ? value.filter((one): one is string => typeof one === "string" && one.trim() !== "") : []);
@@ -696,13 +728,45 @@ export function lampQuestion(itemId: string, fields: Record<string, unknown>, st
   const kind = fields[QUESTION_KIND_FIELD];
   return {
     item_id: itemId,
-    open: fields[statusField] === QUESTION_OPEN_STATUS && (kind === undefined || kind === QUESTION_KIND_CLARIFY),
+    open: fields[statusField] === QUESTION_OPEN_STATUS && clarifyKind(kind),
     related: texts(fields[QUESTION_RELATED_FIELD]),
     unresolved: fields[statusField] === QUESTION_OPEN_STATUS, blocking: fields[QUESTION_BLOCKING_FIELD] === QUESTION_BLOCKING,
+    kind: typeof kind === "string" && kind.trim() !== "" ? kind.trim() : null,
   };
 }
 
 const list = (ids: readonly string[]) => ids.join("、");
+
+/**
+ * 只报数、不判的灯：ok 恒为 null（页面上灰色），summary 是报的数；「还差几项」不算它们，进入下一步的卡片也不看它们。
+ */
+export const REPORT_ONLY_LAMPS: ReadonlySet<string> = new Set(["materials_cited"]);
+
+/** 按出现的先后数一组名字，写成「甲 3、乙 1」。 */
+function tally(names: readonly string[]): string {
+  const counts = new Map<string, number>();
+  for (const one of names) counts.set(one, (counts.get(one) ?? 0) + 1);
+  return [...counts].map(([name, n]) => `${name} ${n}`).join("、");
+}
+
+/** 核读材料那一盏报的数：各份材料被引用的块数与没有被引用的块数，页数按 OVERALL_FIELDS.tags 分，OVERALL_FIELDS.examples 的总项数，问题条目按种类分。 */
+function readingReport(input: LampInput, live: readonly LampPage[]): string {
+  const { tags, examples } = OVERALL_FIELDS;
+  const cited = new Set(input.citedDocuments.map((one) => one.split("#")[0]));
+  const coverage = new Map((input.coverage ?? []).map((one) => [one.path, one]));
+  const materials = input.materials.length === 0 ? "任务里没有材料。" : `材料 ${input.materials.length} 份：${input.materials.map((path) => {
+    const one = coverage.get(path);
+    if (one && one.blocks !== null && one.cited_blocks !== null) return `${path} 共 ${one.blocks} 块，${one.cited_blocks} 块有引用、${one.blocks - one.cited_blocks} 块没有`;
+    if (one) return `${path} 被引用 ${one.citations} 处`;
+    return `${path} ${cited.has(path) ? "有引用" : "没有引用"}`;
+  }).join("；")}。`;
+  const untagged = live.filter((one) => one.tags.length === 0).length;
+  const byTag = tally(live.flatMap((one) => one.tags));
+  const pages = `页 ${live.length} 页${live.length > 0 ? `（按${tags}：${byTag || "无"}${untagged > 0 ? `；没贴${tags}的 ${untagged} 页` : ""}）` : ""}，${examples}共 ${live.reduce((sum, one) => sum + one.examples.length, 0)} 项。`;
+  const kinds = tally(input.questions.map((one) => one.kind ?? "没写种类"));
+  const questions = `问题条目 ${input.questions.length} 条${kinds ? `（${kinds}）` : ""}。`;
+  return `只报数、不判：${materials}${pages}${questions}`;
+}
 const lamp = (key: string, ok: boolean | null, summary: string, items: string[] = []): Lamp => ({ key, summary, ok, items });
 
 /** 每个阶段的几盏灯，六个阶段都算。 */
@@ -712,12 +776,8 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   const tagged = (tag: string) => live.filter((one) => one.tags.includes(tag));
   const others = input.items;
 
-  // 核读材料：每份材料都被至少一页主题或一条问题引用。
-  const cited = new Set(input.citedDocuments.map((one) => one.split("#")[0]));
-  const uncited = input.materials.filter((one) => !cited.has(one));
-  const materialsCited = input.materials.length === 0 ? lamp("materials_cited", null, "任务里没有材料。")
-    : uncited.length === 0 ? lamp("materials_cited", true, "每份材料都被至少一页主题或一条问题引用了。")
-      : lamp("materials_cited", false, `有 ${uncited.length} 份材料还没有被任何一页主题或问题引用：${list(uncited)}。`, uncited);
+  // 核读材料：只报数、不判（REPORT_ONLY_LAMPS），ok 恒为 null。读完没有、读透没有，程序判不了，所以只把数摆出来。
+  const materialsCited = lamp("materials_cited", null, readingReport(input, live));
 
   // 澄清：贴了标签的页没有挂着未解决的待澄清问题。
   const labelled = live.filter((one) => one.tags.length > 0);
@@ -910,7 +970,10 @@ export const LAMP_KEYS = [
  * 「这一段还差什么」写成给助手看的一段话：不通过的灯各一句；都通过（或都不适用）时写一句「这一段的几项都齐了」。
  */
 export function lampLines(stage: Stage, lamps: readonly Lamp[]): string[] {
-  const missing = lamps.filter((one) => one.ok === false);
-  if (missing.length === 0) return [`${STAGE_NAMES[stage]}这一段的几项都齐了。`];
-  return [`${STAGE_NAMES[stage]}这一段还差 ${missing.length} 项：`, ...missing.map((one) => `  - ${one.summary}`)];
+  const reports = lamps.filter((one) => REPORT_ONLY_LAMPS.has(one.key)).map((one) => `  - ${one.summary}`);
+  const judged = lamps.filter((one) => !REPORT_ONLY_LAMPS.has(one.key));
+  const missing = judged.filter((one) => one.ok === false);
+  const head = missing.length > 0 ? [`${STAGE_NAMES[stage]}这一段还差 ${missing.length} 项：`, ...missing.map((one) => `  - ${one.summary}`)]
+    : judged.length > 0 || reports.length === 0 ? [`${STAGE_NAMES[stage]}这一段的几项都齐了。`] : [];
+  return reports.length === 0 ? head : [...head, `${STAGE_NAMES[stage]}这一段只报数、不判是否做够：`, ...reports];
 }

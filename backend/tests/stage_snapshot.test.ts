@@ -33,8 +33,9 @@ test("整份数据带 stage：现在的阶段、最近一次是谁在什么时�
     reviewing: ["reviews_no_open_findings", "completion_met"],
     document: ["chapters_have_intro", "glossary_complete", "document_no_blocking_questions"],
   });
-  // 几盏灯照库里的内容：材料被那一页引用了；流程页还没有流程图；用例依据的页用户看过；还没有评审过。
-  assert.deepEqual([lampOf(stage, "materials_cited").ok, lampOf(stage, "basis_pages_viewed").ok, lampOf(stage, "no_pending_items").ok], [true, true, true]);
+  // 几盏灯照库里的内容：核读材料那一盏只报数（材料被那一页引用了）；流程页还没有流程图；用例依据的页用户看过；还没有评审过。
+  assert.deepEqual([lampOf(stage, "materials_cited").ok, lampOf(stage, "basis_pages_viewed").ok, lampOf(stage, "no_pending_items").ok], [null, true, true]);
+  assert.match(lampOf(stage, "materials_cited").summary, /^只报数、不判：材料 1 份：.+ 被引用 \d+ 处。/);
   assert.deepEqual([lampOf(stage, "flows_have_flowchart_with_branch").ok, lampOf(stage, "flows_have_flowchart_with_branch").items, lampOf(stage, "flows_have_flowchart_with_branch").summary],
     [false, ["OA-001"], "有 1 页标签为「流程」的主题还没有带判断分叉的流程图：OA-001（还没有以它为来源的流程图）。"]);
   assert.deepEqual([lampOf(stage, "reviews_no_open_findings").ok, lampOf(stage, "reviews_no_open_findings").summary], [false, "还没有评审过。"]);

@@ -10,7 +10,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { ACTOR_USER } from "../src/lib/db.ts";
 import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, SOURCE, cardClick, makeWorkspace, overallDefinition, problemCard, problemClicksOn, query, userEntry } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, cardClick, enterStage, makeWorkspace, overallDefinition, problemCard, problemClicksOn, query, userEntry } from "./helpers.ts";
 
 const SESSION = "session-fields";
 let serial = 0;
@@ -125,6 +125,8 @@ test("任务定义里没有这几个字段的任务：照旧，不要求何时�
 
 test("导语页：一章至多一页在用的；同一批里立两页、库里已有一页再立，都拒绝并指出是哪一页；废弃了原来的才能另立；别的章不受影响", () => {
   const dir = workspace();
+  // 导语页只在编写文档里写（别的位置拦下，另见 page_guard.test.ts）。
+  enterStage(dir, "document", ["sess-ui", SESSION]);
   add(dir, page("业务流程导语", { 导语所属章: "业务流程" }), "业务说明");
   assert.equal(fieldsOf(dir, "OA-001").导语所属章, "业务流程");
   const again = refused(() => add(dir, page("流程一章的导语", { 导语所属章: "业务流程" }), "业务说明"));
@@ -135,7 +137,10 @@ test("导语页：一章至多一页在用的；同一批里立两页、库里�
     { op: "add", collection: "业务说明", fields: page("角色导语", { 导语所属章: "角色" }), sources: [SOURCE] },
     { op: "add", collection: "业务说明", fields: page("角色导语二", { 导语所属章: "角色" }), sources: [SOURCE] },
   ] }));
-  assert.match(batch, /操作 2（新增，集合「业务说明」）：新增到「业务说明」的条目：「角色」这一章已经有一页在用的导语页：OA-002。/);
+  // 前一页只在这一批里，还没存进库：说是第几个操作立的，不说「已经有」。
+  assert.match(batch, /操作 2（新增，集合「业务说明」）：新增到「业务说明」的条目：「角色」这一章的导语页，这一批里第 1 个操作已经在新增（新增后编号会是 OA-002；这一批被拒，它还没有存进库，查看条目查不到）。/);
+  assert.match(batch, /怎么办：一章只立一页导语页：这一批里只让一页当这一章的导语页，别的页讲的是这一章里的内容，不当导语页/);
+  assert.doesNotMatch(batch, /已经有一页在用的导语页/);
   assert.equal(query(dir, "SELECT 1 FROM item").length, 1);
   // 别的章照常；把普通的页改成已有导语页的那一章也拒绝；改导语页自己不算撞上自己。
   add(dir, page("角色导语", { 导语所属章: "角色" }), "业务说明");

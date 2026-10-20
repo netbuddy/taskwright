@@ -10,6 +10,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
+import { assetNamesOf } from "../../agent/src/lib/asset_names.ts";
+import { parseAssetNames } from "../../agent/src/lib/assets.ts";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { type DiagramRecord, diagramViewed, drawnItemIds, kindName, latestVersion, liveDiagrams, readDiagrams, viewedDiagramRevisions } from "../../agent/src/lib/diagram.ts";
@@ -212,6 +214,8 @@ export function definitionView(definition: ParsedDefinition, definitionText: unk
       display: displayView(c["界面"]),
       ...collectionReviewView(definition, c["名称"], definitionText, taskDir),
     })),
+    // 六类资产给人看的名字：任务定义的「资产显示名」，早先的定义里没有时回退读产品自带的（agent/src/lib/asset_names.ts）。
+    asset_names: assetNamesOf({ taskName: String(definition["任务名"] ?? ""), assetNames: parseAssetNames(definition["资产显示名"]) }),
   };
 }
 

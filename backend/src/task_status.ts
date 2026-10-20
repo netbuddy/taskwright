@@ -24,7 +24,7 @@
  * versions 是发布过的各版（library.versionView），没有发布过是空列表。
  * assets 是需求资产六类的现状，六格，每格 { key, name, count, unit, text, note, produced_by }（agent/src/lib/activity_catalog.ts 的 AssetCell）。
  * catalog 是任务起点页的活动目录：flows 两条工作流程与 activities 七项单项活动，文字取自活动与流程的定义文件开头的头
- * （agent/prompts/stages/、agent/prompts/flows/），各带现在能不能启动（enabled）、一句状态（state）与工作项个数（active_count）；
+ * （任务 skill 目录里的 activities/ 与 flows/，没有就读产品自带的，见 agent/src/lib/activity_def_read.ts），各带现在能不能启动（enabled）、一句状态（state）与工作项个数（active_count）；
  * 单项活动能不能启动只看数据，已经有工作项不拦；流程另带 work_item（任务里已有的流程工作项），有它时流程不能启动。
  * 定义读不出来时 catalog 为 null。
  * start_page 是任务起点页与活动输入页上的几段文字（startPageTexts）：一段定位的话、「三步开始」主按钮下面的一句、三种常见起点各一张小卡、
@@ -36,7 +36,7 @@
 
 import { CHAPTERS, chapterLayout, chapterPage } from "../../agent/src/lib/overall_chapters.ts";
 import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
-import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, QUESTION_KIND_CLARIFY, STAGES, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
+import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, STAGES, clarifyKind, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 import { fillText } from "../../agent/src/lib/texts.ts";
@@ -116,7 +116,7 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
   const unsorted = layout.unsorted.filter((one) => !one.deprecated).length;
   // 待澄清：决策记录与待澄清事项那张表里还没有了结的问题；问题集合没有「种类」字段时都算。
   const openQuestions = (view.overall_views?.decisions ?? [])
-    .filter((row) => row.entry === "question" && (row.question_kind === null || row.question_kind === QUESTION_KIND_CLARIFY)).length;
+    .filter((row) => row.entry === "question" && clarifyKind(row.question_kind)).length;
 
   // 模型：还在的图按种类数张数，种类照它第一次出现的先后。
   const models: { kind: string; name: string; count: number }[] = [];

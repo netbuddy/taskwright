@@ -22,7 +22,7 @@ judge：对一遍跑过的演练重算「评测.json」（换了清单，或者�
 compare：两次评测的对照，打印一段 Markdown：每盏灯与清单的每一组各写两个数与差值，后一次比前一次低的标「变差」。
 对照怎样算在观测台的 taskwright_observatory/evals.py 里，观测台的对照页面用的是同一份。
 
-通过率怎样算：一盏灯的通过率是通过的遍数比上能算的遍数（结果是「通过」或「未通过」的遍），「不适用」与「算不了」不进分母；
+通过率怎样算：一盏灯的通过率是通过的遍数比上能算的遍数（结果是「通过」或「未通过」的遍），「不适用」「算不了」「只报数」不进分母；
 一次评测的灯通过率是各盏通过率的平均。清单命中率是命中的组数比上组数，各遍合在一起算。
 
 灯按阶段分组：一盏灯归哪个阶段，按它的键在 sim/lamps.py 的灯表里找，表里没有的键归「其他」，排在最后。汇总以各遍结果里实际出现的灯为准，
@@ -229,14 +229,14 @@ def summary_markdown(s: dict) -> str:
         took = f"{r['用时秒'] // 60} 分 {r['用时秒'] % 60} 秒" if r.get("用时秒") is not None else "没有记"
         lines.append(f"| 第 {i + 1} 遍 | {r['目录']} | {r.get('停止原因') or ''} | {r.get('轮数')} | {took} | {r.get('出错') or '没有'} |")
     lines += ["", "## 灯", "", "每盏灯是这一段「算够」的一条判据，按演练结束时的任务数据算。「不适用」是这盏灯要看的那一类页或条目一个都没有，"
-              "「算不了」是要用的数据取不到，这两种不计入通过率。", "",
+              "「算不了」是要用的数据取不到，「只报数」是这盏灯只报数、不判（核读材料那一盏），这三种不计入通过率。", "",
               "各阶段的通过率（一个阶段的通过率是这一组各盏灯通过率的平均，没有能算的遍的灯不进平均）：", "",
               "| 阶段 | 几盏灯 | 本组通过率 |", "|---|---|---|"]
     lines += [f"| {one['阶段']} | {one['灯数']} | {percent(one['通过率'])} |" for one in s.get("灯按阶段") or eval_files.lamps_by_stage(s["灯"])]
     lines += ["", f"| 阶段 | 灯 |{heads} 通过几遍 |", "|---|---|" + "---|" * (n + 1)]
     for row in s["灯"]:
         # 未通过时写差的页或条目；没有编号可列（例如还没有评审过）或算不了时写备注。
-        cells = "".join(f" {state}{('（差 ' + '、'.join(missing) + '）') if missing else ('（' + note.rstrip('。') + '）') if note and state in (lamps.FAILED, lamps.UNKNOWN) else ''} |"
+        cells = "".join(f" {state}{('（差 ' + '、'.join(missing) + '）') if missing else ('（' + note.rstrip('。') + '）') if note and state in (lamps.FAILED, lamps.UNKNOWN, lamps.REPORT_ONLY) else ''} |"
                         for state, missing, note in zip(row["各遍"], row["各遍差的"], row["各遍备注"]))
         lines.append(f"| {row['阶段']} | {row['说明']} |{cells} {row['通过遍数']}／{row['能算的遍数']} |")
     lines += ["", "## 至少应有", "", "清单是下限：这份材料读透了至少应当整理出这些。一组里是同义的几种写法，出现一种就算命中。", ""]

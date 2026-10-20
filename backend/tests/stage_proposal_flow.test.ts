@@ -68,7 +68,7 @@ test("发卡片、选继续本阶段、再说两轮、在另一条会话里点�
     // 3. 用户再说两轮：助手下一次运行时在上下文里看得到那条通知；提议一直开着。
     await send({ text: "「自助借书」那一节再补一句：教师和学生的上限不一样。", client_id: "c-2" });
     const seen = JSON.stringify(requests()[requests().length - 1]["请求体"].messages);
-    assert.match(seen, /用户在提议「进入澄清」的卡片上选了「继续本阶段」，没有进入澄清。这个提议仍然开着/);
+    assert.match(seen, /用户在提议「进入澄清」的卡片上选了「继续本步」，没有进入澄清。这个提议仍然开着/);
     await send({ text: "还有：寒暑假顺延。", client_id: "c-3" });
     assert.equal((await stageNow()).proposal.event_seq, opened.event_seq);
     assert.equal((await stageNow()).current, "reading");

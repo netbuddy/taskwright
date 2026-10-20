@@ -96,7 +96,15 @@ export function answeredUnmoved(messages: ConversationMessage[], index: number):
   return answerOf(messages, index)?.click?.stage_unmoved?.at ?? null;
 }
 
-/** 同上那次点击没有移动的原因：not_in_flow 是任务当时不在需求分析流程里（空闲，或者正在单独开展一项活动）；别的情形是 null。 */
+/**
+ * 同上那次点击没有移动的原因：not_in_flow 是任务当时不在需求分析流程里（空闲，或者正在单独开展一项活动）；
+ * not_ready 是要去的那一步前置条件不满足；别的情形是 null。
+ */
 export function answeredUnmovedWhy(messages: ConversationMessage[], index: number): string | null {
   return answerOf(messages, index)?.click?.stage_unmoved?.why ?? null;
+}
+
+/** 同上 not_ready 时缺的是什么（活动声明的前置条件的说法）；别的情形是 null。 */
+export function answeredUnmovedBlocked(messages: ConversationMessage[], index: number): string | null {
+  return answerOf(messages, index)?.click?.stage_unmoved?.blocked ?? null;
 }

@@ -164,6 +164,8 @@ export interface CollectionDef {
 
 export interface TaskDefinition {
   collections: CollectionDef[];
+  /** 六类资产给人看的名字，由任务定义给（后端 library.ts 的 definitionView）；键是 materials、description、models、items、review、versions。 */
+  asset_names?: Record<string, string>;
 }
 
 /** 一条评审发现：依据的规则编号与级别（必选的叫问题，可选的叫建议）、字段、列表型字段的第几项（从 0 起）、问题、改法。 */
@@ -528,7 +530,7 @@ export interface UserMessage {
    * 用户点了一张进入某个阶段的卡片而阶段没有移动时才有（次序不对，或者任务本来就在那个阶段）：任务当时在哪个阶段。
    * why 为 not_in_flow 是任务当时不在需求分析流程里（空闲，at 是 idle；或者正在单独开展一项活动），进入与退回不算数。
    */
-  stage_unmoved?: { at: string; why?: string };
+  stage_unmoved?: { at: string; why?: string; blocked?: string };
 }
 
 export interface AssistantReply {
@@ -1286,8 +1288,8 @@ export interface DebugSystemPrompt {
   replaced?: boolean;
   stage?: StageKey | null;
   stage_name?: string | null;
-  /** recomposed 重新读文件拼的；reused 沿用上一次的；kept_after_error 重拼出错而沿用上一次的。 */
-  how?: "recomposed" | "reused" | "kept_after_error" | null;
+  /** recomposed 重新读文件拼的；reused 沿用上一次的。 */
+  how?: "recomposed" | "reused" | null;
   error?: string | null;
   prompt_dir?: string | null;
   notes?: string[];

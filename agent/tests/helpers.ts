@@ -3,9 +3,9 @@
  * 夹具是测试自己写的，与真实任务的起始文件无关。
  */
 
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { crc32 } from "node:zlib";
 import { databasePath } from "../src/lib/db.ts";
@@ -21,6 +21,8 @@ import { runUserOperation } from "../src/lib/user_ops.ts";
 import { paragraphsOf, readZipEntry, tableLabel } from "../../scripts/docx_paragraphs.mjs";
 
 export const DEFINITION_PATH = "docs/task-definitions/demo.json";
+/** 产品自带的需求工程任务类型的 skill 目录。 */
+export const SRS_SKILL_DIR = join(import.meta.dirname, "..", "..", "task-types", "requirements-engineering", ".pi", "skills", "requirements-engineering");
 
 /** 一份覆盖四种字段类型的小任务定义。 */
 export function demoDefinition(): Record<string, unknown> {
@@ -155,6 +157,11 @@ export function makeWorkspace(definition: unknown = demoDefinition(), { material
   const dir = tempDir("taskwright-agent-test-");
   mkdirSync(join(dir, "docs/task-definitions"), { recursive: true });
   writeFileSync(join(dir, DEFINITION_PATH), JSON.stringify(definition, null, 2), "utf-8");
+  // 任务 skill 目录里放产品自带的需求工程那几份活动与流程的声明：有阶段的任务读它们（lib/activity_def_read.ts）。
+  const skill = (definition as { 执行方法?: unknown } | null)?.执行方法;
+  if (typeof skill === "string") {
+    for (const sub of ["activities", "flows"]) cpSync(join(SRS_SKILL_DIR, sub), join(dir, dirname(skill), sub), { recursive: true });
+  }
   if (material) {
     mkdirSync(join(dir, "inputs"), { recursive: true });
     writeFileSync(join(dir, "inputs/材料.md"), MATERIAL_TEXT, "utf-8");

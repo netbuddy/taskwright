@@ -2,7 +2,7 @@
  * 理解格式的 JSON Schema：读进来，给出几样取自它的清单，并按它核对一份理解的形式。
  *
  * schema 文件 agent/prompts/schemas/user_intent.schema.json 是唯一的来源：用户侧九种功能、执行者回复的五种向用户要的回应
- * （lib/reply.ts 的 ACT_KINDS 取自这里）、三档把握、摘要的字数上限，都从它读；平台说明（agent/prompts/stages/common.md）里的说明与示例由
+ * （lib/reply.ts 的 ACT_KINDS 取自这里）、三档把握、摘要的字数上限，都从它读；平台说明「先写理解」的两个模块（agent/prompts/capabilities/dialogue/understanding_full.md 与 understanding_brief.md）里的说明与示例由
  * scripts/render-intent-schema.mjs 从它生成。本模块只读这一个文件，除了取模板的 texts.ts 不导入别的模块，免得与 reply.ts 互相导入。
  */
 
@@ -13,7 +13,7 @@ import { textPattern } from "./texts.ts";
 
 /** 理解格式的 JSON Schema 文件，仓内相对路径（写进提示与诊断用）。 */
 export const INTENT_SCHEMA_FILE = "agent/prompts/schemas/user_intent.schema.json";
-/** 理解格式的 JSON Schema 文件。平台说明（agent/prompts/stages/common.md）里的说明由 scripts/render-intent-schema.mjs 从它生成。 */
+/** 理解格式的 JSON Schema 文件。平台说明「先写理解」的两个模块（agent/prompts/capabilities/dialogue/understanding_full.md 与 understanding_brief.md）里的说明由 scripts/render-intent-schema.mjs 从它生成。 */
 export const INTENT_SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "prompts", "schemas", "user_intent.schema.json");
 
 type Json = Record<string, any>;

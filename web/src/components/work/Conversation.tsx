@@ -23,7 +23,7 @@ import { STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, nobodySpoke, wantsOp
 import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
-import { answeredByStaying, answeredStayKey, answeredText, answeredUnmoved, answeredUnmovedWhy } from "../../model/cardAnswer";
+import { answeredByStaying, answeredStayKey, answeredText, answeredUnmoved, answeredUnmovedBlocked, answeredUnmovedWhy } from "../../model/cardAnswer";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { useService } from "../ServiceControls";
@@ -231,6 +231,7 @@ export function Conversation({
             stayedKey={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredStayKey(messages, index) : null}
             unmovedAt={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmoved(messages, index) : null}
             unmovedWhy={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmovedWhy(messages, index) : null}
+            unmovedBlocked={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmovedBlocked(messages, index) : null}
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
               : m.type === "work_summary" && revisionsOfWork ? revisionsOfWork((m as WorkSummary).work_id) : []} onRevisionTag={onRevisionTag}
@@ -322,7 +323,7 @@ function StatusNote({ line, text }: { line: string; text: string }) {
   );
 }
 
-function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, stayedKey, unmovedAt, unmovedWhy, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, stayedKey, unmovedAt, unmovedWhy, unmovedBlocked, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -339,6 +340,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   /** 答这张卡片的那次点击没有让阶段移动时，任务当时所在的阶段。 */
   unmovedAt: string | null;
   unmovedWhy?: string | null;
+  unmovedBlocked?: string | null;
   onUndo: (revisionNo: number) => void;
   onOpenItem: (itemId: string) => void;
   onLocate?: (excerpt: string, locator?: string) => void;
@@ -398,7 +400,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
             </>
           )}
           {m.act && !m.degraded && (
-            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} stayedKey={stayedKey} unmovedAt={unmovedAt} unmovedWhy={unmovedWhy}
+            <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} stayedKey={stayedKey} unmovedAt={unmovedAt} unmovedWhy={unmovedWhy} unmovedBlocked={unmovedBlocked}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}
           {revisions.length > 0 && (

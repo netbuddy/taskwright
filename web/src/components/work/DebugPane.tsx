@@ -13,7 +13,7 @@ import { formatTime } from "../../model/format";
 import { IDLE_TEXT, flowName, isIdle, positionLabel } from "../../model/stage";
 import { StageBar } from "./StageBar";
 
-const HOW_TEXT: Record<string, string> = { recomposed: "这一次是重新读文件拼的", reused: "这一次沿用了上一次拼好的", kept_after_error: "这一次重拼出错，沿用了上一次拼好的" };
+const HOW_TEXT: Record<string, string> = { recomposed: "这一次是重新读文件拼的", reused: "这一次沿用了上一次拼好的" };
 const ACTOR_TEXT: Record<string, string> = { user: "用户", executor: "助手" };
 const LAMP_STATE: [string, string][] = [["ok", "通过"], ["no", "没通过"], ["na", "不适用"]];
 

@@ -7,6 +7,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
+import { ASSETS, type AssetKey, parseAssetNames } from "./assets.ts";
 import { CONDITION_NAMES } from "./conditions.ts";
 
 /** 字段的四种类型。 */
@@ -122,6 +123,8 @@ export interface TaskDefinition {
    * 是给将来跨任务的只读视图「需求池」预留的；创建任务时用户给了标签就以用户给的为准。
    */
   domainTag: string | null;
+  /** 资产显示名：六类资产各叫什么（键是 ASSETS）。可选项，早先的任务定义里没有，这时用 lib/asset_names.ts 的回退。 */
+  assetNames: Record<AssetKey, string> | null;
 }
 
 /** 任务定义里不写「材料目录」时用的值。观测台据它把读材料的调用归到「读材料」这个阶段。 */
@@ -147,6 +150,77 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim() !== "";
 }
 
+// ───────────── 平台提供的集合 ─────────────
+
+/**
+ * 问题集合由平台提供：字段与取值在这里定一次，任务类型的定义文件不再各抄一份。任务类型在「条目集合」里写一项占位
+ * `{"平台集合": "问题"}`，平台在那个位置补入整个集合，并在「完成条件」里补上它的条件。没有写占位的定义（早先的、用户自己写的）
+ * 平台不补，照原样用。
+ * 早先的任务定义（任务库里的快照、数据目录里早先播种的任务类型）里已经有问题集合时照原样用，不补、不改：
+ * 同名的算，名字不同而有一个枚举字段的取值里含「用户决定保留」的也算。
+ */
+export const PLATFORM_COLLECTION_KEY = "平台集合";
+export const PLATFORM_PROBLEM_NAME = "问题";
+const PLATFORM_COLLECTIONS: Record<string, { collection: Record<string, unknown>; completion: string[] }> = {
+  [PLATFORM_PROBLEM_NAME]: {
+    collection: {
+      名称: PLATFORM_PROBLEM_NAME,
+      编号前缀: "TBD",
+      字段: [
+        { 名: "事项", 类型: "文本", 必填: true },
+        { 名: "种类", 类型: "枚举", 必填: true, 取值: ["待澄清", "冲突", "缺失", "范围外", "后续迭代"] },
+        { 名: PROBLEM_BLOCKING_FIELD, 类型: "枚举", 必填: true, 取值: [PROBLEM_BLOCKING, PROBLEM_NOT_BLOCKING] },
+        { 名: PROBLEM_REVISIT_FIELD, 类型: "文本", 必填: false },
+        { 名: "建议的处理", 类型: "文本", 必填: false },
+        { 名: "状态", 类型: "枚举", 必填: true, 取值: ["未解决", "已解决", KEEP_PENDING_STATUS] },
+        { 名: PROBLEM_RESULT_FIELD, 类型: "文本", 必填: false },
+        { 名: PROBLEM_LANDED_FIELD, 类型: "文本", 必填: false },
+        { 名: "关联条目", 类型: "条目引用", 必填: false },
+      ],
+    },
+    completion: ["没有状态为未解决的条目"],
+  },
+};
+
+/** 平台提供的集合的名字。 */
+export const PLATFORM_COLLECTION_NAMES: readonly string[] = Object.keys(PLATFORM_COLLECTIONS);
+
+/**
+ * 把平台提供的集合补进一份解析出来的任务定义：占位换成整个集合，「完成条件」按集合的先后补上它的条件。已经有问题集合的
+ * （见上）占位去掉、不补。changed 为假时 raw 就是传进来的那一份。形状不对的（不是对象、没有条目集合）原样交回，由校验报错。
+ */
+export function withPlatformCollections(raw: unknown): { raw: unknown; changed: boolean } {
+  if (!isObject(raw) || !isObject(raw["交付物"]) || !Array.isArray(raw["交付物"]["条目集合"])) return { raw, changed: false };
+  const list = raw["交付物"]["条目集合"] as unknown[];
+  const named = new Set(list.filter(isObject).map((one) => one["名称"]).filter((name) => typeof name === "string"));
+  // 早先的定义里问题集合可以叫别的名字：认法与 keepPendingField 相同（有一个枚举字段的取值里含「用户决定保留」），有了就不补。
+  const keeps = list.filter(isObject).some((one) => Array.isArray(one["字段"]) && (one["字段"] as unknown[]).some((field) =>
+    isObject(field) && field["类型"] === FIELD_ENUM && Array.isArray(field["取值"]) && (field["取值"] as unknown[]).includes(KEEP_PENDING_STATUS)));
+  if (keeps) named.add(PLATFORM_PROBLEM_NAME);
+  let changed = false;
+  const added: string[] = [];
+  const out: unknown[] = [];
+  for (const entry of list) {
+    const key = isObject(entry) ? entry[PLATFORM_COLLECTION_KEY] : undefined;
+    if (typeof key === "string" && key in PLATFORM_COLLECTIONS) {
+      changed = true;
+      if (named.has(key) || added.includes(key)) continue;
+      out.push(structuredClone(PLATFORM_COLLECTIONS[key].collection));
+      added.push(key);
+    } else out.push(entry);
+  }
+  if (!changed) return { raw, changed: false };
+  const completion = isObject(raw["完成条件"]) ? raw["完成条件"] : {};
+  const order = out.filter(isObject).map((one) => one["名称"]).filter((name): name is string => typeof name === "string");
+  const merged: Record<string, unknown> = {};
+  for (const name of order) {
+    if (name in completion) merged[name] = completion[name];
+    else if (added.includes(name)) merged[name] = [...PLATFORM_COLLECTIONS[name].completion];
+  }
+  for (const [name, value] of Object.entries(completion)) if (!(name in merged)) merged[name] = value;
+  return { raw: { ...raw, 交付物: { ...raw["交付物"], 条目集合: out }, 完成条件: merged }, changed: true };
+}
+
 /**
  * 核对一份已经解析出来的任务定义。通过就返回结构化对象，不通过就抛 DefinitionError，
  * 里面逐条写明哪一处缺了什么、应当怎样写。
@@ -154,7 +228,8 @@ function isNonEmptyString(value: unknown): value is string {
  * 给了 baseDir（任务目录）时，另外核对各集合「评审规矩」指向的规则文件：文件存在、能解析、编号唯一、级别合法，
  * 关闭与升为必选的编号存在且都是可选规则。库里的任务定义快照再读时不给 baseDir，只核对形状。
  */
-export function validateDefinition(raw: unknown, path = "（未给出路径）", options: { baseDir?: string } = {}): TaskDefinition {
+export function validateDefinition(given: unknown, path = "（未给出路径）", options: { baseDir?: string } = {}): TaskDefinition {
+  const raw = withPlatformCollections(given).raw;
   const reasons: string[] = [];
   if (!isObject(raw)) {
     throw new DefinitionError(path, ["整份文件应当是一个 JSON 对象，现在不是。"]);
@@ -282,6 +357,14 @@ export function validateDefinition(raw: unknown, path = "（未给出路径）",
     }
   }
 
+  let assetNames: Record<AssetKey, string> | null = null;
+  if ("资产显示名" in raw) {
+    assetNames = parseAssetNames(raw["资产显示名"]);
+    if (assetNames === null) {
+      reasons.push(`「资产显示名」是可选项；写了就应当是一个对象，六个键 ${ASSETS.join("、")} 各写一段不为空的文字，不多不少。`);
+    }
+  }
+
   if (reasons.length > 0) throw new DefinitionError(path, reasons);
   return {
     taskName: raw["任务名"] as string,
@@ -293,8 +376,10 @@ export function validateDefinition(raw: unknown, path = "（未给出路径）",
     rulePaths,
     materialsDir,
     domainTag,
+    assetNames,
   };
 }
+
 
 /**
  * 核对一个集合的「界面」一项：几个键都可以不写；分组字段要是这个集合里的文本字段、枚举字段，或者写了「取值」的文本列表字段
@@ -487,7 +572,7 @@ function validateFields(raw: unknown, label: string, reasons: string[]): FieldDe
 export function loadDefinition(
   workspaceDir: string,
   definitionPath: string,
-): { definition: TaskDefinition; text: string; relativePath: string } {
+): { definition: TaskDefinition; text: string; relativePath: string; filled: boolean } {
   const full = resolve(workspaceDir, definitionPath);
   const relativePath = relative(resolve(workspaceDir), full);
   if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
@@ -507,5 +592,8 @@ export function loadDefinition(
   } catch (error) {
     throw new DefinitionError(relativePath, [`文件不是合法的 JSON：${(error as Error).message}。`]);
   }
-  return { definition: validateDefinition(raw, relativePath, { baseDir: workspaceDir }), text, relativePath };
+  // 平台提供的集合补进来之后的全文：建任务时写进任务库，也写回任务目录里的这份文件，助手读到的是完整的定义。
+  const filled = withPlatformCollections(raw);
+  const fullText = filled.changed ? `${JSON.stringify(filled.raw, null, 2)}\n` : text;
+  return { definition: validateDefinition(filled.raw, relativePath, { baseDir: workspaceDir }), text: fullText, relativePath, filled: filled.changed };
 }

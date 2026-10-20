@@ -9,7 +9,8 @@ import { USER_COMMAND, USER_EDIT_CUSTOM_TYPE, USER_RESULT_KEY, registerUserComma
 import { createTask } from "../src/lib/create_task.ts";
 import { recordReplyActs } from "../src/lib/dialogue_acts.ts";
 import { TASK_ACTIVE, withTaskDatabase } from "../src/lib/schema.ts";
-import { BACK_OPTIONS, DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, ENTER_OPTIONS, STAY_HERE_OPTION, STAY_OPTIONS, STAY_TEXT } from "../src/lib/stage.ts";
+import { DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, STAY_TEXT } from "../src/lib/stage.ts";
+import { BACK_OPTIONS, ENTER_OPTIONS, STAY_HERE_OPTION, STAY_OPTIONS } from "./old_cards.ts";
 import { openProposal } from "../src/lib/stage_proposal.ts";
 import { UserOpError } from "../src/lib/user_ops.ts";
 import { CONTINUE_STAGE_KIND, continueStage, continueStageNote } from "../src/lib/user_stage.ts";
@@ -24,7 +25,7 @@ const card = (id: string, act: unknown = ACT) => ({
 const said = (id: string, text: string) => ({ id, type: "message", message: { role: "user", content: text } });
 const OTHER = card("a-2", { kind: "choose", text: "选哪一个？", options: [{ key: "yes", text: "可以" }, { key: "no", text: "不行" }] });
 const BRANCH = [said("u-1", "读一下材料"), card("a-1"), OTHER] as never;
-const NOTE = "界面操作（不是用户打的字）：用户在提议「进入澄清」的卡片上选了「继续本阶段」，没有进入澄清。这个提议仍然开着，用户要进入时会自己点，不用再发同一张卡片。";
+const NOTE = "界面操作（不是用户打的字）：用户在提议「进入澄清」的卡片上选了「继续本步」，没有进入澄清。这个提议仍然开着，用户要进入时会自己点，不用再发同一张卡片。";
 
 function workspace(): string {
   const dir = makeWorkspace(overallDefinition());
@@ -50,8 +51,8 @@ test("这条会话里的进入卡片上选「继续本阶段」：返回要留�
   const result = continueStage({ workspaceDir: dir, sessionId: SESSION }, BRANCH, request({ reply_message_id: "a-1", option_key: "continue_reading" }));
   assert.deepEqual(result, { op_id: "ui-op-1", kind: "continue_stage", note: NOTE, reply_entry: "a-1", option_key: "continue_reading", stage: "clarifying" });
   assert.equal(continueStageNote({ stage: "writing", enter: ENTER_OPTIONS.writing }),
-    "界面操作（不是用户打的字）：用户在提议「开始写条目」的卡片上选了「继续本阶段」，没有进入写条目。这个提议仍然开着，用户要进入时会自己点，不用再发同一张卡片。");
-  assert.equal(STAY_TEXT, "继续本阶段");
+    "界面操作（不是用户打的字）：用户在提议「开始写条目」的卡片上选了「继续本步」，没有进入写条目。这个提议仍然开着，用户要进入时会自己点，不用再发同一张卡片。");
+  assert.equal(STAY_TEXT, "继续本步");
   assert.deepEqual([count(dir, "event"), count(dir, "activity_record")], [events, 0]);
 });
 
@@ -63,7 +64,7 @@ test("回退卡片上的「留在本段」、请过目卡片上的「需要修�
   const run = (entry: string, key: string) => continueStage({ workspaceDir: dir, sessionId: SESSION }, branch, request({ reply_message_id: entry, option_key: key }));
   const before = count(dir, "event");
   assert.deepEqual([run("b-1", "stay_in_stage").note, run("b-1", "stay_in_stage").stage], [
-    "界面操作（不是用户打的字）：用户在提议「退回澄清」的卡片上选了「留在本段」，没有退回澄清。这个提议仍然开着，用户要退回时会自己点，不用再发同一张卡片。", "clarifying"]);
+    "界面操作（不是用户打的字）：用户在提议「退回澄清」的卡片上选了「继续本步」，没有退回澄清。这个提议仍然开着，用户要退回时会自己点，不用再发同一张卡片。", "clarifying"]);
   assert.equal(run("b-2", "document_revise").note,
     "界面操作（不是用户打的字）：用户在请你过目的卡片上选了「需要修改」。等用户说要改哪里，照着改，改完再发一次请过目的卡片。");
   assert.deepEqual([run("b-2", "document_reviewed").note, run("b-2", "document_reviewed").stage, run("b-2", "document_reviewed").option_key], [

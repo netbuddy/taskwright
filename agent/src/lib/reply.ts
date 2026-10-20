@@ -32,7 +32,7 @@ import { type TurnCall, isBlank, isObject, lastAssistantTurn, requireAlone } fro
 import { ToolRejection, codesOf, withCodes } from "./tool_rejection.ts";
 import { GUIDANCE_PREFIX, problem, problemText, splitGuide } from "./save_revision.ts";
 import { codeOf, fillText, refusalText } from "./texts.ts";
-import { type Refusal, STAGE_PARAM_RETIRED } from "./stage.ts";
+import type { Refusal } from "./stage.ts";
 import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT } from "./schema.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
@@ -179,14 +179,10 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
     throw withCodes(new Error(refusal.fact), [refusal.code]);
   }
   for (const key of Object.keys(params)) {
-    if (!["informs", "act", "text", "stage", "reason", "activity_done"].includes(key)) {
+    if (!["informs", "act", "text", "activity_done"].includes(key)) {
       errors.push(problem(refusalText("reply.extra_key", { key, hint: brokenKeyHint(key) })));
     }
   }
-
-  // stage 与 reason 已经停用：助手不能自己移动阶段，往前、往后都是发卡片由用户点。这一个版本里两项仍在参数表里，
-  // 写了（不是 null、不是空白）就拒绝并指引发卡片；不写照常。
-  if (!isBlank(params.stage) || !isBlank(params.reason)) errors.push(problemText(STAGE_PARAM_RETIRED));
 
   // activity_done：助手汇报本会话的工作项（单项活动）做完了。只认 true、false 与 null；写了 true 而这条会话不在做单项活动的工作项就拒绝。
   const done = params.activity_done;

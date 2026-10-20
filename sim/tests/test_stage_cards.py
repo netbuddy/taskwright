@@ -166,7 +166,7 @@ class StageCardsTest(unittest.TestCase):
             self.assertEqual(first["第一层说明"][judge.ENTER_CHECK], "一共点了 5 次进入下一段的卡片：第 2 轮「进入澄清」、第 3 轮「进入整理建模」、"
                              "第 4 轮「开始写条目」、第 5 轮「进入评审确认」、第 7 轮「进入编写文档」。")
             states = {x["键"]: x["结果"] for x in result["灯"]}
-            self.assertEqual((states["materials_cited"], states["completion_met"]), ("通过", "通过"))
+            self.assertEqual((states["materials_cited"], states["completion_met"]), ("只报数", "通过"))
             # 编写文档的灯：只有业务流程这一章有内容，它有了导语。
             self.assertEqual(states["chapters_have_intro"], "通过")
         summary = json.loads(evals.summary_path(sims_root, LABEL, "json").read_text(encoding="utf-8"))
@@ -176,21 +176,26 @@ class StageCardsTest(unittest.TestCase):
         self.assertEqual(stages, list(dict.fromkeys(stage for stage, _key, _text in lamps.LAMPS)))
         self.assertEqual((sum(one["灯数"] for one in summary["灯按阶段"]), len(summary["灯"])), (len(lamps.LAMPS), len(lamps.LAMPS)))
         by_stage = {one["阶段"]: one for one in summary["灯按阶段"]}
-        self.assertEqual((by_stage["核读材料"]["通过率"], by_stage["评审确认"]["通过率"]), (1.0, 1.0))
+        # 核读材料那一盏只报数、不判，不进通过率，这一组没有能算的灯。
+        self.assertEqual((by_stage["核读材料"]["通过率"], by_stage["评审确认"]["通过率"]), (None, 1.0))
         self.assertEqual(stages[-1], "编写文档")
-        self.assertIn("| 核读材料 | 1 | 100% |", text)
-        # 提示词版本：两遍相同；文件清单里有代码仓里按阶段的说明与任务目录里任务类型的说明，没有早先的平台 skill；任务目录 docs 下的不在。
+        self.assertIn("| 核读材料 | 1 | 没有能算的 |", text)
+        # 提示词版本：两遍相同；文件清单里有代码仓里按阶段的说明、平台说明的模块、活动模板与任务目录里任务类型的说明，没有早先的平台 skill；任务目录 docs 下的不在。
         self.assertRegex(summary["提示词版本"], r"^[0-9a-f]{12}$")
         self.assertEqual(summary["各遍提示词版本"], [summary["提示词版本"]] * PASSES)
         listed = {one["路径"]: one for one in summary["提示词文件"]}
-        on_disk = sorted(f"agent/prompts/stages/{p.name}" for p in (REPO / "agent" / "prompts" / "stages").iterdir() if p.is_file())
-        self.assertEqual(sorted(path for path in listed if path.startswith("agent/prompts/stages/")), on_disk)
-        for path, where in (("agent/prompts/stages/common.md", "代码仓"), ("agent/prompts/stages/system.md", "代码仓"),
-                            (".pi/skills/requirements-engineering/SKILL.md", "任务目录"), (".pi/skills/requirements-engineering/stages/reading.md", "任务目录")):
+        on_disk = sorted(f"agent/prompts/templates/{p.name}" for p in (REPO / "agent" / "prompts" / "templates").iterdir() if p.is_file())
+        self.assertEqual(sorted(path for path in listed if path.startswith("agent/prompts/templates/")), on_disk)
+        # 活动与流程的声明在任务目录的 skill 里，列在任务目录一栏。
+        self.assertIn(".pi/skills/requirements-engineering/activities/reading.md", listed)
+        self.assertIn(".pi/skills/requirements-engineering/flows/analysis.md", listed)
+        for path, where in (("agent/prompts/capabilities/reading/materials.md", "代码仓"), ("agent/prompts/templates/reading.md", "代码仓"), ("agent/prompts/system.md", "代码仓"),
+                            (".pi/skills/requirements-engineering/SKILL.md", "任务目录"), (".pi/skills/requirements-engineering/activities/reading.md", "任务目录")):
             self.assertEqual((listed[path]["来自"], len(listed[path]["摘要值"])), (where, 16), path)
         self.assertFalse([path for path in listed if path.startswith("docs/") or path.startswith("/") or path.startswith("agent/prompts/skills/")])
         self.assertIn(f"- 提示词版本：{summary['提示词版本']}（每份文件见最后的「提示词」一节）", text)
-        self.assertIn(f"| agent/prompts/stages/common.md | 代码仓 | {listed['agent/prompts/stages/common.md']['字节数']} | {listed['agent/prompts/stages/common.md']['摘要值']} |", text)
+        materials = listed["agent/prompts/capabilities/reading/materials.md"]
+        self.assertIn(f"| agent/prompts/capabilities/reading/materials.md | 代码仓 | {materials['字节数']} | {materials['摘要值']} |", text)
         self.assertEqual(evals.listed(sims_root)[0]["提示词版本"], summary["提示词版本"])
         # 这次评测自己与自己对照：提示词是同一版，没有变了的文件。
         compared = eval_files.compare(sims_root, LABEL, LABEL)["提示词"]

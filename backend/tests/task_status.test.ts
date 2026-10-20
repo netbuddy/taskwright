@@ -91,7 +91,7 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   // 需求资产六类的现状：材料一份、已被引用；业务说明的节数与待澄清数同上面 description 的；三张图用户都没有打开过；
   // 两条用例里一条没有看过、一条因依据的页没看过而待核实；没有评审过、没有发布过。
   assert.deepEqual(status.assets.map((one) => [one.key, one.name, one.count, one.unit, one.text, one.note]), [
-    ["materials", "材料与证据", 1, "份", "1 份", "均已核读"], ["description", "业务说明", 7, "节", "7 节", "1 处待澄清"], ["models", "分析模型", 3, "张", "3 张", "3 未查看"],
+    ["materials", "材料与证据", 1, "份", "1 份", "均有引用"], ["description", "业务说明", 7, "节", "7 节", "1 处待澄清"], ["models", "分析模型", 3, "张", "3 张", "3 未查看"],
     ["items", "需求条目", 2, "条", "2 条", "1 未读 · 1 待核实"], ["review", "评审与确认", 0, "轮", "未评审", ""], ["versions", "文档与版本", 0, "版", "未发布", ""]]);
   // 每格写由哪些活动产出（取自各项活动的定义里「写」那一栏）；材料来自上传，没有产出它的活动。
   assert.deepEqual(status.assets.map((one) => one.produced_by), [[], ["核读材料", "澄清", "整理建模", "编写文档"], ["整理建模"], ["写条目", "评审确认"], ["评审确认"], ["编写文档", "发布"]]);
@@ -131,7 +131,7 @@ test("刚建的任务：没有页、没有图、没有提议，各项都是空�
     ["writing", { sections: 0, chapters: [], unsorted: 0, open_questions: 0 }, [], null]);
   assert.deepEqual(fresh.items.map((one) => [one.collection, one.total]), [["用例", 0], ["待定事项", 0]]);
   // 资产现状：只有一份还没有被引用的材料，别的各格都是零，零的格下面没有那一句。
-  assert.deepEqual(fresh.assets.map((one) => [one.text, one.note]), [["1 份", "1 份未核读"], ["0 节", ""], ["0 张", ""], ["0 条", ""], ["未评审", ""], ["未发布", ""]]);
+  assert.deepEqual(fresh.assets.map((one) => [one.text, one.note]), [["1 份", "1 份未被引用"], ["0 节", ""], ["0 张", ""], ["0 条", ""], ["未评审", ""], ["未发布", ""]]);
   assert.equal(taskStatus(build(tmp, "old", DEMO_DEFINITION, [])), null);
   assert.equal(taskStatus(`${tmp}/没有这个目录`), null);
 });

@@ -7,8 +7,8 @@
  */
 
 import {
-  ACTIVITY_NAMES, ASSETS, ASSET_NAMES, type ActivityDef, type ActivityKey, type AssetKey, type Condition, type FlowDef, type FlowKey, MODE_NAMES, type Mode,
-  PUBLISH, READ_NAMES, prerequisiteText,
+  ACTIVITY_NAMES, ASSETS, type ActivityDef, type ActivityKey, type AssetKey, type Condition, type FlowDef, type FlowKey, MODE_NAMES, type Mode,
+  PUBLISH, prerequisiteText, readName,
 } from "./activity_def.ts";
 import { CHAPTERS, chapterLayout } from "./overall_chapters.ts";
 import { FLOW_ANALYSIS, type FlowItemRef, LAUNCH_READY, type LampInput, type Stage, flowExistsText, flowStartNode, isStage } from "./stage.ts";
@@ -125,11 +125,11 @@ export interface AssetCell {
   produced_by: string[];
 }
 
-/** 六类资产的现状，照 ASSETS 的次序。 */
-export function assetCells(facts: AssetFacts, activities: readonly ActivityDef[]): AssetCell[] {
+/** 六类资产的现状，照 ASSETS 的次序；names 是任务定义的资产显示名（lib/asset_names.ts 的 assetNamesOf）。 */
+export function assetCells(facts: AssetFacts, activities: readonly ActivityDef[], names: Readonly<Record<AssetKey, string>>): AssetCell[] {
   const itemsNote = [facts.itemsUnread > 0 ? `${facts.itemsUnread} 未读` : "", facts.itemsPending > 0 ? `${facts.itemsPending} 待核实` : ""].filter(Boolean).join(" · ");
   const shown: Record<AssetKey, [count: number, unit: string, text: string | null, note: string]> = {
-    materials: [facts.materials, "份", null, facts.materials === 0 ? "" : facts.materialsUnread === 0 ? "均已核读" : `${facts.materialsUnread} 份未核读`],
+    materials: [facts.materials, "份", null, facts.materials === 0 ? "" : facts.materialsUnread === 0 ? "均有引用" : `${facts.materialsUnread} 份未被引用`],
     description: [facts.sections, "节", null, facts.openQuestions > 0 ? `${facts.openQuestions} 处待澄清` : facts.sections > 0 ? "无待澄清事项" : ""],
     models: [facts.diagrams, "张", null, facts.diagrams === 0 ? "" : facts.diagramsUnviewed === 0 ? "均已查看" : `${facts.diagramsUnviewed} 未查看`],
     items: [facts.items, "条", null, facts.items === 0 ? "" : itemsNote || "均已确认"],
@@ -139,7 +139,7 @@ export function assetCells(facts: AssetFacts, activities: readonly ActivityDef[]
   return ASSETS.map((key) => {
     const [count, unit, text, note] = shown[key];
     return {
-      key, name: ASSET_NAMES[key], count, unit, text: text ?? `${count} ${unit}`, note,
+      key, name: names[key], count, unit, text: text ?? `${count} ${unit}`, note,
       produced_by: activities.filter((one) => one.writes.includes(key)).map((one) => one.name),
     };
   });
@@ -153,7 +153,7 @@ export interface Named {
 
 /** 活动目录里的一项单项活动。 */
 export interface CatalogActivity {
-  key: ActivityKey;
+  key: string;
   name: string;
   mode: Mode;
   mode_name: string;
@@ -215,12 +215,12 @@ export const CATALOG_LATER = "此版本尚未提供";
  * （单项活动的按活动的键、流程的按流程的键），单项活动已经有工作项不拦，再启动是另起一个。flowItem 是任务里已有的流程工作项：
  * 有它时两条流程都不能启动（一个任务同一时刻至多一个流程工作项）。
  */
-export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, facts: AssetFacts, counts: Readonly<Record<string, number>> = {},
-  flowItem: FlowItemRef | null = null): Catalog {
+export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, names: Readonly<Record<AssetKey, string>>, facts: AssetFacts,
+  counts: Readonly<Record<string, number>> = {}, flowItem: FlowItemRef | null = null): Catalog {
   const activities: CatalogActivity[] = defs.activities.map((one) => {
     const base = {
       key: one.key, name: one.name, mode: one.mode, mode_name: MODE_NAMES[one.mode], purpose: one.purpose,
-      reads: one.reads.map((key) => ({ key, name: READ_NAMES[key] })), writes: one.writes.map((key) => ({ key, name: ASSET_NAMES[key] })),
+      reads: one.reads.map((key) => ({ key, name: readName(key, names) })), writes: one.writes.map((key) => ({ key, name: names[key] })),
       prerequisite_text: prerequisiteText(one.requires), example: one.example, recommended: false, active_count: counts[one.key] ?? 0,
     };
     const blocked = blockedText(one.requires, facts);
@@ -233,7 +233,8 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
     const blocked = blockedText(one.requires, facts);
     const ready = analysis && blocked === null;
     return {
-      key: one.key, name: one.name, purpose: one.purpose, applies: one.applies, nodes: one.nodes.map((key) => ({ key, name: ACTIVITY_NAMES[key] })), inputs: one.inputs,
+      key: one.key, name: one.name, purpose: one.purpose, applies: one.applies,
+      nodes: one.steps.map((key) => ({ key, name: defs.activities.find((activity) => activity.key === key)?.name ?? key })), inputs: one.inputs,
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
       // 只有需求分析现在能启动；需求变更要有已发布的版本，而且它的各站还没有定义。已有流程工作项时都不能启动。
       enabled: ready && flowItem === null,

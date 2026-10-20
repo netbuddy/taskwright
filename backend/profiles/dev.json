@@ -65,7 +65,7 @@
       "required": false
     }
   ],
-  "system_prompt_file": "agent/prompts/stages/system.md",
+  "system_prompt_file": "agent/prompts/system.md",
   "系统提示说明": "助手的系统提示，用 --system-prompt 整体替换助手程序自带的系统提示。文件路径相对代码仓根目录，这份文字是助手行为的一部分，改动要连同测试一起评估。",
   "env_passthrough": [
     "LANGFUSE_PUBLIC_KEY",

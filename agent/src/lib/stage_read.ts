@@ -11,10 +11,11 @@
  * 早先建的任务（任务定义里没有「业务说明」集合）没有阶段：stageOf 返回 null，调用方据此什么都不做。
  */
 
+import { assetNamesOf } from "./asset_names.ts";
 import type { DatabaseSync } from "node:sqlite";
-import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, catalog } from "./activity_catalog.ts";
+import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, blockedText, catalog } from "./activity_catalog.ts";
 import { DefinitionHeadError } from "./activity_def.ts";
-import { type Definitions, definitions } from "./activity_def_read.ts";
+import { type Definitions, definitionsFor } from "./activity_def_read.ts";
 import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { checkCompletion } from "./conditions.ts";
 import { emit, wallClockText } from "./db.ts";
@@ -30,12 +31,13 @@ import {
 } from "./schema.ts";
 import { openProposal } from "./stage_proposal.ts";
 import {
-  BACK_OPTIONS, ENTER_OPTIONS, FLOW_ANALYSIS, FLOW_NAMES, type FlowItemRef, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
-  type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow,
-  activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, nextStage, stageBackedBy, stageEnteredBy, stageLamps,
+  FLOW_ANALYSIS, FLOW_NAMES, type FlowItemRef, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type MaterialCoverage, type LaunchFacts, type LaunchView,
+  type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow, type WriteKind,
+  activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, stageLamps, cardMove, gotoOption, nextStepOption,
 } from "./stage.ts";
 import { refusalText } from "./texts.ts";
 import { listMaterials } from "./task_status.ts";
+import { envSegmentParams, materialFacts } from "./segments.ts";
 import { versionCount } from "./versions.ts";
 
 /**
@@ -158,6 +160,11 @@ export function stageOf(db: DatabaseSync, workspaceDir: string, taskId: string, 
   sessionId: string | null | undefined): Position | null {
   if (!hasOverall(definition.collections)) return null;
   return currentStage(db, taskId, sessionId);
+}
+
+/** 在这个位置助手能做哪几类写入：取这个任务的活动声明生成的获准能力表（lib/activity_def_read.ts）。声明读不出来时抛错。 */
+export function allowedAt(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, stage: Position): readonly WriteKind[] {
+  return definitionsFor(workspaceDir, definition.skillPath).allowed[stage];
 }
 
 /** 一个工作项是哪一种、叫什么：流程的工作项叫流程的名字，单项活动的叫活动的名字。 */
@@ -365,12 +372,12 @@ export function moveStage(db: DatabaseSync, workspaceDir: string, who: Who, to: 
 }
 
 /**
- * 产品自带的活动与流程的定义（lib/activity_def_read.ts）。读不出来（文件不在、头缺栏）时不抛错，返回原因：
- * 调用方据此不出活动目录、不让启动任何一项单项活动，别的照常。
+ * 这个任务的活动与流程的声明（lib/activity_def_read.ts：任务 skill 目录里的，没有就回退读产品自带的）。读不出来（文件不在、
+ * 声明缺栏）时不抛错，返回原因：调用方据此不出活动目录、不让启动任何一项单项活动，别的照常。
  */
-export function definitionsOrError(): { defs: Definitions; error: null } | { defs: null; error: string } {
+export function definitionsOrError(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">): { defs: Definitions; error: null } | { defs: null; error: string } {
   try {
-    return { defs: definitions(), error: null };
+    return { defs: definitionsFor(workspaceDir, definition.skillPath), error: null };
   } catch (error) {
     if (error instanceof DefinitionHeadError) return { defs: null, error: error.message };
     throw error;
@@ -389,7 +396,7 @@ function allBlocked(reason: string): Record<Stage, string | null> {
 export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition, sessionId: string | null | undefined, assets?: AssetFacts): LaunchFacts {
   const open = openActivityRecord(db, taskId, sessionId);
   const facts = assets ?? assetFacts(lampInput(db, workspaceDir, taskId, definition));
-  const found = definitionsOrError();
+  const found = definitionsOrError(workspaceDir, definition);
   return {
     position: open?.activity ?? IDLE, inFlow: open !== null && open.flow !== null, flowNode: null, flowItem: flowWorkItem(db, taskId), hasMaterials: facts.materials > 0,
     blocked: found.defs ? blockedByStage(found.defs.activities, facts) : allBlocked(found.error),
@@ -412,77 +419,106 @@ export function activeCounts(db: DatabaseSync, taskId: string): Record<string, n
   return counts;
 }
 
-/** 用户在卡片上点了「进入某个阶段」时，那次换站记的理由。 */
-export function enterReason(to: Stage): string {
-  return `用户在卡片上选了「${ENTER_OPTIONS[to].text}」`;
+/** 用户在卡片上点了往前走的那一项时，那次换站记的理由：点的那一项的文字。 */
+export function enterReason(option: string): string {
+  return `用户在卡片上选了「${option}」`;
 }
 /**
- * 用户在卡片上点了「退回某个阶段」时，那次换站记的理由：点的是哪一项，后面接卡片的问句（助手在那里写为什么要退回）。
+ * 用户在卡片上点了往回退的那一项时，那次换站记的理由：点的是哪一项，后面接卡片的问句（助手在那里写为什么要退回）。
  * 问句是空的时只写点的是哪一项。
  */
-export function backReason(to: Exclude<Stage, "document">, question: string): string {
+export function backReason(option: string, question: string): string {
   const said = question.trim();
-  return `用户在卡片上选了「${BACK_OPTIONS[to].text}」${said ? `：${said}` : ""}`;
+  return `用户在卡片上选了「${option}」${said ? `：${said}` : ""}`;
 }
-/** 点的是「开始写条目」时的理由。 */
-export const START_ITEMS_REASON = enterReason("writing");
 
 /**
- * 用户点了一张卡片上的选项：点的是助手提议的那张请选择卡片上「进入」或「退回」某个阶段的选项时，替用户记一次换站。
- * 进入的键各进入一个阶段（lib/stage.ts 的 ENTER_OPTIONS）：进入澄清、进入整理建模、开始写条目、进入评审确认、进入编写文档。
+ * 用户点了一张卡片上的选项：点的是助手提议的那张请选择卡片上转移的那一项（进入下一步 next_step、转到某一步 goto:<活动标识符>，
+ * 早先的固定键照 lib/stage.ts 的 LEGACY_CARD_MOVES 换）时，替用户记一次换站。
  * 先在会话当前分支上找到点的那条回复，确认它确实是助手发的请选择、选项里有这个键。这条分支上找不到那条回复时（卡片是在同一个工作项的
- * 另一条会话里发的，用户从输入框上方的「待决定」一行点了进入），改为核对这条会话的工作项开着的提议（lib/stage_proposal.ts）：点的键是它的进入键、
+ * 另一条会话里发的，用户从输入框上方的「待决定」一行点了），改为核对这条会话的工作项开着的提议（lib/stage_proposal.ts）：点的键是它生效的那一项、
  * 给了回复编号时又正是它那一条，才算。两样都认不出就不记（返回 null），点击照常往下走。
- * 进入与退回是流程里的事，按这条会话的工作项判：
- * - 这条会话正在做一个流程的工作项：次序不对的点击不记（why 为 not_next 或 not_back）。进入澄清、进入整理建模、进入评审确认、进入编写文档只在
- *   工作项正处在紧挨着的前一段时才算；开始写条目在写条目之前的哪一段点都算（用户可以跳过中间的阶段），已经过了写条目时点它是退回写条目；
- *   退回的目标要在现在这个阶段之前。
- * - 别的情形（自由讨论的会话、归档的会话、单项活动的工作项）：进入与退回都不算（why 为 not_in_flow）。早先任务空闲时
- *   「开始核读材料」的卡片能启动流程，现在启动一律从任务起点页做，这张卡片上的点击也不算。
+ * 转移是工作流里的事，按这条会话的工作项判：
+ * - 这条会话正在做一个工作流的工作项：要去哪一步由程序推出来——进入下一步是工作流声明的 steps 里现在这一步的下一步，转到某一步就是那一步；
+ *   要去的那一步要在这条工作流的各步里（why 为 not_next），它的活动声明的 requires 要满足（why 为 not_ready，blocked 写缺什么），然后换站。
+ *   在现在这一步之前的算退回，理由里接卡片的问句。
+ * - 别的情形（自由讨论的会话、归档的会话、单项活动的工作项）：都不算（why 为 not_in_flow）。
  * 任务没有阶段、工作项本来就在那一站时也不记，结果里写明原因。自己开事务，在卡片点击的处理函数里、
  * 发那句固定的话之前调用，这样助手回应这次点击的那一次运行从头就在新的阶段。
  */
 export function recordStageCardClick(workspaceDir: string, sessionId: string, branch: readonly Entry[],
   click: { opId: string; replyEntry: unknown; optionKey: unknown }): StageMoveOutcome | null {
-  const to = stageEnteredBy(click.optionKey);
-  const back = to === null ? stageBackedBy(click.optionKey) : null;
-  if (to === null && back === null) return null;
+  const move = cardMove(click.optionKey);
+  if (move === null || move.kind === "stay") return null;
   // 回复编号没有给、或者给的是空文字（开着的提议没有记下它在哪条回复上时，页面只能这样发）：都当作没有给。
   const replyEntry = typeof click.replyEntry === "string" && click.replyEntry !== "" ? click.replyEntry : null;
   const card = replyEntry !== null ? branch.find((entry) => entry.id === replyEntry) : undefined;
   // 那条回复在这条分支上：照它自己判，是别的东西（用户的话、别的卡片、卡片上没有这个键）就不认，不再去看开着的提议。
   const act = card ? chooseActOf(card) : null;
-  if (card && (!act || !act.options.some((option: { key?: unknown } | null) => option?.key === click.optionKey))) return null;
+  const option = act?.options.find((one: { key?: unknown } | null) => one?.key === click.optionKey) as { key: string; text?: unknown } | undefined;
+  if (card && (!act || !option)) return null;
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as
         { task_id: string; definition_text: string } | undefined;
       if (!task) return null;
       let cardQuestion = typeof act?.text === "string" ? act.text : "";
+      let optionText = typeof option?.text === "string" ? option.text : "";
       if (!card) {
         const open = openProposal(db, task.task_id, sessionId);
         if (open === null || open.kind === "review" || open.enter.key !== click.optionKey) return null;
         if (replyEntry !== null && replyEntry !== open.reply_entry) return null;
         cardQuestion = open.text;
+        optionText = open.enter.text;
       }
+      const definition = validateDefinition(JSON.parse(task.definition_text));
       const where = whereIs(db, workspaceDir, task.task_id, sessionId);
       const from = where?.from ?? null;
       const who: Who = { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" };
-      const unmoved = (why: "not_back" | "not_next" | "not_in_flow") => ({ requested: (back ?? to)!, from, moved: false, why, event_seq: null });
-      // 这条会话不在做流程的工作项：进入与退回都不算数。
+      const fromStage = from !== null && from !== IDLE ? from : null;
+      const to = move.kind === "next" ? (fromStage ? nextStepStage(workspaceDir, definition, where?.item?.flow ?? null, fromStage) : null) : move.to;
+      const unmoved = (why: "not_next" | "not_in_flow" | "not_ready", blocked?: string) =>
+        ({ requested: to ?? fromStage ?? "reading", from, moved: false, why, event_seq: null, ...(blocked ? { blocked } : {}) });
+      // 这条会话不在做工作流的工作项：转移都不算数。任务没有阶段时照常交给 moveStage，它写明原因（no_stages）。
       if (where !== null && (where.item === null || where.item.flow === null)) return unmoved("not_in_flow");
-      if (back !== null) {
-        // 退回：目标要在现在这个阶段之前；卡片的问句（助手写的原因）记进理由。
-        if (from !== null && from !== IDLE && STAGES.indexOf(back) >= STAGES.indexOf(from)) return unmoved("not_back");
-        return moveStage(db, workspaceDir, who, back, backReason(back, cardQuestion));
+      if (where === null && to !== null) return moveStage(db, workspaceDir, who, to, enterReason(optionText || gotoOption(to, null).text));
+      if (to === null) return unmoved("not_next");
+      // 早先的固定键自带方向：「退回某段」只认前面的阶段，「进入某段」只认后面的阶段，方向不对的不记（点的是一张早先的卡片）。
+      if (move.kind === "goto" && move.back !== undefined && fromStage !== null) {
+        const before = STAGES.indexOf(to) < STAGES.indexOf(fromStage);
+        if (move.back && !before) return { ...unmoved("not_next"), why: "not_back" as const };
+        if (!move.back && before) return unmoved("not_next");
       }
-      if (to !== "writing" && from !== null && from !== IDLE && nextStage(from) !== to) return unmoved("not_next");
-      return moveStage(db, workspaceDir, who, to!, enterReason(to!));
+      // 要去的那一步要在这条工作流的各步里，它的 requires 要满足。
+      const found = definitionsOrError(workspaceDir, definition);
+      if (found.defs) {
+        const flow = found.defs.flows.find((one) => one.key === (where?.item?.flow ?? FLOW_ANALYSIS));
+        const target = found.defs.activities.find((one) => one.stage === to);
+        if (!flow || !target || !flow.steps.includes(target.key)) return unmoved("not_next");
+        const blocked = blockedText(target.requires, assetFacts(lampInput(db, workspaceDir, task.task_id, definition)));
+        if (blocked !== null) return unmoved("not_ready", blocked);
+      }
+      const back = fromStage !== null && STAGES.indexOf(to) < STAGES.indexOf(fromStage);
+      const text = optionText || (move.kind === "next" ? nextStepOption(to).text : gotoOption(to, from).text);
+      return moveStage(db, workspaceDir, who, to, back ? backReason(text, cardQuestion) : enterReason(text));
     });
   } catch (error) {
     if (error instanceof NoDatabaseYet) return null;
     throw error;
   }
+}
+
+/**
+ * 一条流程里某个阶段的下一步算作哪个阶段：按流程声明的各步（steps）的先后，取这一步之后的那一项活动的阶段；
+ * 这一步是最后一步、下一项活动只能由用户发起（发布）、或者流程的声明读不出来时是 null。flow 为 null 时按需求分析。
+ */
+export function nextStepStage(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, flow: string | null, from: Stage): Stage | null {
+  const found = definitionsOrError(workspaceDir, definition);
+  if (!found.defs) return null;
+  const steps = found.defs.flows.find((one) => one.key === (flow ?? FLOW_ANALYSIS))?.steps ?? [];
+  const stages = steps.map((key) => found.defs.activities.find((one) => one.key === key)?.stage ?? null);
+  const at = stages.indexOf(from);
+  return at < 0 ? null : stages[at + 1] ?? null;
 }
 
 // ───────────── 现在在哪个阶段、每个阶段还差什么 ─────────────
@@ -627,6 +663,21 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
   };
 }
 
+/**
+ * 每份材料被引用的情况（核读材料那一盏报数用），按 materials 的次序。块数取材料的分段清单（lib/segments.ts 的 materialFacts）：
+ * 一块里有一段（PDF 是页内的一块）被引用就算这一块有引用。分段清单读不到的 Word、PDF 材料不列，报数时退回只说有没有引用。
+ */
+function materialCoverage(db: DatabaseSync, workspaceDir: string, taskId: string, listed: string[], materials: readonly string[]): MaterialCoverage[] {
+  const facts = new Map(materialFacts(db, taskId, workspaceDir, listed, envSegmentParams()).map((one) => [one.path, one]));
+  return materials.flatMap((path) => {
+    const one = facts.get(path);
+    if (!one) return [];
+    if (one.kind === "text") return [{ path, blocks: null, cited_blocks: null, citations: one.cited }];
+    if (one.blocks.length === 0) return [];
+    return [{ path, blocks: one.blocks.length, cited_blocks: one.blocks.filter((block) => block.items > 0).length, citations: 0 }];
+  });
+}
+
 /** 从任务库与任务目录里读出算灯要的全部事实（lib/stage.ts 的 LampInput）。只读。 */
 export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): LampInput {
   const facts = lampFacts(db, taskId, definition);
@@ -641,9 +692,12 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
     return verdictAt(db, taskId, one.item_id, revisionOf.get(one.item_id)!, hashOf.get(one.collection)!).state === "failed";
   }).map((one) => one.item_id);
   const completion = checkCompletion(db, taskId, definition.completion, { workspaceDir });
+  const listed = listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path);
+  const materials = sourceMaterials(listed);
   return {
     ...facts,
-    materials: sourceMaterials(listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path)),
+    materials,
+    coverage: materialCoverage(db, workspaceDir, taskId, listed, materials),
     review: {
       failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined,
       // 评审过几轮：一次评审（一个批次）结束时记一条摘要事件。
@@ -684,7 +738,7 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
   const input = lampInput(db, workspaceDir, taskId, definition);
   const assets = assetFacts(input);
   const facts = launchFacts(db, workspaceDir, taskId, definition, sessionId, assets);
-  const found = definitionsOrError();
+  const found = definitionsOrError(workspaceDir, definition);
   const node = open !== null && open.flow !== null ? open.activity : null;
   const moved = open ? lastMove(db, open) : null;
   return {
@@ -693,8 +747,8 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
     flow_node: node,
     work_item: open ? workItemBrief(open) : null,
     launch: launchView(facts),
-    assets: assetCells(assets, found.defs?.activities ?? []),
-    catalog: found.defs ? catalog(found.defs, assets, activeCounts(db, taskId), facts.flowItem) : null,
+    assets: assetCells(assets, found.defs?.activities ?? [], assetNamesOf(definition)),
+    catalog: found.defs ? catalog(found.defs, assetNamesOf(definition), assets, activeCounts(db, taskId), facts.flowItem) : null,
     catalog_error: found.error,
     moved_by: moved?.actor ?? null,
     moved_at: moved?.at ?? null,
@@ -718,7 +772,7 @@ export const IDLE_LINE = "本会话是自由讨论，不属于任何工作项：
 
 /**
  * 给助手看的一段：这条会话的工作项是什么、现在在哪一站、最近一次是谁在什么时候为什么启动或者换站的，以及这一段还差什么（只说现在这个阶段的几盏灯）。
- * 查询任务状态的返回末尾用它。会话空闲时只有一句，不说灯：空闲没有自己的灯。
+ * 助手查任务现状的那个工具在返回末尾用它。会话空闲时只有一句，不说灯：空闲没有自己的灯。
  */
 export function stageLines(summary: StageSummary): string[] {
   if (summary.current === IDLE) return [IDLE_LINE];

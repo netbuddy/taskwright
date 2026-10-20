@@ -8,6 +8,7 @@
  * 一个在执行者没有经「回复」说话就停下时追加一句话要它重说的兜底扩展，
  * 一个给自带的 grep 与 read 的返回定量的扩展（grep 的返回太多时截短，read 读知识库里的文件时缺省只读一部分，hooks/tool_limits.ts），
  * 一个在每次运行开始之前按任务现在的阶段换系统提示的扩展（任务有阶段时才换，hooks/stage_prompt.ts），
+ * 一个在助手读任务定义文件时把返回换成本会话视图的扩展（hooks/definition_view.ts），
  * 两个扩展命令 /tw-user（用户在界面上的直接操作，不经模型写库）与 /tw-ui（卡片点击，带标注地发一句话），
  * 一个只读的扩展命令 /tw-board（在终端界面里打印交付物看板），「回复」与「保存修订」两个工具在终端界面里的渲染器
  * （只有 pi 的交互模式调用，RPC 模式不调；经 withTuiRenderers 并进工具定义），
@@ -35,6 +36,7 @@ import { registerRequestReview } from "./tools/request_review.ts";
 import { registerIntentRecord } from "./hooks/intent_record.ts";
 import { registerToolLimits } from "./hooks/tool_limits.ts";
 import { registerStagePrompt } from "./hooks/stage_prompt.ts";
+import { registerDefinitionView } from "./hooks/definition_view.ts";
 
 export default function (pi: ExtensionAPI) {
   registerSaveRevision(withTuiRenderers(pi));
@@ -56,4 +58,6 @@ export default function (pi: ExtensionAPI) {
   registerToolLimits(pi);
   // 按阶段换系统提示：任务有阶段时，每次运行开始之前把系统提示整份换成共用部分加现在这个阶段的那一段；早先的任务不动（hooks/stage_prompt.ts）。
   registerStagePrompt(pi);
+  // 任务定义按会话给视图：助手读任务定义文件时把返回换成本会话能参照、能写的那几个集合；原文件不改（hooks/definition_view.ts）。
+  registerDefinitionView(pi);
 }

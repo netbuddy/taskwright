@@ -29,7 +29,7 @@
  * （标注点的是哪条回复的哪个选项），再 sendUserMessage 模板句；两条都传 deliverAs: "followUp"，执行者空闲时
  * 立即生效，正在运行时排到这次运行本该停下的时候，两条紧挨着并入（排队模式为 all，见任务目录的 .pi/settings.json）。
  * 结果经状态栏键 taskwright-ui-result 回传。
- * 点的是助手提议往前走的那张卡片上「进入」某个阶段的选项时（选项键 enter_clarify、enter_consolidate、start_items、enter_review），
+ * 点的是助手提议转移的那张卡片上生效的那一项时（选项键 next_step、goto:<活动标识符>，早先的 enter_clarify、start_items 之类照样认），
  * 在发这两条之前先替用户记一次移动（lib/stage_read.ts 的 recordStageCardClick）；记下了的话，结果里的 stage_event_seq 是那条事件的序号，
  * 后端据此去查库转发。
  * option_key 是 typed 时不是点击：用户在那张卡片的文本框里打了一句话。这时追加的是 taskwright-card-typed 自定义消息
@@ -215,7 +215,7 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       // 点的是「进入」某个阶段的选项：先替用户把任务移过去，再发下面两条，助手回应这次点击时从头就在新的阶段。
       let stageSeq: number | null = null;
       let stageMove: { from: string; to: string; how?: string } | null = null;
-      let stageUnmoved: { at: string; why?: string } | null = null;
+      let stageUnmoved: { at: string; why?: string; blocked?: string } | null = null;
       try {
         const moved = recordStageCardClick(ctx.cwd, ctx.sessionManager.getSessionId(), ctx.sessionManager.getBranch() as never,
           { opId: opId ?? "", replyEntry: request.reply_entry, optionKey: request.option_key });
@@ -226,7 +226,10 @@ export function registerUserCommands(pi: ExtensionAPI): void {
         // 认出了是进入某个阶段的卡片、任务也有阶段，但这次点击没有让阶段移动（次序不对，或者任务本来就在那里）：
         // 标注里写下任务当时在哪个阶段，卡片上据此告诉用户这次点击没有改变阶段。
         // 这条会话不在做流程的工作项时，进入与退回都不算数：另写 why 为 not_in_flow，卡片上据此提示从任务起点页启动一个工作项。
-        else if (moved && !moved.moved && moved.from !== null) stageUnmoved = { at: moved.from, ...(moved.why === "not_in_flow" ? { why: moved.why } : {}) };
+        // 要去的那一步的 requires 不满足（why 为 not_ready）：另写缺什么，卡片上照它告诉用户。
+        else if (moved && !moved.moved && moved.from !== null) {
+          stageUnmoved = { at: moved.from, ...(moved.why === "not_in_flow" || moved.why === "not_ready" ? { why: moved.why } : {}), ...(moved.blocked ? { blocked: moved.blocked } : {}) };
+        }
       } catch (error) {
         ctx.ui.setStatus(UI_RESULT_KEY, JSON.stringify({ op_id: opId, ok: false,
           error: { code: "rejected", message: `没有能把任务移到下一个阶段：${(error as Error).message}`, data: {} } }));

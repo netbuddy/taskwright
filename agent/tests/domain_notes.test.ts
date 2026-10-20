@@ -90,7 +90,7 @@ test("真实的任务类型：这个位置上现在是「业务说明」集合�
   assert.deepEqual(pages.fields.filter((f) => f.sameCollection && f.single).map((f) => f.name), ["上级主题", "改看"]);
   assert.equal(pages.reviewRules ?? null, null);
   assert.deepEqual(definition.completion.业务说明, ["每个条目用户确认"]);
-  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/requirements-engineering.json"), "utf-8")).版本, 4);
+  assert.equal(JSON.parse(readFileSync(resolve(typeDir, "docs/task-definitions/requirements-engineering.json"), "utf-8")).版本, 7);
 });
 
 test("来源种类「条目」：出处是还在的条目时保存，记下引用时它的修订号；出处去掉首尾空白；产出方记作条目", () => {
@@ -201,16 +201,17 @@ test("来源种类「图」：出处不是图的编号、任务里没有这张�
 
 test("任务 skill 写了业务说明的做法，不出现平台的内部用词", () => {
   // 任务 skill 里不出现这几个词。
-  // 任务 skill 的文字分三份：每个阶段都要用的在 SKILL.md，核读材料与写条目各有一段在旁边的 stages/ 目录里。
+  // 任务 skill 的文字分三份：每个阶段都要用的在 SKILL.md，核读材料与写条目各有一段在旁边 activities/ 的那两项活动里（原写 stages/ 目录里。
   const taskDir = resolve(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering");
-  const task = ["SKILL.md", "stages/reading.md", "stages/writing.md"].map((name) => readFileSync(resolve(taskDir, name), "utf-8")).join("\n");
+  const task = ["SKILL.md", "activities/reading.md", "activities/writing.md"].map((name) => readFileSync(resolve(taskDir, name), "utf-8")).join("\n");
   for (const word of ["节点", "联系", "要素", "依据门", "派生", "投影", "schema"]) {
     assert.ok(!task.includes(word), `任务 skill 里有「${word}」`);
   }
   assert.match(task, /由五个条目集合组成：功能用例、非功能需求、约束、问题、业务说明/);
   assert.doesNotMatch(task, /领域说明/);
-  assert.match(task, /各立成业务说明的一页主题（每一块怎样填见上文第 6 条）；材料里的术语定义段落也立成主题，标签贴「概念」/);
-  assert.match(task, /6\. \*\*业务说明的每一页怎样填。\*\*/);
+  assert.match(task, /每一块怎样填见上文第 4 条；「它是什么」按页的种类回答下面这些问题/);
+  assert.match(task, /材料里的术语定义段落也立成页，标签贴「概念」/);
+  assert.match(task, /4\. \*\*业务说明的每一页怎样填。\*\*/);
   for (const piece of ["一页一个主题", "「标题」写短", "「它是什么」用这件事自己的话写一两段", "有名字的人、具体的东西、具体的日子", "这种不算的例子以「反例：」开头",
     "「已经定下的」一句一条", "「标签」从概念、角色、流程、场景、目标、范围、假设、决定里选", "「上级主题」写它在哪一页之下讨论", "一次保存最多写 4 页主题"]) {
     assert.ok(task.includes(piece), piece);

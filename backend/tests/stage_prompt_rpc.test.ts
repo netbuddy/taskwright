@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { composeStagePrompt, digestOf } from "../../agent/src/lib/stage_prompt.ts";
+import { composeContext, digestOf } from "../../agent/src/lib/context_assemble.ts";
 import { ROOT, captureConsole, movesSql, sendAndWaitTurn, sqlGet, sqlRun, tempDir } from "./helpers.ts";
 import { type Dict, NO_PI, TOPIC_CALL, reply, withStack } from "./consent_stack.ts";
 
@@ -58,7 +58,7 @@ function promptNotes(dir: string, taskId: string): Dict[] {
 test("模型收到的系统消息就是按阶段拼出的那一份；用户点卡片进入下一段，那次点击引起的运行就换成新阶段的；早先的任务收到的与原来相同", { skip: NO_PI, timeout: 180000 }, () =>
   withStack(tmp, "prompt", SCRIPT, async ({ call, taskId, session, dir, port, requests, send, db, entryOfCall }) => {
     const taskDir = join(dir, "tasks", taskId);
-    const expected = (stage: "reading" | "clarifying") => composeStagePrompt({
+    const expected = (stage: "reading" | "clarifying") => composeContext({
       stage, workspaceDir: taskDir, tail: `<cwd>\n${taskDir}\n</cwd>`,
       skills: [{ name: "requirements-engineering", filePath: join(taskDir, ".pi", "skills", "requirements-engineering", "SKILL.md") }],
     });
@@ -78,15 +78,15 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     assert.equal(db("SELECT COUNT(*) AS n FROM activity_record")[0].n, 1, "助手只发了卡片，阶段没有动：只有启动需求分析的那一条");
 
     // 用户在卡片上点「进入澄清」：扩展先记移动、再代发那句固定的话，这句话引起的运行拿到的已经是澄清的那一份；
-    // 按阶段的那一段之前的文字与上一次相同。
+    // 系统提示那一部分与上一次相同。
     await send({ text: "我选：进入澄清", client_id: "c-2", origin: "card_choice", card: { reply_message_id: entryOfCall("call-card"), kind: "choose", choice: "enter_clarify" } });
     assert.equal(db(movesSql(["stage"])).at(-1).stage, "clarifying");
     const clarifying = expected("clarifying");
     assert.equal(systemText(requests()[2]), clarifying.text);
     assert.ok(clarifying.text.includes("# 现在这个阶段：澄清\n"));
     assert.ok(!clarifying.text.includes("# 现在这个阶段：核读材料\n"));
-    const sharedLength = reading.text.indexOf("# 现在这个阶段：");
-    assert.equal(clarifying.text.slice(0, sharedLength), reading.text.slice(0, sharedLength));
+    // 系统提示一字不变；按位置选的模块不同（核读是批处理，澄清是逐项对话）。
+    assert.equal(clarifying.parts[0].text, reading.parts[0].text);
 
     // 第三次运行：阶段没变，同一份。
     await send({ text: "还有，逾期不能预约。", client_id: "c-3" });
@@ -97,8 +97,8 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
     assert.deepEqual(notes.map((n) => [n.replaced, n.stage, n.how]), [[true, "reading", "recomposed"], [true, "clarifying", "recomposed"], [true, "clarifying", "reused"]]);
     const own = (text: string) => text.slice(0, -`\n\n<cwd>\n${taskDir}\n</cwd>`.length);
     assert.deepEqual(notes.map((n) => n.digest), [digestOf(own(reading.text)), digestOf(own(clarifying.text)), digestOf(own(clarifying.text))]);
-    assert.deepEqual(notes[0].parts.map((p: Dict) => p.file), ["agent/prompts/stages/system.md", "agent/prompts/stages/common.md", ".pi/skills/requirements-engineering/SKILL.md",
-      "agent/prompts/stages/reading.md", "agent/prompts/flows/analysis.md", ".pi/skills/requirements-engineering/stages/reading.md"]);
+    assert.deepEqual(notes[0].parts.map((p: Dict) => p.file), reading.parts.filter((p) => p.from !== "pi").map((p) => p.file));
+    assert.ok(notes[0].parts.some((p: Dict) => p.file === "agent/prompts/templates/reading.md") && notes[0].parts.some((p: Dict) => p.module === "materials"));
     assert.ok(!JSON.stringify(notes).includes("你是 Taskwright 的执行者"));
 
     // 早先的任务：把另一个任务的任务定义改成没有「业务说明」集合的样子（早先建的任务就是这样），它没有阶段。
@@ -114,7 +114,7 @@ test("模型收到的系统消息就是按阶段拼出的那一份；用户点�
       assert.equal((await call("POST", `/api/v1/tasks/${oldId}/messages?session=${oldSession}`, { text: "你好。", client_id: "c-old" })).status, 200);
     });
     const old = systemText(requests()[4]);
-    const legacy = readFileSync(join(ROOT, "agent", "prompts", "stages", "system.md"), "utf-8");
+    const legacy = readFileSync(join(ROOT, "agent", "prompts", "system.md"), "utf-8");
     assert.ok(old.startsWith(legacy), "系统提示的开头就是启动参数给的那一份");
     assert.match(old, /<skills>[\s\S]*<name>requirements-engineering<\/name>[\s\S]*<\/skills>/);
     assert.ok(!old.includes("taskwright-executor"));

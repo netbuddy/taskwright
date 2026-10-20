@@ -40,7 +40,7 @@ const FACTS: DebugStage = {
     { from: "writing", from_name: "写条目", to: "clarifying", to_name: "澄清", actor: "executor", reason: "", run_id: "r3", session_id: "S-1", at: "2026-10-10T08:58:00" },
   ],
   rejections: [
-    { work_id: "w-2", session_id: "S-1", call_id: "c-9", tool: "save_revision", kind: "input", fact: "任务现在在澄清阶段，这个阶段不能新增「功能用例」的条目", guidance: "进入写条目要由用户在卡片上选「开始写条目」", at: "2026-10-10T09:04:00" },
+    { work_id: "w-2", session_id: "S-1", call_id: "c-9", tool: "save_revision", kind: "input", fact: "任务现在在澄清阶段，这个阶段不能新增「功能用例」的条目", guidance: "进入写条目要由用户在卡片上选「转到：写条目」", at: "2026-10-10T09:04:00" },
     { work_id: "w-1", session_id: "S-1", call_id: "c-3", tool: "reply", kind: "gate", fact: "这一轮还没有写理解", guidance: null, at: "2026-10-10T08:40:00" },
   ],
   latest_work_id: "w-2",
@@ -109,7 +109,7 @@ describe("右侧栏的调试页签", () => {
     expect(shown).toHaveLength(1);
     expect(shown[0]).toHaveTextContent("save_revision");
     expect(shown[0]).toHaveTextContent("任务现在在澄清阶段，这个阶段不能新增「功能用例」的条目");
-    expect(shown[0]).toHaveTextContent("指引：进入写条目要由用户在卡片上选「开始写条目」");
+    expect(shown[0]).toHaveTextContent("指引：进入写条目要由用户在卡片上选「转到：写条目」");
     fireEvent.click(screen.getByTestId("debug-all-rejections"));
     shown = screen.getAllByTestId("debug-rejection");
     expect(shown).toHaveLength(2);

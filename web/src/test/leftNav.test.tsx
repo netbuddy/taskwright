@@ -237,6 +237,9 @@ describe("流程进度的站", () => {
     expect(flowProgress(stage(), SESSIONS)?.stage).toBe("writing");
     expect(flowProgress(stage(), SESSIONS.slice(1))).toBeNull();
     expect(flowProgress(stage(LAMPS, { flow_node: "document" }), [])?.line).toBe("第 6 站 · 编写文档 · 已在最后一站");
+    // 核读材料只有只报数的那一盏：不说齐了、也不说还差，写只报数、由用户判断（ok 是什么都一样）。
+    expect(flowProgress(stage(LAMPS, { flow_node: "reading" }), [])?.line).toBe("第 1 站 · 核读材料 · 只报数，由你判断");
+    expect(flowProgress(stage({ ...LAMPS, reading: [lamp("materials_cited", null)] }, { flow_node: "reading" }), [])?.line).toBe("第 1 站 · 核读材料 · 只报数，由你判断");
     nav({ sessions: SESSIONS.slice(1), currentSessionId: "S2" });
     expect(screen.queryByTestId("nav-flow")).toBeNull();
     expect(screen.getByTestId("nav-work")).toBeInTheDocument();

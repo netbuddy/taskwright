@@ -105,12 +105,6 @@ const parameters = Type.Object({
   text: Type.Optional(Type.String({
     description: fillText("reply.param.text"),
   })),
-  stage: Type.Optional(Type.Union([Type.Null(), Type.String()], {
-    description: fillText("reply.param.stage"),
-  })),
-  reason: Type.Optional(Type.Union([Type.Null(), Type.String()], {
-    description: fillText("reply.param.reason"),
-  })),
   activity_done: Type.Optional(Type.Union([Type.Null(), Type.Boolean()], {
     description: fillText("reply.param.activity_done"),
   })),

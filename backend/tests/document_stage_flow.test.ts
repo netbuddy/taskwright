@@ -155,7 +155,7 @@ test("核读到编写文档：问题就地记下并了结、回退由用户在�
     assert.deepEqual([(await stageNow()).current, (await stageNow()).proposal.event_seq, moves().length], ["writing", back.event_seq, 3]);
     const stayNote = ((await call("GET", `/api/v1/tasks/${taskId}/conversation?session=${session}`)).body.messages as Dict[]).filter((m) => m.type === "ui_action_noted" && m.kind === "continue_stage").at(-1)!;
     assert.deepEqual([stayNote.reply_message_id, stayNote.option_key, stayNote.stage], [backEntry, "stay_in_stage", "modeling"]);
-    assert.match(stayNote.text, /选了「留在本段」，没有退回整理建模/);
+    assert.match(stayNote.text, /选了「继续本步」，没有退回整理建模/);
     // 再点「退回整理建模」：记成用户的移动，原因里带着助手写的那句话；提议结束。
     await click("call-back", "back_to_consolidate", "退回整理建模");
     const moved = moves().at(-1) as Dict;

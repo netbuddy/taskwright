@@ -26,7 +26,7 @@ const ALLOWED: Record<string, string[]> = {
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
   // 另有问题条目的几个字段名与取值（常量）。
-  "stage.ts": ["STAGE_NAMES", "STAGES", "ENTER_OPTIONS", "STAY_OPTIONS", "STAGE_START_TEXTS", "ACTIVITY_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_ANALYSIS", "flowKeyOf", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark",
+  "stage.ts": ["STAGE_NAMES", "STAGES", "cardMove", "STAGE_START_TEXTS", "ACTIVITY_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_ANALYSIS", "flowKeyOf", "clarifyKind", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark",
     // 范围说明的字数上限与按名字认阶段的函数：只做计算，后端在新建会话之前核对开展活动的写法时用。
     "SCOPE_MAX_LENGTH", "stageByName",
     // 空闲（任务没有在进行的活动）的写法与名字、位置的类型与两个只做计算的函数。
@@ -40,7 +40,8 @@ const ALLOWED: Record<string, string[]> = {
   // 按阶段拼系统提示：读说明文件、拼接、算摘要值，都不碰任务库的写入（集成测试拿它算出模型应当收到的文字）。
   // 另有调试接口用的：十三个固定的文件名、看一份文件是不是可用的普通文件（只查属性）、各部分与出处给人看的名字。
   // 末两个是系统提示里两段固定的文字（常量）：任务空闲时的开头、用户单独开展一项活动时代替节点出口的一段；整栈测试拿它们核对模型收到的文字。
-  "stage_prompt.ts": ["composeStagePrompt", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames", "IDLE_OPENING", "STANDALONE_EXIT"],
+  "context_assemble.ts": ["composeContext", "digestOf", "NODE_IO", "ORIGIN_NAMES", "PART_NAMES", "promptDirNames", "PROMPTS_DIR"],
+  "prompt_modules.ts": ["loadModules"],
   // 图：种类与编号的常量、从库里读图、从 Mermaid 文本里扫条目编号、用户看过哪些图（只读与只做计算的函数，不写库）。
   "diagram.ts": ["DIAGRAM_KINDS", "DiagramRecord", "diagramViewed", "drawnItemIds", "kindName", "latestVersion", "liveDiagrams", "readDiagrams", "viewedDiagramRevisions"],
   // 从 Mermaid 文本里扫东西（只做计算）：系统边界图画没画出系统与系统外面的节点，保存前的校验用。
@@ -96,7 +97,9 @@ const ALLOWED: Record<string, string[]> = {
   // 版本记录只读：读出各版与它们的类型；记一次发布的 recordVersion 是写入函数，不在这里。
   "versions.ts": ["VersionRecord", "versionRecords", "versionDir", "ARCHIVED_MARKDOWN", "ARCHIVED_DOCX"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。改任务类型时用 loadDefinition 核对改后的任务定义读得通（只读文件，不碰库）。
-  "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition"],
+  "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition", "withPlatformCollections"],
+  "asset_names.ts": ["assetNamesOf"],
+  "assets.ts": ["parseAssetNames"],
 };
 
 function files(dir: string): string[] {

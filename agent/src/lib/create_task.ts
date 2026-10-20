@@ -9,6 +9,8 @@
  * 交给模型，写明缺什么、可以怎样改。本模块不依赖 pi，工具文件只负责把 pi 的参数交进来。
  */
 
+import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, type Actor, EVENT_TASK_CREATED, emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, loadDefinition } from "./definition.ts";
@@ -151,7 +153,7 @@ export const TASK_ID_PATTERN = /^TASK-[A-Z0-9-]{1,40}$/;
 
 export function createTask(call: CallContext, params: CreateTaskParams): ToolOutcome {
   return withTaskDatabase(call.workspaceDir, { createIfMissing: true }, (db) => {
-    const { definition, text, relativePath } = loadDefinition(call.workspaceDir, params.definition_path);
+    const { definition, text, relativePath, filled } = loadDefinition(call.workspaceDir, params.definition_path);
     // 图的编号是 D-001 这样的（lib/diagram.ts）：集合的编号前缀单写 D 会与它同形，新建任务时不许。已有的任务不拦。
     const clash = definition.collections.find((one) => one.prefix === DIAGRAM_PREFIX);
     if (clash) {
@@ -198,6 +200,8 @@ export function createTask(call: CallContext, params: CreateTaskParams): ToolOut
       "INSERT INTO task (task_id, task_name, domain_tag, definition_path, definition_text, session_id, call_id, event_seq, started_at) " +
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     ).run(taskId, taskName, domainTag, relativePath, text, call.sessionId, call.callId, seq, at);
+    // 任务类型的定义只写了平台集合的占位：任务目录里这份定义换成补全之后的全文，与任务库里的快照相同。
+    if (filled) writeFileSync(resolve(call.workspaceDir, relativePath), text, "utf-8");
     const textForModel =
       `已创建任务：任务编号是 ${taskId}，任务名是「${definition.taskName}」。\n` +
       describeDeliverable(definition) +
