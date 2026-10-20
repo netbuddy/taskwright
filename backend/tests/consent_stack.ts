@@ -20,6 +20,8 @@ const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE
   "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT"];
 
 export const MATERIAL = "读者凭借书证在自助机上借书。";
+/** 页的正文：材料那句话加句末括注。核读时页的正文每句要有着落（agent/src/lib/cited_sentences.ts）。 */
+export const MATERIAL_CITED = "读者凭借书证在自助机上借书（材料 第 1 段）。";
 
 /**
  * 立一页主题的那次工具调用：贴了标签、有例子、全部照抄材料。新建的任务里要先有这样一页、用户看过它、任务又移到了写条目阶段，
@@ -28,7 +30,7 @@ export const MATERIAL = "读者凭借书证在自助机上借书。";
  */
 export const TOPIC_CALL = { id: "call-topic", name: "save_revision", arguments: { operations: [{ op: "add", collection: "业务说明",
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
-  fields: { 标题: "自助借书", 它是什么: MATERIAL, 例子: [MATERIAL], 标签: ["流程"], 状态: "在用" } }] } };
+  fields: { 标题: "自助借书", 它是什么: MATERIAL_CITED, 例子: [MATERIAL], 标签: ["流程"], 状态: "在用" } }] } };
 
 /** 把一个刚建好、材料已经放好的任务备到可以写条目的样子（见 TOPIC_CALL 的说明）。测试里另建的任务要自己调它。 */
 export function seedWriting(taskDir: string): void {

@@ -299,6 +299,18 @@ act.options 里的 key「{{key}}」重复了，每个选项的 key 要不一样
 
 act.options 的第 {{no}} 项的 reason 要写一句话（这一项出自哪里，或者为什么列它）；不写理由就去掉 reason
 
+## `reply.topic_card_opening`
+
+用途：写了 topic 的请选择，问题句没有以规定的说法开头。opening 是那个说法。
+
+写了 act.topic 的请选择，act.text 要以「{{opening}}」开头：第一句写为了写清哪一页的哪一处、缺的是什么，第二句是问题本身；别的说明写在回复的成文的话里，不进卡片
+
+## `reply.option_catch_all`
+
+用途：写了 topic 的请选择，某个候选是归并说法（其他、以上都、几种组合、并存之类）。no 是第几项，text 是那一项的文字。
+
+act.options 的第 {{no}} 项「{{text}}」是归并说法；候选只能是具体说法，用户另有想法走卡片上的自由回答。去掉这一项，或者改写成一个具体的答案
+
 ## `reply.multiple_invalid`
 
 用途：请选择的 multiple 不是 true 或 false。

@@ -234,7 +234,7 @@ test("请选择的 key 重复时拒绝", () => {
 
 test("请选择的选项可以带理由，卡片可以标多选、写标题，三样原样送达", () => {
   const options = [{ key: "a", text: "统一模型接入", reason: "出处：立项申请书把它列为一期目标。" }, { key: "b", text: "知识库", reason: "同类平台通常有。（助手补充）" }];
-  const reply = checkReply({ informs: [], act: { kind: "choose", text: "这一期必须做哪几项？", options, multiple: true, topic: "范围" }, text: "这一期必须做哪几项？" }, alone());
+  const reply = checkReply({ informs: [], act: { kind: "choose", text: "为了写清范围的边界：这一期必须做哪几项？", options, multiple: true, topic: "范围" }, text: "这一期必须做哪几项？" }, alone());
   assert.deepEqual(reply.act?.options, options);
   assert.equal(reply.act?.multiple, true);
   assert.equal(reply.act?.topic, "范围");
@@ -251,6 +251,16 @@ test("写了标题的请选择可以不给选项：开放问题只留自由回�
   checkReply({ informs: [], act: { kind: "choose", topic: "起因与现状问题", text: "为了写清起因：你看最要紧的是什么？" }, text: "你看最要紧的是什么？" }, alone());
   rejected({ informs: [], act: { kind: "choose", text: "选哪个？", options: [] }, text: "选哪个？" }, alone(), /至少两个选项/);
   rejected({ informs: [], act: { kind: "choose", topic: "范围", text: "选哪个？", options: [{ key: "a", text: "甲" }] }, text: "选哪个？" }, alone(), /至少两个选项/);
+});
+
+test("写了标题的请选择：问题句以「为了写清」开头才收；候选是归并说法的拒绝，「5000 元以上」一类具体说法照收", () => {
+  const options = [{ key: "a", text: "金额 5000 元以上走二级审批", reason: "制度 p3。" }, { key: "b", text: "一律走一级审批", reason: "同类系统通常如此。" }];
+  checkReply({ informs: [], act: { kind: "choose", topic: "业务规则 · 缺口 1（材料没写）", text: "为了写清业务规则的审批一段：材料没写金额门槛。走哪一级？", options }, text: "走哪一级？" }, alone());
+  rejected({ informs: [], act: { kind: "choose", topic: "业务规则 · 缺口 1（材料没写）", text: "材料没写金额门槛，走哪一级？", options }, text: "走哪一级？" }, alone(), /act\.text 要以「为了写清」开头/);
+  rejected({ informs: [], act: { kind: "choose", topic: "起因 · 缺口 1（材料没写）", text: "为了写清起因：为什么分散？",
+    options: [{ key: "a", text: "需求不同", reason: "x" }, { key: "b", text: "其他原因或多种原因并存", reason: "y" }] }, text: "为什么分散？" }, alone(), /第 2 项「其他原因或多种原因并存」是归并说法/);
+  // 没写标题的请选择（例如进入下一步的卡片）不受这两条约束。
+  checkReply({ informs: [], act: { kind: "choose", text: "是否进入下一步？", options: [{ key: "next_step", text: "进入下一步：澄清" }, { key: "stay", text: "其他时候再说" }] }, text: "是否进入下一步？" }, alone());
 });
 
 test("多选、标题只有请选择能写", () => {

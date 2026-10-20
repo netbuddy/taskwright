@@ -10,6 +10,8 @@ import { ACTOR_USER } from "../src/lib/db.ts";
 import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { SaveRejected, saveRevision } from "../src/lib/save_revision.ts";
 import { type Stage } from "../src/lib/stage.ts";
+import { copyFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { DEFINITION_PATH, SOURCE, UI_SESSION, enterStage, idleSessions, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 const SESSION = "session-guard";
@@ -98,4 +100,20 @@ test("核读材料：只查这次传入的两个字段，不追溯旧页；把�
   assert.equal(refusal(dir, [update(dir, "OA-002", { 标签: ["流程"] })]), null);
   // 用户的操作不看位置。
   assert.equal(refusal(dir, [add({ 标题: "预约", 它是什么: "预约的说明。", 状态: "在用" })], ACTOR_USER), null);
+});
+
+test("核读材料：任务的 skill 里有分析提纲时，页的正文每句要有句末括注或以推断起头；维度页与登记的固定页不查；没有分析提纲的任务不查", () => {
+  const dir = workspace("reading");
+  const skill = (overallDefinition() as any).执行方法 as string;
+  copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+  const loose = refusal(dir, [add(full("起因与现状问题", { 它是什么: "费用分散，财务无法汇总（预算复函 p2）。\n\n材料尚未说明为什么各部门各自试用。" }))])!;
+  assert.ok(loose.includes("核读材料时页的「它是什么」每一句都要有着落"), loose);
+  assert.ok(loose.includes("这一页有 1 句没有：「材料尚未说明为什么各部门各自试用。」"), loose);
+  assert.ok(loose.includes("怎么办：给这几句补上句末括注"), loose);
+  assert.equal(refusal(dir, [add(full("起因与现状问题", { 它是什么: "费用分散，财务无法汇总（预算复函 p2）。财务部两次要求停掉自购额度（你）。\n\n这意味着统一计量是一期的前置条件。" }))]), null);
+  // 维度页与元数据登记的固定页是综合，不逐句查。
+  assert.equal(refusal(dir, [add(full("背景与目标", { 它是什么: "这一维度写为什么要建平台。" })), add(full("目前的判断", { 它是什么: "这是财务问题逼出来的项目。" }))]), null);
+  // 没有分析提纲的任务（skill 目录里没有 outline.md）不查。
+  const plain = workspace("reading");
+  assert.equal(refusal(plain, [add(full("起因与现状问题", { 它是什么: "材料尚未说明原因。" }))]), null);
 });

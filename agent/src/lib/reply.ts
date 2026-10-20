@@ -67,6 +67,12 @@ const ITEMS_REQUIRED: ActKind[] = ["ask", "confirm", "suggest", "propose"];
 /** scope 唯一允许的取值：这一问、这条建议或提议与任何条目都无关。 */
 export const SCOPE_GENERAL = "general";
 
+/** 写了 topic 的请选择（问一个问题带候选答案）的问题句必须以它开头：先说为了写清哪一处。 */
+export const TOPIC_CARD_OPENING = "为了写清";
+
+/** 候选答案里的归并说法：用户另有想法走卡片上的自由回答，候选只写具体说法。「以上」「组合」只认归并的用法，免得误中「5000 元以上」一类。 */
+const CATCH_ALL_OPTION = /其他|并存|以上(?:都|皆|几|均|各项|全部)|组合以上|(?:几|多)种.{0,4}组合/;
+
 /** 连续被拒到第几次起，拒绝理由改为只要成文正文。 */
 export const PLAIN_TEXT_FROM = 3;
 
@@ -394,6 +400,16 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
       });
     }
     if ("multiple" in raw && typeof raw.multiple !== "boolean") errors.push(problem(refusalText("reply.multiple_invalid")));
+    if (typeof raw.topic === "string" && !isBlank(raw.topic)) {
+      if (typeof raw.text === "string" && !raw.text.trim().startsWith(TOPIC_CARD_OPENING)) {
+        errors.push(problem(refusalText("reply.topic_card_opening", { opening: TOPIC_CARD_OPENING })));
+      }
+      (Array.isArray(options) ? options : []).forEach((one, index) => {
+        if (isObject(one) && typeof one.text === "string" && CATCH_ALL_OPTION.test(one.text)) {
+          errors.push(problem(refusalText("reply.option_catch_all", { no: index + 1, text: one.text })));
+        }
+      });
+    }
     if ("topic" in raw && (typeof raw.topic !== "string" || isBlank(raw.topic))) errors.push(problem(refusalText("reply.topic_invalid")));
   }
 

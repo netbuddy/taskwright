@@ -87,6 +87,8 @@ import { OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED, gateFact, hasOve
 import { overallState } from "./overall_read.ts";
 import { type Position, itemRefusal, pageRefusal, positionName } from "./stage.ts";
 import { allowedAt, stageOf } from "./stage_read.ts";
+import { type OutlineTitles, outlineTitlesFor } from "./outline_read.ts";
+import { ungroundedSentences } from "./cited_sentences.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 import { codeOf, fillText, refusalText, textPrefix } from "./texts.ts";
 import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
@@ -264,9 +266,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *     都拒绝；只把既有导语页停用（OVERALL_FIELDS.status 改为 STATUS_DEPRECATED），放行。
  * 二、核读材料时立的页 OVERALL_FIELDS.tags 至少一项、OVERALL_FIELDS.examples 至少一项（反例、例外也算）：只查新增的页与这次传入的
  *     这两个字段，不追溯旧页；停用的页不查。
+ * 三、核读材料时写进 OVERALL_FIELDS.what 的正文逐句要有着落（lib/cited_sentences.ts）：只在任务类型有分析提纲（outline 不为 null）时查，
+ *     只查这次传入了这个字段的页；分析提纲里的维度页与元数据登记的几页固定页的正文是综合，不查；停用的页不查。
  * 任务定义里没有这几个字段（早先的任务）时，相应的那条不查。可以时返回 null。
  */
-function pageGuard(stage: Position, collection: CollectionDef, given: Fields, before: Fields | null) {
+function pageGuard(stage: Position, collection: CollectionDef, given: Fields, before: Fields | null, outline: OutlineTitles | null = null) {
   const has = (name: string) => collection.fields.some((field) => field.name === name);
   const { intro, status, tags, examples } = OVERALL_FIELDS;
   const words = { stage: positionName(stage), intro_field: intro, status_field: status, deprecated: STATUS_DEPRECATED };
@@ -285,6 +289,17 @@ function pageGuard(stage: Position, collection: CollectionDef, given: Fields, be
     const missing = [tags, examples].filter((name) => (before === null || name in given) && isEmptyValue(given[name]));
     if (missing.length > 0) {
       return refusalText("save_revision.page_needs_tag_and_example", { stage: words.stage, tags, examples, missing: missing.map((name) => `「${name}」`).join("、") });
+    }
+  }
+  const { what, title } = OVERALL_FIELDS;
+  if (stage === "reading" && outline !== null && has(what) && typeof given[what] === "string" && given[status] !== STATUS_DEPRECATED) {
+    const named = typeof given[title] === "string" ? given[title] : before?.[title];
+    const synthesis = typeof named === "string" && (outline.dimensions.includes(named.trim()) || outline.synthesisPages.includes(named.trim()));
+    const loose = synthesis ? [] : ungroundedSentences(given[what] as string);
+    if (loose.length > 0) {
+      return refusalText("save_revision.page_sentence_ungrounded", {
+        stage: words.stage, what, count: loose.length, sentences: loose.slice(0, 3).map((one) => `「${[...one].length > 40 ? `${[...one].slice(0, 40).join("")}…` : one}」`).join("、"),
+      });
     }
   }
   return null;
@@ -451,13 +466,15 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const stage: Position | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition, call.sessionId) : null;
   // 这个位置获准的写入种类取任务类型的活动声明（获准能力表）。
   const allowed = stage === null ? null : allowedAt(call.workspaceDir, definition, stage);
+  // 核读时逐句核对正文要用分析提纲里的维度名与固定页的名字；任务类型没有分析提纲时为 null，不查。
+  const outline = stage === "reading" ? outlineTitlesFor(call.workspaceDir, definition.skillPath) : null;
   /**
    * 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改业务说明的页时改动了的字段名；
    * given 是这次传入的字段，before 是修改前这一页的内容（新增时为 null）：页的两条守卫（pageGuard）按它们判。
    */
   const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = [], given: unknown = undefined, before: Fields | null = null) => {
     if (stage === null || allowed === null) return null;
-    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before) : null);
+    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before, outline) : null);
     return keepPendingField(collection) === null ? itemRefusal(stage, allowed, kind, collection.name) : null;
   };
 

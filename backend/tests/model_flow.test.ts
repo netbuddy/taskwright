@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, MATERIAL_CITED, NO_PI, reply, withStack } from "./consent_stack.ts";
 
 captureConsole();
 process.env.PI_OFFLINE = "1";
@@ -23,10 +23,10 @@ const FROM_MATERIAL = { kind: "文档原文", locator: "inputs/材料.md", excer
 const page = (fields: Dict, sources: unknown[] = [FROM_MATERIAL]) => ({ op: "add", collection: "业务说明", fields: { 状态: "在用", ...fields }, sources });
 /** 四页主题：一页流程、一页角色、两页概念（借阅记录说到了状态；借书证有一条已经定下的规则）。 */
 const PAGES = [
-  page({ 标题: "自助借书", 它是什么: MATERIAL, 例子: [MATERIAL], 标签: ["流程"] }),
-  page({ 标题: "读者", 它是什么: "办了借书证、来馆里借书的人。", 例子: [MATERIAL], 标签: ["角色"] }),
-  page({ 标题: "借阅记录", 它是什么: "读者借一本书留下的记录，有在借与已还两种状态。", 例子: [MATERIAL], 标签: ["概念"] }),
-  page({ 标题: "借书证", 它是什么: "读者在馆里的身份凭证。", 例子: [MATERIAL], 标签: ["概念"], 已经定下的: ["一人一证。"] },
+  page({ 标题: "自助借书", 它是什么: MATERIAL_CITED, 例子: [MATERIAL], 标签: ["流程"] }),
+  page({ 标题: "读者", 它是什么: "办了借书证、来馆里借书的人（材料 第 1 段）。", 例子: [MATERIAL], 标签: ["角色"] }),
+  page({ 标题: "借阅记录", 它是什么: "读者借一本书留下的记录，有在借与已还两种状态（材料 第 1 段）。", 例子: [MATERIAL], 标签: ["概念"] }),
+  page({ 标题: "借书证", 它是什么: "读者在馆里的身份凭证（材料 第 1 段）。", 例子: [MATERIAL], 标签: ["概念"], 已经定下的: ["一人一证。"] },
     [{ ...FROM_MATERIAL, supports: [{ field: "它是什么" }, { field: "例子" }] }, { kind: "助手补充", excerpt: "图书馆通常这样规定，我补了「一人一证。」", supports: [{ field: "已经定下的", index: 0, inserted: ["一人一证。"] }] }]),
 ];
 const from = (...ids: string[]) => ids.map((id) => ({ kind: "条目", locator: id }));
