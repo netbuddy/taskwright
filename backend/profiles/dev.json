@@ -76,5 +76,20 @@
   ],
   "langfuse": {
     "environment": "development"
+  },
+  "看门狗": {
+    "说明": "一次运行的看门狗（backend/src/run_watch.ts）：模型输出退化或卡住时中止这一次运行，对话里留一条说明，用户发一句「继续」即可接着做。下面各项不写或写错时用代码里的默认值。",
+    "blank_run": 200,
+    "blank_run说明": "连续多少个只含空白的输出片段就中止。",
+    "blank_chars": 2000,
+    "blank_chars说明": "连续的空白片段累计多少个字就中止。",
+    "tool_args_bytes": 49152,
+    "tool_args_bytes说明": "一个工具调用的参数写到多少字节就中止（48 KB）。",
+    "no_progress_seconds": 90,
+    "no_progress_seconds说明": "等模型、模型输出时多少秒没有新内容（空白不算）就中止；执行工具时不算。",
+    "call_seconds": 480,
+    "call_seconds说明": "一次模型调用多少秒就中止（8 分钟）。",
+    "stall_hint_seconds": 45,
+    "stall_hint_seconds说明": "多少秒没有新内容时，对话区底部的运行状态条变成琥珀色、提示这一步可能卡住了；应当小于 no_progress_seconds。"
   }
 }

@@ -514,6 +514,10 @@ export interface Work {
  * 被停下或出错停下的除外：那一段照样算一次工作，页面要写明它是怎样停下的。
  * call_ids 是这次工作里全部工具调用的调用编号，修订日志据此把一次修订归到产生它的那次工作。
  */
+/** 看门狗中止了一次运行之后，扩展留在会话里的那条系统消息：自定义消息的类型与 details 里的种类（conversation.ts 的 USER_EDIT、OUTPUT_ABORTED）。 */
+const ABORT_NOTE_TYPE = "taskwright-user-edit";
+const ABORT_NOTE_KIND = "output_aborted";
+
 export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallbackText: string, textOf: (c: unknown) => string, facts: CallFacts | null = null): Work[] {
   const results = new Map<string, Dict>();
   for (const e of pathEntries) {
@@ -523,7 +527,8 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
   const works: Work[] = [];
   let current: Dict | null = null;
   const close = () => {
-    const ended = current?.last_stop === "aborted" ? "stopped_by_user" : current?.last_stop === "error" ? "failed" : null;
+    // 看门狗中止的那一次（后面跟着中止的系统消息）记为失败，不算用户停下的。
+    const ended = current?.watch_aborted ? "failed" : current?.last_stop === "aborted" ? "stopped_by_user" : current?.last_stop === "error" ? "failed" : null;
     if (current && (current.calls.length || current.reply_ids.length || ended)) {
       const start = clock.parseUtcIso(current.start);
       const end = clock.parseUtcIso(current.end);
@@ -538,6 +543,7 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
     }
   };
   for (const e of pathEntries) {
+    if (e.type === "custom_message" && e.customType === ABORT_NOTE_TYPE && (or(e.details, {}) as Dict).kind === ABORT_NOTE_KIND && current !== null) current.watch_aborted = true;
     if (e.type !== "message") continue;
     const m = or(e.message, {}) as Dict;
     const role = m.role;

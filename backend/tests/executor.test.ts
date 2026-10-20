@@ -66,7 +66,8 @@ function setup(entries: Dict[]) {
   };
   const drain = async () => {
     const out: [string, Dict][] = [];
-    for (let item = await sub.get(10); item; item = await sub.get(10)) out.push([item[0], item[2]]);
+    // 运行状态帧（run_status）随阶段与每秒推送，它们有自己的测试（run_watch.test.ts、run_watch_flow.test.ts），这里不列。
+    for (let item = await sub.get(10); item; item = await sub.get(10)) if (item[0] !== "run_status") out.push([item[0], item[2]]);
     return out;
   };
   return { hub, executor, pi, feed, drain };
