@@ -629,6 +629,21 @@ export interface LampQuestion {
   unresolved: boolean;
   /** 是否阻断下游：写的是「阻断下游」为真，「不阻断」或者没有写为假。 */
   blocking: boolean;
+  /** 「种类」写的什么；没有写（或集合没有这个字段）是 null。只用来报数。没有给当作 null。 */
+  kind?: string | null;
+}
+
+/**
+ * 一份材料被引用的情况（只用来报数）：Word 与 PDF 材料按分段清单的块数，几块里有被引用的段落；文本材料没有块，只有被引用几处。
+ */
+export interface MaterialCoverage {
+  path: string;
+  /** 分段清单里的块数；文本材料、或者清单读不到时是 null。 */
+  blocks: number | null;
+  /** 有被引用的段落（或页内的块）的块数；blocks 为 null 时也是 null。 */
+  cited_blocks: number | null;
+  /** 文本材料被引用的条数（「文档原文」来源的条数）；Word 与 PDF 材料是 0，看块数。 */
+  citations: number;
 }
 
 /** 算灯要的全部事实。助手一侧与后端各自从任务库里读出来填，算法只在这里。 */
@@ -659,6 +674,8 @@ export interface LampInput {
   declared?: { intro: boolean; blocking: boolean };
   /** 发过几版（版本记录的行数）；没有给当作没有发布过。 */
   versions?: number;
+  /** 每份材料被引用的情况，按 materials 的次序（核读材料那一盏只报数时用）；没有给时按 citedDocuments 只报有没有被引用。 */
+  coverage?: MaterialCoverage[];
 }
 
 const texts = (value: unknown): string[] => (Array.isArray(value) ? value.filter((one): one is string => typeof one === "string" && one.trim() !== "") : []);
@@ -708,10 +725,42 @@ export function lampQuestion(itemId: string, fields: Record<string, unknown>, st
     open: fields[statusField] === QUESTION_OPEN_STATUS && (kind === undefined || kind === QUESTION_KIND_CLARIFY),
     related: texts(fields[QUESTION_RELATED_FIELD]),
     unresolved: fields[statusField] === QUESTION_OPEN_STATUS, blocking: fields[QUESTION_BLOCKING_FIELD] === QUESTION_BLOCKING,
+    kind: typeof kind === "string" && kind.trim() !== "" ? kind.trim() : null,
   };
 }
 
 const list = (ids: readonly string[]) => ids.join("、");
+
+/**
+ * 只报数、不判的灯：ok 恒为 null（页面上灰色），summary 是报的数；「还差几项」不算它们，进入下一步的卡片也不看它们。
+ */
+export const REPORT_ONLY_LAMPS: ReadonlySet<string> = new Set(["materials_cited"]);
+
+/** 按出现的先后数一组名字，写成「甲 3、乙 1」。 */
+function tally(names: readonly string[]): string {
+  const counts = new Map<string, number>();
+  for (const one of names) counts.set(one, (counts.get(one) ?? 0) + 1);
+  return [...counts].map(([name, n]) => `${name} ${n}`).join("、");
+}
+
+/** 核读材料那一盏报的数：各份材料被引用的块数与没有被引用的块数，页数按 OVERALL_FIELDS.tags 分，OVERALL_FIELDS.examples 的总项数，问题条目按种类分。 */
+function readingReport(input: LampInput, live: readonly LampPage[]): string {
+  const { tags, examples } = OVERALL_FIELDS;
+  const cited = new Set(input.citedDocuments.map((one) => one.split("#")[0]));
+  const coverage = new Map((input.coverage ?? []).map((one) => [one.path, one]));
+  const materials = input.materials.length === 0 ? "任务里没有材料。" : `材料 ${input.materials.length} 份：${input.materials.map((path) => {
+    const one = coverage.get(path);
+    if (one && one.blocks !== null && one.cited_blocks !== null) return `${path} 共 ${one.blocks} 块，${one.cited_blocks} 块有引用、${one.blocks - one.cited_blocks} 块没有`;
+    if (one) return `${path} 被引用 ${one.citations} 处`;
+    return `${path} ${cited.has(path) ? "有引用" : "没有引用"}`;
+  }).join("；")}。`;
+  const untagged = live.filter((one) => one.tags.length === 0).length;
+  const byTag = tally(live.flatMap((one) => one.tags));
+  const pages = `页 ${live.length} 页${live.length > 0 ? `（按${tags}：${byTag || "无"}${untagged > 0 ? `；没贴${tags}的 ${untagged} 页` : ""}）` : ""}，${examples}共 ${live.reduce((sum, one) => sum + one.examples.length, 0)} 项。`;
+  const kinds = tally(input.questions.map((one) => one.kind ?? "没写种类"));
+  const questions = `问题条目 ${input.questions.length} 条${kinds ? `（${kinds}）` : ""}。`;
+  return `只报数、不判：${materials}${pages}${questions}`;
+}
 const lamp = (key: string, ok: boolean | null, summary: string, items: string[] = []): Lamp => ({ key, summary, ok, items });
 
 /** 每个阶段的几盏灯，六个阶段都算。 */
@@ -721,12 +770,8 @@ export function stageLamps(input: LampInput): Record<Stage, Lamp[]> {
   const tagged = (tag: string) => live.filter((one) => one.tags.includes(tag));
   const others = input.items;
 
-  // 核读材料：每份材料都被至少一页主题或一条问题引用。
-  const cited = new Set(input.citedDocuments.map((one) => one.split("#")[0]));
-  const uncited = input.materials.filter((one) => !cited.has(one));
-  const materialsCited = input.materials.length === 0 ? lamp("materials_cited", null, "任务里没有材料。")
-    : uncited.length === 0 ? lamp("materials_cited", true, "每份材料都被至少一页主题或一条问题引用了。")
-      : lamp("materials_cited", false, `有 ${uncited.length} 份材料还没有被任何一页主题或问题引用：${list(uncited)}。`, uncited);
+  // 核读材料：只报数、不判（REPORT_ONLY_LAMPS），ok 恒为 null。读完没有、读透没有，程序判不了，所以只把数摆出来。
+  const materialsCited = lamp("materials_cited", null, readingReport(input, live));
 
   // 澄清：贴了标签的页没有挂着未解决的待澄清问题。
   const labelled = live.filter((one) => one.tags.length > 0);
@@ -919,7 +964,10 @@ export const LAMP_KEYS = [
  * 「这一段还差什么」写成给助手看的一段话：不通过的灯各一句；都通过（或都不适用）时写一句「这一段的几项都齐了」。
  */
 export function lampLines(stage: Stage, lamps: readonly Lamp[]): string[] {
-  const missing = lamps.filter((one) => one.ok === false);
-  if (missing.length === 0) return [`${STAGE_NAMES[stage]}这一段的几项都齐了。`];
-  return [`${STAGE_NAMES[stage]}这一段还差 ${missing.length} 项：`, ...missing.map((one) => `  - ${one.summary}`)];
+  const reports = lamps.filter((one) => REPORT_ONLY_LAMPS.has(one.key)).map((one) => `  - ${one.summary}`);
+  const judged = lamps.filter((one) => !REPORT_ONLY_LAMPS.has(one.key));
+  const missing = judged.filter((one) => one.ok === false);
+  const head = missing.length > 0 ? [`${STAGE_NAMES[stage]}这一段还差 ${missing.length} 项：`, ...missing.map((one) => `  - ${one.summary}`)]
+    : judged.length > 0 || reports.length === 0 ? [`${STAGE_NAMES[stage]}这一段的几项都齐了。`] : [];
+  return reports.length === 0 ? head : [...head, `${STAGE_NAMES[stage]}这一段只报数、不判是否做够：`, ...reports];
 }

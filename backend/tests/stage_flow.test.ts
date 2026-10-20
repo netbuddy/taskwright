@@ -121,7 +121,9 @@ test("五个阶段从头走到完成：往前的每一步都由用户在卡片�
       await send({ text: "我选：进入澄清", client_id: "c-clarify", origin: "card_choice", card: { reply_message_id: entryOfCall("call-clarify"), kind: "choose", choice: "enter_clarify" } });
       const clarifying = await stageNow();
       assert.deepEqual([clarifying.current, clarifying.moved_by, clarifying.reason], ["clarifying", "user", "用户在卡片上选了「进入澄清」"]);
-      assert.equal(clarifying.lamps.reading[0].ok, true, "材料被那一页引用了");
+      // 核读材料那一盏只报数、不判：数里写着材料被那一页引用了。
+      assert.equal(clarifying.lamps.reading[0].ok, null);
+      assert.match(clarifying.lamps.reading[0].summary, /被引用 1 处/, "材料被那一页引用了");
       // 扩展先记移动、再代发那句固定的话：这句话引起的运行拿到的已经是澄清的那一段。
       promptsAre("澄清", 1);
 

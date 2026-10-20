@@ -31,12 +31,13 @@ import {
 } from "./schema.ts";
 import { openProposal } from "./stage_proposal.ts";
 import {
-  FLOW_ANALYSIS, FLOW_NAMES, type FlowItemRef, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type LaunchFacts, type LaunchView,
+  FLOW_ANALYSIS, FLOW_NAMES, type FlowItemRef, IDLE, STAGES, KIND_CLASS, KIND_FLOWCHART, type Lamp, type LampDiagram, type LampInput, type MaterialCoverage, type LaunchFacts, type LaunchView,
   type Position, QUESTION_OPEN_STATUS, type Refusal, STAGE_NAMES, type Stage, type StageActor, type StartHow, type WriteKind,
   activityDoneRefusal, flowKeyOf, isStage, lampLines, launchView, QUESTION_BLOCKING_FIELD, hasPendingMark, lampPage, lampQuestion, stageLamps, cardMove, gotoOption, nextStepOption,
 } from "./stage.ts";
 import { refusalText } from "./texts.ts";
 import { listMaterials } from "./task_status.ts";
+import { envSegmentParams, materialFacts } from "./segments.ts";
 import { versionCount } from "./versions.ts";
 
 /**
@@ -662,6 +663,21 @@ export function lampFacts(db: DatabaseSync, taskId: string, definition: TaskDefi
   };
 }
 
+/**
+ * 每份材料被引用的情况（核读材料那一盏报数用），按 materials 的次序。块数取材料的分段清单（lib/segments.ts 的 materialFacts）：
+ * 一块里有一段（PDF 是页内的一块）被引用就算这一块有引用。分段清单读不到的 Word、PDF 材料不列，报数时退回只说有没有引用。
+ */
+function materialCoverage(db: DatabaseSync, workspaceDir: string, taskId: string, listed: string[], materials: readonly string[]): MaterialCoverage[] {
+  const facts = new Map(materialFacts(db, taskId, workspaceDir, listed, envSegmentParams()).map((one) => [one.path, one]));
+  return materials.flatMap((path) => {
+    const one = facts.get(path);
+    if (!one) return [];
+    if (one.kind === "text") return [{ path, blocks: null, cited_blocks: null, citations: one.cited }];
+    if (one.blocks.length === 0) return [];
+    return [{ path, blocks: one.blocks.length, cited_blocks: one.blocks.filter((block) => block.items > 0).length, citations: 0 }];
+  });
+}
+
 /** 从任务库与任务目录里读出算灯要的全部事实（lib/stage.ts 的 LampInput）。只读。 */
 export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string, definition: TaskDefinition): LampInput {
   const facts = lampFacts(db, taskId, definition);
@@ -676,9 +692,12 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
     return verdictAt(db, taskId, one.item_id, revisionOf.get(one.item_id)!, hashOf.get(one.collection)!).state === "failed";
   }).map((one) => one.item_id);
   const completion = checkCompletion(db, taskId, definition.completion, { workspaceDir });
+  const listed = listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path);
+  const materials = sourceMaterials(listed);
   return {
     ...facts,
-    materials: sourceMaterials(listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path)),
+    materials,
+    coverage: materialCoverage(db, workspaceDir, taskId, listed, materials),
     review: {
       failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined,
       // 评审过几轮：一次评审（一个批次）结束时记一条摘要事件。
