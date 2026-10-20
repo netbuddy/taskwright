@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { App as AntApp, ConfigProvider } from "antd";
 import type { Item, Task } from "../api/types";
-import { currentEntryPage, outlinePlace, outlineTree, stateText } from "../model/outlineTree";
+import { currentEntryPage, outlineOrder, outlinePlace, outlineTree, stateText } from "../model/outlineTree";
 import { OutlineContents } from "../components/work/overall/OutlineContents";
 import { ItemsPanel } from "../components/work/ItemsPanel";
 import { overallTask } from "./fixtures/overallTask";
@@ -101,6 +101,10 @@ describe("提纲的树与状态", () => {
     expect(outlinePlace(tree, "OA-005")).toBeNull();
     expect(outlineTree(task(undefined, null))).toBeNull();
   });
+
+  it("上一条、下一条的次序是提纲树从上到下（深度优先）：目前的判断、维度页、条目页与它下面的页，最后是其他页", () => {
+    expect(outlineOrder(outlineTree(task())!).map((one) => one.item_id)).toEqual(["OA-004", "OA-001", "OA-002", "OA-003", "OA-005"]);
+  });
 });
 
 const Wrap = ({ children }: { children: React.ReactNode }) => <ConfigProvider button={{ autoInsertSpace: false }}><AntApp>{children}</AntApp></ConfigProvider>;
@@ -133,6 +137,12 @@ describe("目录与面包屑", () => {
     render(<Panel t={task()} />);
     expect(screen.getByTestId("outline-toc")).toBeInTheDocument();
     expect(text(screen.getByTestId("topic-crumb"))).toContain("背景与目标›起因与现状问题");
+    // 当前是 OA-003（起因与现状问题下面的页）：上一条是 OA-002，下一条是其他页里的 OA-005。
+    fireEvent.click(screen.getByTestId("topic-next"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("孤零零的一页");
+    fireEvent.click(screen.getByTestId("topic-prev"));
+    fireEvent.click(screen.getByTestId("topic-prev"));
+    expect(text(screen.getByTestId("topic-title"))).toBe("起因与现状问题");
     cleanup();
     render(<Panel t={task(undefined, null)} />);
     expect(screen.queryByTestId("outline-toc")).toBeNull();

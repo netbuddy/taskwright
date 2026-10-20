@@ -182,3 +182,21 @@ export function outlinePlace(tree: OutlineTree, itemId: string): { dimension: st
   }
   return null;
 }
+
+/**
+ * 提纲树从上到下的各页（深度优先）：目前的判断；每个维度先是维度页，再是各提纲条目的页与挂在下面的页，再是维度下别的页；
+ * 然后是解决方案创意、未归类的发现与其他页。「上一条」「下一条」照它走。
+ */
+export function outlineOrder(tree: OutlineTree): Item[] {
+  const walk = (nodes: PageNode[]): Item[] => nodes.flatMap((one) => [one.item, ...walk(one.children)]);
+  const fixedPage = (node: FixedNode | null) => (node?.page ? [node.page] : []);
+  return [
+    ...fixedPage(tree.judgement),
+    ...tree.dimensions.flatMap((dimension) => [
+      ...(dimension.page ? [dimension.page] : []),
+      ...dimension.entries.flatMap((entry) => [...entry.pages, ...walk(entry.children)]),
+      ...walk(dimension.others),
+    ]),
+    ...fixedPage(tree.ideas), ...fixedPage(tree.unsorted), ...tree.loose,
+  ];
+}
