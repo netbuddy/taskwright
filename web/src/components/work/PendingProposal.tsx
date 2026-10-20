@@ -1,5 +1,5 @@
 // 输入框上方的「待决定」一行：助手发过提议的卡片、用户还没有照它做时出现（整份数据的 stage.proposal 不为空）。
-// 提议有三种：进入下一个阶段（「助手已提议进入某阶段」）、退回前面的阶段（「助手已提议退回某阶段」）、
+// 提议有三种：进入下一步（「助手已提议进入某某这一步」）、退回前面的一步（「助手已提议退回某某这一步」）、
 // 编写文档阶段请用户过目补写的页（「补写的 N 处待过目」，按钮是「看过了，生成文档」，点了不发话、不移动阶段）。下面的说明以第一种为例。
 // 它是一件待办，不是进度：用户在卡片上选了「继续本阶段」、又讨论修订了多少轮之后，都能从这里进入下一段。
 // 按钮上的字就是那张卡片进入项的字，点了与点卡片上的进入项发同一个请求（那句「我选：……」带上卡片所在的回复与选项的键）；
@@ -19,7 +19,7 @@ export function pendingParts(proposal: Pick<StageProposal, "stage"> & Partial<Pi
   const name = (STAGE_NAMES as Record<string, string>)[proposal.stage] ?? proposal.stage;
   // 任务空闲时助手提议开始核读材料：不是进入下一个阶段，是启动需求分析。
   if (proposal.kind !== "back" && proposal.stage === "reading") return ["助手已提议开始", name, ""];
-  return [proposal.kind === "back" ? "助手已提议退回" : "助手已提议进入", name, "阶段"];
+  return [proposal.kind === "back" ? "助手已提议退回" : "助手已提议进入", name, "这一步"];
 }
 
 /**

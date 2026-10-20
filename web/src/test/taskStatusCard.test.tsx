@@ -74,7 +74,7 @@ describe("工作进展卡各行的写法", () => {
     expect([...card.querySelectorAll(".row b")].map((b) => b.textContent)).toEqual(["本会话", "业务说明", "模型", "需求条目", "这一段还差", "待决定"]);
     expect(screen.getByTestId("status-description")).toHaveTextContent("16 节：角色 2 · 业务流程 6 · 业务对象 6 · 业务目标 2；1 处待澄清");
     expect(screen.getByTestId("status-description").querySelector("em")).toHaveTextContent("1 处待澄清");
-    expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定助手已提议进入写条目阶段");
+    expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定助手已提议进入写条目这一步");
     expect(screen.queryByTestId("status-activities")).toBeNull();
     // 进入按钮与输入框上方那一行的按钮是同一个请求；「请助手汇报当前状况」发那句固定的话。各自点过一次就不能再点。
     fireEvent.click(screen.getByTestId("status-enter"));
@@ -100,7 +100,7 @@ describe("工作进展卡各行的写法", () => {
     cleanup();
     const back: StageProposal = { ...PROPOSAL, kind: "back", stage: "clarifying", enter: { key: "back_to_clarify", text: "退回澄清" }, stay: { key: "stay_in_stage", text: "留在本段" } };
     render(<Wrap><TaskStatusCard status={{ ...STATUS, proposal: back }} liveProposal={back} onMessage={onMessage} onSend={noop} /></Wrap>);
-    expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定助手已提议退回澄清阶段");
+    expect(screen.getByTestId("status-proposal")).toHaveTextContent("待决定助手已提议退回澄清这一步");
     fireEvent.click(screen.getByTestId("status-enter"));
     expect(onMessage.mock.calls).toEqual([["我选：退回澄清", { reply_message_id: "reply-far", kind: "choose", choice: "back_to_clarify" }]]);
   });

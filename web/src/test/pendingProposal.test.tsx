@@ -1,4 +1,4 @@
-// 输入框上方的「待决定」一行：整份数据的 stage.proposal 不为空时出现，写「待决定 · 助手已提议进入某阶段」加一个按钮；
+// 输入框上方的「待决定」一行：整份数据的 stage.proposal 不为空时出现，写「待决定 · 助手已提议进入某某这一步」加一个按钮；
 // 按钮上的字是那张卡片进入项的字，点了与点卡片上的进入项发同一个请求；没有开着的提议、任务不能再发话时不出现或者点不了。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -33,7 +33,7 @@ describe("「待决定」一行", () => {
     // 任务空闲时助手提议开始核读材料：不说「进入某阶段」。
     expect(pendingParts({ stage: "reading" })).toEqual(["助手已提议开始", "核读材料", ""]);
     expect((["clarifying", "modeling", "writing", "reviewing"] as const).map((stage) => pendingParts({ stage }).join(""))).toEqual(
-      ["助手已提议进入澄清阶段", "助手已提议进入整理建模阶段", "助手已提议进入写条目阶段", "助手已提议进入评审确认阶段"]);
+      ["助手已提议进入澄清这一步", "助手已提议进入整理建模这一步", "助手已提议进入写条目这一步", "助手已提议进入评审确认这一步"]);
     expect(enterRequest(PROPOSAL)).toEqual(["我选：进入澄清", { reply_message_id: "reply-far", kind: "choose", choice: "enter_clarify" }]);
     expect(enterRequest({ ...PROPOSAL, enter: { key: "start_items", text: "开始写条目" }, reply_message_id: null })).toEqual(
       ["我选：开始写条目", { reply_message_id: "", kind: "choose", choice: "start_items" }]);
@@ -42,7 +42,7 @@ describe("「待决定」一行", () => {
   it("提议开着：输入框上方多一行，阶段名加重，按钮上是卡片进入项的字；点了发那一句，这一条提议不能再点第二次", () => {
     const onMessage = chat(taskWith(PROPOSAL));
     const row = screen.getByTestId("pending-proposal");
-    expect(row).toHaveTextContent("待决定助手已提议进入澄清阶段进入澄清");
+    expect(row).toHaveTextContent("待决定助手已提议进入澄清这一步进入澄清");
     expect(row.querySelector("b")).toHaveTextContent(/^澄清$/);
     expect(row).toHaveAttribute("data-stage", "clarifying");
     // 排在输入框之前。

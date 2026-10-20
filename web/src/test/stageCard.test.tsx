@@ -1,5 +1,5 @@
 // 助手提议进入下一个阶段的卡片（请选择，其中一个选项的键是 enter_clarify、enter_consolidate、start_items、enter_review 之一）：
-// 按键认出；标题写「进入下一阶段 · 请决定」；进入的那个选项是主按钮，另一个是普通按钮；点名的条目前面写「请先看：」并且可以点开；
+// 按键认出；标题写「进入下一步 · 请决定」；进入的那个选项是主按钮，另一个是普通按钮；点名的条目前面写「请先看：」并且可以点开；
 // 点进入的那一项照现有的做法替用户发一句与选项相同的话，带上选项的键；留在这一步的那一项（stay，早先的固定键也认）一律写成「继续本步」，
 // 点了怎样见 stayCard.test.tsx。别的请选择卡片与复述的卡片照旧。
 import { readFileSync } from "node:fs";
@@ -33,11 +33,11 @@ const CARDS: [string, string, string, string][] = [
 ];
 
 describe("提议进入下一个阶段的卡片", () => {
-  it.each(CARDS)("选项键 %s：标题是「进入下一阶段 · 请决定」，「%s」是主按钮；键是 %s 的那一项不管助手写成「%s」还是别的，都显示成「继续本步」", (enterKey, enterText, stayKey, stayText) => {
+  it.each(CARDS)("选项键 %s：标题是「进入下一步 · 请决定」，「%s」是主按钮；键是 %s 的那一项不管助手写成「%s」还是别的，都显示成「继续本步」", (enterKey, enterText, stayKey, stayText) => {
     card({ kind: "choose", text: "这一段做完了，接下来做下一段。", options: [{ key: enterKey, text: enterText }, { key: stayKey, text: stayText }] });
     const act = screen.getByTestId("act-choose");
     expect(act.querySelector(".tt")).toHaveTextContent(STAGE_CARD_TITLE);
-    expect(STAGE_CARD_TITLE).toBe("进入下一阶段 · 请决定");
+    expect(STAGE_CARD_TITLE).toBe("进入下一步 · 请决定");
     expect(act).toHaveAttribute("data-stage-card", "true");
     expect(screen.getByTestId(`card-option-${enterKey}`)).toHaveTextContent(enterText);
     expect(screen.getByTestId(`card-option-${enterKey}`)).toHaveClass("pri");

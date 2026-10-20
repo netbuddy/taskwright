@@ -65,11 +65,11 @@ export const TEMPLATES = {
  * 而征求同意的是提议。助手一侧的说明、回复工具的返回里仍把这种行为写作「请确认」，指的是同一种。
  */
 /** 助手提议进入下一个阶段的那张请选择卡片的标题。 */
-export const STAGE_CARD_TITLE = "进入下一阶段 · 请决定";
+export const STAGE_CARD_TITLE = "进入下一步 · 请决定";
 /** 任务空闲时助手提议开始核读材料的那张卡片的标题：这时没有「下一阶段」，是启动需求分析。 */
 export const START_CARD_TITLE = "开始核读材料 · 请决定";
 /** 助手提议退回前面的阶段的卡片、编写文档阶段请用户过目补写的页的卡片的标题。 */
-export const BACK_CARD_TITLE = "退回前面的阶段 · 请决定";
+export const BACK_CARD_TITLE = "退回前面的一步 · 请决定";
 export const REVIEW_CARD_TITLE = "补写的内容 · 请过目";
 const PROPOSAL_TITLES: Record<ProposalCardKind, string> = { enter: STAGE_CARD_TITLE, back: BACK_CARD_TITLE, review: REVIEW_CARD_TITLE };
 /** 提议的卡片上点名的页前面那一行小字。 */
@@ -232,7 +232,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
   // 助手复述的卡片（请选择，三个选项是「采纳为例子」「有误，需修改」「换一个例子重述」，键是 story_ok、story_fix、story_again）：
   // 故事画成故事的样子，卡片本身不要底色。
   const story = storyPlace(act, replyText);
-  // 助手提议往前走的卡片（请选择，其中一个选项的键是「进入」某个阶段的四个键之一）：标题写「进入下一阶段 · 请决定」，
+  // 助手提议往前走的卡片（请选择，其中一个选项的键是「进入」某个阶段的四个键之一）：标题写「进入下一步 · 请决定」，
   // 进入的那个选项画成主按钮，点名的条目前面写「请先看：」。用户点了进入，系统替用户记移动，阶段条随库事件变。
   const stageCard = !story && stageCardOf(act);
   // 另两种提议的卡片：提议退回前面的阶段（「退回某阶段」「留在本段」）、编写文档阶段请用户过目（「看过了，生成文档」「需要修改」）。

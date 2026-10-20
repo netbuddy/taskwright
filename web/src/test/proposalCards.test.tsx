@@ -79,7 +79,7 @@ describe("提议退回前面的阶段的卡片", () => {
     const handlers = card(BACK);
     const act = screen.getByTestId("act-choose");
     expect(act.querySelector(".tt")).toHaveTextContent(BACK_CARD_TITLE);
-    expect(BACK_CARD_TITLE).toBe("退回前面的阶段 · 请决定");
+    expect(BACK_CARD_TITLE).toBe("退回前面的一步 · 请决定");
     expect(act).toHaveAttribute("data-proposal", "back");
     expect(act).not.toHaveAttribute("data-stage-card");
     expect(screen.getByTestId("card-look-first")).toHaveTextContent("牵涉到：");
@@ -179,14 +179,14 @@ describe("「待决定」一行的三种写法", () => {
 
   it("进入、退回、请过目各自的那句话；没有写种类的当作进入", () => {
     expect([pendingParts({ stage: "document" }).join(""), pendingParts({ kind: "enter", stage: "writing" }).join(""), pendingParts(back).join(""), pendingParts(review).join("")])
-      .toEqual(["助手已提议进入编写文档阶段", "助手已提议进入写条目阶段", "助手已提议退回澄清阶段", "补写的 3 处待过目"]);
+      .toEqual(["助手已提议进入编写文档这一步", "助手已提议进入写条目这一步", "助手已提议退回澄清这一步", "补写的 3 处待过目"]);
   });
 
   it("退回的提议：按钮是「退回澄清」，点了发那一句带键的话", () => {
     const onMessage = vi.fn();
     render(<Wrap><PendingProposal proposal={back} onMessage={onMessage} /></Wrap>);
     const row = screen.getByTestId("pending-proposal");
-    expect(row).toHaveTextContent("待决定助手已提议退回澄清阶段退回澄清");
+    expect(row).toHaveTextContent("待决定助手已提议退回澄清这一步退回澄清");
     expect(row).toHaveAttribute("data-kind", "back");
     fireEvent.click(screen.getByTestId("pending-enter"));
     expect(onMessage.mock.calls).toEqual([["我选：退回澄清", { reply_message_id: "reply-9", kind: "choose", choice: "back_to_clarify" }]]);
