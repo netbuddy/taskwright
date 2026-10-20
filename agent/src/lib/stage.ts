@@ -532,8 +532,10 @@ export const USE_CASE_COLLECTION = "功能用例";
 /** 问题条目里说明它是哪一种的字段与「待澄清」这个取值；状态字段里表示还没解决的取值；指到相关条目的字段。 */
 export const QUESTION_KIND_FIELD = "种类";
 export const QUESTION_KIND_CLARIFY = "待澄清";
+/** 问题种类里的「缺失」：该有的内容材料没写、用户也答不上。按分析提纲画的目录据它分出「缺失」与还开着的缺口（web/src/model/outlineTree.ts）。 */
+export const QUESTION_KIND_MISSING = "缺失";
 /** 要在澄清时逐条问用户的问题种类：待澄清，以及核读时记下的冲突与缺失。 */
-export const QUESTION_KINDS_TO_CLARIFY: readonly string[] = [QUESTION_KIND_CLARIFY, "冲突", "缺失"];
+export const QUESTION_KINDS_TO_CLARIFY: readonly string[] = [QUESTION_KIND_CLARIFY, "冲突", QUESTION_KIND_MISSING];
 /** 一条问题条目的种类算不算要澄清的：没有写种类（集合没有这个字段，或早先的条目）的也算。 */
 export function clarifyKind(kind: unknown): boolean {
   return kind === undefined || kind === null || QUESTION_KINDS_TO_CLARIFY.includes(String(kind));

@@ -19,6 +19,7 @@
 // 这里只画；数由 model/overall.ts 与 model/chapters.ts 算，写入一律走条目区交进来的直接操作与发送。
 
 import { useState, type ReactNode } from "react";
+import { outlinePlace, outlineTree } from "../../../model/outlineTree";
 import type { CollectionDef, Item, Source, Task } from "../../../api/types";
 import { CHAPTER_FLOWS, INTRO_NAME, UNSORTED_NAME, chapterByNo, introChapter, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
 import { SOURCE_SUPPLEMENT, issueAnswerText, writeOffReason } from "../../../model/items";
@@ -88,6 +89,9 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
   // 导语页不是节：面包屑写它是哪一章的导语，不算没有归类。
   const introOf = introChapter(contents, item.item_id);
   const chapter = section ? chapterByNo(section.chapter) : introOf?.chapter ?? null;
+  // 任务类型有分析提纲时，面包屑写这一页在提纲里的位置：「维度 › 提纲条目」；不在提纲树里的页写「其他页」。
+  const tree = outlineTree(task);
+  const place = tree ? outlinePlace(tree, item.item_id) : null;
   const labels = labelsOf(item);
   const lead = sectionLead(item);
   const pending = pendingCount(item);
@@ -151,7 +155,9 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
     <div className="oa-page" data-testid="topic-page">
       <div className="oa-crumb" data-testid="topic-crumb">
         <span className="back" role="button" onClick={onBack} data-testid="topic-back">‹ 回到目录</span>
-        {chapter
+        {tree
+          ? (place ? <><span className="up">{place.dimension}</span>{place.entry && <><i>›</i><span className="here">{place.entry}</span></>}</> : <span className="up">其他页</span>)
+          : chapter
           ? <><span className="up">{chapter.no} {chapter.name}</span>{introOf ? <><i>›</i><span className="here">{INTRO_NAME}</span></> : section!.no && <><i>›</i><span className="here">{section!.no}</span></>}</>
           : <span className="up">{UNSORTED_NAME}</span>}
         <span className="oa-nav">

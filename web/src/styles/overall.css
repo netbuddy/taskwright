@@ -312,3 +312,15 @@
 .app .oa-ch .oa-caret { cursor: pointer; border-radius: .25rem; }
 .app .oa-ch .oa-caret:hover { background: var(--line); }
 .app .oa-head h3 > small[data-testid^="chapter-section-note-"] { margin-left: .6rem; }
+
+/* 按分析提纲画的目录（components/work/overall/OutlineContents.tsx）：维度行的「已做 k/n」与状态小标，正在问的那一条。 */
+.app .oa-outline-tree .oa-ch .oa-done { margin-left: auto; font-family: var(--font-body); font-weight: 400; font-size: 0.8rem; color: var(--text3); }
+.app .oa-outline-tree .oa-st { flex: none; font-family: var(--font-body); font-weight: 400; font-size: 0.75rem; padding: 0 .35rem; border-radius: .3rem; white-space: nowrap; }
+.app .oa-outline-tree .oa-row .oa-st { margin-left: auto; }
+.app .oa-outline-tree .oa-st.none { color: var(--text3); background: transparent; }
+.app .oa-outline-tree .oa-st.draft { color: var(--ai); background: var(--ai-bg); }
+.app .oa-outline-tree .oa-st.partial { color: var(--text2); background: var(--sel, var(--line)); }
+.app .oa-outline-tree .oa-st.full { color: var(--ok); background: var(--ok-bg); }
+.app .oa-outline-tree .oa-st.irrelevant { color: var(--text3); background: var(--line); }
+.app .oa-outline-tree .oa-row.asking:not(.cur) { box-shadow: inset 0.15rem 0 0 var(--ai); background: var(--ai-bg); }
+.app .oa-outline-tree .oa-ch.dim, .app .oa-outline-tree .oa-row.dim { cursor: default; }

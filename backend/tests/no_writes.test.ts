@@ -100,6 +100,8 @@ const ALLOWED: Record<string, string[]> = {
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition", "withPlatformCollections"],
   "asset_names.ts": ["assetNamesOf"],
   "assets.ts": ["parseAssetNames"],
+  // 任务类型的分析提纲的原文（只读文件，不碰库）：任务定义视图带上它，页面据它把业务说明的目录画成提纲的树。
+  "outline_read.ts": ["outlineTextFor"],
 };
 
 function files(dir: string): string[] {

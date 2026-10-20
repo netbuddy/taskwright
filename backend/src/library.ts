@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { assetNamesOf } from "../../agent/src/lib/asset_names.ts";
+import { outlineTextFor } from "../../agent/src/lib/outline_read.ts";
 import { parseAssetNames } from "../../agent/src/lib/assets.ts";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
@@ -216,7 +217,20 @@ export function definitionView(definition: ParsedDefinition, definitionText: unk
     })),
     // 六类资产给人看的名字：任务定义的「资产显示名」，早先的定义里没有时回退读产品自带的（agent/src/lib/asset_names.ts）。
     asset_names: assetNamesOf({ taskName: String(definition["任务名"] ?? ""), assetNames: parseAssetNames(definition["资产显示名"]) }),
+    // 任务类型的分析提纲（任务目录里 skill 的 outline.md）的原文：页面据它把业务说明的目录画成提纲的树；没有时为 null，目录照旧按章画。
+    outline: outlineOf(definition, taskDir),
   };
+}
+
+/** 一个任务的分析提纲的原文；没有任务目录、没有分析提纲、读不出活动声明时为 null。 */
+function outlineOf(definition: ParsedDefinition, taskDir: string | null): string | null {
+  const skill = definition["执行方法"];
+  if (!taskDir || typeof skill !== "string" || !skill) return null;
+  try {
+    return outlineTextFor(taskDir, skill);
+  } catch {
+    return null;
+  }
 }
 
 /** 一次评审（批次）：第几次、批次编号、时刻、谁发起、范围与计数。row 是 REVIEW_BATCH 事件那一行。 */
