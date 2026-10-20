@@ -470,13 +470,53 @@
          "路径": ".pi/skills/requirements-engineering/flows/change.md"
         },
         {
-         "字节数": 4742,
-         "摘要值": "c98ce0b2cd3d412c",
-         "路径": ".pi/skills/requirements-engineering/methods.md"
+         "字节数": 645,
+         "摘要值": "f6aef10be331de1e",
+         "路径": ".pi/skills/requirements-engineering/methods/MoSCoW.md"
         },
         {
-         "字节数": 6957,
-         "摘要值": "8ab546073736acc3",
+         "字节数": 1654,
+         "摘要值": "1b8a46b6271106ba",
+         "路径": ".pi/skills/requirements-engineering/methods/SIPOC 走查.md"
+        },
+        {
+         "字节数": 1413,
+         "摘要值": "a1ebb19092a9bb98",
+         "路径": ".pi/skills/requirements-engineering/methods/五问法.md"
+        },
+        {
+         "字节数": 891,
+         "摘要值": "a6babe0e60671a65",
+         "路径": ".pi/skills/requirements-engineering/methods/假设反转加事前验尸.md"
+        },
+        {
+         "字节数": 682,
+         "摘要值": "1d8e7414d4f639db",
+         "路径": ".pi/skills/requirements-engineering/methods/决定来历追问.md"
+        },
+        {
+         "字节数": 600,
+         "摘要值": "6870640998a67cf9",
+         "路径": ".pi/skills/requirements-engineering/methods/决策表.md"
+        },
+        {
+         "字节数": 694,
+         "摘要值": "0134ee558eb5b1fd",
+         "路径": ".pi/skills/requirements-engineering/methods/干系人权力与关切矩阵.md"
+        },
+        {
+         "字节数": 626,
+         "摘要值": "142f61d6caf89097",
+         "路径": ".pi/skills/requirements-engineering/methods/逐步例外问询.md"
+        },
+        {
+         "字节数": 661,
+         "摘要值": "f756a04f23dade16",
+         "路径": ".pi/skills/requirements-engineering/methods/阶梯法.md"
+        },
+        {
+         "字节数": 7059,
+         "摘要值": "6ce8fb63e7fc2fad",
          "路径": ".pi/skills/requirements-engineering/outline.md"
         },
         {
