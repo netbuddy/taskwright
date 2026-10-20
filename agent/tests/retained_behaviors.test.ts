@@ -1,12 +1,15 @@
 /**
  * 保留行为验收集合的配置一侧：提示词拆成模块、按会话拼装之后，撑着这些行为的规矩仍然拼进了对应位置的系统提示。
- * 行为本身的机械一侧（点卡片换站、拦写入、拼不成停下）另有测试，各条注释里写明在哪里。第 10 条（两个不同活动的会话读任务定义各得其视图）随任务定义视图一起做。
+ * 行为本身的机械一侧（点卡片换站、拦写入、拼不成停下、读任务定义换成视图）另有测试，各条注释里写明在哪里。
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+import { readDefinitions } from "../src/lib/activity_def_read.ts";
 import { composeContext } from "../src/lib/context_assemble.ts";
+import { definitionView } from "../src/lib/definition_view.ts";
 import { IDLE, type Stage } from "../src/lib/stage.ts";
 
 const SRS_TYPE = join(resolve(import.meta.dirname, "..", ".."), "task-types", "requirements-engineering");
@@ -69,4 +72,19 @@ test("8 停止后继续、换会话、新增材料时按记录说进度：每个
 // 拼不成时停下：agent/tests/prompt_modules.test.ts（模块缺失、when 写错）、agent/tests/context_assemble.test.ts、backend/tests/compose_failure.test.ts（真 pi 不调用模型）。
 test("9 模块缺失或条件写错时停止并报错：见注释里的三份测试；这里只核对正常的拼装每个位置都拼得成", () => {
   for (const stage of ["reading", "clarifying", "modeling", "writing", "reviewing", "document"] as const) assert.ok(promptAt(stage).length > 0);
+});
+
+// 机械一侧：agent/tests/definition_view.test.ts（两条会话读同一份文件，原文件不变；读的参数不影响；不换的情形）。
+test("10 两个不同活动的会话读任务定义各得其视图：核读只见页与问题且没有导语那一栏，编写文档另见条目集合（只供参照）与导语那一栏", () => {
+  const raw = JSON.parse(readFileSync(join(SRS_TYPE, "docs", "task-definitions", "requirements-engineering.json"), "utf-8"));
+  const defs = readDefinitions(join(SRS_TYPE, ".pi", "skills", "requirements-engineering"));
+  const viewAt = (stage: Stage) => {
+    const activity = defs.activities.find((one) => one.key === stage)!;
+    return definitionView(raw, { stage, reads: activity.reads, allowed: defs.allowed[stage] }) as { 交付物: { 条目集合: { 名称: string; 可写: boolean; 字段: { 名: string }[] }[] } };
+  };
+  const reading = viewAt("reading").交付物.条目集合, document = viewAt("document").交付物.条目集合;
+  assert.deepEqual(reading.map((one) => [one.名称, one.可写]), [["问题", true], ["业务说明", true]]);
+  assert.deepEqual(document.map((one) => [one.名称, one.可写]), [["功能用例", false], ["非功能需求", false], ["约束", false], ["问题", true], ["业务说明", true]]);
+  const intro = (list: typeof reading) => list.find((one) => one.名称 === "业务说明")!.字段.some((field) => field.名 === "导语所属章");
+  assert.deepEqual([intro(reading), intro(document)], [false, true]);
 });
