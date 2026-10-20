@@ -12,11 +12,10 @@ import type { CatalogFlow, Item, StageKey, StageLamp, Task, TaskStatusView, Work
 import { RESOLVED_VALUE, issueRefs, issueStatus, keepPendingField } from "./items";
 import { allAssetsEmpty } from "./startPage";
 import { basisNote, isBlockingQuestion, questionRevisit } from "./overall";
-import { STAGE_NAMES, lampShort, reportOnlyStation } from "./stage";
+import { STAGE_NAMES, clarifyKind, lampShort, reportOnlyStation } from "./stage";
 
 /** 问题集合里「种类」这一项取这个值的才是待澄清问题（另两种是范围外、后续迭代）。 */
 export const QUESTION_KIND_FIELD = "种类";
-export const QUESTION_KIND_CLARIFY = "待澄清";
 /** 一组里至多列几行，多的写一句「还有 N 条」。 */
 export const PENDING_ROWS = 5;
 
@@ -58,12 +57,12 @@ function nameOf(task: Task, id: string): string {
   return diagram ? diagram.name : id;
 }
 
-/** 还没有了结的待澄清问题：问题集合（有「用户决定保留」那一项的集合）里状态既不是已解决也不是用户决定保留、种类是待澄清的条目。 */
+/** 还没有了结的待澄清问题：问题集合（有「用户决定保留」那一项的集合）里状态既不是已解决也不是用户决定保留、种类是要澄清的（待澄清、冲突、缺失，或者没写种类）条目。 */
 export function openClarifyQuestions(task: Task): Item[] {
   return task.items
     .filter((one) => keepPendingField(task, one.collection) !== null)
     .filter((one) => { const status = issueStatus(task, one); return status !== RESOLVED_VALUE && status !== "用户决定保留"; })
-    .filter((one) => { const kind = one.fields[QUESTION_KIND_FIELD]; return kind === undefined || kind === null || String(kind) === QUESTION_KIND_CLARIFY; })
+    .filter((one) => clarifyKind(one.fields[QUESTION_KIND_FIELD]))
     .sort((a, b) => byNumber(a.item_id, b.item_id));
 }
 

@@ -168,7 +168,7 @@ const PLATFORM_COLLECTIONS: Record<string, { collection: Record<string, unknown>
       编号前缀: "TBD",
       字段: [
         { 名: "事项", 类型: "文本", 必填: true },
-        { 名: "种类", 类型: "枚举", 必填: true, 取值: ["待澄清", "范围外", "后续迭代"] },
+        { 名: "种类", 类型: "枚举", 必填: true, 取值: ["待澄清", "冲突", "缺失", "范围外", "后续迭代"] },
         { 名: PROBLEM_BLOCKING_FIELD, 类型: "枚举", 必填: true, 取值: [PROBLEM_BLOCKING, PROBLEM_NOT_BLOCKING] },
         { 名: PROBLEM_REVISIT_FIELD, 类型: "文本", 必填: false },
         { 名: "建议的处理", 类型: "文本", 必填: false },

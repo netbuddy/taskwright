@@ -187,7 +187,7 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
             open_on: dict[str, list[str]] = {}
             for item in items:
                 fields = _fields(item)
-                if item["所属集合"] == QUESTIONS and fields.get("种类") == "待澄清" and fields.get("状态") == "未解决":
+                if item["所属集合"] == QUESTIONS and fields.get("种类") in ("待澄清", "冲突", "缺失") and fields.get("状态") == "未解决":
                     for ref in _refs(fields.get("关联条目")):
                         open_on.setdefault(ref, []).append(item["条目编号"])
             missing = [p["条目编号"] for p in targets if p["条目编号"] in open_on]

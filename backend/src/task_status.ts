@@ -36,7 +36,7 @@
 
 import { CHAPTERS, chapterLayout, chapterPage } from "../../agent/src/lib/overall_chapters.ts";
 import { OVERALL_COLLECTION } from "../../agent/src/lib/overall_analysis.ts";
-import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, QUESTION_KIND_CLARIFY, STAGES, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
+import { IDLE, IDLE_NAME, type Position, QUESTION_KEEP_STATUS, STAGES, clarifyKind, STAGE_NAMES } from "../../agent/src/lib/stage.ts";
 import * as clock from "./clock.ts";
 import * as library from "./library.ts";
 import { fillText } from "../../agent/src/lib/texts.ts";
@@ -116,7 +116,7 @@ export function taskStatus(taskDir: string, sessionId: string | null = null, ses
   const unsorted = layout.unsorted.filter((one) => !one.deprecated).length;
   // 待澄清：决策记录与待澄清事项那张表里还没有了结的问题；问题集合没有「种类」字段时都算。
   const openQuestions = (view.overall_views?.decisions ?? [])
-    .filter((row) => row.entry === "question" && (row.question_kind === null || row.question_kind === QUESTION_KIND_CLARIFY)).length;
+    .filter((row) => row.entry === "question" && clarifyKind(row.question_kind)).length;
 
   // 模型：还在的图按种类数张数，种类照它第一次出现的先后。
   const models: { kind: string; name: string; count: number }[] = [];

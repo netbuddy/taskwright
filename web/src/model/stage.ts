@@ -3,12 +3,12 @@
 // 阶段的名字、次序与转移卡片的选项键（next_step、goto:<活动标识符>、stay）取自助手一侧的 lib/stage.ts，与工具用的是同一份。
 
 import {
-  DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, FLOW_NAMES, IDLE, IDLE_NAME, LEGACY_CARD_MOVES, REPORT_ONLY_LAMPS, STAGES, STAGE_NAMES, STAY_TEXT,
+  DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, FLOW_NAMES, clarifyKind, IDLE, IDLE_NAME, LEGACY_CARD_MOVES, REPORT_ONLY_LAMPS, STAGES, STAGE_NAMES, STAY_TEXT,
   activityDoneSentence, activityStartSentence, cardMove, flowKeyOf,
 } from "../../../agent/src/lib/stage";
 import type { Item, PositionKey, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
-export { STAGES, STAGE_NAMES, STAY_TEXT };
+export { STAGES, STAGE_NAMES, STAY_TEXT, clarifyKind };
 
 /**
  * 这一站只报数、不判：它有灯，而且全是只报数的灯（核读材料就是这样）。这种站没有「齐了」「还差」可说，

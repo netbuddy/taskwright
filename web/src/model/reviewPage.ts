@@ -4,7 +4,8 @@
 import type { Item, ReviewBatch, Task } from "../api/types";
 import { requirementItems } from "./assetTabs";
 import { failedReview, isUnread, keepPendingField, openProblems } from "./items";
-import { QUESTION_KIND_CLARIFY, QUESTION_KIND_FIELD, openClarifyQuestions } from "./pendingWork";
+import { QUESTION_KIND_FIELD, openClarifyQuestions } from "./pendingWork";
+import { clarifyKind } from "./stage";
 import { formatTimeShort } from "./format";
 
 /** 一处待处理里最多点名几个，多的写「等 N 个」。 */
@@ -74,7 +75,7 @@ export function confirmRows(task: Task): ConfirmRow[] {
   const added = task.items.filter(supplemented);
   const waiting = added.filter((one) => one.pending_verification).map((one) => one.item_id);
   const questions = task.items.filter((one) => keepPendingField(task, one.collection) !== null
-    && [undefined, null, QUESTION_KIND_CLARIFY].includes(one.fields[QUESTION_KIND_FIELD] as string | undefined | null));
+    && clarifyKind(one.fields[QUESTION_KIND_FIELD]));
   const open = openClarifyQuestions(task).map((one) => one.item_id);
   return [
     { name: "需求条目", done: items.length - unread.length, total: items.length,

@@ -26,7 +26,7 @@ const ALLOWED: Record<string, string[]> = {
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
   // 另有问题条目的几个字段名与取值（常量）。
-  "stage.ts": ["STAGE_NAMES", "STAGES", "cardMove", "STAGE_START_TEXTS", "ACTIVITY_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_ANALYSIS", "flowKeyOf", "QUESTION_KIND_CLARIFY", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark",
+  "stage.ts": ["STAGE_NAMES", "STAGES", "cardMove", "STAGE_START_TEXTS", "ACTIVITY_START_TEXTS", "STATUS_NEXT_TEXT", "FLOW_ANALYSIS", "flowKeyOf", "clarifyKind", "QUESTION_KEEP_STATUS", "QUESTION_KIND_FIELD", "QUESTION_OPEN_STATUS", "QUESTION_SUGGESTION_FIELD", "isStage", "QUESTION_BLOCKING", "QUESTION_BLOCKING_FIELD", "hasPendingMark",
     // 范围说明的字数上限与按名字认阶段的函数：只做计算，后端在新建会话之前核对开展活动的写法时用。
     "SCOPE_MAX_LENGTH", "stageByName",
     // 空闲（任务没有在进行的活动）的写法与名字、位置的类型与两个只做计算的函数。

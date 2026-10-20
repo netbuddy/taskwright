@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  LAMP_KEYS, type Lamp, type LampDiagram, type LampInput, type LampItem, type LampPage, type LampQuestion, REPORT_ONLY_LAMPS, STAGES, hasPendingMark, lampLines, lampPage, lampQuestion, stageLamps,
+  LAMP_KEYS, type Lamp, type LampDiagram, type LampInput, type LampItem, type LampPage, type LampQuestion, REPORT_ONLY_LAMPS, STAGES, clarifyKind, hasPendingMark, lampLines, lampPage, lampQuestion, stageLamps,
 } from "../src/lib/stage.ts";
 
 const page = (id: string, over: Partial<LampPage> = {}): LampPage =>
@@ -261,6 +261,9 @@ test("从字段内容取算灯要的几样：一页主题、一条问题", () =>
   assert.deepEqual([q({ 种类: "范围外", 状态: "未解决" }).open, q({ 种类: "待澄清", 状态: "已解决" }).open, q({ 种类: "待澄清", 状态: "用户决定保留" }).open], [false, false, false]);
   // 集合没有「种类」这个字段时只看状态。
   assert.deepEqual(q({ 状态: "未解决" }), { item_id: "TBD-001", open: true, related: [], unresolved: true, blocking: false, kind: null });
+  // 要澄清的种类：待澄清、冲突、缺失（核读时记下的两处说法对不上、该有而没有的），没写种类的也算；范围外、后续迭代不算。
+  assert.deepEqual(["待澄清", "冲突", "缺失", "范围外", "后续迭代"].map((kind) => q({ 种类: kind, 状态: "未解决" }).open), [true, true, true, false, false]);
+  assert.deepEqual([clarifyKind(undefined), clarifyKind(null), clarifyKind("冲突"), clarifyKind("范围外")], [true, true, true, false]);
 });
 
 test("「这一段还差什么」的几行：不通过的灯各一句；都通过或不适用时写一句都齐了", () => {
