@@ -118,16 +118,21 @@ test("核读材料：任务的 skill 里有分析提纲时，页的正文每句�
   assert.equal(refusal(plain, [add(full("起因与现状问题", { 它是什么: "材料尚未说明原因。" }))]), null);
 });
 
-test("核读材料：分析提纲把例子标为可选的维度，它的维度页、提纲条目页与子系统页可以不写例子；要求例子的维度照旧拦；没有分析提纲的任务照旧拦", () => {
+test("核读材料：有分析提纲的任务不要求「例子」一栏；要求举例的维度的页正文至少一句以「例如」起头，可选维度不要求；标签照旧要求；没有分析提纲的任务照旧要求例子", () => {
   const dir = workspace("reading");
   const skill = (overallDefinition() as any).执行方法 as string;
   copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
-  const noExample = (title: string) => { const { 例子: _, ...rest } = full(title, { 它是什么: `${title}的说明（材料 第 1 段）。` }); return add(rest); };
-  assert.equal(refusal(dir, [noExample("背景与目标"), noExample("起因与现状问题"), noExample("量、成本与约束 · 平台共用能力")]), null);
-  assert.ok(refusal(dir, [noExample("角色与职责")])!.includes("这一页缺「例子」。"));
-  assert.ok(refusal(dir, [noExample("组织与角色 · 平台共用能力")])!.includes("这一页缺「例子」。"));
+  const page = (title: string, what: string, more: Record<string, unknown> = {}) => { const { 例子: _, ...rest } = full(title, { 它是什么: what, ...more }); return add(rest); };
+  // 可选维度的页、维度名对不上的子主题页：不要求例如句，也不要求例子。
+  assert.equal(refusal(dir, [page("起因与现状问题", "费用分散（预算复函 p2）。"), page("范围", "一期做三个应用（评审会纪要 第 4 条）。")]), null);
+  // 要求举例的维度：没有例如句被拦，写明要以「例如」起头。
+  const none = refusal(dir, [page("角色与职责", "服务台有八个人，分两班（服务台访谈 p23）。")])!;
+  assert.ok(none.includes("核读材料时这一页的「它是什么」里至少要有一句以「例如」起头的具体实例"), none);
+  assert.ok(refusal(dir, [page("组织与角色 · 平台共用能力", "平台由信息化部维护（立项申请书 p30）。")])!.includes("以「例如」起头的具体实例"));
+  // 有例如句（同样带出处）就放行，「例子」一栏可以空着。
+  assert.equal(refusal(dir, [page("角色与职责", "服务台有八个人，分两班（服务台访谈 p23）。例如早班八点半到下午五点（服务台访谈 p23）。")]), null);
   // 标签仍然要贴。
-  const { 例子: _e, ...bare } = full("范围", { 它是什么: "一期做三个应用（材料 第 1 段）。", 标签: [] });
-  assert.ok(refusal(dir, [add(bare)])!.includes("这一页缺「标签」。"));
-  assert.ok(refusal(workspace("reading"), [noExample("起因与现状问题")])!.includes("这一页缺「例子」。"));
+  assert.ok(refusal(dir, [page("背景与目标", "这一维度写为什么要建平台（立项申请书 p30）。", { 标签: [] })])!.includes("这一页缺「标签」。"));
+  // 没有分析提纲的任务照旧要求例子一栏。
+  assert.ok(refusal(workspace("reading"), [page("起因与现状问题", "费用分散。")])!.includes("这一页缺「例子」。"));
 });

@@ -4,6 +4,14 @@
  * 只用字符串处理，不用 node 模块；页面不导入它。
  */
 
+/** 具体实例的句子以它起头：实例写在正文里，紧跟它所说明的那句，同样要带出处。 */
+export const INSTANCE_HEAD = "例如";
+
+/** 正文里有没有一句实例（以 INSTANCE_HEAD 起头的句子）。 */
+export function hasInstance(text: string): boolean {
+  return sentencesOf(text).some((one) => one.startsWith(INSTANCE_HEAD));
+}
+
 /** 推断的句子以这几种说法起头。 */
 export const INFERENCE_HEADS = ["这意味着", "由此看"] as const;
 

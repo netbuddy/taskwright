@@ -144,16 +144,11 @@ describe("节的各块", () => {
     expect(screen.getByTestId("topic-what").querySelector(".oa-prose")).not.toHaveClass("pending");
   });
 
-  it("示例：一条一张卡片，反例是灰色卡片、写「这种不算」，正文里不带「反例：」", () => {
+  it("示例不单列一块：具体实例写在正文里；「例子」里平常的与以「反例：」开头的几条页上都不画（条目详情里照旧可看可改）", () => {
     render(<Panel t={overallTask()} />);
-    expect(screen.getByTestId("topic-examples").querySelector("h3")).toHaveTextContent("示例");
-    const first = screen.getByTestId("topic-example-0");
-    const second = screen.getByTestId("topic-example-1");
-    expect(first).not.toHaveClass("neg");
-    expect(first.querySelector(".k")).toBeNull();
-    expect(second).toHaveClass("neg");
-    expect(second.querySelector(".k")).toHaveTextContent("这种不算");
-    expect(second.querySelector("p")!.textContent).toBe("小李想借的《深入理解计算机系统》还在别人手上，他登记的是排队等书，不是预约取书。");
+    expect(screen.queryByTestId("topic-examples")).toBeNull();
+    expect(screen.queryByTestId("topic-example-0")).toBeNull();
+    expect(screen.queryByText("这种不算")).toBeNull();
   });
 
   it("异常分支：以「例外：」开头的例子各一张小卡，正文里不带「例外：」，写出处；流程节末尾有「＋ 补一种例外」，点了进到修改", () => {
@@ -165,11 +160,10 @@ describe("节的各块", () => {
     expect(card).toHaveClass("exc");
     expect(card.querySelector("p")!.textContent).toBe("读者的借书证过期了，不能预约。");
     expect(card.querySelector(".oa-src")).toHaveTextContent("你说的「有人预约的书不能续借。」");
-    // 例外不再出现在示例里；平常的例子与反例还在。
-    expect([...screen.getByTestId("topic-examples").querySelectorAll(".oa-card")].length).toBe(2);
-    // 块的次序：说明、异常分支、示例、适用规则、待澄清事项，然后是相关角色与对象、对应的需求条目。
+    // 平常的例子与反例不单列一块。块的次序：说明、异常分支、适用规则、待澄清事项，然后是相关角色与对象、对应的需求条目。
+    expect(screen.queryByTestId("topic-examples")).toBeNull();
     expect([...screen.getByTestId("topic-page").querySelectorAll(".oa-blk > h3")].map((h) => h.firstChild!.textContent!.trim()))
-      .toEqual(["说明", "异常分支", "示例", "适用规则", "待澄清事项", "相关角色与对象", "对应的需求条目"]);
+      .toEqual(["说明", "异常分支", "适用规则", "待澄清事项", "相关角色与对象", "对应的需求条目"]);
     fireEvent.click(screen.getByTestId("topic-add-exception"));
     expect(screen.getByTestId("topic-edit")).toBeInTheDocument();
   });

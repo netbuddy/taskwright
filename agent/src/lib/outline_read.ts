@@ -43,12 +43,13 @@ export function outlineTitles(text: string): OutlineTitles {
 }
 
 /**
- * 一页属于举例可选的维度吗：它的名字是这种维度的维度名或提纲条目名，或者是「维度名 · 子系统名」「条目名 · 子系统名」。
- * 子主题页、候选页的名字对不上这几种，照常要求举例。
+ * 一页属于要求举例的维度吗（没有写 `examples: optional` 的维度）：它的名字是这种维度的维度名或提纲条目名，
+ * 或者是「维度名 · 子系统名」「条目名 · 子系统名」。子主题页、候选页与固定页的名字对不上这几种，不算。
  */
-export function examplesOptionalFor(outline: OutlineTitles, name: string): boolean {
+export function examplesRequiredFor(outline: OutlineTitles, name: string): boolean {
   const head = name.split(" · ")[0].trim();
-  return outline.examplesOptional.some((dimension) => head === dimension || (outline.entries[dimension] ?? []).includes(head));
+  return outline.dimensions.filter((dimension) => !outline.examplesOptional.includes(dimension))
+    .some((dimension) => head === dimension || (outline.entries[dimension] ?? []).includes(head));
 }
 
 /**

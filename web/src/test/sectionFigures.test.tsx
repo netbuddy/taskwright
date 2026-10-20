@@ -93,7 +93,7 @@ describe("图画在节的哪一块", () => {
     serve(task);
     render(<Panel t={task} />);
     await shown("D-002");
-    expect(blocks()).toEqual(["说明", "流程步骤", "异常分支", "示例", "适用规则", "其他图", "相关角色与对象"]);
+    expect(blocks()).toEqual(["说明", "流程步骤", "异常分支", "适用规则", "其他图", "相关角色与对象"]);
     expect(within(screen.getByTestId("topic-fig-steps")).getByTestId("figure-name")).toHaveTextContent("图 D-002");
     expect(within(screen.getByTestId("topic-fig-other")).getByTestId("figure-name")).toHaveTextContent("图 D-003");
   });

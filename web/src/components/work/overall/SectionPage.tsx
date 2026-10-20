@@ -3,7 +3,7 @@
 //   说明 ── 「它是什么」，一段一段；逐字出自材料的句子用底色标出，点它在右边的材料里看原文；助手补的、用户还没有确认的字句用琥珀底标出；
 //           块尾一行来源。
 //   异常分支 ── 「例子」里以「例外：」开头的各条，一条一张小卡，写出处；流程节末尾有「＋ 补一种例外」。
-//   示例 ── 「例子」里其余各条，一条一张卡片；以「反例：」开头的是灰色卡片，写「这种不算」。
+//   「例子」里其余各条（具体情形、以「反例：」开头的）不在这里单列：具体实例写进正文（以「例如」起头）；条目详情里「例子」字段照旧可看可改。
 //   适用规则 ── 「已经定下的」，一句一条，每条下面一行出处；助手补的那一条前面是琥珀点；规则表里标了冲突的那一条写明与哪一节的规则冲突。
 //   待澄清事项 ── 每个问题挂一枚「阻断下游」或「不阻断」（不阻断的写何时回看），阻断下游的排在前面；已经了结的问题列在
 //                 下面，写它落实到了哪里。
@@ -104,7 +104,6 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
   const whatUnmarked = whatPending && !pieces.some((one) => one.some((part) => part.mark === "added"));
   const examples = examplesOf(item).map((one, index) => ({ index, ...exampleKind(one) }));
   const exceptions = examples.filter((one) => one.kind === "exception");
-  const samples = examples.filter((one) => one.kind !== "exception");
   const isFlow = section?.chapter === CHAPTER_FLOWS;
   const settled = settledOf(item);
   const questions = openQuestions(task, item);
@@ -237,21 +236,6 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
               <button type="button" className="oa-card add" disabled={!!offTitle} title={offTitle ?? "在「例子」里加一条以「例外：」开头的例子"} onClick={() => { setTagging(null); setEditing(true); }}
                 data-testid="topic-add-exception">＋ 补一种例外</button>
             )}
-          </div>
-        </section>
-      )}
-
-      {samples.length > 0 && (
-        <section className="oa-blk" data-testid="topic-examples">
-          <h3>示例</h3>
-          <div className="oa-ex">
-            {samples.map((one) => (
-              <div key={one.index} className={`oa-card${one.kind === "counter" ? " neg" : ""}${marked.examples.has(one.index) ? " pending" : ""}`} data-testid={`topic-example-${one.index}`}>
-                {one.kind === "counter" && <div className="k">这种不算</div>}
-                <p>{one.text}</p>
-                <SourceLine sources={sourcesFor(item, TOPIC.examples, one.index)} pending={marked.examples.has(one.index)} onLocate={onLocate} />
-              </div>
-            ))}
           </div>
         </section>
       )}
