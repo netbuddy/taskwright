@@ -12,7 +12,7 @@ import type { CatalogFlow, Item, StageKey, StageLamp, Task, TaskStatusView, Work
 import { RESOLVED_VALUE, issueRefs, issueStatus, keepPendingField } from "./items";
 import { allAssetsEmpty } from "./startPage";
 import { basisNote, isBlockingQuestion, questionRevisit } from "./overall";
-import { STAGE_NAMES, lampShort } from "./stage";
+import { STAGE_NAMES, lampShort, reportOnlyStation } from "./stage";
 
 /** 问题集合里「种类」这一项取这个值的才是待澄清问题（另两种是范围外、后续迭代）。 */
 export const QUESTION_KIND_FIELD = "种类";
@@ -146,7 +146,7 @@ function idList(ids: string[]): string {
 /**
  * 「推进建议」：任务里有流程工作项时才有。阻断下游的问题（在澄清及以后的站；核读材料时它们正要留给澄清去问）与待核实的条目（在写条目及以后的站）
  * 先要处理，写「解决 …并核实 …之后，需求分析可进入第 N 站「Y」」；
- * 没有这两样时看这一站的灯：都齐了写可以进入下一站，没齐写这一站还差什么。已经在最后一站时不写下一站。
+ * 没有这两样时看这一站的灯：都齐了写可以进入下一站，没齐写这一站还差什么；只报数、不判的站（核读材料）写由用户看过数字后决定。已经在最后一站时不写下一站。
  */
 export function adviceLine(task: Task, status: TaskStatusView | null, work: PendingWork): string | null {
   const item = status?.work_items?.find((one) => one.kind === "flow");
@@ -164,6 +164,9 @@ export function adviceLine(task: Task, status: TaskStatusView | null, work: Pend
   ].filter(Boolean);
   if (todo.length) return `${todo.join("并")}之后，${ahead}。`;
   const lamps = task.stage?.lamps?.[item.node] ?? [];
+  if (reportOnlyStation(lamps)) {
+    return next ? `${here}不判是否做够，看过数字后由你决定是否进入第 ${item.ordinal + 1} 站「${next.name}」。` : `${item.name}在${here}，这一站不判是否做够，由你判断。`;
+  }
   const short = lamps.filter((one) => one.ok === false).map((one) => lampShort(one.summary).replace(/[。.]+$/, ""));
   if (short.length) return `${item.name}在${here}，这一站还差：${short.join("；")}。`;
   return next ? `${here}的几项都齐了，${ahead}。` : `${item.name}在${here}，这一站的几项都齐了。`;

@@ -7,7 +7,7 @@
 
 import type { KnowledgeLibrary, SessionListEntry, StageKey, StageView, Task } from "../api/types";
 import { pendingWork } from "./pendingWork";
-import { STAGES, STAGE_NAMES, stageMarks, type StageMark } from "./stage";
+import { STAGES, STAGE_NAMES, reportOnlyStation, stageMarks, type StageMark } from "./stage";
 
 const STORAGE_KEY = "taskwright.leftNav";
 
@@ -55,6 +55,7 @@ export interface FlowProgress {
  * 打开的正是流程工作项的会话时取它（随库事件就地更新）；别的会话里取自会话清单：属于流程工作项的会话上记着那个工作项现在做的活动（流程同时只有一个工作项）。
  * 任务没有流程工作项（只有单项活动或还没有启动工作项）时是 null，左栏不画这一段。
  * 「还差 M 件」是那一站没通过的灯数（各阶段的灯整个任务相同，task.stage.lamps 里六站都有）；都通过了写「这一站的几项都齐了」，在最后一站写「已在最后一站」。
+ * 只报数、不判的站（reportOnlyStation，例如核读材料）写「只报数，由你判断」。
  */
 export function flowProgress(stage: StageView | null | undefined, sessions: readonly SessionListEntry[] | null | undefined): FlowProgress | null {
   const flowItem = (sessions ?? []).find((one) => !one.archived && one.work_item?.kind === "flow")?.work_item ?? null;
@@ -64,8 +65,9 @@ export function flowProgress(stage: StageView | null | undefined, sessions: read
   const index = STAGES.indexOf(at);
   const next = STAGES[index + 1] ?? null;
   const missing = (stage.lamps?.[at] ?? []).filter((one) => one.ok === false).length;
-  const tail = !next ? ["已在最后一站", ...(missing > 0 ? [`还差 ${missing} 件`] : [])]
-    : [missing > 0 ? `还差 ${missing} 件才能进${STAGE_NAMES[next]}` : "这一站的几项都齐了"];
+  const tail = reportOnlyStation(stage.lamps?.[at]) ? [...(!next ? ["已在最后一站"] : []), "只报数，由你判断"]
+    : !next ? ["已在最后一站", ...(missing > 0 ? [`还差 ${missing} 件`] : [])]
+      : [missing > 0 ? `还差 ${missing} 件才能进${STAGE_NAMES[next]}` : "这一站的几项都齐了"];
   const line = [`第 ${index + 1} 站`, STAGE_NAMES[at], ...tail].join(" · ");
   return { name: name || "工作流程", ordinal: index + 1, stage: at, marks: stageMarks(at), line };
 }

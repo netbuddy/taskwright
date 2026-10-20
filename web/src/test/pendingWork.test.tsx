@@ -106,7 +106,7 @@ describe("推进建议", () => {
   it("没有要先处理的：看这一站的灯，没齐写还差什么，齐了写可以进入下一站；核读材料时阻断问题留给澄清，不算进来；没有流程工作项时没有这一句", () => {
     expect(adviceLine(taskOf(), statusOf([work({ node: "modeling", activity: "modeling", ordinal: 3 })]), { ...got, blocking: 0 }))
       .toBe("需求分析在第 3 站「整理建模」，这一站还差：有 1 页流程还没有带判断分叉的流程图。");
-    expect(adviceLine(taskOf(), statusOf([work({ node: "reading", activity: "reading", ordinal: 1 })]), got)).toBe("第 1 站「核读材料」的几项都齐了，需求分析可进入第 2 站「澄清」。");
+    expect(adviceLine(taskOf(), statusOf([work({ node: "reading", activity: "reading", ordinal: 1 })]), got)).toBe("第 1 站「核读材料」不判是否做够，看过数字后由你决定是否进入第 2 站「澄清」。");
     expect(adviceLine(taskOf(), statusOf([work({ kind: "activity", node: null, ordinal: null, flow: null })]), got)).toBeNull();
   });
 });
