@@ -302,6 +302,10 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   assert.ok(!reading.includes("12 页"));
   for (const words of ["这几批里不要夹着用例、需求或约束", "一次保存最多写 4 页主题", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
     "「风险、假设与运维」这一维度的七个问题逐项问", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "「例子」写两条"]) assert.ok(reading.includes(words), words);
+  // 第 0 遍按分析提纲定骨架，立完停下请用户确认，不自动接着读。
+  for (const words of ["**第 0 遍：定骨架。**", "**骨架确认（必停）。**", "不得自动续读", "标题「维度名 · 子系统名」", "标题以「候选：」开头", "最后只问一个问题"]) {
+    assert.ok(reading.includes(words), words);
+  }
   // 领域参照的七问在任务类型的分析提纲里，是最后一个分析维度的七个节点。
   const outline = readFileSync(join(SRS_SKILL, "outline.md"), "utf-8");
   for (const words of ["outline: requirements-engineering", "unsorted: 未归类的发现", "overview: 总体观察", "## 风险、假设与运维", "人工怎样接管，接管的情况怎样统计、怎样回流改进？"]) {
