@@ -494,7 +494,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}
                 disabled={!!disabledReason} disabledReason={disabledReason} handlers={cardHandlers}
                 hold={dirty || diagramDirty} holdText={diagramDirty && !dirty ? DIAGRAM_HOLD_TEXT : undefined} working={working} hint={hint} starting={executor?.state === "starting"}
-                onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews} onStop={busyElsewhere ? undefined : stop}
+                onSend={(t) => send(t)} onUndo={undo} onShowReviews={showReviews} onOpenDiff={openDiff} onStop={busyElsewhere ? undefined : stop}
                 onOpenItem={openItem} onAttach={attach} revisionOf={revisionOf} attachments={attachments}
                 draft={draft} onDraft={setDraft} inputRef={input} loadStatus={loadStatus} statusRequest={statusRequest}
                 sessionLine={task?.stage && archivedHere === false ? newSessionLine(task.stage.work_item) : null}

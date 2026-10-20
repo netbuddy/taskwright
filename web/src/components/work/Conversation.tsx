@@ -55,7 +55,7 @@ export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onStop,
+  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onOpenDiff, onStop,
   loadStatus,
   statusRequest = 0,
   sessionLine = null,
@@ -92,6 +92,8 @@ export function Conversation({
   revisionOf: (note: UiActionNoted) => number | null;
   /** 评审结束那一行的「看评审页签」：右侧栏切到评审页签。 */
   onShowReviews?: () => void;
+  /** 打开一个条目、停在某次修订并和上一次改动比对（修订页签的「查看差异」）；给了时，告知里点名这条回复改出来的修订的条目链接走它。 */
+  onOpenDiff?: (itemId: string, revision: number) => void;
   attachments: string[];
   /** 输入框的内容由页面持有时传进来（「让助手改这一条」要预填它）；不传就由这里自己持有。 */
   draft?: string;
@@ -237,7 +239,7 @@ export function Conversation({
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
               : m.type === "work_summary" && revisionsOfWork ? revisionsOfWork((m as WorkSummary).work_id) : []} onRevisionTag={onRevisionTag}
-            onShowReviews={onShowReviews} />
+            onShowReviews={onShowReviews} onOpenDiff={onOpenDiff} />
           {calledAfter((m as { message_id?: string }).message_id ?? null)}
         </Fragment>))}
         {outgoing.map((m) => (
@@ -295,9 +297,13 @@ function itemIds(informs: Inform[]): string[] {
   return [...new Set(informs.flatMap((one) => (one.items ?? []).map((ref) => ref.item_id)))];
 }
 
-/** 告知里点名的一个条目：点它在右侧打开这个条目。 */
-function ItemLink({ id, onOpenItem }: { id: string; onOpenItem: (itemId: string) => void }) {
-  return <span className="ref" role="button" title={`打开 ${id}`} onClick={() => onOpenItem(id)} data-testid={`inform-item-${id}`}>{id}</span>;
+/**
+ * 告知里点名的一个条目：点它在右侧打开这个条目。diff 给了时（告知点名的修订正是这条回复改出来的），点它打开这个条目、
+ * 停在那次修订并和上一次改动比对，与修订页签的「查看差异」相同。
+ */
+function ItemLink({ id, onOpenItem, diff }: { id: string; onOpenItem: (itemId: string) => void; diff?: (() => void) | null }) {
+  return <span className="ref" role="button" title={diff ? `看 ${id} 这次改了什么` : `打开 ${id}`} onClick={() => (diff ? diff() : onOpenItem(id))}
+    data-testid={`inform-item-${id}`} data-diff={diff ? "true" : undefined}>{id}</span>;
 }
 
 /**
@@ -325,7 +331,7 @@ function StatusNote({ line, text }: { line: string; text: string }) {
   );
 }
 
-function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, answeredWith = null, stayed, stayedKey, unmovedAt, unmovedWhy, unmovedBlocked, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, answeredWith = null, stayed, stayedKey, unmovedAt, unmovedWhy, unmovedBlocked, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews, onOpenDiff }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -336,6 +342,8 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   revisions: number[];
   onRevisionTag?: (revisions: number[]) => void;
   onShowReviews?: () => void;
+  /** 打开一个条目、停在某次修订并和上一次改动比对（修订页签的「查看差异」）；给了时，告知里点名这条回复改出来的修订的条目链接走它。 */
+  onOpenDiff?: (itemId: string, revision: number) => void;
   answered: string | null;
   /** 用户在这张卡片里写的那句回复（问答卡片收起时据它写选了哪几项）。 */
   answeredWith?: string | null;
@@ -373,6 +381,11 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
     }
     case "assistant_reply": {
       const m = message as AssistantReply;
+      /** 告知里点名的条目，点名的修订是这条回复改出来的：点它进那次修订的比对。 */
+      const diffOf = (one: Inform, id: string) => {
+        const revision = (one.items ?? []).find((ref) => ref.item_id === id)?.revision_no;
+        return onOpenDiff && revision != null && revisions.includes(revision) ? () => onOpenDiff(id, revision) : null;
+      };
       return (
         <>
         <div className="m ai" data-testid="assistant-reply">
@@ -387,7 +400,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
                 <ul className="informs">
                   {m.informs.map((one, i) => (
                     <li key={i}>{renderInline(one.text)}{itemIds([one]).map((id) => (
-                      <span key={id}> <ItemLink id={id} onOpenItem={onOpenItem} /></span>
+                      <span key={id}> <ItemLink id={id} onOpenItem={onOpenItem} diff={diffOf(one, id)} /></span>
                     ))}</li>
                   ))}
                 </ul>
