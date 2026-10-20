@@ -126,7 +126,8 @@ test("活动模板只有做什么、不做什么、做到什么算够；工作�
     assert.ok(template.startsWith(`# 现在这个阶段：${STAGE_NAMES[stage]}\n`), stage);
     assert.ok(template.includes(`任务现在在${STAGE_NAMES[stage]}阶段`), stage);
     assert.deepEqual([...sections(template).keys()], STAGE_HEADINGS, stage);
-    assert.ok(sections(template).get("做到什么算够")!.includes("查询任务状态的末尾写着这一段还差什么"), stage);
+    // 核读材料那一段只报数、不判（它的完成指示只报数），别的几段照还差什么说。
+    assert.ok(sections(template).get("做到什么算够")!.includes(stage === "reading" ? "查询任务状态的末尾写着这一段的数" : "查询任务状态的末尾写着这一段还差什么"), stage);
     assert.doesNotMatch(template, /^## 出口$|^## 用户说的话不属于本段时$/m, stage);
     assert.ok(sections(activityBody(stage)).has(ENDING), stage);
   }
@@ -207,11 +208,16 @@ test("每一段的「不做什么」与工具守的一致：这一段不能写�
   assert.ok(sections(read("reviewing.md")).get("这一段不做什么")!.includes("只能改「状态」与「改看」两处"));
 });
 
-test("核读材料那一段：一轮最多 12 页，用一小段话说清材料讲的是什么，对不上的各记一条问题，立完页发「进入澄清」的卡片并说出第一个要问的问题", () => {
+test("核读材料那一段：两遍读法，分批不是停止点，第二遍的次序固定，用一小段话说清材料讲的是什么，只报数，中途停下写清做到哪里，立完页发「进入澄清」的卡片并说出第一个要问的问题", () => {
   const text = read("reading.md");
-  assert.ok(text.includes("一轮最多立 12 页"));
+  assert.ok(!text.includes("12 页"), "没有一轮的页数上限");
+  for (const words of ["这一段分两遍做，两遍都做完才算这一段做完。", "**第一遍：逐份材料立页。**", "分批只是每次存多少，不是停下来的地方", "第一遍没有读完全部材料之前，不提议进入下一步。",
+    "**第二遍：横向对照。** 全部材料立完页之后做，次序固定：", "只把这些块回读一遍。不重读材料全文。", "照「对照与洞察」找五样东西", "最后写一页总体观察",
+    "只报数、不判", "**中途停下时。**", "第一遍还有哪几份材料没读，逐份写名字", "这时不提议进入下一步。"]) assert.ok(text.includes(words), words);
   assert.ok(text.includes("用一小段话说清三件事：材料讲的是什么业务、要改变什么、最大的不确定是什么"));
-  assert.ok(text.includes("材料之间互相矛盾，或者材料与知识库里的规定对不上，每一处记一条问题条目"));
+  const check = moduleText("cross_check");
+  for (const words of ["**补可以，补了要标。**", "先核对是不是同一件事", "已有裁决性的材料", "记一条种类为冲突的问题条目", "记一条种类为缺失的问题条目", "**领域参照。**",
+    "第三句必须引用材料里的具体事实", "一般不超过八条", "形式的样例（假想的系统"]) assert.ok(check.includes(words), words);
   assert.ok(text.includes("再说进入下一步之后你要问的第一件事"));
   assert.ok(moduleText("flow_transitions").includes("你不能自己把任务移到别的一步。"));
   assert.ok(text.includes("不向用户提问。"));
@@ -293,8 +299,9 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   for (const chapter of CHAPTERS.slice(1)) assert.ok(document.includes(`${chapter.name}：`), chapter.name);
   const reading = supplement("reading");
   assert.ok(reading.startsWith("## 这类任务在核读材料阶段\n"));
-  assert.ok(reading.includes("一轮最多 12 页"));
-  assert.ok(reading.includes("这几批里不要夹着用例、需求或约束"));
+  assert.ok(!reading.includes("12 页"));
+  for (const words of ["这几批里不要夹着用例、需求或约束", "一次保存最多写 4 页主题", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
+    "7. 人工怎样接管", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "「例子」写两条"]) assert.ok(reading.includes(words), words);
   const writing = supplement("writing");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
   for (const head of ["整理建模阶段画出的图与材料里的内容都要整理进条目", "1. **照图写条目。**", "2. **每条功能用例的来源写两张图。**", "3. **非功能需求不经图。**",

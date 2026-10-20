@@ -261,14 +261,9 @@
   "agent/prompts/templates/reading.md": {
     "例子": 1,
     "功能用例": 1,
-    "它是什么": 1,
-    "已经定下的": 2,
-    "标题": 1,
-    "流程": 1,
+    "已经定下的": 1,
     "状态": 1,
-    "目标": 1,
     "约束": 1,
-    "角色": 1,
     "非功能需求": 1
   },
   "agent/prompts/templates/reviewing.md": {

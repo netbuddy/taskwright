@@ -76,7 +76,7 @@ export const PROMPT_DIR_TASK_COMMON = "common.md";
 export const REQUIRED_MODULES = [
   "system_message", "task_definition", "tools_general", "sources", "three_facts", "work_items",
   "materials", "knowledge", "batches", "reply_full", "reply_brief", "reply_confirm", "understanding_full", "understanding_brief",
-  "review", "confirm_publish", "pages_full", "pages_brief", "problems", "items_full", "items_brief", "diagrams_full", "diagrams_brief",
+  "review", "confirm_publish", "pages_full", "pages_brief", "cross_check", "problems", "items_full", "items_brief", "diagrams_full", "diagrams_brief",
   "stage_cards", "retell", "flow_transitions", "standalone_exit", "idle_rules",
 ] as const;
 

@@ -46,7 +46,7 @@ const kinds = (prompt: StagePrompt) => prompt.parts.map((one) => one.module ?? o
 const ALWAYS = ["system_message", "task_definition", "tools_general", "sources", "three_facts", "work_items"];
 /** 每个位置选进来的条件模块。 */
 const CONDITIONAL: Record<Stage | typeof IDLE, string[]> = {
-  reading: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "pages_full", "problems", "stage_cards", "flow_transitions"],
+  reading: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "pages_full", "cross_check", "problems", "stage_cards", "flow_transitions"],
   clarifying: ["reply_full", "understanding_full", "pages_full", "problems", "stage_cards", "retell", "flow_transitions"],
   modeling: ["batches", "reply_brief", "understanding_brief", "pages_full", "problems", "diagrams_full", "stage_cards", "flow_transitions"],
   writing: ["batches", "reply_brief", "reply_confirm", "understanding_brief", "review", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards", "flow_transitions"],
@@ -208,15 +208,15 @@ test("拼不成就抛错，写明是哪一份：系统提示、活动模板、�
   const alone = { workspaceDir: copy.task, skills: copy.skills, tail: "" };
   assert.ok(composeContext({ ...alone, stage: "reading", inFlow: false }).text.includes("本会话的工作项是单项活动"));
   assert.ok(composeContext({ ...alone, stage: IDLE }).text.includes("# 现在：自由讨论"));
-  assert.equal(REQUIRED_MODULES.length, 28);
+  assert.equal(REQUIRED_MODULES.length, 29);
 });
 
 test("新增一个合规的模块：条件满足的位置就多这一段，次序按次序号", () => {
   const dir = platformCopy();
-  writeFileSync(join(dir, "capabilities", "analysis", "compare.md"), "---\nname: compare\norder: 515\nwhen: main=description & mode=batch\n---\n\n## 对照\n\n对照的规矩。\n");
+  writeFileSync(join(dir, "capabilities", "analysis", "compare.md"), "---\nname: compare\norder: 518\nwhen: main=description & mode=batch\n---\n\n## 对照\n\n对照的规矩。\n");
   const input = (stage: Stage) => ({ stage, workspaceDir: dir, skills: [], tail: "", platformDir: dir, definitions: DEFS });
   const reading = kinds(composeContext(input("reading")));
-  assert.ok(reading.indexOf("compare") === reading.indexOf("pages_full") + 1 && reading.indexOf("compare") === reading.indexOf("problems") - 1);
+  assert.ok(reading.indexOf("compare") === reading.indexOf("cross_check") + 1 && reading.indexOf("compare") === reading.indexOf("problems") - 1);
   assert.ok(!kinds(composeContext(input("clarifying"))).includes("compare"), "澄清是逐项对话，不进");
 });
 
