@@ -57,7 +57,7 @@ const ALLOWED_EXTRA: Record<ActKind, string[]> = {
   ask: ["scope", "resends"],
   confirm: [],
   suggest: ["value", "basis", "scope"],
-  choose: ["options", "resends"],
+  choose: ["options", "multiple", "topic", "resends"],
   propose: ["preview", "scope"],
 };
 
@@ -92,7 +92,12 @@ export interface ReplyAct {
   kind: ActKind;
   text: string;
   items?: ItemRef[];
-  options?: { key: string; text: string }[];
+  /** 请选择的选项；reason 是这一项的出处或理由，写了的话界面在选项下面另起一行显示。 */
+  options?: { key: string; text: string; reason?: string }[];
+  /** 请选择可以选几项：写 true 是可以多选，不写是只选一项。 */
+  multiple?: boolean;
+  /** 请选择问的是哪件事：几个字，界面写在卡片顶上「提问 · 」之后。 */
+  topic?: string;
   value?: string;
   basis?: { kind: string; locator: string; excerpt: string }[];
   preview?: { effect: string; text: string }[];
@@ -379,8 +384,13 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
         }
         if (seen.has(one.key as string)) errors.push(problem(refusalText("reply.option_key_duplicate", { key: String(one.key) })));
         seen.add(one.key as string);
+        if ("reason" in one && (typeof one.reason !== "string" || isBlank(one.reason))) {
+          errors.push(problem(refusalText("reply.option_reason_invalid", { no: index + 1 })));
+        }
       });
     }
+    if ("multiple" in raw && typeof raw.multiple !== "boolean") errors.push(problem(refusalText("reply.multiple_invalid")));
+    if ("topic" in raw && (typeof raw.topic !== "string" || isBlank(raw.topic))) errors.push(problem(refusalText("reply.topic_invalid")));
   }
 
   // 给建议值的依据：交给 checkBasis 按保存修订的来源同一套规则逐字核对（文档原文、用户的话、条目等），核对后的依据替换模型写的

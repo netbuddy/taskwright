@@ -498,7 +498,12 @@ export interface Act {
   kind: ActKind;
   text: string;
   items?: ActItemRef[];
-  options?: { key: string; text: string }[];
+  /** 请选择的选项；reason 是这一项的出处或理由，写了的卡片画成问答卡片（components/work/QuestionCard.tsx）。 */
+  options?: { key: string; text: string; reason?: string }[];
+  /** 请选择可以多选。 */
+  multiple?: boolean;
+  /** 请选择问的是哪件事，问答卡片写在顶上「提问 · 」之后。 */
+  topic?: string;
   value?: string;
   basis?: Source[];
   preview?: { effect: "remove" | "add" | "change"; text: string }[];

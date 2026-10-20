@@ -60,10 +60,12 @@ const act = Type.Object(
       description: fillText("reply.param.act.scope"),
     })),
     options: Type.Optional(
-      Type.Array(Type.Object({ key: Type.Optional(Type.String()), text: Type.Optional(Type.String()) }, { additionalProperties: true }), {
+      Type.Array(Type.Object({ key: Type.Optional(Type.String()), text: Type.Optional(Type.String()), reason: Type.Optional(Type.String()) }, { additionalProperties: true }), {
         description: fillText("reply.param.act.options"),
       }),
     ),
+    multiple: Type.Optional(Type.Boolean({ description: fillText("reply.param.act.multiple") })),
+    topic: Type.Optional(Type.String({ description: fillText("reply.param.act.topic") })),
     value: Type.Optional(Type.String({ description: fillText("reply.param.act.value") })),
     resends: Type.Optional(Type.String({
       description: fillText("reply.param.act.resends"),

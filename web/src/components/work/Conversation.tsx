@@ -23,7 +23,8 @@ import { STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, nobodySpoke, wantsOp
 import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
-import { answeredByStaying, answeredStayKey, answeredText, answeredUnmoved, answeredUnmovedBlocked, answeredUnmovedWhy } from "../../model/cardAnswer";
+import { QuestionCard, isQuestionCard } from "./QuestionCard";
+import { answeredByStaying, answeredStayKey, answeredText, answeredTypedText, answeredUnmoved, answeredUnmovedBlocked, answeredUnmovedWhy } from "../../model/cardAnswer";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { useService } from "../ServiceControls";
@@ -227,6 +228,7 @@ export function Conversation({
           <MessageView message={m} task={task} handlers={handlers}
             disabled={disabled} hold={hold} holdText={holdText} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
+            answeredWith={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredTypedText(messages, index) : null}
             stayed={m.type === "assistant_reply" && !!(m as AssistantReply).act && answeredByStaying(messages, index)}
             stayedKey={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredStayKey(messages, index) : null}
             unmovedAt={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmoved(messages, index) : null}
@@ -323,7 +325,7 @@ function StatusNote({ line, text }: { line: string; text: string }) {
   );
 }
 
-function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, stayedKey, unmovedAt, unmovedWhy, unmovedBlocked, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, answeredWith = null, stayed, stayedKey, unmovedAt, unmovedWhy, unmovedBlocked, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -335,6 +337,8 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   onRevisionTag?: (revisions: number[]) => void;
   onShowReviews?: () => void;
   answered: string | null;
+  /** 用户在这张卡片里写的那句回复（问答卡片收起时据它写选了哪几项）。 */
+  answeredWith?: string | null;
   stayed: boolean;
   stayedKey: string | null;
   /** 答这张卡片的那次点击没有让阶段移动时，任务当时所在的阶段。 */
@@ -399,7 +403,11 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
               )}
             </>
           )}
-          {m.act && !m.degraded && (
+          {m.act && !m.degraded && isQuestionCard(m.act) && (
+            <QuestionCard act={m.act} replyMessageId={m.message_id} disabled={disabled} hold={hold} holdText={holdText} writesOff={working}
+              answered={answered} answeredWith={answeredWith} handlers={handlers} />
+          )}
+          {m.act && !m.degraded && !isQuestionCard(m.act) && (
             <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} stayedKey={stayedKey} unmovedAt={unmovedAt} unmovedWhy={unmovedWhy} unmovedBlocked={unmovedBlocked}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}

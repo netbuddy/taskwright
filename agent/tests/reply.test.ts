@@ -232,6 +232,23 @@ test("请选择的 key 重复时拒绝", () => {
   );
 });
 
+test("请选择的选项可以带理由，卡片可以标多选、写标题，三样原样送达", () => {
+  const options = [{ key: "a", text: "统一模型接入", reason: "出处：立项申请书把它列为一期目标。" }, { key: "b", text: "知识库", reason: "同类平台通常有。（助手补充）" }];
+  const reply = checkReply({ informs: [], act: { kind: "choose", text: "这一期必须做哪几项？", options, multiple: true, topic: "范围" }, text: "这一期必须做哪几项？" }, alone());
+  assert.deepEqual(reply.act?.options, options);
+  assert.equal(reply.act?.multiple, true);
+  assert.equal(reply.act?.topic, "范围");
+});
+
+test("请选择的理由、多选、标题写错时逐条拒绝", () => {
+  const act = { kind: "choose", text: "选哪个？", options: [{ key: "a", text: "甲", reason: " " }, { key: "b", text: "乙" }], multiple: "yes", topic: "" };
+  rejected({ informs: [], act, text: "选哪个？" }, alone(), /第 1 项的 reason 要写一句话[\s\S]*act\.multiple 只能写 true[\s\S]*act\.topic 要写几个字/);
+});
+
+test("多选、标题只有请选择能写", () => {
+  rejected({ informs: [], act: { kind: "ask", text: "现状问题是什么？", scope: "general", multiple: true }, text: "现状问题是什么？" }, alone(), /multiple/);
+});
+
 test("给建议值没有写值时拒绝", () => {
   rejected({ informs: [], act: { kind: "suggest", text: "建议如下。", basis: BASIS }, text: "x" }, alone(), /要写 act\.value/);
 });

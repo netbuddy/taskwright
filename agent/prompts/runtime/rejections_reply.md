@@ -293,6 +293,24 @@ act.options 的第 {{no}} 项要有不为空的 key 与 text
 
 act.options 里的 key「{{key}}」重复了，每个选项的 key 要不一样
 
+## `reply.option_reason_invalid`
+
+用途：请选择的某个选项写了 reason，但不是一句不为空的话。
+
+act.options 的第 {{no}} 项的 reason 要写一句话（这一项出自哪里，或者为什么列它）；不写理由就去掉 reason
+
+## `reply.multiple_invalid`
+
+用途：请选择的 multiple 不是 true 或 false。
+
+act.multiple 只能写 true（可以多选）或 false（只选一项），不写就是只选一项
+
+## `reply.topic_invalid`
+
+用途：请选择的 topic 不是不为空的文字。
+
+act.topic 要写几个字，说这一问问的是哪件事；不写就去掉 topic
+
 ## `reply.suggest_value_missing`
 
 用途：给建议值没有写建议的值。
