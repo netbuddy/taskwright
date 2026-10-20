@@ -59,6 +59,7 @@ export const OPERATION_MAP: {
   other_user_op_kinds: {
     request_review: { operation: "write_review", note: "发起者是用户：在界面上点评审；与工具 request_review 那一行并存" },
     stop_run: { operation: "stop" },
+    output_aborted: { operation: "stop", note: "模型输出异常时后端中止运行之后留的通知；发起者是后端，不是用户的操作" },
     continue_stage: { operation: "transition" },
     edit_diagram: { operation: "edit_content" },
     mark_diagram_viewed: { operation: "confirm" },

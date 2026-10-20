@@ -159,9 +159,16 @@ export const STOP_RUN_KIND = "stop_run";
  */
 export const STOP_RUN_NOTE = fillText("ui_ops.stop_run");
 
-/** 停止通知那条自定义消息的 details：形状与别的界面操作通知相同，没有库事件，不能撤销。 */
-export function stopRunDetails(opId: string | null) {
-  return { op_id: opId, kind: STOP_RUN_KIND, event_seqs: [] as number[], results: [] as unknown[], revision_no: null, undoable: false };
+/**
+ * 模型输出异常、后端中止了这一次运行（后端 degenerate_output.ts 判出一连串只含空白的输出）。与停止一样不写库，只往会话里留一条通知，
+ * 页面照通知的正文显示，助手下一次运行时据此知道上一次没有做完。
+ */
+export const OUTPUT_ABORTED_KIND = "output_aborted";
+export const OUTPUT_ABORTED_NOTE = fillText("ui_ops.output_aborted");
+
+/** 停止通知（或输出异常中止的通知）那条自定义消息的 details：形状与别的界面操作通知相同，没有库事件，不能撤销。 */
+export function stopRunDetails(opId: string | null, kind: string = STOP_RUN_KIND) {
+  return { op_id: opId, kind, event_seqs: [] as number[], results: [] as unknown[], revision_no: null, undoable: false };
 }
 
 /**
