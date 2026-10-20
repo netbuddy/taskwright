@@ -87,7 +87,7 @@ import { OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED, gateFact, hasOve
 import { overallState } from "./overall_read.ts";
 import { type Position, itemRefusal, pageRefusal, positionName } from "./stage.ts";
 import { allowedAt, stageOf } from "./stage_read.ts";
-import { type OutlineTitles, outlineTitlesFor } from "./outline_read.ts";
+import { type OutlineTitles, examplesOptionalFor, outlineTitlesFor } from "./outline_read.ts";
 import { ungroundedSentences } from "./cited_sentences.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 import { codeOf, fillText, refusalText, textPrefix } from "./texts.ts";
@@ -265,7 +265,8 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * 一、导语页（OVERALL_FIELDS.intro 有值的页）只在编写文档里写：别的位置（空闲也算）新增导语页、把一页改成导语页、改既有导语页的字段，
  *     都拒绝；只把既有导语页停用（OVERALL_FIELDS.status 改为 STATUS_DEPRECATED），放行。
  * 二、核读材料时立的页 OVERALL_FIELDS.tags 至少一项、OVERALL_FIELDS.examples 至少一项（反例、例外也算）：只查新增的页与这次传入的
- *     这两个字段，不追溯旧页；停用的页不查。
+ *     这两个字段，不追溯旧页；停用的页不查。任务类型的分析提纲里写了举例可选的维度（outline_read.ts 的 examplesOptionalFor），
+ *     那些页只查 OVERALL_FIELDS.tags 一个字段。
  * 三、核读材料时写进 OVERALL_FIELDS.what 的正文逐句要有着落（lib/cited_sentences.ts）：只在任务类型有分析提纲（outline 不为 null）时查，
  *     只查这次传入了这个字段的页；分析提纲里的维度页与元数据登记的几页固定页的正文是综合，不查；停用的页不查。
  * 任务定义里没有这几个字段（早先的任务）时，相应的那条不查。可以时返回 null。
@@ -286,7 +287,9 @@ function pageGuard(stage: Position, collection: CollectionDef, given: Fields, be
     }
   }
   if (stage === "reading" && has(tags) && has(examples) && given[status] !== STATUS_DEPRECATED && !(before !== null && isDeprecated(before) && !(status in given))) {
-    const missing = [tags, examples].filter((name) => (before === null || name in given) && isEmptyValue(given[name]));
+    const named = typeof given[OVERALL_FIELDS.title] === "string" ? given[OVERALL_FIELDS.title] : before?.[OVERALL_FIELDS.title];
+    const optional = outline !== null && typeof named === "string" && examplesOptionalFor(outline, named.trim());
+    const missing = [tags, ...(optional ? [] : [examples])].filter((name) => (before === null || name in given) && isEmptyValue(given[name]));
     if (missing.length > 0) {
       return refusalText("save_revision.page_needs_tag_and_example", { stage: words.stage, tags, examples, missing: missing.map((name) => `「${name}」`).join("、") });
     }

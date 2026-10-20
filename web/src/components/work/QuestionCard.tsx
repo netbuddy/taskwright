@@ -2,12 +2,13 @@
 //
 // 每个候选一个方框行：左列序号圆标 A、B、C……，右列第一行选项文字、第二行理由（小字）；单选是圆形序号、多选是方形序号，
 // 选中的填色、没选的空心。自由回答是同样的方框行，序号接在候选之后，框里是多行输入。点选项只是选上，按「发送」才发：
-// 选的与补充的合成一句普通的话「我选：……。补充：……」，带着这张卡片的标识、choice 写 typed（与在卡片的文本框里打字同一条通道），
-// 对话记录里有了这句话卡片就收起。「先跳过这一问」发一句固定的话。
+// 选的与补充的合成一句话「我选：……。补充：……」：选了候选时它是对这张卡片的一次点击，卡片标识里 choice 写所选那一项的键
+// （与原来的请选择卡片一样，问题条目的同意门据此认用户答过；多选时写第一项的键，几项都列在这句话里）；只写了自己的话、
+// 或者「先跳过这一问」时，choice 写 typed，与在卡片的文本框里打字同一条通道。对话记录里有了这句话卡片就收起。
 // 答过之后收成一行「提问 · 标题 · 已答：选 A · 有补充」。
 
 import { useRef, useState } from "react";
-import type { Act, MessageRequest } from "../../api/types";
+import type { Act } from "../../api/types";
 import { CARD_TYPED_CHOICE, HOLD_TEXT, type CardHandlers } from "./ReplyCard";
 import { restoreOnFailure } from "./sendRestore";
 import { RESENT_TEXT } from "../../model/cardAnswer";
@@ -85,15 +86,15 @@ export function QuestionCard({ act, replyMessageId, disabled, hold = false, hold
     if (off) return;
     setPicked((now) => (multiple ? (now.includes(key) ? now.filter((k) => k !== key) : [...now, key]) : now.includes(key) ? [] : [key]));
   };
-  const card: MessageRequest["card"] = { reply_message_id: replyMessageId, kind: act.kind, choice: CARD_TYPED_CHOICE };
-  const answer = composeAnswer(options.filter((o) => picked.includes(o.key)).map((o) => o.text), free);
-  const send = (text: string) => {
+  const chosen = options.filter((o) => picked.includes(o.key));
+  const answer = composeAnswer(chosen.map((o) => o.text), free);
+  const send = (text: string, choice: string) => {
     if (!text || off) return;
     const original = free;
     setSent(text);
     setFree("");
     // 没有发出去：卡片重新打开，补充的话放回输入框（用户已经接着打了新字就不放回）。
-    const result = handlers.onMessage(text, card);
+    const result = handlers.onMessage(text, { reply_message_id: replyMessageId, kind: act.kind, choice });
     restoreOnFailure(result, original, () => latestFree.current, setFree);
     void Promise.resolve(result).then((ok) => { if (ok === false) setSent(null); });
   };
@@ -118,8 +119,8 @@ export function QuestionCard({ act, replyMessageId, disabled, hold = false, hold
           onChange={(e) => setFree(e.target.value)} data-testid="question-free" />
       </label>
       <div className="qbar">
-        <button type="button" className="btn sm pri" disabled={off || !answer} title={hold ? holdText : undefined} onClick={() => send(answer)} data-testid="question-send">发送</button>
-        <span className={`qskip${off ? " off" : ""}`} role="button" onClick={() => !off && send(SKIP_TEXT)} data-testid="question-skip">先跳过这一问</span>
+        <button type="button" className="btn sm pri" disabled={off || !answer} title={hold ? holdText : undefined} onClick={() => send(answer, chosen[0]?.key ?? CARD_TYPED_CHOICE)} data-testid="question-send">发送</button>
+        <span className={`qskip${off ? " off" : ""}`} role="button" onClick={() => !off && send(SKIP_TEXT, CARD_TYPED_CHOICE)} data-testid="question-skip">先跳过这一问</span>
       </div>
     </div>
   );

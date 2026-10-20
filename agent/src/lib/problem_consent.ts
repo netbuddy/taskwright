@@ -6,6 +6,9 @@
  * 对这几个都算问过；选项的 key 由助手随意写，所以按文字认，比较时去掉空白与标点（与 lib/reply.ts 的 echoedAct 同一种比法）。
  * 点击：会话里一条界面点击的自定义消息加系统替用户发的那句话（lib/completion_consent.ts 的 cardClicks）；用户打字不算。
  *
+ * 另一种卡片：点名了问题条目的任何别的请选择（核读里问一个缺口的问答卡片就是这种），用户点了上面任一项，就算回答了这个问题，
+ * 同意把它改为「已解决」（缺口被作答即关闭）；作答之后本来就要改它牵涉的页，所以这种只看问题条目本身点击之后有没有被改过。
+ *
  * 规则只写在 judgeProblemStatus 里：
  * - 以点名这个问题条目的这种卡片上最近一次点击为准，点的要是与新状态对应的那一项（已解决 ← 「已解决」，用户决定保留 ← 「先不管，保留」）；
  * - 点了之后，这个问题条目或它牵涉的条目（它的条目引用字段里写的那些）有了新的修订或被删除，不论是谁改的，点击就过期，要重新问；
@@ -39,22 +42,19 @@ export interface ProblemClick {
   items: string[];
   optionText: string | null;
   userEntryId: string;
+  /** 点的是哪种卡片：consent 是问「是否已解决」的那种；answer 是点名了问题条目的别的请选择，点了就算回答了这个问题。 */
+  card: "consent" | "answer";
 }
 
-/** 这条助手消息是不是问问题是否已解决的卡片：请选择，选项里有「已解决」或「先不管，保留」。是就返回卡片上的请选择。 */
-function problemCardOf(entry: Entry): Record<string, any> | null {
-  const act = chooseActOf(entry);
-  return act && act.options.some((option: any) => CARD_OPTIONS.has(bare(option?.text))) ? act : null;
-}
-
-/** 会话分支上对这种卡片的全部点击，按先后排。由工具从会话分支读出，交给保存修订。 */
+/** 会话分支上对点名了问题条目的请选择的全部点击，按先后排，记明是哪种卡片。由工具从会话分支读出，交给保存修订。 */
 export function problemClicks(branch: readonly Entry[]): ProblemClick[] {
-  return cardClicks(branch, problemCardOf).map((click) => ({
+  return cardClicks(branch, chooseActOf).map((click) => ({
     items: (Array.isArray(click.act.items) ? click.act.items : [])
       .map((ref: any) => (typeof ref?.item_id === "string" ? ref.item_id : ""))
       .filter(Boolean),
     optionText: click.optionText,
     userEntryId: click.userEntryId,
+    card: click.act.options.some((option: any) => CARD_OPTIONS.has(bare(option?.text))) ? "consent" as const : "answer" as const,
   }));
 }
 
@@ -93,6 +93,12 @@ export function judgeProblemStatus(
   const click = [...facts.clicks].reverse().find((one) => one.items.includes(itemId));
   const seq = click ? facts.clickSeq(click.userEntryId) : null;
   if (!click || seq === null) return refusalText("gate.problem_consent_missing", common);
+  // 回答了点名这个问题条目的卡片：可以改为已解决，只要问题条目本身点击之后没有被改过。
+  if (click.card === "answer") {
+    if (status !== RESOLVED_STATUS) return refusalText("gate.problem_consent_missing", common);
+    const change = facts.changedAfter(itemId, seq);
+    return change ? refusalText("gate.problem_consent_stale", { ...common, other: itemId, change }) : null;
+  }
   if (bare(click.optionText) !== bare(option)) {
     return refusalText("gate.problem_consent_wrong_option", { item: itemId, status, ask: common.ask, chosen: click.optionText ?? "" });
   }

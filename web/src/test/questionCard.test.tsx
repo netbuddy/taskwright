@@ -40,7 +40,7 @@ describe("问答卡片", () => {
     expect(screen.getByText("D")).toBeTruthy();
   });
 
-  it("单选：点一项只是选上，再点另一项换成另一项；按「发送」才发，带补充，走在卡片里打字的通道", () => {
+  it("单选：点一项只是选上，再点另一项换成另一项；按「发送」才发，带补充，记为对所选那一项的点击", () => {
     const onMessage = setup(single);
     fireEvent.click(screen.getByTestId("question-option-a"));
     expect(onMessage).not.toHaveBeenCalled();
@@ -48,18 +48,18 @@ describe("问答卡片", () => {
     expect(screen.getByTestId("question-option-a").getAttribute("aria-checked")).toBe("false");
     fireEvent.change(screen.getByTestId("question-free"), { target: { value: "审计已经两次查不到人。" } });
     fireEvent.click(screen.getByTestId("question-send"));
-    expect(onMessage).toHaveBeenCalledWith("我选：权限与日志各自为政。补充：审计已经两次查不到人。", { reply_message_id: "msg-9", kind: "choose", choice: CARD_TYPED_CHOICE });
+    expect(onMessage).toHaveBeenCalledWith("我选：权限与日志各自为政。补充：审计已经两次查不到人。", { reply_message_id: "msg-9", kind: "choose", choice: "b" });
     expect(screen.getByTestId("question-card-done").textContent).toBe("提问 · 起因与现状问题 · 已答：选 B · 有补充");
   });
 
-  it("多选：几项可以同时选上，合成的话逐项列出；什么都没选也没写时「发送」不能按", () => {
+  it("多选：几项可以同时选上，合成的话逐项列出，点击记第一项的键；什么都没选也没写时「发送」不能按", () => {
     const onMessage = setup(multi);
     expect(screen.getByText("可以多选。")).toBeTruthy();
     expect((screen.getByTestId("question-send") as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByTestId("question-option-a"));
     fireEvent.click(screen.getByTestId("question-option-c"));
     fireEvent.click(screen.getByTestId("question-send"));
-    expect(onMessage).toHaveBeenCalledWith("我选：模型成本失控；重复建设。", expect.anything());
+    expect(onMessage).toHaveBeenCalledWith("我选：模型成本失控；重复建设。", { reply_message_id: "msg-9", kind: "choose", choice: "a" });
   });
 
   it("写了标题而没有选项的是开放问题：只有自由回答（序号 A）与「先跳过」，写的话原样发出", () => {
@@ -70,14 +70,14 @@ describe("问答卡片", () => {
     expect(screen.getByText("A")).toBeTruthy();
     fireEvent.change(screen.getByTestId("question-free"), { target: { value: "费用分散最要紧。" } });
     fireEvent.click(screen.getByTestId("question-send"));
-    expect(onMessage).toHaveBeenCalledWith("费用分散最要紧。", expect.anything());
+    expect(onMessage).toHaveBeenCalledWith("费用分散最要紧。", { reply_message_id: "msg-9", kind: "choose", choice: CARD_TYPED_CHOICE });
     expect(screen.getByTestId("question-card-done").textContent).toBe("提问 · 起因与现状问题 · 已答：自己回答");
   });
 
   it("「先跳过这一问」发一句固定的话", () => {
     const onMessage = setup(single);
     fireEvent.click(screen.getByTestId("question-skip"));
-    expect(onMessage).toHaveBeenCalledWith(SKIP_TEXT, expect.anything());
+    expect(onMessage).toHaveBeenCalledWith(SKIP_TEXT, { reply_message_id: "msg-9", kind: "choose", choice: CARD_TYPED_CHOICE });
     expect(screen.getByTestId("question-card-done").textContent).toBe("提问 · 起因与现状问题 · 已跳过");
   });
 

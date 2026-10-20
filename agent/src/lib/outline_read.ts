@@ -18,6 +18,10 @@ export interface OutlineTitles {
   dimensions: string[];
   /** 元数据里 SYNTHESIS_PAGE_KEYS 登记的固定页的名字。 */
   synthesisPages: string[];
+  /** 写了 `examples: optional` 的维度：这些维度的页不要求举例。 */
+  examplesOptional: string[];
+  /** 每个维度下的提纲条目名（「- 条目名 —— ……」一行的开头）。 */
+  entries: Record<string, string[]>;
 }
 
 /** 从分析提纲的文字里取维度名与固定页的名字。 */
@@ -25,8 +29,26 @@ export function outlineTitles(text: string): OutlineTitles {
   const head = /^---\n([\s\S]*?)\n---/.exec(text)?.[1] ?? "";
   const meta = new Map(head.split("\n").map((line) => /^(\w+):\s*(.+)$/.exec(line.trim())).filter((m): m is RegExpExecArray => m !== null).map((m) => [m[1], m[2].trim()]));
   const synthesisPages = SYNTHESIS_PAGE_KEYS.map((key) => meta.get(key)).filter((one): one is string => !!one);
-  const dimensions = [...text.matchAll(/^## (.+)$/gm)].map((m) => m[1].trim());
-  return { dimensions, synthesisPages };
+  const sections = text.split(/^## /m).slice(1).map((part) => {
+    const [name, ...rest] = part.split("\n");
+    const body = rest.join("\n");
+    return { name: name.trim(), optional: /^examples:\s*optional\s*$/m.test(body), entries: [...body.matchAll(/^- (.+?) ——/gm)].map((m) => m[1].trim()) };
+  });
+  return {
+    dimensions: sections.map((one) => one.name),
+    synthesisPages,
+    examplesOptional: sections.filter((one) => one.optional).map((one) => one.name),
+    entries: Object.fromEntries(sections.map((one) => [one.name, one.entries])),
+  };
+}
+
+/**
+ * 一页属于举例可选的维度吗：它的名字是这种维度的维度名或提纲条目名，或者是「维度名 · 子系统名」「条目名 · 子系统名」。
+ * 子主题页、候选页的名字对不上这几种，照常要求举例。
+ */
+export function examplesOptionalFor(outline: OutlineTitles, name: string): boolean {
+  const head = name.split(" · ")[0].trim();
+  return outline.examplesOptional.some((dimension) => head === dimension || (outline.entries[dimension] ?? []).includes(head));
 }
 
 /**

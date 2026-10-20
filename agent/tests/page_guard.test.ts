@@ -117,3 +117,17 @@ test("核读材料：任务的 skill 里有分析提纲时，页的正文每句�
   const plain = workspace("reading");
   assert.equal(refusal(plain, [add(full("起因与现状问题", { 它是什么: "材料尚未说明原因。" }))]), null);
 });
+
+test("核读材料：分析提纲把例子标为可选的维度，它的维度页、提纲条目页与子系统页可以不写例子；要求例子的维度照旧拦；没有分析提纲的任务照旧拦", () => {
+  const dir = workspace("reading");
+  const skill = (overallDefinition() as any).执行方法 as string;
+  copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+  const noExample = (title: string) => { const { 例子: _, ...rest } = full(title, { 它是什么: `${title}的说明（材料 第 1 段）。` }); return add(rest); };
+  assert.equal(refusal(dir, [noExample("背景与目标"), noExample("起因与现状问题"), noExample("量、成本与约束 · 平台共用能力")]), null);
+  assert.ok(refusal(dir, [noExample("角色与职责")])!.includes("这一页缺「例子」。"));
+  assert.ok(refusal(dir, [noExample("组织与角色 · 平台共用能力")])!.includes("这一页缺「例子」。"));
+  // 标签仍然要贴。
+  const { 例子: _e, ...bare } = full("范围", { 它是什么: "一期做三个应用（材料 第 1 段）。", 标签: [] });
+  assert.ok(refusal(dir, [add(bare)])!.includes("这一页缺「标签」。"));
+  assert.ok(refusal(workspace("reading"), [noExample("起因与现状问题")])!.includes("这一页缺「例子」。"));
+});
