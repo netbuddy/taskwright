@@ -302,9 +302,9 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   assert.ok(!reading.includes("12 页"));
   for (const words of ["这几批里不要夹着用例、需求或约束", "一次保存最多写 4 页主题", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
     "「风险、假设与运维」这一维度的七个问题逐项问", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "「例子」写两条"]) assert.ok(reading.includes(words), words);
-  // 第 0 遍在对话里一块一块定骨架：每次问一件事，用户答了才立那一块的页，不写给自己看的记号。
-  for (const words of ["**第 0 遍：在对话里定骨架。**", "不得自动续读", "每条消息只问一件事", "**逐个子系统定候选。**", "标题「维度名 · 子系统名」", "标题以「候选：」开头",
-    "不写「待定：读材料后填写」这类给自己看的记号"]) {
+  // 核读按提纲次序与用户对话：从「背景与目标」开场，每次问一件事，用户答了才写页，不写给自己看的记号。
+  for (const words of ["**开场。**", "**背景与目标。**", "**各个子系统。**", "**其余维度。**", "**每个提纲条目怎样走。**", "不得自动续读", "每条消息只问一件事",
+    "子系统以用户在「范围」那一问里认的为准", "标题「维度名 · 子系统名」", "标题以「候选：」开头", "不写「待定：读材料后填写」这类给自己看的记号"]) {
     assert.ok(reading.includes(words), words);
   }
   // 领域参照的七问在任务类型的分析提纲里，是最后一个分析维度的七个节点。
@@ -318,7 +318,7 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   for (const name of new Set(named)) {
     const method = readFileSync(join(SRS_SKILL, "methods", `${name}.md`), "utf-8");
     assert.ok(method.startsWith(`# ${name}\n`), name);
-    for (const head of ["## 怎么问", "## 问到什么算够", "## 产物写在哪"]) assert.ok(method.includes(`\n${head}\n`), `${name}：${head}`);
+    for (const head of ["## 怎么问", "## 问到什么算够", "## 产物写在哪", "## 怎么问用户"]) assert.ok(method.includes(`\n${head}\n`), `${name}：${head}`);
   }
   const writing = supplement("writing");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
