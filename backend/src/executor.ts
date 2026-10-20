@@ -193,6 +193,8 @@ interface Work {
   /** 这一轮连续被拒到上限、由工具停下了这次运行（工具结果的 details.stopped 为真）。 */
   limit_stopped: boolean;
   failed: boolean;
+  /** 看门狗中止了这一次运行（run_watch.ts）。不用 failed：消息结束时 failed 会按那条消息的停止原因重算，被中止的消息算「中止」。 */
+  watch_aborted?: boolean;
   last_text: string | null;
   last_user_id: string | null;
   replied_since_user: boolean;
@@ -701,7 +703,8 @@ export class Executor {
    */
   private async abortRun(sid: string | null, reason: AbortReason): Promise<void> {
     const work = this.work;
-    if (work === null || work.failed) return;
+    if (work === null || work.watch_aborted) return;
+    work.watch_aborted = true;
     work.failed = true;
     this.watch.stop();
     const text = reasonText(reason);
@@ -769,7 +772,7 @@ export class Executor {
       if (event === null) {
         if (!pi.alive()) break;
         // 每秒看一眼钟：长时间没有新内容、一次模型调用太久都要中止；顺带推一帧运行状态。
-        if (this.work !== null && !this.work.failed) {
+        if (this.work !== null && !this.work.watch_aborted) {
           const reason = this.watch.clock(Date.now());
           if (reason) void this.abortRun(this.activeSession, reason);
           else this.pushStatus(this.activeSession, true);
@@ -814,7 +817,7 @@ export class Executor {
     const sid = this.activeSession;
     if (kind === "agent_start") this.aborted = null;
     // 看门狗：模型输出退化或卡住时中止这一次运行（run_watch.ts）；运行状态随阶段变化推给页面。
-    if (this.work === null || !this.work.failed) {
+    if (this.work === null || !this.work.watch_aborted) {
       const reason = this.watch.feed(event, Date.now());
       if (reason && this.work !== null) void this.abortRun(sid, reason);
       else this.pushStatus(sid);
@@ -1141,6 +1144,8 @@ export class Executor {
     if (work.limit_stopped && !work.stopped) {
       // 连续被拒到上限、由工具停下：只告诉用户已经停下。这一轮的助手正文不转发，它多半是没写合格的那份理解。
       this.hub.emit("problem", { session_id: sid, code: "stopped_by_limit", text: LIMIT_STOPPED_TEXT, retry: null });
+    } else if (work.watch_aborted) {
+      // 看门狗中止的这一轮：中止时已经报过问题，会话里也有说明，不再报「没有说话就停下了」。
     } else if (!work.replied_since_user) {
       // 兜底：这段话之后没有一次被接受的「回复」。转发最后一条助手正文；正文也没有就发 problem。
       if (work.last_text) {
@@ -1158,7 +1163,7 @@ export class Executor {
     // 步数不能只看本轮的计数：一条消息里有几个工具调用、执行到一半被停下时，后面没有开始的调用只在会话记录里有。
     const found = await this.emitSummary(pi, sid, work);
     // 看门狗中止的这一轮记为失败：中止的系统消息这时可能还没写进会话，会话记录算出的是「停下」。
-    const outcome = this.aborted !== null && work.failed ? "failed"
+    const outcome = work.watch_aborted ? "failed"
       : found?.outcome ?? (work.stopped ? "stopped_by_user" : work.failed ? "failed" : work.limit_stopped ? "stopped_by_limit" : work.replied ? "replied" : "no_reply");
     this.hub.emit("work_ended", { session_id: sid, work_id: work.work_id, at: clock.now(), seconds: workSummary.round1(Date.now() / 1000 - work.started),
       step_count: found?.step_count ?? work.step_count, outcome });

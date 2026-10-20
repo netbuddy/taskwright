@@ -33,7 +33,8 @@ test("模型把工具参数写成一连串空白：看门狗在第 200 段空白
     const frames = events.filter((one) => one.event === "run_status").map((one) => one.data);
     assert.ok(frames.some((one) => one.phase === "tool_args" && one.tool === "save_revision"), JSON.stringify(frames.slice(0, 5)));
     assert.equal(frames.at(-1)!.aborted, "连续输出了 200 段空白");
-    assert.ok(events.some((one) => one.event === "problem" && one.data.code === "model_output_aborted"));
+    // 只报一条中止的问题，不再报「没有说话就停下了」一类。
+    assert.deepEqual(events.filter((one) => one.event === "problem").map((one) => one.data.code), ["model_output_aborted"]);
     // 会话里那条系统消息写进了会话之后，快照里能看到。
     let note: any = null;
     for (let i = 0; i < 50 && !note; i++) {
