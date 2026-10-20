@@ -328,6 +328,30 @@ fields 应当是一个对象，只写要改的字段
 
 一章只立一页导语页：这一批里只让一页当这一章的导语页，别的页讲的是这一章里的内容，不当导语页
 
+## `save_revision.intro_page_not_now`
+
+用途：编写文档之外的位置（空闲也算）新增导语页、把一页改成导语页，或者改既有导语页的字段。只把既有导语页停用（status_field 改为 deprecated）不拦。stage 是会话现在的位置；intro_field、status_field、deprecated 是那几个字段名与取值。
+
+现在在{{stage}}，不能新立导语页，也不能改既有导语页（「{{intro_field}}」有值的页）
+
+## `save_revision.intro_page_not_now.guide`
+
+用途：上一条的指引。
+
+导语页在编写文档时写；这一页讲的内容不填「{{intro_field}}」照常立页。要停用一页既有导语页，只把它的「{{status_field}}」改成「{{deprecated}}」，别的字段不动
+
+## `save_revision.page_needs_tag_and_example`
+
+用途：核读材料时新增或改动的页缺了 tags 或 examples 那一栏（只查新增的页与这次传入的这两个字段）。tags、examples 是两个字段名，missing 是缺的那几个（各加引号）。
+
+{{stage}}时立的页至少要贴一个「{{tags}}」、写一项「{{examples}}」（反例、例外也算），这一页缺{{missing}}
+
+## `save_revision.page_needs_tag_and_example.guide`
+
+用途：上一条的指引。
+
+「{{tags}}」拿不准就贴最接近的一个，并在问题条目里记一句为什么拿不准；「{{examples}}」没有现成的，写材料里的一个具体情形或反例并给来源；材料里确实没有时，写一条你推断的情形，来源种类写「助手补充」并写理由（自动待核实）
+
 ## `save_revision.problem_edit_restricted`
 
 用途：问题条目写下之后改了只能改的几个字段之外的字段。fields 是改到的字段（各加引号），editable 是能改的字段。

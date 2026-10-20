@@ -10,7 +10,7 @@ import { createTask } from "../src/lib/create_task.ts";
 import { ACTOR_USER } from "../src/lib/db.ts";
 import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { DEFINITION_PATH, SOURCE, cardClick, makeWorkspace, overallDefinition, problemCard, problemClicksOn, query, userEntry } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, cardClick, enterStage, makeWorkspace, overallDefinition, problemCard, problemClicksOn, query, userEntry } from "./helpers.ts";
 
 const SESSION = "session-fields";
 let serial = 0;
@@ -125,6 +125,8 @@ test("任务定义里没有这几个字段的任务：照旧，不要求何时�
 
 test("导语页：一章至多一页在用的；同一批里立两页、库里已有一页再立，都拒绝并指出是哪一页；废弃了原来的才能另立；别的章不受影响", () => {
   const dir = workspace();
+  // 导语页只在编写文档里写（别的位置拦下，另见 page_guard.test.ts）。
+  enterStage(dir, "document", ["sess-ui", SESSION]);
   add(dir, page("业务流程导语", { 导语所属章: "业务流程" }), "业务说明");
   assert.equal(fieldsOf(dir, "OA-001").导语所属章, "业务流程");
   const again = refused(() => add(dir, page("流程一章的导语", { 导语所属章: "业务流程" }), "业务说明"));

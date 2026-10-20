@@ -79,7 +79,8 @@ test("业务说明的页前四个阶段新增、修改、删除都可以；问�
   for (const stage of ["reading", "clarifying", "modeling", "writing"] as const) {
     enterStage(dir, stage);
     n += 1;
-    assert.equal(refusal(dir, [page(`主题${n}`), problem(`第 ${n} 个问题？`)]), null, STAGE_NAMES[stage]);
+    // 核读材料时立的页要贴标签、写例子（另见 page_guard.test.ts），这里四个阶段都给齐。
+    assert.equal(refusal(dir, [page(`主题${n}`, { 标签: ["概念"], 例子: [`第 ${n} 页的一个例子。`] }), problem(`第 ${n} 个问题？`)]), null, STAGE_NAMES[stage]);
     const id = `OA-00${n}`;
     assert.equal(refusal(dir, [{ op: "update", item: id, base_revision: revisionOf(dir, id), fields: { 它是什么: `改过的第 ${n} 页。` } }]), null);
     assert.equal(refusal(dir, [{ op: "delete", item: id, base_revision: revisionOf(dir, id) }]), null);

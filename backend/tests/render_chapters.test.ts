@@ -35,6 +35,8 @@ before(() => {
       page({ 标题: "借还更省事", 标签: ["目标"], 它是什么: MATERIAL[4] }, [doc(4)]),                                                               // OA-006
       page({ 标题: "草稿", 它是什么: "还没有想清楚。" }, [doc(0)]),                                                                                // OA-007，没有贴标签
     ],
+    // 导语页只在编写文档里立（保存修订的守卫），这一批在编写文档里存，之后回到写条目。
+    { stage: "编写文档" },
     [
       page({ 标题: "借书只在自助机上办", 标签: ["决定"], 上级主题: ["OA-006"], 它是什么: "不设人工借书窗口。", 已经定下的: ["借书不到服务台办。"] },
         [{ kind: "助手补充", excerpt: "据目标推出来的。", supports: [{ field: "它是什么", inserted: ["不设人工借书窗口"] }, { field: "已经定下的", index: 0 }] }]),                                                                                        // OA-008
@@ -43,6 +45,7 @@ before(() => {
       { op: "add", collection: "问题", sources: [{ kind: "条目", locator: "OA-001", excerpt: MATERIAL[0] }], fields: { 事项: "自助机坏了能不能到服务台借？", 种类: "待澄清", 是否阻断下游: "不阻断", 何时回看: "评审确认时",
         状态: "未解决", 关联条目: ["OA-001"] } },
     ],
+    { stage: "写条目" },
     { diagram: { name: "借阅系统的边界", kind: "context", sources: from("OA-002", "OA-003"),
       mermaid: 'flowchart LR\n  r(["OA-002 读者"])\n  subgraph sys["借阅系统"]\n    k["自助机"]\n  end\n  r -- 借书证 --> k' }, said: "画一下" },
     { diagram: { name: "读者与馆员的用例", kind: "use_case", sources: from("OA-002", "OA-003", "OA-001"),

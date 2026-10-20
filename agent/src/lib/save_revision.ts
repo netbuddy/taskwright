@@ -83,9 +83,9 @@ import { clickEventSeq, revisionIntent } from "./dialogue_acts.ts";
 import { type RewrittenSupport, carrySources, mergeGiven, sameQuote } from "./source_carry.ts";
 import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
-import { OVERALL_COLLECTION, OVERALL_FIELDS, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
+import { OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
-import { type Position, itemRefusal, pageRefusal } from "./stage.ts";
+import { type Position, itemRefusal, pageRefusal, positionName } from "./stage.ts";
 import { allowedAt, stageOf } from "./stage_read.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 import { codeOf, fillText, refusalText, textPrefix } from "./texts.ts";
@@ -258,6 +258,38 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** 一个字段值算不算空：空白文字、空列表、全是空白文字的列表都算空。 */
+/**
+ * 助手写页（OVERALL_COLLECTION 的条目）时的两条守卫，按这次传入的字段（given）判，不以合并后的页为据；before 是修改前这一页的内容，新增时为 null。
+ * 一、导语页（OVERALL_FIELDS.intro 有值的页）只在编写文档里写：别的位置（空闲也算）新增导语页、把一页改成导语页、改既有导语页的字段，
+ *     都拒绝；只把既有导语页停用（OVERALL_FIELDS.status 改为 STATUS_DEPRECATED），放行。
+ * 二、核读材料时立的页 OVERALL_FIELDS.tags 至少一项、OVERALL_FIELDS.examples 至少一项（反例、例外也算）：只查新增的页与这次传入的
+ *     这两个字段，不追溯旧页；停用的页不查。
+ * 任务定义里没有这几个字段（早先的任务）时，相应的那条不查。可以时返回 null。
+ */
+function pageGuard(stage: Position, collection: CollectionDef, given: Fields, before: Fields | null) {
+  const has = (name: string) => collection.fields.some((field) => field.name === name);
+  const { intro, status, tags, examples } = OVERALL_FIELDS;
+  const words = { stage: positionName(stage), intro_field: intro, status_field: status, deprecated: STATUS_DEPRECATED };
+  if (stage !== "document" && has(intro)) {
+    const differs = (name: string) => name in given && !(isEmptyValue(given[name]) ? isEmptyValue(before?.[name]) : sameJson(given[name], before?.[name]));
+    const isIntro = before !== null && !isEmptyValue(before[intro]);
+    if (isIntro) {
+      const touched = Object.keys(given).filter(differs);
+      const onlyDeprecates = touched.every((name) => name === status) && (touched.length === 0 || given[status] === STATUS_DEPRECATED);
+      if (!onlyDeprecates) return refusalText("save_revision.intro_page_not_now", words);
+    } else if (!isEmptyValue(given[intro]) && differs(intro)) {
+      return refusalText("save_revision.intro_page_not_now", words);
+    }
+  }
+  if (stage === "reading" && has(tags) && has(examples) && given[status] !== STATUS_DEPRECATED && !(before !== null && isDeprecated(before) && !(status in given))) {
+    const missing = [tags, examples].filter((name) => (before === null || name in given) && isEmptyValue(given[name]));
+    if (missing.length > 0) {
+      return refusalText("save_revision.page_needs_tag_and_example", { stage: words.stage, tags, examples, missing: missing.map((name) => `「${name}」`).join("、") });
+    }
+  }
+  return null;
+}
+
 export function isEmptyValue(value: unknown): boolean {
   if (value === undefined || value === null) return true;
   if (typeof value === "string") return value.trim() === "";
@@ -419,10 +451,13 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const stage: Position | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition, call.sessionId) : null;
   // 这个位置获准的写入种类取任务类型的活动声明（获准能力表）。
   const allowed = stage === null ? null : allowedAt(call.workspaceDir, definition, stage);
-  /** 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改业务说明的页时改动了的字段名。 */
-  const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = []) => {
+  /**
+   * 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改业务说明的页时改动了的字段名；
+   * given 是这次传入的字段，before 是修改前这一页的内容（新增时为 null）：页的两条守卫（pageGuard）按它们判。
+   */
+  const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = [], given: unknown = undefined, before: Fields | null = null) => {
     if (stage === null || allowed === null) return null;
-    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed);
+    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before) : null);
     return keepPendingField(collection) === null ? itemRefusal(stage, allowed, kind, collection.name) : null;
   };
 
@@ -486,7 +521,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         })));
         return;
       }
-      const staged = stageRefusal(collection, "add");
+      const staged = stageRefusal(collection, "add", [], raw.fields, null);
       if (staged) errors.push(problemText(staged));
       if (gate !== null && collection.name !== OVERALL_COLLECTION && keepPendingField(collection) === null) errors.push(problemText(gate));
       if (raw.item !== undefined) errors.push(problem(refusalText("save_revision.add_item_given")));
@@ -608,7 +643,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
     if (op === "update") {
       // 这个阶段能不能改它：别的集合的条目要到写条目阶段；评审确认阶段业务说明的页只能改状态与改看，所以要看这次改动了哪几个字段。
       const changed = [...new Set([...Object.keys(before), ...Object.keys(merged)])].filter((name) => !sameJson(before[name], merged[name]));
-      const staged = stageRefusal(collection, "update", changed);
+      const staged = stageRefusal(collection, "update", changed, raw.fields, before);
       if (staged) errors.push(problemText(staged));
     }
     // 旧的「用户直接修改」当作不存在（见文件开头）。用户的操作（直接修改、撤销）都交来完整的来源，不经这里沿用，撤销照原样恢复。
