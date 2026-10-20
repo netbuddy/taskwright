@@ -129,7 +129,7 @@ export interface AssetCell {
 export function assetCells(facts: AssetFacts, activities: readonly ActivityDef[], names: Readonly<Record<AssetKey, string>>): AssetCell[] {
   const itemsNote = [facts.itemsUnread > 0 ? `${facts.itemsUnread} 未读` : "", facts.itemsPending > 0 ? `${facts.itemsPending} 待核实` : ""].filter(Boolean).join(" · ");
   const shown: Record<AssetKey, [count: number, unit: string, text: string | null, note: string]> = {
-    materials: [facts.materials, "份", null, facts.materials === 0 ? "" : facts.materialsUnread === 0 ? "均已核读" : `${facts.materialsUnread} 份未核读`],
+    materials: [facts.materials, "份", null, facts.materials === 0 ? "" : facts.materialsUnread === 0 ? "均有引用" : `${facts.materialsUnread} 份未被引用`],
     description: [facts.sections, "节", null, facts.openQuestions > 0 ? `${facts.openQuestions} 处待澄清` : facts.sections > 0 ? "无待澄清事项" : ""],
     models: [facts.diagrams, "张", null, facts.diagrams === 0 ? "" : facts.diagramsUnviewed === 0 ? "均已查看" : `${facts.diagramsUnviewed} 未查看`],
     items: [facts.items, "条", null, facts.items === 0 ? "" : itemsNote || "均已确认"],

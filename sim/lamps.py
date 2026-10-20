@@ -48,7 +48,7 @@ STAGES = ("核读材料", "澄清", "整理建模", "写条目", "评审确认",
 
 #: 二十一盏灯：阶段、键、说明。键与产品里按阶段算的灯用同一套名字。
 LAMPS = (
-    ("核读材料", "materials_cited", "每份材料都被至少一页主题或一条问题引用。"),
+    ("核读材料", "materials_cited", "只报数、不判：每份材料有没有被主题页或问题引用（与产品的这一盏相同，不算通过与否）。"),
     ("澄清", "tagged_pages_no_open_questions", "贴了标签的页没有挂着未解决的待澄清问题。"),
     ("澄清", "decisions_have_goal", "每个标签为「决定」的页有上级「目标」页（「写了为什么」程序认不出，只看上级目标页）。"),
     ("整理建模", "roles_in_context_and_use_cases", "每个标签为「角色」的页都画进了系统边界图与用例图。"),
@@ -72,6 +72,8 @@ LAMPS = (
 )
 
 PASSED, FAILED, NOT_APPLICABLE, UNKNOWN = "通过", "未通过", "不适用", "算不了"
+#: 只报数、不判的灯（产品里 REPORT_ONLY_LAMPS 那几盏）：结果写这个，不计入通过率，备注是报的数。
+REPORT_ONLY = "只报数"
 
 #: 整盏的结果从产品取的十二盏灯（命令行入口输出里的 lamps）：看图与规则表的七盏，看问题、待定标记、导语与术语的五盏。
 PRODUCT_LAMPS = ("roles_in_context_and_use_cases", "concepts_related_in_class", "flows_have_flowchart_with_branch", "stateful_concepts_have_state",
@@ -176,7 +178,8 @@ def compute(task: dict, facts: dict | None, materials: list[str], completion: li
                     if source.get("种类") == "文档原文":
                         cited.add(str(source.get("出处") or "").split("#")[0].rsplit("/", 1)[-1])
             missing = [name for name in materials if name not in cited]
-            return (FAILED if missing else PASSED), [], ("没有被引用的材料：" + "、".join(missing) + "。" if missing else ""), {"差的材料": missing}
+            note = f"材料 {len(materials)} 份，{len(materials) - len(missing)} 份有引用" + (f"；没有被引用的：{'、'.join(missing)}。" if missing else "。")
+            return REPORT_ONLY, [], note, {"差的材料": missing}
         if key == "tagged_pages_no_open_questions":
             targets = [p for p in live if tags[p["条目编号"]]]
             if not targets:

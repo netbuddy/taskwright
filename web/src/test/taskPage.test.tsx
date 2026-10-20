@@ -100,7 +100,7 @@ const EMPTY_ASSETS = [
   cell("review", "评审与确认", 0, "轮", "未评审", "", ["评审确认"]), cell("versions", "文档与版本", 0, "版", "未发布", "", ["编写文档", "发布"]),
 ];
 const FILLED_ASSETS = [
-  cell("materials", "材料与证据", 2, "份", "2 份", "均已核读"), cell("description", "业务说明", 9, "节", "9 节", "1 处待澄清", ["核读材料", "澄清", "整理建模", "编写文档"]),
+  cell("materials", "材料与证据", 2, "份", "2 份", "均有引用"), cell("description", "业务说明", 9, "节", "9 节", "1 处待澄清", ["核读材料", "澄清", "整理建模", "编写文档"]),
   cell("models", "分析模型", 4, "张", "4 张", "1 未查看", ["整理建模"]), cell("items", "需求条目", 6, "条", "6 条", "6 未读 · 1 待核实", ["写条目", "评审确认"]),
   cell("review", "评审与确认", 0, "轮", "未评审", "", ["评审确认"]), cell("versions", "文档与版本", 0, "版", "未发布", "", ["编写文档", "发布"]),
 ];
@@ -344,7 +344,7 @@ describe("起点页：有内容的任务", () => {
     expect(screen.queryByTestId("start-case-materials")).toBeNull();
     expect(screen.queryByTestId("work-items")).toBeNull();
     expect([...screen.getByTestId("asset-cells").querySelectorAll(".tp-cell")].map((one) => [text(one.querySelector(".v")), text(one.querySelector(".s"))])).toEqual([
-      ["2 份", "均已核读"], ["9 节", "1 处待澄清"], ["4 张", "1 未查看"], ["6 条", "6 未读 · 1 待核实"], ["未评审", ""], ["未发布", ""]]);
+      ["2 份", "均有引用"], ["9 节", "1 处待澄清"], ["4 张", "1 未查看"], ["6 条", "6 未读 · 1 待核实"], ["未评审", ""], ["未发布", ""]]);
     expect(text(screen.getByTestId("flow-analysis").querySelector(".tp-go"))).toBe("启动 →");
     cleanup(); vi.restoreAllMocks();
     const released = FILLED_ASSETS.map((one) => (one.key === "versions" ? cell("versions", "文档与版本", 1, "版", "第 1 版") : one));

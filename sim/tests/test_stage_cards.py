@@ -166,7 +166,7 @@ class StageCardsTest(unittest.TestCase):
             self.assertEqual(first["第一层说明"][judge.ENTER_CHECK], "一共点了 5 次进入下一段的卡片：第 2 轮「进入澄清」、第 3 轮「进入整理建模」、"
                              "第 4 轮「开始写条目」、第 5 轮「进入评审确认」、第 7 轮「进入编写文档」。")
             states = {x["键"]: x["结果"] for x in result["灯"]}
-            self.assertEqual((states["materials_cited"], states["completion_met"]), ("通过", "通过"))
+            self.assertEqual((states["materials_cited"], states["completion_met"]), ("只报数", "通过"))
             # 编写文档的灯：只有业务流程这一章有内容，它有了导语。
             self.assertEqual(states["chapters_have_intro"], "通过")
         summary = json.loads(evals.summary_path(sims_root, LABEL, "json").read_text(encoding="utf-8"))
@@ -176,9 +176,10 @@ class StageCardsTest(unittest.TestCase):
         self.assertEqual(stages, list(dict.fromkeys(stage for stage, _key, _text in lamps.LAMPS)))
         self.assertEqual((sum(one["灯数"] for one in summary["灯按阶段"]), len(summary["灯"])), (len(lamps.LAMPS), len(lamps.LAMPS)))
         by_stage = {one["阶段"]: one for one in summary["灯按阶段"]}
-        self.assertEqual((by_stage["核读材料"]["通过率"], by_stage["评审确认"]["通过率"]), (1.0, 1.0))
+        # 核读材料那一盏只报数、不判，不进通过率，这一组没有能算的灯。
+        self.assertEqual((by_stage["核读材料"]["通过率"], by_stage["评审确认"]["通过率"]), (None, 1.0))
         self.assertEqual(stages[-1], "编写文档")
-        self.assertIn("| 核读材料 | 1 | 100% |", text)
+        self.assertIn("| 核读材料 | 1 | 没有能算的 |", text)
         # 提示词版本：两遍相同；文件清单里有代码仓里按阶段的说明、平台说明的模块、活动模板与任务目录里任务类型的说明，没有早先的平台 skill；任务目录 docs 下的不在。
         self.assertRegex(summary["提示词版本"], r"^[0-9a-f]{12}$")
         self.assertEqual(summary["各遍提示词版本"], [summary["提示词版本"]] * PASSES)

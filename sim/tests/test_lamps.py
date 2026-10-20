@@ -83,12 +83,12 @@ class LampTest(unittest.TestCase):
         out = lamps.compute(task([use_case(1)], collections=[{"名称": "功能用例"}, {"名称": "领域说明"}]), None, ["a.md"], [])
         self.assertEqual({x["结果"] for x in out}, {"不适用"})
 
-    def test_每份材料都被主题页或问题引用(self):
+    def test_材料被引用只报数不判(self):
         cited = [page(1, "借书", sources=[quote("inputs/a.md")]), question(1, sources=[quote("inputs/b.docx#p12")])]
-        self.assertEqual(one("materials_cited", cited, materials=["a.md", "b.docx"]), ("通过", []))
+        self.assertEqual(one("materials_cited", cited, materials=["a.md", "b.docx"]), ("只报数", []))
         only_use_case = [page(1, "借书", sources=[quote("inputs/a.md")]), use_case(1, [quote("inputs/b.docx#p3")])]
         found = [x for x in lamps.compute(task(only_use_case), {}, ["a.md", "b.docx"], None) if x["键"] == "materials_cited"][0]
-        self.assertEqual((found["结果"], found["差的材料"], found["备注"]), ("未通过", ["b.docx"], "没有被引用的材料：b.docx。"))
+        self.assertEqual((found["结果"], found["差的材料"], found["备注"]), ("只报数", ["b.docx"], "材料 2 份，1 份有引用；没有被引用的：b.docx。"))
         self.assertEqual(one("materials_cited", cited)[0], "不适用")
 
     def test_贴了标签的页没有挂着未解决的待澄清问题(self):
@@ -257,7 +257,7 @@ class SimLampTest(unittest.TestCase):
         self.assertEqual(before["任务编号"], "TASK-T")
         state = {x["键"]: (x["结果"], x["差的条目编号"]) for x in before["灯"]}
         self.assertEqual(state, {
-            "materials_cited": ("通过", []),
+            "materials_cited": ("只报数", []),
             "tagged_pages_no_open_questions": ("未通过", ["OA-001"]),
             "decisions_have_goal": ("不适用", []),
             "roles_in_context_and_use_cases": ("未通过", ["OA-002"]),      # 角色页「读者」还没有画进任何一张图

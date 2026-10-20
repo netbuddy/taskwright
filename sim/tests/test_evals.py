@@ -203,7 +203,7 @@ class EvalRunTest(unittest.TestCase):
             # 立了一页流程主题并被引用；还没有给它画流程图；没有用例依据这一页；没有评审过。
             self.assertEqual((states["materials_cited"], states["flows_have_flowchart_with_branch"], states["flows_backed_by_use_cases"],
                               states["no_untagged_pages"], states["roles_in_context_and_use_cases"], states["reviews_no_open_findings"]),
-                             ("通过", "未通过", "未通过", "通过", "不适用", "未通过"))
+                             ("只报数", "未通过", "未通过", "通过", "不适用", "未通过"))
             hits = [(x["部分"], x["组"][0]) for x in one["至少应有"] if x["命中"]]
             self.assertEqual(hits, [("业务说明·流程页", "借书"), ("问题", "寒暑假")])
             # 助手的问题取自任务库的对话行为，轮次靠演练记录对上。

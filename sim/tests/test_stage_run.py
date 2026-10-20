@@ -141,7 +141,7 @@ class StageRunTest(unittest.TestCase):
         # 灯：写条目与评审确认两段都过了；这份演示脚本从核读材料直接进入写条目，没有画图，流程页没有流程图那一盏不通过。
         states = {x["键"]: x["结果"] for x in result["灯"]}
         self.assertEqual(states, {
-            "materials_cited": "通过", "tagged_pages_no_open_questions": "通过", "decisions_have_goal": "不适用",
+            "materials_cited": "只报数", "tagged_pages_no_open_questions": "通过", "decisions_have_goal": "不适用",
             "roles_in_context_and_use_cases": "不适用", "concepts_related_in_class": "不适用", "flows_have_flowchart_with_branch": "未通过",
             "stateful_concepts_have_state": "不适用", "no_duplicate_titles": "通过", "no_untagged_pages": "通过", "rules_no_conflict": "不适用",
             "flows_backed_by_use_cases": "通过", "basis_pages_viewed": "通过", "basis_diagrams_viewed": "不适用", "no_pending_items": "通过",

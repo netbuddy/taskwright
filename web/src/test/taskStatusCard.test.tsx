@@ -262,7 +262,7 @@ describe("随时调出", () => {
 
 describe("工作进展卡的版本、工作项与资产三行，启动推荐流程与其他工作", () => {
   const cell = (key: string, count: number, text: string, note = "") => ({ key, name: key, count, unit: "", text, note, produced_by: [] });
-  const ASSETS = [cell("materials", 1, "1 份", "均已核读"), cell("description", 9, "9 节", "无待澄清事项"), cell("models", 4, "4 张", "均已查看"),
+  const ASSETS = [cell("materials", 1, "1 份", "均有引用"), cell("description", 9, "9 节", "无待澄清事项"), cell("models", 4, "4 张", "均已查看"),
     cell("items", 23, "23 条", "均已确认"), cell("review", 1, "1 轮", ""), cell("versions", 1, "第 1 版", "")];
   const flow = (key: string, name: string, recommended: boolean, enabled = true) => ({ key, name, recommended, enabled }) as never;
   const WORK = [

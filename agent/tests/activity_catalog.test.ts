@@ -43,8 +43,8 @@ test("空任务：六类都是零，材料来自上传所以没有产出它的�
 test("材料与证据：份数；没有被任何一节或问题引用的算未核读，引用里 # 后面的位置不看", () => {
   const facts = assetFacts(input({ materials: ["inputs/甲.md", "inputs/乙.docx"], citedDocuments: ["inputs/甲.md#p3"] }));
   assert.deepEqual([facts.materials, facts.materialsUnread], [2, 1]);
-  assert.deepEqual(cellsOf(facts).materials, ["2 份", "1 份未核读"]);
-  assert.deepEqual(cellsOf({ ...facts, materialsUnread: 0 }).materials, ["2 份", "均已核读"]);
+  assert.deepEqual(cellsOf(facts).materials, ["2 份", "1 份未被引用"]);
+  assert.deepEqual(cellsOf({ ...facts, materialsUnread: 0 }).materials, ["2 份", "均有引用"]);
 });
 
 test("业务说明：节数只数在用的主题页，已废弃的页与章的导语页不数；待澄清数的是没有了结的待澄清问题", () => {
