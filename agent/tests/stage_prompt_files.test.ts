@@ -307,6 +307,11 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   for (const words of ["outline: requirements-engineering", "unsorted: 未归类的发现", "overview: 总体观察", "## 风险、假设与运维", "人工怎样接管，接管的情况怎样统计、怎样回流改进？"]) {
     assert.ok(outline.includes(words), words);
   }
+  // 提纲条目写的每个方法，在同一目录的 methods.md 里都有同名的一段。
+  const methods = readFileSync(join(SRS_SKILL, "methods.md"), "utf-8");
+  const named = [...outline.matchAll(/—— 方法：(.+)$/gm)].map((one) => one[1].trim());
+  assert.ok(named.length > 0);
+  for (const name of new Set(named)) assert.ok(methods.includes(`\n## ${name}\n`), name);
   const writing = supplement("writing");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
   for (const head of ["整理建模阶段画出的图与材料里的内容都要整理进条目", "1. **照图写条目。**", "2. **每条功能用例的来源写两张图。**", "3. **非功能需求不经图。**",
