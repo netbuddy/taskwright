@@ -529,15 +529,20 @@ describe("节末尾的三块", () => {
     expect(screen.getByTestId("item-detail")).toHaveTextContent("预约图书");
   });
 
-  it("追溯：材料 › 澄清记录 › 条目 › 文档节号，没有内容的段不画；点材料在右边定位第一处原文，点澄清记录换成条目详情的样子", () => {
+  it("追溯：只写来源行里没有显示过的材料与澄清记录；页上已有的来源、图、条目、文档节号都不重复，没有可写的就不画；点材料在右边定位第一处原文，点澄清记录换成条目详情的样子", () => {
+    render(<Panel t={overallTask()} />);
+    expect(screen.queryByTestId("topic-trace")).toBeNull();
+    cleanup();
     const locate = vi.fn();
-    render(<Panel t={overallTask()} spies={{ locate }} />);
-    // 最后一段是这一节在生成的文档里的节号，与面包屑里的节号是同一个。
-    const no = text(screen.getByTestId("topic-crumb")).match(/›(\d+\.\d+)/)![1];
-    expect(text(screen.getByTestId("topic-trace"))).toBe(`追溯材料 借阅规则.md›澄清记录 2 条›条目 UC-002、UC-003›文档 ${no} 节`);
-    expect(screen.queryByTestId("trace-figures")).toBeNull();
+    const t = change(overallTask(), "OA-003", (page) => {
+      page.sources = [...page.sources,
+        { kind: "文档原文", locator: "inputs/借阅规则.md", excerpt: "预约也叫预借。", supports: [{ field: "别名" }] },
+        { kind: "用户的话", locator: "", excerpt: "这算流程。", supports: [{ field: "标签" }] }] as never;
+    });
+    render(<Panel t={t} first="OA-003" spies={{ locate }} />);
+    expect(text(screen.getByTestId("topic-trace"))).toBe("追溯材料 借阅规则.md›澄清记录 1 条");
     fireEvent.click(within(screen.getByTestId("trace-materials")).getByRole("button"));
-    expect(locate).toHaveBeenCalledWith("同一册图书同一时间只接受一位读者的预约。", "inputs/借阅规则.md");
+    expect(locate).toHaveBeenCalledWith("预约也叫预借。", "inputs/借阅规则.md");
     fireEvent.click(within(screen.getByTestId("trace-clarified")).getByRole("button"));
     expect(screen.getByTestId("item-detail")).toBeInTheDocument();
   });
