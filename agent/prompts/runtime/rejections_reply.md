@@ -279,7 +279,7 @@ act.scope 写了 "general"，表示与任何条目都无关，就不要再在 it
 
 用途：请选择的选项不到两个。
 
-请选择（choose）要写 act.options，至少两个选项，每项是 { key, text }
+请选择（choose）要写 act.options，至少两个选项，每项是 { key, text }；写了 act.topic 的问题卡片可以一个选项也不给，只留自由回答
 
 ## `reply.option_incomplete`
 

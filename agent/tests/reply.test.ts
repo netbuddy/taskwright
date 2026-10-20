@@ -245,6 +245,14 @@ test("请选择的理由、多选、标题写错时逐条拒绝", () => {
   rejected({ informs: [], act, text: "选哪个？" }, alone(), /第 1 项的 reason 要写一句话[\s\S]*act\.multiple 只能写 true[\s\S]*act\.topic 要写几个字/);
 });
 
+test("写了标题的请选择可以不给选项：开放问题只留自由回答；没写标题时仍要两个选项", () => {
+  const reply = checkReply({ informs: [], act: { kind: "choose", topic: "起因与现状问题", text: "为了写清起因：你看最要紧的是什么？", options: [] }, text: "你看最要紧的是什么？" }, alone());
+  assert.deepEqual(reply.act?.options, []);
+  checkReply({ informs: [], act: { kind: "choose", topic: "起因与现状问题", text: "为了写清起因：你看最要紧的是什么？" }, text: "你看最要紧的是什么？" }, alone());
+  rejected({ informs: [], act: { kind: "choose", text: "选哪个？", options: [] }, text: "选哪个？" }, alone(), /至少两个选项/);
+  rejected({ informs: [], act: { kind: "choose", topic: "范围", text: "选哪个？", options: [{ key: "a", text: "甲" }] }, text: "选哪个？" }, alone(), /至少两个选项/);
+});
+
 test("多选、标题只有请选择能写", () => {
   rejected({ informs: [], act: { kind: "ask", text: "现状问题是什么？", scope: "general", multiple: true }, text: "现状问题是什么？" }, alone(), /multiple/);
 });

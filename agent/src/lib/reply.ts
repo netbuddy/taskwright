@@ -373,7 +373,11 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
 
   if (k === "choose") {
     const options = raw.options;
-    if (!Array.isArray(options) || options.length < 2) {
+    // 写了 topic 的请选择是一个问题加候选答案：候选可以一个也不给（开放问，只留自由回答），给了就至少两个。
+    const open = typeof raw.topic === "string" && !isBlank(raw.topic) && (options === undefined || (Array.isArray(options) && options.length === 0));
+    if (open) {
+      // 不给候选：卡片上只有自由回答与「先跳过」。
+    } else if (!Array.isArray(options) || options.length < 2) {
       errors.push(problem(refusalText("reply.options_too_few")));
     } else {
       const seen = new Set<string>();

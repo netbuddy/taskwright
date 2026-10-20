@@ -19,9 +19,9 @@ export const SKIP_TEXT = "这一问先跳过，接着往下。";
 /** 多选的卡片在问题下面写的一句提示。 */
 export const MULTIPLE_HINT = "可以多选。";
 
-/** 一张卡片是不是问答卡片：请选择，选项里有写了理由的，或者标了多选。 */
+/** 一张卡片是不是问答卡片：请选择，写了标题、选项里有写了理由的，或者标了多选。写了标题而没有选项的是开放问题，只有自由回答。 */
 export function isQuestionCard(act: Act): boolean {
-  return act.kind === "choose" && (act.multiple === true || (act.options ?? []).some((o) => !!o.reason?.trim()));
+  return act.kind === "choose" && (!!act.topic?.trim() || act.multiple === true || (act.options ?? []).some((o) => !!o.reason?.trim()));
 }
 
 /** 第 index 个序号：A、B、C……。 */

@@ -62,6 +62,18 @@ describe("问答卡片", () => {
     expect(onMessage).toHaveBeenCalledWith("我选：模型成本失控；重复建设。", expect.anything());
   });
 
+  it("写了标题而没有选项的是开放问题：只有自由回答（序号 A）与「先跳过」，写的话原样发出", () => {
+    const open: Act = { kind: "choose", topic: "起因与现状问题", text: "为了写清起因：你看最要紧的是什么？", options: [] };
+    expect(isQuestionCard(open)).toBe(true);
+    const onMessage = setup(open);
+    expect(screen.queryByTestId("question-option-a")).toBeNull();
+    expect(screen.getByText("A")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("question-free"), { target: { value: "费用分散最要紧。" } });
+    fireEvent.click(screen.getByTestId("question-send"));
+    expect(onMessage).toHaveBeenCalledWith("费用分散最要紧。", expect.anything());
+    expect(screen.getByTestId("question-card-done").textContent).toBe("提问 · 起因与现状问题 · 已答：自己回答");
+  });
+
   it("「先跳过这一问」发一句固定的话", () => {
     const onMessage = setup(single);
     fireEvent.click(screen.getByTestId("question-skip"));
