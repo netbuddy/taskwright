@@ -12,7 +12,7 @@
 // 工作中按回车不会停止，只有点方块才停。停下之后会话里留一条界面操作通知（种类 stop_run），对话区画成「你停止了助手这一次的工作」。
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SavedFacts, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
+import type { AssistantReply, ConversationMessage, CurrentWork, Inform, RunStatus, SavedFacts, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
@@ -24,6 +24,7 @@ import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
 import { QuestionCard, isQuestionCard } from "./QuestionCard";
+import { RunStatusBar } from "./RunStatusBar";
 import { answeredByStaying, answeredStayKey, answeredText, answeredTypedText, answeredUnmoved, answeredUnmovedBlocked, answeredUnmovedWhy } from "../../model/cardAnswer";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
@@ -55,7 +56,7 @@ export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onOpenDiff, onStop,
+  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onOpenDiff, onStop, runStatus = null,
   loadStatus,
   statusRequest = 0,
   sessionLine = null,
@@ -111,6 +112,8 @@ export function Conversation({
    * 返回真＝停止的请求做成了；假＝没有做成（原因由页面另行提示），停止键恢复成可以再点。
    */
   onStop?: () => Promise<boolean>;
+  /** 这条会话最近一帧运行状态（SSE 的 run_status）：输入框上方的运行状态条照它画。 */
+  runStatus?: RunStatus | null;
   /** 不拦住操作的提示（助手已经退出、正在启动、还没启动），显示成输入框上方的蓝色提示条；见 executorHint.ts。 */
   hint?: string | null;
   /** 助手正在启动：发送按钮暂不可用，输入框照常可以打字。 */
@@ -261,6 +264,7 @@ export function Conversation({
         )}
       </div>
       <div className={`chat-in${disabledReason ? " busy" : ""}`}>
+        <RunStatusBar status={runStatus} />
         <div className={`busybar${note ? " show" : ""}${info ? " info" : ""}`} data-testid={note ? (info ? "executor-hint" : "busy-note") : undefined}>{note}</div>
         <PendingProposal proposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle} onMessage={handlers.onMessage} onReviewed={handlers.onReviewed} />
         <div className="inbox">
@@ -453,7 +457,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
       if (m.kind === CONTINUE_STAGE_KIND) return <div className="selfnote" data-testid="continue-stage-note">{continueStageLine(m.option_key)}</div>;
       const revision = m.undoable ? revisionOf(m) : null;
       return (
-        <div className="selfnote" data-testid="ui-action">
+        <div className="selfnote" data-testid="ui-action" data-note-kind={m.kind ?? undefined}>
           {m.text}
           {revision != null && (
             <span className={`undo${working ? " off" : ""}`} role="button" title={working ? "助手正在工作，结束后你可以继续修改" : undefined}

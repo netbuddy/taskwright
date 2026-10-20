@@ -979,6 +979,20 @@ export interface MaterialRemoved {
   replaced_by?: string;
 }
 
+/** 运行状态帧（SSE 的 run_status，后端 run_watch.ts）：现在在哪一段、这次运行多少秒、这一轮收到多少字、是否可能卡住了、看门狗是否中止了。 */
+export interface RunStatus {
+  session_id?: string | null;
+  phase: "idle" | "waiting" | "thinking" | "text" | "tool_args" | "tool";
+  tool: string | null;
+  run_seconds: number | null;
+  received_chars: number;
+  tool_args_chars: number;
+  idle_seconds: number | null;
+  stalled: boolean;
+  /** 看门狗中止了上一次运行时的原因（给人看的一句）；没有中止为 null。 */
+  aborted: string | null;
+}
+
 export interface Problem {
   session_id?: string;
   code: string;
