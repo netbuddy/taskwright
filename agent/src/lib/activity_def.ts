@@ -14,6 +14,11 @@
  * 需求资产分六类（ASSETS）。活动声明写它读哪几类、写哪几类：能不能启动只看要读的几类里有没有东西，
  * 与之前做没做过哪一项活动无关。「读」一栏另认两个写法：knowledge（知识库）与 all（全部资产）。
  * 前置条件（requires）是数据条件的键（CONDITIONS），一个都没有就是无前置条件。
+ *
+ * 活动的正文可以分段（声明里写 segments）：正文里一行「<!-- segment: 时机 -->」起一段，到下一个这样的行或者正文末尾止；
+ * 第一个标记之前的是常驻段，进系统提示。时机只认 SEGMENT_TIMINGS：after_save 附在这条会话第一次保存修订做成的结果后面，
+ * after_reply 附在第一次回复做成的结果后面（lib/activity_segments.ts）。声明里写的时机与正文里的标记要一一对上。
+ * 没有写 segments 的活动正文整段常驻，与以前一样。
  */
 
 import { ASSETS, type AssetKey } from "./assets.ts";
@@ -74,6 +79,44 @@ export function prerequisiteText(requires: readonly Condition[]): string {
   return requires.length === 0 ? NO_PREREQUISITE_TEXT : `前置条件：${requires.map((one) => CONDITION_TEXTS[one]).join("，")}。`;
 }
 
+/** 活动正文的分段时机：附在第一次保存修订做成的结果后面、附在第一次回复做成的结果后面。常驻段不写时机。 */
+export const SEGMENT_TIMINGS = ["after_save", "after_reply"] as const;
+export type SegmentTiming = (typeof SEGMENT_TIMINGS)[number];
+/** 正文里起一段的那一行。 */
+const SEGMENT_MARK = /^<!-- segment: ([a-z_]+) -->$/;
+
+/** 活动正文按分段标记切开：always 是第一个标记之前的常驻段，别的按时机。没有标记时整段都是常驻段。不核对时机写得对不对（见 checkSegments）。 */
+export function splitSegments(body: string): { always: string; segments: Partial<Record<string, string>>; marks: string[] } {
+  const segments: Record<string, string[]> = {};
+  const marks: string[] = [];
+  const always: string[] = [];
+  let into = always;
+  for (const line of body.split("\n")) {
+    const hit = SEGMENT_MARK.exec(line.trim());
+    if (!hit) {
+      into.push(line);
+      continue;
+    }
+    marks.push(hit[1]);
+    into = segments[hit[1]] ??= [];
+  }
+  const tidy = (lines: string[]) => lines.join("\n").replace(/^\n+/, "").replace(/\s+$/, "");
+  return { always: tidy(always), segments: Object.fromEntries(Object.entries(segments).map(([key, lines]) => [key, tidy(lines)])), marks };
+}
+
+/** 声明里的 segments 与正文里的分段标记对不对得上：每个时机恰好一个标记、不多不少，每段不是空的。 */
+function checkSegments(timings: SegmentTiming[], body: string, file: string): void {
+  const { segments, marks } = splitSegments(body);
+  const unknown = marks.find((one) => !(timings as string[]).includes(one));
+  if (unknown) throw new DefinitionHeadError(`${file} 的正文里有分段标记「${unknown}」，声明的「segments」里没有它。`);
+  const twice = marks.find((one, i) => marks.indexOf(one) !== i);
+  if (twice) throw new DefinitionHeadError(`${file} 的正文里分段标记「${twice}」出现了两次。`);
+  const missing = timings.find((one) => !marks.includes(one));
+  if (missing) throw new DefinitionHeadError(`${file} 的声明里「segments」写了「${missing}」，正文里没有这一段的标记。`);
+  const empty = timings.find((one) => !segments[one]);
+  if (empty) throw new DefinitionHeadError(`${file} 的正文里「${empty}」这一段是空的。`);
+}
+
 /** 一项活动的声明。 */
 export interface ActivityDef {
   /** 标识符，取自文件名。六个阶段与发布的那几项与它们的键相同。 */
@@ -96,6 +139,8 @@ export interface ActivityDef {
   template: string | null;
   /** 算作哪个阶段（过渡期的兼容栏）；只能由用户发起的活动为 null。 */
   stage: Stage | null;
+  /** 正文分了哪几段（不含常驻段）；没有分段时是空的。 */
+  segments: SegmentTiming[];
 }
 
 /** 一条流程的声明。 */
@@ -172,7 +217,7 @@ function headOf(text: string, file: string): Record<string, string> {
 export function parseActivityDef(text: string, key: string, file: string): ActivityDef {
   if (!IDENTIFIER_PATTERN.test(key)) throw new DefinitionHeadError(`${file} 的文件名「${key}」不能当活动的标识符：只能是小写字母开头的小写字母、数字、短横线与下划线。`);
   const head = headOf(text, file);
-  const known = new Set(["name", "mode", "purpose", "reads", "writes", "writes_allowed", "requires", "example", "template", "stage"]);
+  const known = new Set(["name", "mode", "purpose", "reads", "writes", "writes_allowed", "requires", "example", "template", "stage", "segments"]);
   const extra = Object.keys(head).filter((field) => !known.has(field));
   if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
   const mode = oneOf(head, "mode", MODES, file);
@@ -189,6 +234,9 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
   }
   const writesAllowed = listOf(head, "writes_allowed", WRITE_KINDS, file, mode !== "user_only");
   if (mode === "user_only" && writesAllowed.length > 0) throw new DefinitionHeadError(`${file} 的声明里「writes_allowed」：只能由用户发起的活动不经助手，这一栏空着。`);
+  const segments = head.segments === undefined ? [] : listOf(head, "segments", SEGMENT_TIMINGS, file, true);
+  if (segments.length > 0 && mode === "user_only") throw new DefinitionHeadError(`${file} 的声明里「segments」：只能由用户发起的活动不进系统提示，不分段。`);
+  checkSegments(segments, splitHead(text).body, file);
   return {
     key,
     name: need(head, "name", file),
@@ -201,6 +249,7 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
     example: need(head, "example", file),
     template,
     stage: stageText as Stage | null,
+    segments,
   };
 }
 

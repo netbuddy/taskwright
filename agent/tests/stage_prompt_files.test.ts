@@ -13,6 +13,7 @@ import { EXCEPTION_EXAMPLE_PREFIX } from "../src/lib/overall_analysis.ts";
 import { closedQuestion } from "../src/lib/reply.ts";
 import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { RULE_CONFLICT_PREFIX } from "../src/lib/overall_views.ts";
+import { splitSegments } from "../src/lib/activity_def.ts";
 import { PROBLEM_BLOCKING, PROBLEM_BLOCKING_FIELD, PROBLEM_LANDED_FIELD, PROBLEM_NOT_BLOCKING, PROBLEM_REVISIT_FIELD } from "../src/lib/definition.ts";
 import { type LampInput, PENDING_MARK, STAGES, STAGE_NAMES, type Stage, type WriteKind, canWrite, nextStage, stageLamps } from "../src/lib/stage.ts";
 import { NO_PROPOSAL_LINE, openCardsLine } from "../src/lib/stage_proposal.ts";
@@ -302,8 +303,18 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   assert.ok(!reading.includes("12 页"));
   for (const words of ["这个阶段用例、需求与约束存不进去", "一次保存只写一个操作", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
     "「风险、假设与运维」这一维度的七个问题逐项问", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "各接一句以「例如」起头的具体情形"]) assert.ok(reading.includes(words), words);
-  // 核读按提纲与用户对话：规则按步骤分段，做到哪一步读哪一段；一个提纲条目五步，缺口记成挂在页上的问题条目，正文不写状态标记。
-  for (const words of ["做到哪一步，就回头读那一段", "**开场与次序。**", "**第一步：盘点。**", "**第二步：草稿与缺口。**", "**第三步：提问。**", "**第四步：答后。**", "**第五步：收尾。**",
+  // 核读按提纲与用户对话：规则分三段，常驻段进系统提示，盘点、草稿与提问的写法附在第一次保存的结果后面，答后及之后的附在第一次回复的结果后面；
+  // 一个提纲条目五步，缺口记成挂在页上的问题条目，正文不写状态标记。
+  const segmented = splitSegments(body(readFileSync(join(SRS_SKILL, "activities", "reading.md"), "utf-8")));
+  for (const words of ["规则分三处给你", "第一步盘点、第二步草稿与缺口、第三步提问、第四步答后、第五步收尾", "**开场与次序。**", "**一直要守的三条。**", "不把别的页当出处",
+    "不用提问（ask）卡片", "一次保存只写一个操作", "## 这一步怎样收尾"]) assert.ok(segmented.always.includes(words), `常驻段：${words}`);
+  for (const words of ["**第一步：盘点。**", "**第二步：草稿与缺口。**", "**第三步：提问。**", "**正文的写法。**", "**页怎样分。**", "**每页至少有什么。**"]) {
+    assert.ok(segmented.segments.after_save?.includes(words) && !segmented.always.includes(words), `保存后段：${words}`);
+  }
+  for (const words of ["**第四步：答后。**", "**第五步：收尾。**", "**一个维度走完时。**", "**已经定下的。**", "**第二遍各样东西记成什么。**", "**总体观察。**", "标了 `per_unit: true` 的维度"]) {
+    assert.ok(segmented.segments.after_reply?.includes(words) && !segmented.always.includes(words), `回复后段：${words}`);
+  }
+  for (const words of ["**开场与次序。**", "**第一步：盘点。**", "**第二步：草稿与缺口。**", "**第三步：提问。**", "**第四步：答后。**", "**第五步：收尾。**",
     "**一个维度走完时。**", "**正文的写法。**", "**已经定下的。**", "不得自动续读", "每条消息只问一件事", "子系统以用户在「范围」里认的为准", "标题「维度名 · 子系统名」",
     "标题以「候选：」开头", "不写「待定：」「候选：」这类状态标记", "每个提纲条目最多问两问", "「维度名 · 条目名 · 缺口 N（种类）」", "「维度名 · 第 k 条目 条目名（共 n 条）」", "一行一个列出各提纲条目的状态", "改了〈页名〉：原来……，现在……",
     "决定。理由：……。另有备选：……（未取）。", "候选只来自材料或行业常识", "所有提问都用这种带候选的请选择卡片", "`text` 必须以「为了写清」开头", "缺口没有存成问题条目，就不发卡片", "存页前逐句核对", "提纲条目的内容一律写进条目页，不写进维度页", "不发不带候选的卡片，也不用提问（ask）卡片", "正文只写已经知道的事，不写材料缺什么", "`topic` 必须写", "「例子」一栏在核读里只用来放流程页的例外"]) {

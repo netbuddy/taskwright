@@ -9,7 +9,8 @@
  *   4 平台说明里条件满足的模块，按次序号
  *   5 活动模板（agent/prompts/templates/<模板>.md，「现在这个阶段」；用哪一份看活动声明的 template）
  *   6 任务类型说明的共用部分（任务 skill 的 SKILL.md 正文）
- *   7 任务类型说明里这项活动的补充（任务 skill 目录下 activities/<活动>.md 声明之后的正文，没有就没有；工作流之外去掉收尾一节）
+ *   7 任务类型说明里这项活动的补充（任务 skill 目录下 activities/<活动>.md 声明之后的正文，没有就没有；工作流之外去掉收尾一节）；
+ *     正文分了段的只放常驻段，别的段由工具附在结果后面（activitySegmentText，lib/activity_segments.ts）
  *   8 工作流声明里这一步的提示（note.<活动标识符>，写了才有）。工作流里的转移（各步、上一步、下一步、分工表）由程序从声明推出来，
  *     填进第 4 步里 planning/flow_transitions 模块的占位；单项活动的收尾与空闲的规矩也是第 4 步里的模块
  *   9 用户启动工作项时写的说明（写了才有）
@@ -38,7 +39,7 @@ import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { type ActivityDef, ASSETS, type AssetKey, DefinitionHeadError, prerequisiteText, splitHead } from "./activity_def.ts";
+import { type ActivityDef, ASSETS, type AssetKey, DefinitionHeadError, type SegmentTiming, prerequisiteText, splitHead, splitSegments } from "./activity_def.ts";
 import { assetNamesOf } from "./asset_names.ts";
 import { ACTIVITIES_SUBDIR, type Definitions, definitionsFor } from "./activity_def_read.ts";
 import { databasePath } from "./db.ts";
@@ -532,8 +533,7 @@ export function composeContext(input: ComposeInput, io: PromptIo = NODE_IO): Sta
   for (const one of byPart("task_activity")) {
     const got = readWanted(one, input, io, notes);
     if (!got) continue;
-    const body = skillBody(got.text);
-    add({ part: "task_activity", from: got.from, file: got.file, text: at.session === "flow" ? body : withoutSection(withoutSection(body, EXIT_HEADING), ENDING_HEADING) });
+    add({ part: "task_activity", from: got.from, file: got.file, text: forSession(splitSegments(skillBody(got.text)).always, at.session) });
   }
   // 8 工作流声明里这一步的提示（note.<活动标识符>），写了才有。
   if (at.session === "flow") {
@@ -545,6 +545,27 @@ export function composeContext(input: ComposeInput, io: PromptIo = NODE_IO): Sta
   // 10 pi 接的那一截
   add({ part: "tail", from: "pi", file: null, text: input.tail });
   return { stage: input.stage, text: parts.map((one) => one.text).join("\n\n"), parts, notes };
+}
+
+/** 活动补充在工作流之外（单项活动、空闲）去掉「出口」与收尾一节。 */
+function forSession(text: string, session: SessionKind): string {
+  return session === "flow" ? text : withoutSection(withoutSection(text, EXIT_HEADING), ENDING_HEADING);
+}
+
+/**
+ * 这次会话的活动补充里某个时机的那一段（lib/activity_def.ts 的分段），与拼系统提示读的是同一份文件（含调试模式的提示词目录），
+ * 同样在工作流之外去掉「出口」与收尾一节。空闲、活动没有分段、或者没有这一段时返回 null。拼不成时抛 PromptAssemblyError。
+ */
+export function activitySegmentText(input: ComposeInput, timing: SegmentTiming, io: PromptIo = NODE_IO): string | null {
+  if (input.stage === IDLE) return null;
+  const activity = activityOf(input);
+  if (!activity.segments.includes(timing)) return null;
+  const at = situationOf(input, activity);
+  const wanted = wantedFiles(input, activity, activity.template!).find((one) => one.part === "task_activity")!;
+  const got = readWanted(wanted, input, io, []);
+  if (!got) return null;
+  const text = splitSegments(skillBody(got.text)).segments[timing];
+  return text ? forSession(text, at.session) || null : null;
 }
 
 // ───────────── 缓存 ─────────────
@@ -648,6 +669,26 @@ export function whereInWorkspace(workspaceDir: string, sessionId: string | null)
   } finally {
     db.close();
   }
+}
+
+/**
+ * 这条会话现在的活动补充里某个时机的那一段（activitySegmentText），按任务库里的位置与任务定义的「执行方法」找文件。
+ * 任务库不在、空闲、活动没有这一段时返回 null。
+ */
+export function activitySegmentAt(workspaceDir: string, sessionId: string | null, timing: SegmentTiming, promptDir: string | null = null): string | null {
+  const where = whereInWorkspace(workspaceDir, sessionId);
+  if (where === null || where.stage === IDLE) return null;
+  const db = new DatabaseSync(databasePath(workspaceDir), { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  let skillPath: string;
+  try {
+    const task = db.prepare("SELECT definition_text FROM task ORDER BY started_at LIMIT 1").get() as { definition_text: string };
+    skillPath = validateDefinition(JSON.parse(task.definition_text)).skillPath;
+  } finally {
+    db.close();
+  }
+  const { stage, inFlow, flow, activity, assetNames } = where;
+  return activitySegmentText({ stage, inFlow, flow, activity: activity ?? null, ...(assetNames ? { assetNames } : {}), workspaceDir,
+    skills: [{ name: "", filePath: resolve(workspaceDir, skillPath) }], tail: "", promptDir }, timing);
 }
 
 /** 活动记录里的一个标识符算作哪个阶段（见 whereInWorkspace）。 */

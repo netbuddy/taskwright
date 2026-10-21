@@ -29,6 +29,8 @@ import { envKnowledgeRoot } from "../lib/knowledge.ts";
 import { userMessagesOnBranch } from "./save_revision.ts";
 import { activityDoneGate, activityDoneOf } from "../lib/stage_read.ts";
 import { fillText } from "../lib/texts.ts";
+import { withSegment } from "../lib/activity_segments.ts";
+import { activitySegmentAt, debugPromptDir } from "../lib/context_assemble.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = REPLY_TOOL_NAME;
@@ -171,7 +173,9 @@ export function registerReply(pi: ExtensionAPI): void {
       // 助手汇报这条会话的工作项（单项活动）做完了：只是回复下面的一句话，工作项照旧留着，不改任何记录。
       const done = decision.reply.activity_done ? activityDoneOf(ctx.cwd, sessionId) : null;
       // degraded 为真：连续被拒到上限之后放行的纯文字回复，正文在 reply.text。
-      return spoken(recorded?.text ? fillText("result.reply.delivered_with", { recorded: recorded.text }) : fillText("result.reply.delivered"), {
+      // 这条会话第一次回复做成：附上活动补充里回复之后要用的那一段（lib/activity_segments.ts）。
+      const said = recorded?.text ? fillText("result.reply.delivered_with", { recorded: recorded.text }) : fillText("result.reply.delivered");
+      return spoken(withSegment(said, "after_reply", branch as never, () => activitySegmentAt(ctx.cwd, sessionId, "after_reply", debugPromptDir().dir)), {
         delivered: true,
         reply: decision.reply,
         degraded: decision.degraded,

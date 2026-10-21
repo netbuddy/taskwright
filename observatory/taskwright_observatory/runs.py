@@ -101,6 +101,16 @@ def _shorten_paths(value):
 
 #: 「展开看带过去的这几条消息」里最多列几条。再往前的不列，免得把整条会话抄一遍。
 RECENT_MESSAGES = 5
+# 工具做成时平台附在结果正文后面的活动补充里的一段，前面是这一行分段记号（agent/src/lib/activity_segments.ts 的 segmentMark）。
+SEGMENT_MARK = re.compile(r"\n*<!-- activity-segment: ([a-z_]+) -->\n")
+
+
+def split_segment(text: str) -> tuple[str, dict | None]:
+    """把工具结果的文字拆成工具本身的结果与平台附上的那一段（{"时机", "文字"}）；没有附的时候第二项是 None。"""
+    hit = SEGMENT_MARK.search(text)
+    if not hit:
+        return text, None
+    return text[:hit.start()], {"时机": hit.group(1), "文字": text[hit.end():]}
 
 #: pi 的三种消息角色在界面上怎么称呼。这三个词与概念对照页上的一致。
 ROLE_NAMES = {"user": "用户消息", "assistant": "助手消息", "toolResult": "工具结果消息"}
@@ -614,10 +624,12 @@ def build_runs(launches: list[dict]) -> list[dict]:
                     turn_requests.append(request)
                     pending_request = None
                 elif role == "toolResult":
+                    own, segment = split_segment(text_of_content(message.get("content")))
                     turn_results.append({
                         "调用编号": str(message.get("toolCallId") or ""),
                         "工具": str(message.get("toolName") or ""),
-                        "文字": text_of_content(message.get("content")),
+                        "文字": own,
+                        **({"附上的活动规则段": segment} if segment else {}),
                         "是不是出错": bool(message.get("isError")),
                         "收到时刻": _received(event),
                         "归档行号": event.get(LINE_KEY),

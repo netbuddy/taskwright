@@ -306,7 +306,9 @@ test("文件改了、模块目录里多了一份文件、任务目录里多了�
   assert.equal(cache.get(input).how, "recomposed");
   // 任务目录里这项活动的补充多了一句。
   const activity = join(skillDir, "activities", "reading.md");
-  writeFileSync(activity, `${readFileSync(activity, "utf-8")}\n补充的一句。\n`, "utf-8");
+  // 分了段的活动文件：加在常驻段末尾（第一个分段标记之前）。
+  const before = readFileSync(activity, "utf-8"), cut = before.indexOf("\n<!-- segment:");
+  writeFileSync(activity, cut < 0 ? `${before}\n补充的一句。\n` : `${before.slice(0, cut)}\n补充的一句。\n${before.slice(cut)}`, "utf-8");
   const more = cache.get(input);
   assert.equal(more.how, "recomposed");
   assert.ok(more.prompt.parts.find((one) => one.part === "task_activity")!.text.endsWith("补充的一句。"));
