@@ -34,6 +34,12 @@ function cellsOf(row: string): string[] {
   return row.replace(/^\|/, "").replace(/\|$/, "").split("|").map((one) => one.trim());
 }
 
+/** 正文里第一张表的表头各格；正文里没有表时返回 null。 */
+export function firstTableHeader(text: string): string[] | null {
+  const row = text.split(/\n+/).map((one) => one.trim()).find(isTableRow);
+  return row === undefined ? null : cellsOf(row);
+}
+
 /**
  * 正文按空行与换行分段，每段按句末标点切成句；切出来不到两个字的不算一句。
  * 表行整行算一句，格里有句号也不切；一张表的第一行是表头，与分隔行一样不算句。

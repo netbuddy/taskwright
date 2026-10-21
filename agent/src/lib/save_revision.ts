@@ -87,8 +87,8 @@ import { OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED, gateFact, hasOve
 import { overallState } from "./overall_read.ts";
 import { type Position, itemRefusal, pageRefusal, positionName } from "./stage.ts";
 import { allowedAt, stageOf } from "./stage_read.ts";
-import { type OutlineTitles, examplesRequiredFor, outlineTitlesFor } from "./outline_read.ts";
-import { INSTANCE_HEAD, hasInstance, ungroundedSentences } from "./cited_sentences.ts";
+import { type OutlineTitles, examplesRequiredFor, outlineTitlesFor, tableHeaderFor } from "./outline_read.ts";
+import { INSTANCE_HEAD, firstTableHeader, hasInstance, ungroundedSentences } from "./cited_sentences.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 import { codeOf, fillText, refusalText, textPrefix } from "./texts.ts";
 import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
@@ -269,6 +269,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *     要求举例的维度的页（outline_read.ts 的 examplesRequiredFor）改查正文 OVERALL_FIELDS.what 里至少一句以 INSTANCE_HEAD 起头。
  * 三、核读材料时写进 OVERALL_FIELDS.what 的正文逐句要有着落（lib/cited_sentences.ts）：只在任务类型有分析提纲（outline 不为 null）时查，
  *     只查这次传入了这个字段的页；分析提纲里的维度页与元数据登记的几页固定页的正文是综合，不查；停用的页不查。
+ *     分析提纲给某个提纲条目写了表头（outline_parse.ts 的 tableHeaderFor）时，这个条目的页正文第一张表的表头要正好是那几列。
  * 任务定义里没有这几个字段（早先的任务）时，相应的那条不查。可以时返回 null。
  */
 function pageGuard(stage: Position, collection: CollectionDef, given: Fields, before: Fields | null, outline: OutlineTitles | null = null) {
@@ -307,6 +308,13 @@ function pageGuard(stage: Position, collection: CollectionDef, given: Fields, be
       return refusalText("save_revision.page_sentence_ungrounded", {
         stage: words.stage, what, count: loose.length, sentences: loose.slice(0, 3).map((one) => `「${[...one].length > 40 ? `${[...one].slice(0, 40).join("")}…` : one}」`).join("、"),
       });
+    }
+    // 提纲里给这个条目写了表头（table）：这一页正文的第一张表要正好是这几列，次序也一样。
+    const header = typeof named === "string" ? tableHeaderFor(outline, named) : null;
+    const got = header === null ? null : firstTableHeader(given[what] as string);
+    if (header !== null && (got === null || got.join("|") !== header.join("|"))) {
+      const row = `| ${header.join(" | ")} |`;
+      return refusalText("save_revision.page_table_header", { stage: words.stage, what, row, got: got === null ? fillText("part.no_table") : `| ${got.join(" | ")} |` });
     }
   }
   return null;

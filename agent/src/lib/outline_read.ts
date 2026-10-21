@@ -8,7 +8,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { definitionsDir } from "./activity_def_read.ts";
 import { type OutlineTitles, outlineTitles } from "./outline_parse.ts";
 
-export { type OutlineTitles, SYNTHESIS_PAGE_KEYS, examplesRequiredFor, outlineTitles } from "./outline_parse.ts";
+export { type OutlineTitles, SYNTHESIS_PAGE_KEYS, examplesRequiredFor, outlineTitles, tableHeaderFor } from "./outline_parse.ts";
 
 /** 分析提纲的文件名，放在 skill 目录里。 */
 export const OUTLINE_FILE = "outline.md";

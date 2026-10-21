@@ -138,6 +138,25 @@ test("核读材料：正文里的表一行算一句，最后一格是出处；�
   }
 });
 
+test("核读材料：分析提纲给提纲条目写了表头时，这个条目的页（含「条目名 · 子系统名」）第一张表的表头要正好是那几列；没有表、列不同、次序不同都拦；别的页与没有提纲的任务不查", () => {
+  const dir = workspace("reading");
+  const skill = (overallDefinition() as any).执行方法 as string;
+  copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+  const body = (head: string) => [head, "|---|---|---|---|---|", "| 1 | 员工 | 门户 | 报销单 | 报销制度 p3 |", "", "报销从员工提交开始（报销制度 p3）。", "例如员工提交一张差旅报销单（报销制度 p3）。"].join("\n");
+  const right = "| 第几步 | 谁做 | 用什么系统 | 产出什么 | 出处 |";
+  assert.equal(refusal(dir, [add(full("主流程步骤 · 服务台", { 它是什么: body(right) }))]), null);
+  const wrong = refusal(dir, [add(full("主流程步骤 · 服务台", { 它是什么: body("| 步骤 | 责任人 | 系统 | 产出 | 出处 |") }))])!;
+  assert.ok(wrong.includes(`表头正好是 ${right}，列数与次序都不变；这一页现在是 | 步骤 | 责任人 | 系统 | 产出 | 出处 |`), wrong);
+  assert.ok(wrong.includes("怎么办：把第一张表的表头改成上面那一行"), wrong);
+  assert.ok(refusal(dir, [add(full("主流程步骤", { 它是什么: body("| 谁做 | 第几步 | 用什么系统 | 产出什么 | 出处 |") }))])!.includes("这一页现在是 | 谁做 | 第几步"));
+  assert.ok(refusal(dir, [add(full("主流程步骤", { 它是什么: "报销从员工提交开始（报销制度 p3）。例如员工提交一张差旅报销单（报销制度 p3）。" }))])!.includes("这一页现在是 没有表"));
+  // 别的提纲条目的页不查表头。
+  assert.equal(refusal(dir, [add(full("触发与交付", { 它是什么: body("| 甲 | 乙 |") }))]), null);
+  // 没有分析提纲的任务不查。
+  const plain = workspace("reading");
+  assert.equal(refusal(plain, [add(full("主流程步骤", { 它是什么: "报销分两步。" }))]), null);
+});
+
 test("核读材料：有分析提纲的任务不要求「例子」一栏；要求举例的维度的页正文至少一句以「例如」起头，可选维度不要求；标签照旧要求；没有分析提纲的任务照旧要求例子", () => {
   const dir = workspace("reading");
   const skill = (overallDefinition() as any).执行方法 as string;
