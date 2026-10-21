@@ -75,10 +75,10 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     assert.deepEqual([fresh.activity.kind, fresh.activity.key, fresh.activity.name, fresh.activity.ordinal, fresh.missing, fresh.work_items, "recent_done" in fresh],
       ["idle", "idle", "空闲", null, [], [], false]);
     assert.deepEqual(fresh.catalog.flows.map((one: Dict) => [one.key, one.enabled, one.state, one.start, one.active_count]),
-      [["analysis", true, "可以启动", "reading", 0], ["change", false, "还没有已发布的版本", null, 0]]);
+      [["analysis", true, "可以启动", "reading", 0], ["change", false, "还没有已发布的版本", null, 0], ["rewrite", false, "此版本尚未提供", null, 0]]);
     assert.deepEqual(fresh.catalog.activities.map((one: Dict) => [one.name, one.enabled, one.state]), [
       ["核读材料", true, "可以启动"], ["澄清", true, "可以启动"], ["整理建模", false, "业务说明还没有内容"], ["写条目", false, "业务说明还没有内容"],
-      ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"], ["发布", false, "还没有评审过"]]);
+      ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"], ["发布", false, "还没有评审过"], ["逆向解析", true, "可以启动"]]);
     assert.deepEqual(db("SELECT COUNT(*) AS n FROM activity_record"), [{ n: 0 }]);
 
     // 在自由讨论的会话里说话：助手这次运行拿到的是空闲的系统提示；写用例被拦，原话说本会话不属于任何工作项。

@@ -2,7 +2,7 @@
  * 静态扫描：后端不写库。
  *
  * 1. backend/ 下的任何文件（源码、测试）从 agent/src/lib 导入的名字都必须在下面的白名单里：只读函数、常量，
- *    以及唯一允许的写入——建任务的 createTask。保存修订、界面操作、评审等写入函数一律不许导入；也不许整个模块导入或动态导入。
+ *    以及允许的写入——建任务的 createTask，与上传、替换、删除材料时记材料表的 insertMaterial、retireMaterial。保存修订、界面操作、评审等写入函数一律不许导入；也不许整个模块导入或动态导入。
  * 2. backend/src 下的源码里不出现写库的 SQL（INSERT、UPDATE、DELETE、REPLACE、CREATE、DROP、ALTER）。
  *    唯一的例外是服务级库的数据模块 src/service_db.ts：服务级库（数据目录下的 service.sqlite）是后端自己的库，它的每一句 SQL
  *    都只许写在那一个文件里。
@@ -96,6 +96,9 @@ const ALLOWED: Record<string, string[]> = {
   "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "MIN_TASK_DB_VERSION", "olderDataText", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase", "UPGRADED_VERSION_NOTE"],
   // 版本记录只读：读出各版与它们的类型；记一次发布的 recordVersion 是写入函数，不在这里。
   "versions.ts": ["VersionRecord", "versionRecords", "versionDir", "ARCHIVED_MARKDOWN", "ARCHIVED_DOCX"],
+  // 材料表：查每份材料的槽位与角色（查不到时按不经槽位的「证据」算）、在流程声明里找收材料的槽位（只读）。
+  // insertMaterial 与 retireMaterial 是写入，与 createTask 同类的例外：上传、替换、删除材料是用户直接对任务目录的操作，不经 pi。
+  "material_db.ts": ["DEFAULT_MATERIAL_ROLE", "MaterialRole", "materialRoles", "materialSlot", "roleOf", "insertMaterial", "retireMaterial"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。改任务类型时用 loadDefinition 核对改后的任务定义读得通（只读文件，不碰库）。
   "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition", "withPlatformCollections"],
   "asset_names.ts": ["assetNamesOf"],
@@ -155,7 +158,7 @@ test("扫描规则本身：认得出具名导入、类型导入、改名导入�
  */
 const SAMPLE_BUILDER = join("tests", "fixtures", "task_dirs", "build.mjs");
 
-test("backend/ 下的文件不导入 agent 的写入函数（建任务的 createTask 除外）", () => {
+test("backend/ 下的文件不导入 agent 的写入函数（建任务的 createTask 与记材料表的两个除外）", () => {
   const bad: string[] = [];
   for (const file of files(BACKEND)) {
     if (relative(BACKEND, file) === SAMPLE_BUILDER) continue;

@@ -7,7 +7,7 @@
  */
 
 import {
-  ACTIVITY_NAMES, ASSETS, type ActivityDef, type ActivityKey, type AssetKey, type Condition, type FlowDef, type FlowKey, MODE_NAMES, type Mode,
+  ACTIVITY_NAMES, ASSETS, type ActivityDef, type ActivityKey, type AssetKey, type Condition, type FlowDef, type FlowKey, type FlowSlot, MODE_NAMES, type Mode,
   PUBLISH, prerequisiteText, readName,
 } from "./activity_def.ts";
 import { CHAPTERS, chapterLayout } from "./overall_chapters.ts";
@@ -181,6 +181,8 @@ export interface CatalogFlow {
   /** 各站，按先后。 */
   nodes: Named[];
   inputs: string;
+  /** 输入页的槽位，照工作流的声明原样给；没有声明槽位的是空的。页面现在还不读它。 */
+  slots: FlowSlot[];
   prerequisite_text: string;
   example: string;
   /** 现在能不能启动：看数据前提，另外任务里已有流程的工作项（不论哪条流程）时不能启动。 */
@@ -234,7 +236,7 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
     const ready = analysis && blocked === null;
     return {
       key: one.key, name: one.name, purpose: one.purpose, applies: one.applies,
-      nodes: one.steps.map((key) => ({ key, name: defs.activities.find((activity) => activity.key === key)?.name ?? key })), inputs: one.inputs,
+      nodes: one.steps.map((key) => ({ key, name: defs.activities.find((activity) => activity.key === key)?.name ?? key })), inputs: one.inputs, slots: one.slots,
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
       // 只有需求分析现在能启动；需求变更要有已发布的版本，而且它的各站还没有定义。已有流程工作项时都不能启动。
       enabled: ready && flowItem === null,

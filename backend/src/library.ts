@@ -24,6 +24,7 @@ import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQues
 import { FLOW_ANALYSIS as FLOW_ANALYSIS_KEY, flowKeyOf, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
 import { type VersionRecord, versionRecords } from "../../agent/src/lib/versions.ts";
+import { type MaterialRole, materialRoles, roleOf } from "../../agent/src/lib/material_db.ts";
 import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
@@ -373,6 +374,21 @@ export interface WorkItemRow extends WorkItemBrief {
   session_ids: string[];
   /** 现在给这个工作项新建一条会话时，那条会话起的名字。 */
   session_name: string;
+}
+
+/** 还在的材料各自的槽位与角色（agent/src/lib/material_db.ts）；没有库、读不出库时是空的，这时每份材料都按不经槽位的「证据」算。 */
+export function materialRoleRows(taskDir: string): Map<string, MaterialRole> {
+  try {
+    const db = openRo(taskDir);
+    if (db === null) return new Map();
+    try {
+      return materialRoles(db);
+    } finally {
+      db.close();
+    }
+  } catch {
+    return new Map();
+  }
 }
 
 /** 一个任务的全部版本记录（agent/src/lib/versions.ts），按版本号从小到大；读不出库时是空的。 */
@@ -1417,6 +1433,7 @@ export function derivedSourceName(name: string, present: ReadonlySet<string>): s
  * 0.2 的任务里是 x.docx.txt）、分段清单（x.docx.segments.json）与位置表（x.docx.locations.json）旁边有那份 .docx 时，derived_from 写那份 .docx 的路径，
  * 界面据此不单独列出；其余为 null。由 PDF 材料生成的投影、分段清单与位置表（x.pdf.md、x.pdf.segments.json、x.pdf.locations.json）同样处理。
  * PDF 材料另带 pdf 一项：总页数、块的总数、没有文字的页码（读自它的位置表；位置表不在时没有这一项）。
+ * 每份另带 slot 与 role：读自任务库的材料表（格式 11 起），没有记录的是槽位空、角色「证据」；派生文件取它所由生成的那份材料的。
  */
 export function materials(taskDir: string, definition: ParsedDefinition | Record<string, any> | null) {
   const rel = or((definition || {})["材料目录"], DEFAULT_MATERIALS_DIR) as string;
@@ -1442,10 +1459,14 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
     const source = derivedSourceName(name, present);
     return source === null ? null : `${rel}${source}`;
   };
+  const roles = files.length > 0 ? materialRoleRows(taskDir) : new Map<string, MaterialRole>();
   return files.map(([name, st]: [string, any]) => {
     const facts = name.toLowerCase().endsWith(".pdf") ? pdfFacts(join(folder, name)) : null;
+    const derivedFrom = sourceOf(name);
+    const { slot, role } = roleOf(roles, derivedFrom ?? `${rel}${name}`);
     return {
-      path: `${rel}${name}`, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), derived_from: sourceOf(name),
+      path: `${rel}${name}`, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), derived_from: derivedFrom,
+      slot, role,
       ...(facts ? { pdf: facts } : {}),
     };
   });

@@ -418,6 +418,10 @@ export interface Material {
   derived_from?: string | null;
   /** PDF 材料才有：页数、读出了多少块文字、没有读出文字的是哪几页（页码，多半是扫描件；都读出了时是空的）。 */
   pdf?: { pages: number; units: number; no_text_pages: number[] } | null;
+  /** 放进哪个槽位（流程声明里的槽位键）；不经槽位上传的、升级前就有的为 null。早先的后端不给。 */
+  slot?: string | null;
+  /** 角色：槽位的 role；不经槽位上传的、升级前就有的是「证据」。派生文件取它所由生成的那份材料的。早先的后端不给。 */
+  role?: string;
   /** 现在能不能删除（只有任务详情里给）：任务进行中、不是派生文件、还没有进入对话（上传之后没有任何会话有过活动）。能不能替换也看它。 */
   deletable?: boolean;
 }
@@ -1537,6 +1541,16 @@ export interface CatalogActivity {
   active_count?: number;
 }
 
+/** 流程声明里的一个槽位：输入页上一个有名字、有角色的上传位或填写位。 */
+export interface FlowSlot {
+  key: string;
+  name: string;
+  accepts: "materials" | "text";
+  required: boolean;
+  /** 放进这个槽位的材料的角色；收文字的槽位为 null。 */
+  role: string | null;
+}
+
 /** 活动目录里的一条工作流程。 */
 export interface CatalogFlow {
   key: string;
@@ -1545,6 +1559,8 @@ export interface CatalogFlow {
   applies: string;
   nodes: NamedKey[];
   inputs: string;
+  /** 输入页的槽位，照流程声明原样给；没有声明槽位的流程是空的。早先的后端不给。 */
+  slots?: FlowSlot[];
   prerequisite_text: string;
   example: string;
   enabled: boolean;

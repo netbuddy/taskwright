@@ -10,6 +10,8 @@
  * （发布）没有模板也没有阶段，两栏都写空。
  * 流程的声明：flow 之外是 name、purpose、applies、steps（各步的活动标识符，按先后，用逗号隔开）、inputs、requires、example，
  * 另可以写 note.<活动标识符>：这一步的一句提示。同一项活动在一条流程里只能出现一次。
+ * 另可以写 slot.<槽位键>：输入页上一个有名字、带 role 的上传位或填写位，一行一个，值写成
+ * 「name=<名称>; accepts=materials|text; required=true|false; role=<名称>」，四项顺序固定；只有 accepts=text 的槽位 role 空着或省略。
  *
  * 需求资产分六类（ASSETS）。活动声明写它读哪几类、写哪几类：能不能启动只看要读的几类里有没有东西，
  * 与之前做没做过哪一项活动无关。「读」一栏另认两个写法：knowledge（知识库）与 all（全部资产）。
@@ -143,6 +145,20 @@ export interface ActivityDef {
   segments: SegmentTiming[];
 }
 
+/** 槽位收什么：材料文件，或者一段文字。 */
+export const SLOT_ACCEPTS = ["materials", "text"] as const;
+export type SlotAccepts = (typeof SLOT_ACCEPTS)[number];
+
+/** 工作流的声明里的一个槽位（slot.<键> 一行）。 */
+export interface FlowSlot {
+  key: string;
+  name: string;
+  accepts: SlotAccepts;
+  required: boolean;
+  /** 放进这个槽位的材料的 role；收文字的槽位是 null。 */
+  role: string | null;
+}
+
 /** 一条流程的声明。 */
 export interface FlowDef {
   key: FlowKey;
@@ -156,6 +172,8 @@ export interface FlowDef {
   notes: Record<string, string>;
   /** 需要什么输入，一句。 */
   inputs: string;
+  /** 输入页的槽位，按头里出现的先后；没有写的是空的。 */
+  slots: FlowSlot[];
   requires: Condition[];
   /** 一段经过示例。 */
   example: string;
@@ -253,6 +271,30 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
   };
 }
 
+/** 读一行槽位：「name=…; accepts=…; required=…; role=…」，四项顺序固定，收文字的槽位 role 可以省略。 */
+function parseSlot(key: string, value: string, file: string): FlowSlot {
+  const field = `slot.${key}`;
+  const bad = (why: string) => new DefinitionHeadError(`${file} 的声明里「${field}」${why}`);
+  if (!IDENTIFIER_PATTERN.test(key)) throw bad(`的键「${key}」不能当槽位的键：只能是小写字母开头的小写字母、数字、短横线与下划线。`);
+  const parts = value.split(/[;；]/).map((one) => one.trim());
+  if (parts.at(-1) === "") parts.pop();
+  const names = ["name", "accepts", "required", "role"];
+  const got: Record<string, string> = {};
+  parts.forEach((part, i) => {
+    const at = part.indexOf("=");
+    const name = at > 0 ? part.slice(0, at).trim() : "";
+    if (name !== names[i]) throw bad(`第 ${i + 1} 项应当是「${names[i]}=…」，写的是「${part}」：四项依次是 name、accepts、required、role。`);
+    got[name] = part.slice(at + 1).trim();
+  });
+  if (!got.name) throw bad("缺名称（name）。");
+  if (!(SLOT_ACCEPTS as readonly string[]).includes(got.accepts ?? "")) throw bad(`的 accepts 写的是「${got.accepts ?? ""}」，只能是 ${SLOT_ACCEPTS.join("、")} 之一。`);
+  if (got.required !== "true" && got.required !== "false") throw bad(`的 required 写的是「${got.required ?? ""}」，只能是 true 或 false。`);
+  const accepts = got.accepts as SlotAccepts, role = got.role ?? "";
+  if (accepts === "materials" && role === "") throw bad("收材料，要写 role。");
+  if (accepts === "text" && role !== "") throw bad(`收文字，role 要空着，写的是「${role}」。`);
+  return { key, name: got.name, accepts, required: got.required === "true", role: accepts === "materials" ? role : null };
+}
+
 /** 读一条流程的声明并校验。activities 是这个任务类型的全部活动的标识符：各步只能写它们里的，同一项不能写两次。 */
 export function parseFlowDef(text: string, key: string, file: string, activities: readonly string[]): FlowDef {
   const head = headOf(text, file);
@@ -268,8 +310,14 @@ export function parseFlowDef(text: string, key: string, file: string, activities
     if (!steps.includes(step)) throw new DefinitionHeadError(`${file} 的声明里「${field}」说的「${step}」不在「steps」里。`);
     if (value) notes[step] = value;
   }
+  // 拆头时同名的栏后一行盖掉前一行，所以槽位写没写两次要回到原文数。
+  const headText = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? "";
+  const slotLines = headText.split("\n").map((line) => /^slot\.([^:]*):/.exec(line)?.[1]?.trim()).filter((one) => one !== undefined);
+  const twiceSlot = slotLines.find((one, i) => slotLines.indexOf(one) !== i);
+  if (twiceSlot !== undefined) throw new DefinitionHeadError(`${file} 的声明里「slot.${twiceSlot}」写了两次：一个槽位只能写一行。`);
+  const slots = Object.entries(head).filter(([field]) => field.startsWith("slot.")).map(([field, value]) => parseSlot(field.slice("slot.".length), value, file));
   const known = new Set(["flow", "name", "purpose", "applies", "steps", "inputs", "requires", "example"]);
-  const extra = Object.keys(head).filter((field) => !known.has(field) && !field.startsWith("note."));
+  const extra = Object.keys(head).filter((field) => !known.has(field) && !field.startsWith("note.") && !field.startsWith("slot."));
   if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
   return {
     key,
@@ -279,6 +327,7 @@ export function parseFlowDef(text: string, key: string, file: string, activities
     steps,
     notes,
     inputs: need(head, "inputs", file),
+    slots,
     requires: listOf(head, "requires", CONDITIONS, file, false),
     example: need(head, "example", file),
   };

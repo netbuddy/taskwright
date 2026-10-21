@@ -674,9 +674,11 @@ const handlers: Record<string, Handler> = {
   },
   upload: async (service, req) => {
     const t = service.task(req.params.task);
-    const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
-    // PDF 材料要另起一次运行生成派生文件，等它做完才回答；别的类型当场就有结果。
-    return json(200, await service.upload(t, name, data, sessionParam(req)));
+    const form = parseMultipartForm(String(req.headers["content-type"] ?? ""), req.body);
+    if (!form.file) throw new ApiError("bad_request", "请求里没有文件。");
+    const [name, data] = form.file;
+    // 可选的文字字段 slot：放进哪个槽位（流程声明里收材料的槽位键）。PDF 材料要另起一次运行生成派生文件，等它做完才回答；别的类型当场就有结果。
+    return json(200, await service.upload(t, name, data, sessionParam(req), null, form.fields.slot ?? null));
   },
   delete_material: (service, req) => {
     const t = service.task(req.params.task);

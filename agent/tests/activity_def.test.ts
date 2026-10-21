@@ -81,6 +81,9 @@ test("需求工程的三条流程：各步与前置条件；需求分析与改�
   assert.equal(rewrite.name, "改写既有规格说明");
   assert.deepEqual(rewrite.steps, ["parse_spec", ...STAGES, "publish"]);
   assert.deepEqual(rewrite.requires, []);
+  assert.deepEqual(rewrite.slots.map((one) => [one.key, one.accepts, one.required, one.role]),
+    [["spec", "materials", true, "既有规格说明"], ["evidence", "materials", false, "证据"], ["goal", "text", false, null]]);
+  assert.deepEqual([analysis.slots, change.slots], [[], []]);
   for (const one of flows) for (const field of [one.purpose, one.applies, one.inputs, one.example]) assert.ok(field.length > 0, one.key);
 });
 
@@ -153,6 +156,26 @@ test("流程的声明缺栏、各步不认、同一项写两次、提示指到�
   assert.throws(() => parse(replaced("steps", "reading, clarifying, reading")), /写了两次「reading」/);
   assert.throws(() => parse(replaced("flow", "change")), /「flow」写的是「change」，应当与文件名相同/);
   assert.throws(() => parse([...head, "note.publish: 不在里面。"]), /「note.publish」说的「publish」不在「steps」里/);
+});
+
+test("流程的槽位：slot.<键> 一行一个，按头里的先后；没有槽位行的流程是空的；重键、accepts 不认、收材料缺角色、required 不认、收文字带角色都报错", () => {
+  const head = ["flow: analysis", "name: 需求分析", "purpose: 目的。", "applies: 适用。", "steps: reading, clarifying", "inputs: 输入。",
+    "slot.spec: name=既有规格说明; accepts=materials; required=true; role=既有规格说明", "slot.goal: name=目标系统描述; accepts=text; required=false; role=",
+    "slot.note: name=备注; accepts=text; required=false", "requires:", "example: 示例。"];
+  const parse = (lines: string[]) => parseFlowDef(withHead(lines), "analysis", "flows/analysis.md", ["reading", "clarifying", "publish"]);
+  assert.deepEqual(parse(head).slots, [
+    { key: "spec", name: "既有规格说明", accepts: "materials", required: true, role: "既有规格说明" },
+    { key: "goal", name: "目标系统描述", accepts: "text", required: false, role: null },
+    { key: "note", name: "备注", accepts: "text", required: false, role: null }]);
+  assert.deepEqual(parse(head.filter((line) => !line.startsWith("slot."))).slots, []);
+  const spec = (value: string) => head.map((line) => (line.startsWith("slot.spec:") ? `slot.spec: ${value}` : line));
+  const wrong = (lines: string[], pattern: RegExp) => assert.throws(() => parse(lines), (error: Error) => error instanceof DefinitionHeadError && pattern.test(error.message), String(pattern));
+  wrong([...head.slice(0, 7), "slot.spec: name=又一个; accepts=materials; required=false; role=证据", ...head.slice(7)], /「slot\.spec」写了两次/);
+  wrong(spec("name=既有规格说明; accepts=files; required=true; role=既有规格说明"), /「slot\.spec」的 accepts 写的是「files」/);
+  wrong(spec("name=既有规格说明; accepts=materials; required=true; role="), /「slot\.spec」收材料，要写 role/);
+  wrong(spec("name=既有规格说明; accepts=materials; required=yes; role=既有规格说明"), /「slot\.spec」的 required 写的是「yes」/);
+  wrong(head.map((line) => (line.startsWith("slot.goal:") ? "slot.goal: name=目标系统描述; accepts=text; required=false; role=证据" : line)), /「slot\.goal」收文字，role 要空着/);
+  wrong(spec("accepts=materials; name=既有规格说明; required=true; role=既有规格说明"), /「slot\.spec」第 1 项应当是「name=…」/);
 });
 
 /** 产品自带的需求工程 skill 目录的一份拷贝，在一个临时的任务目录里。 */

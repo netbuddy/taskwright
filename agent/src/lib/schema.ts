@@ -28,7 +28,7 @@ import { reviewSpecOf, rulesHash } from "./review_state.ts";
  */
 export const BUSY_TIMEOUT_MS = 5000;
 
-/** 十九张表的名字，按建表的先后排。 */
+/** 二十张表的名字，按建表的先后排。 */
 export const TABLE_NAMES = [
   "task",
   "revision",
@@ -49,6 +49,7 @@ export const TABLE_NAMES = [
   "activity_record",
   "work_item_session",
   "version_record",
+  "material",
 ] as const;
 
 
@@ -317,6 +318,22 @@ CREATE TABLE IF NOT EXISTS version_record (
 );
 `;
 
+/**
+ * 材料记录：上传一份材料一行，记它放进了哪个槽位（工作流的声明里的 slot.<键>）、role 是什么。材料本身是任务目录 inputs/ 下的文件，
+ * 清单仍扫目录得出（task_status.ts 的 listMaterials）；这张表只补文件上看不出的槽位与 role。删除或被替换时不删行，写上那一刻；
+ * 同一路径删了再传是新的一行。格式 11 加的表；升级时不回填，升级前已有的材料没有行，读的时候当作 role「证据」、槽位空。
+ */
+export const MATERIAL_SQL = `
+CREATE TABLE IF NOT EXISTS material (
+  material_id  INTEGER PRIMARY KEY,  -- 材料记录的编号；同一路径删了再传是新的一行
+  task_id      TEXT NOT NULL,        -- 所属任务的任务编号
+  path         TEXT NOT NULL,        -- 相对任务目录的路径，与 listMaterials 列出的相同
+  slot         TEXT,                 -- 放进哪个槽位（工作流的声明里的槽位键）；不经槽位上传的为空
+  role         TEXT NOT NULL,        -- 槽位的 role；不经槽位上传的是「证据」
+  added_at     TEXT NOT NULL,        -- 上传的时刻（本地时间）
+  removed_at   TEXT                  -- 删除或被替换的时刻（本地时间）；还在的为空
+);
+`;
 
 /** 格式 7 升到 8 时给早先「已完成」的任务补的第 1 版用的发布说明（那一版没有存档）。格式 8 的库里可能还有这样的记录，后端据它说明为什么没有存档。 */
 export const UPGRADED_VERSION_NOTE = "升级前完成，当时文档未存档";
@@ -461,6 +478,7 @@ ${DIAGRAM_SQL}
 ${ACTIVITY_RECORD_SQL}
 ${WORK_ITEM_SESSION_SQL}
 ${VERSION_RECORD_SQL}
+${MATERIAL_SQL}
 ${REVISION_CALL_INDEX_SQL}`;
 
 /** 任务目录里还没有库、又不允许新建时抛的错。调用方据此给出「还没有创建任务」的拒绝。 */
@@ -476,10 +494,11 @@ export function existingTables(db: DatabaseSync): string[] {
 /**
  * 任务库的格式版本，记在库文件自己的 PRAGMA user_version 里。每改一次任务库的结构，就在 UPGRADE_STEPS 里加一步，这个数加 1。
  * 本程序只认格式 8 起的库：8 是 0.6 开发期间定下的样子（工作项、工作项的会话、版本记录）；9 给工具拒绝表加了原因码两列
- * （reason_code、reason_codes）；10 给来源表加了助手补充补进正文的字串一列（inserted）。更早的格式（没有编过版本号的 0.4 的库，与 0.5 建的格式 1 到 7 的库）不再升级，打开时拒绝
+ * （reason_code、reason_codes）；10 给来源表加了助手补充补进正文的字串一列（inserted）；
+ * 11 加了材料表（material：每份材料放进哪个槽位、role 是什么）。更早的格式（没有编过版本号的 0.4 的库，与 0.5 建的格式 1 到 7 的库）不再升级，打开时拒绝
  * （OlderTaskDatabase），库原样不动。一张表都没有的空库（版本也是 0）照现在的建表语句建齐，直接记成现在的版本。
  */
-export const TASK_DB_VERSION = 10;
+export const TASK_DB_VERSION = 11;
 
 /** 本程序还能升级的最早格式：比它早的库打开时拒绝。 */
 export const MIN_TASK_DB_VERSION = 8;
@@ -529,6 +548,7 @@ export function taskWrittenBy(workspaceDir: string): string | null {
 const UPGRADE_STEPS: { from: number; to: number; run: (db: DatabaseSync, ctx: UpgradeContext) => void }[] = [
   { from: 8, to: 9, run: (db, ctx) => { addRejectionReasons(db); renameTaskType(db, ctx); renameOverallCollection(db, ctx); dropSideTab(db, ctx); } },
   { from: 9, to: 10, run: (db, ctx) => addInsertedColumn(db, ctx) },
+  { from: 10, to: 11, run: (db) => createMaterialTable(db) },
 ];
 
 /**
@@ -598,6 +618,11 @@ function addInsertedColumn(db: DatabaseSync, ctx: UpgradeContext): void {
     filled += 1;
   }
   if (filled) ctx.notes.push(`助手补充的来源里 ${filled} 处由理由里的直角引号抽出了补进正文的字串`);
+}
+
+/** 第 10 到 11 步：建材料表，不回填。建表语句带 IF NOT EXISTS，重复做不出错。 */
+function createMaterialTable(db: DatabaseSync): void {
+  db.exec(MATERIAL_SQL);
 }
 
 /** 任务类型改名（格式 9 起）：键与中文名。 */
