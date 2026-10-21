@@ -263,6 +263,17 @@ test("写了标题的请选择：问题句以「为了写清」开头才收；�
   checkReply({ informs: [], act: { kind: "choose", text: "是否进入下一步？", options: [{ key: "next_step", text: "进入下一步：澄清" }, { key: "stay", text: "其他时候再说" }] }, text: "是否进入下一步？" }, alone());
 });
 
+test("写了标题的请选择：「不是，请按另一种划分方式处理」一类换个说法的兜底项拒绝，具体说法照收", () => {
+  const ask = (text: string) => ({ informs: [], act: { kind: "choose", topic: "背景与目标 · 范围 · 缺口 1（轻重取舍）", text: "为了写清范围页的子系统一段：材料列了平台与三个应用。这一期必须做的是哪几个？",
+    options: [{ key: "a", text: "共用平台", reason: "立项申请书 p30。" }, { key: "b", text, reason: "同类系统通常如此。" }] }, text: "这一期必须做的是哪几个？" });
+  for (const text of ["不是，请按另一种划分方式处理。", "否，请重新划分", "按别的方式划分", "由你来说", "其它"]) {
+    rejected(ask(text), alone(), /第 2 项「[^」]*」是归并说法/);
+  }
+  for (const text of ["不是本期范围", "各部门自行采购模型额度", "重新设计报修表单", "另外收取运维费用", "改用另一种计费：按调用量结算", "由你方信息安全部审批"]) {
+    checkReply(ask(text), alone());
+  }
+});
+
 test("多选、标题只有请选择能写", () => {
   rejected({ informs: [], act: { kind: "ask", text: "现状问题是什么？", scope: "general", multiple: true }, text: "现状问题是什么？" }, alone(), /multiple/);
 });
