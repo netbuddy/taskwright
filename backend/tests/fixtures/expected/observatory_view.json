@@ -440,6 +440,11 @@
          "路径": ".pi/skills/requirements-engineering/activities/modeling.md"
         },
         {
+         "字节数": 592,
+         "摘要值": "34b5fb5f31e49355",
+         "路径": ".pi/skills/requirements-engineering/activities/parse_spec.md"
+        },
+        {
          "字节数": 328,
          "摘要值": "4fcfa2caa050518c",
          "路径": ".pi/skills/requirements-engineering/activities/publish.md"
@@ -468,6 +473,11 @@
          "字节数": 585,
          "摘要值": "3477f45d99639785",
          "路径": ".pi/skills/requirements-engineering/flows/change.md"
+        },
+        {
+         "字节数": 734,
+         "摘要值": "04591331f3c7a8cc",
+         "路径": ".pi/skills/requirements-engineering/flows/rewrite.md"
         },
         {
          "字节数": 1376,

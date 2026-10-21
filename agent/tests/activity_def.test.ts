@@ -22,10 +22,10 @@ const HEAD = ["name: 核读材料", "mode: batch", "purpose: 通读材料。", "
 const withHead = (lines: readonly string[], body = "# 正文\n") => `---\n${lines.join("\n")}\n---\n\n${body}`;
 const SKILL_PATH = ".pi/skills/requirements-engineering/SKILL.md";
 
-test("需求工程的七项活动：方式、读、写、前置条件、模板与阶段照表", () => {
+test("需求工程的八项活动：方式、读、写、前置条件、模板与阶段照表；逆向解析排在发布之后", () => {
   const { activities, fallback } = readDefinitions(SRS_SKILL_DIR);
   assert.equal(fallback, false);
-  assert.deepEqual(activities.map((one) => one.key), [...ACTIVITIES]);
+  assert.deepEqual(activities.map((one) => one.key), [...ACTIVITIES, "parse_spec"]);
   const table = Object.fromEntries(activities.map((one) => [one.key, [one.name, one.mode, one.reads.join(" "), one.writes.join(" "), one.requires.join(" "), one.template, one.stage]]));
   assert.deepEqual(table, {
     reading: ["核读材料", "batch", "materials knowledge", "description", "has_materials", "reading", "reading"],
@@ -35,6 +35,7 @@ test("需求工程的七项活动：方式、读、写、前置条件、模板�
     reviewing: ["评审确认", "dialogue", "items", "review items", "has_items", "reviewing", "reviewing"],
     document: ["编写文档", "batch", "all", "description versions", "has_confirmed_items", "document", "document"],
     publish: ["发布", "user_only", "all", "versions", "no_open_findings confirmations_clear", null, null],
+    parse_spec: ["逆向解析", "batch", "materials", "description", "has_materials", "reading", "reading"],
   });
   for (const one of activities) assert.ok(one.purpose.endsWith("。") && one.example.endsWith("。"), one.key);
 });
@@ -43,7 +44,7 @@ test("获准能力表由活动声明生成：六个阶段取各自代表活动�
   const { activities, allowed } = readDefinitions(SRS_SKILL_DIR);
   assert.deepEqual(Object.fromEntries(activities.map((one) => [one.key, one.writesAllowed.join(" ")])), {
     reading: "page problem", clarifying: "page problem", modeling: "page problem diagram", writing: "page problem diagram item review",
-    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "",
+    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "", parse_spec: "page problem",
   });
   assert.deepEqual(allowed, {
     reading: ["page", "problem"], clarifying: ["page", "problem"], modeling: ["page", "problem", "diagram"],
@@ -66,10 +67,10 @@ test("活动声明的 writes_allowed 超出它所用模板头里的那一栏时�
   }
 });
 
-test("需求工程的两条流程：各步与前置条件；需求分析没有前置条件，需求变更要有已发布的版本", () => {
+test("需求工程的三条流程：各步与前置条件；需求分析与改写既有规格说明没有前置条件，需求变更要有已发布的版本", () => {
   const { flows } = readDefinitions(SRS_SKILL_DIR);
-  assert.deepEqual(flows.map((one) => one.key), ["analysis", "change"]);
-  const [analysis, change] = flows;
+  assert.deepEqual(flows.map((one) => one.key), ["analysis", "change", "rewrite"]);
+  const [analysis, change, rewrite] = flows;
   assert.deepEqual([analysis.key, analysis.name], ["analysis", "需求分析"]);
   assert.deepEqual(analysis.steps, [...STAGES, "publish"]);
   assert.deepEqual(analysis.requires, []);
@@ -77,7 +78,18 @@ test("需求工程的两条流程：各步与前置条件；需求分析没有�
   assert.equal(change.name, "需求变更");
   assert.deepEqual(change.steps, ["reading", "modeling", "writing", "reviewing", "document", "publish"]);
   assert.deepEqual(change.requires, ["has_version"]);
+  assert.equal(rewrite.name, "改写既有规格说明");
+  assert.deepEqual(rewrite.steps, ["parse_spec", ...STAGES, "publish"]);
+  assert.deepEqual(rewrite.requires, []);
   for (const one of flows) for (const field of [one.purpose, one.applies, one.inputs, one.example]) assert.ok(field.length > 0, one.key);
+});
+
+test("逆向解析算作核读材料阶段、用核读模板，但核读材料阶段的代表仍是 reading：前六项仍是六个阶段的键", () => {
+  const { activities, allowed } = readDefinitions(SRS_SKILL_DIR);
+  const parse = activities.find((one) => one.key === "parse_spec")!;
+  assert.deepEqual([parse.name, parse.stage, parse.template, parse.requires], ["逆向解析", "reading", "reading", ["has_materials"]]);
+  assert.deepEqual(activities.slice(0, STAGES.length).map((one) => one.key), [...STAGES]);
+  assert.deepEqual(allowed.reading, ["page", "problem"]);
 });
 
 test("六类资产的键是平台定的、名字由任务定义给；前置条件各有给人看的名字；几个前置条件合成一句", () => {
@@ -162,7 +174,9 @@ test("从目录里读：六个阶段各至少要有一项活动（可以有几�
     const interview = join(skill, "activities", "interview.md");
     writeFileSync(interview, readFileSync(join(skill, "activities", "reading.md"), "utf-8").replace("name: 核读材料", "name: 访谈"));
     const both = readDefinitions(skill).activities;
-    assert.deepEqual([both[0].key, both.at(-1)!.key, both.at(-1)!.stage], ["reading", "interview", "reading"]);
+    const added = both.findIndex((one) => one.key === "interview");
+    assert.deepEqual([both[0].key, both[added].stage], ["reading", "reading"]);
+    assert.ok(added > both.findIndex((one) => one.key === "publish"), "排在发布之后");
     rmSync(interview);
     rmSync(modeling);
     assert.throws(() => readDefinitions(skill), /没有算作「modeling」这个阶段的活动/);

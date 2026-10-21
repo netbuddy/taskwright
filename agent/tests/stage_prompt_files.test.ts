@@ -289,8 +289,8 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   // 问题条目的写法与「用户决定保留」只认对话里的用户，挪进了平台说明的模块「问题条目」。
   for (const head of ["1. **含糊的地方不要自己定。**", "2. **「用户决定保留」只认对话里的用户。**"]) assert.ok(moduleText("problems").includes(head), head);
   assert.ok(!common.includes("含糊的地方不要自己定") && !common.includes("只认对话里的用户"));
-  // 七项活动各一份声明；六个阶段都有收尾一节，「这类任务在某阶段」的补充只有核读材料、写条目与编写文档三项。
-  assert.deepEqual(readdirSync(join(SRS_SKILL, "activities")).sort(), ["clarifying.md", "document.md", "modeling.md", "publish.md", "reading.md", "reviewing.md", "writing.md"]);
+  // 八项活动各一份声明（逆向解析算作核读材料阶段，不在六个阶段的补充里）；六个阶段都有收尾一节，「这类任务在某阶段」的补充只有核读材料、写条目与编写文档三项。
+  assert.deepEqual(readdirSync(join(SRS_SKILL, "activities")).sort(), ["clarifying.md", "document.md", "modeling.md", "parse_spec.md", "publish.md", "reading.md", "reviewing.md", "writing.md"]);
   const supplement = (name: string) => withoutSection(body(readFileSync(join(SRS_SKILL, "activities", `${name}.md`), "utf-8")), ENDING).replace(/^\n+/, "");
   assert.deepEqual(STAGES.filter((one) => supplement(one).trim() !== ""), ["reading", "writing", "document"]);
   const document = supplement("document");
