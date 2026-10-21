@@ -83,8 +83,13 @@ const operation = Type.Object(
   { additionalProperties: true },
 );
 
+/** 一次保存修订最多带几个操作（工具参数定义的 maxItems，pi 校验参数时就拦）。 */
+export const SAVE_REVISION_MAX_OPERATIONS = 2;
+
 const parameters = Type.Object({
+  // 一次最多两个操作：参数写得太长时模型容易把 JSON 结构写坏（括号提前收尾、冒号写成逗号），宁可多存几次。
   operations: Type.Array(operation, {
+    maxItems: SAVE_REVISION_MAX_OPERATIONS,
     description: fillText("save_revision.param.operations"),
   }),
 });

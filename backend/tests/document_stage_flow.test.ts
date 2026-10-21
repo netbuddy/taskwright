@@ -33,7 +33,7 @@ const BACK_REASON = "写用例时发现「自助借书」这一页与材料对�
 
 const CLARIFY_CARD = choose("材料读完了。现在进入澄清吗？", [["enter_clarify", "进入澄清"], ["continue_reading", "继续本阶段"]], [["OA-001", 1]]);
 const MODEL_CARD = choose("要问的都问到了。现在进入整理建模吗？", [["enter_consolidate", "进入整理建模"], ["continue_clarify", "继续本阶段"]]);
-// 修订的先后：1 主题页，2 问题与待定标记，3 把答案写进那一页，4 问题标为已解决，5 用例，6 三页导语。
+// 修订的先后：1 主题页，2 问题与待定标记，3 把答案写进那一页，4 问题标为已解决，5 用例，6 前两页导语，7 第三页导语（一次保存最多两个操作）。
 const START_BLOCKED = choose("主题页理好了。还有 1 个阻断下游的问题没有答：借书证丢失的读者能不能借书？答了之后再开始写条目。",
   [["start_items", "开始写条目"], ["continue_consolidate", "继续本阶段"]], [["OA-001", 2]]);
 const SOLVED_CARD = choose("TBD-001 这个问题是否已解决？", [["a", "已解决"], ["b", "还没解决，继续改"], ["c", "先不管，保留"]], [["TBD-001", 2]]);
@@ -42,7 +42,7 @@ const BACK_CARD = choose(`${BACK_REASON}退回整理建模吗？`, [["back_to_co
 const REVIEW_CARD = choose("用例写好了。现在进入评审确认吗？", [["enter_review", "进入评审确认"], ["continue_writing", "继续本阶段"]], [["UC-001", 5]]);
 const DOCUMENT_CARD = choose("条目你都看过了。进入编写文档，把各章的导语补上吗？", [["enter_document", "进入编写文档"], ["continue_review", "继续本阶段"]]);
 const READ_CARD = choose("补写了三章的导语，请过目。看过之后在条目区按「生成文档」。",
-  [["document_reviewed", "看过了，生成文档"], ["document_revise", "需要修改"]], [["OA-002", 6], ["OA-003", 6], ["OA-004", 6]]);
+  [["document_reviewed", "看过了，生成文档"], ["document_revise", "需要修改"]], [["OA-002", 6], ["OA-003", 6], ["OA-004", 7]]);
 
 const INTROS: [string, string][] = [
   ["业务流程", "这一章讲读者怎样在自助机上借书。"],
@@ -87,7 +87,8 @@ const SCRIPT = {
     // 评审确认：提议进入编写文档。
     reply("条目你都看过了。", "call-document", DOCUMENT_CARD),
     // 编写文档：给有内容的三章各补一页导语，请用户过目。
-    save("call-intros", INTROS.map(intro)),
+    save("call-intros", INTROS.slice(0, 2).map(intro)),
+    save("call-intros-2", INTROS.slice(2).map(intro)),
     reply("补写了业务流程、业务规则、决策记录与待澄清事项三章的导语。", "call-read", READ_CARD),
   ],
 };
@@ -186,7 +187,7 @@ test("核读到编写文档：问题就地记下并了结、回退由用户在�
     const quiet = requests().length;
     const noted = await action({ client_id: "read-1", kind: "continue_stage", targets: [], fields: { reply_message_id: readEntry, option_key: "document_reviewed" }, notify_executor: false });
     assert.equal(noted.status, 200, JSON.stringify(noted.body));
-    await view([["OA-002", 6], ["OA-003", 6], ["OA-004", 6]]);
+    await view([["OA-002", 6], ["OA-003", 6], ["OA-004", 7]]);
     await sleep(1500);
     assert.equal(requests().length, quiet, "点「看过了，生成文档」不引出助手运行");
     const after = await taskNow();

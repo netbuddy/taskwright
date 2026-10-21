@@ -281,7 +281,7 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   // 「材料里的内容都要整理进条目」这句只在写条目那一段里：核读材料与澄清阶段不该有写条目的要求。
   assert.doesNotMatch(common, /都要整理进条目/);
   assert.doesNotMatch(common, /分拣成/);
-  assert.doesNotMatch(common, /一批最多写 4 个条目/);
+  assert.doesNotMatch(common, /一批最多写 2 个条目/);
   for (const head of ["1. **材料没按块读完不要动笔。**", "2. **问用户与记下答复。**", "3. **用户的说法与材料原文对不上时**", "4. **业务说明的每一页怎样填。**"]) {
     assert.ok(common.includes(head), head);
   }
@@ -295,12 +295,12 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   const document = supplement("document");
   assert.ok(document.startsWith("## 这类任务在编写文档阶段\n"));
   for (const words of ["概述与范围那一章的导语写三段。背景：", "读者对象：", "范围边界：", "导语只概括各节与已经确认的条目里写下的内容，不写新的规定", "来源写「助手补充」",
-    "一次保存最多写 4 页", "「是否阻断下游」照实写，不要改条目"]) assert.ok(document.includes(words), words);
+    "一次保存最多写 2 页", "「是否阻断下游」照实写，不要改条目"]) assert.ok(document.includes(words), words);
   for (const chapter of CHAPTERS.slice(1)) assert.ok(document.includes(`${chapter.name}：`), chapter.name);
   const reading = supplement("reading");
   assert.ok(reading.startsWith("## 这类任务在核读材料阶段\n"));
   assert.ok(!reading.includes("12 页"));
-  for (const words of ["这几批里不要夹着用例、需求或约束", "一次保存最多写 4 页主题", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
+  for (const words of ["这个阶段用例、需求与约束存不进去", "一次保存只写一个操作", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
     "「风险、假设与运维」这一维度的七个问题逐项问", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "各接一句以「例如」起头的具体情形"]) assert.ok(reading.includes(words), words);
   // 核读按提纲与用户对话：规则按步骤分段，做到哪一步读哪一段；一个提纲条目五步，缺口记成挂在页上的问题条目，正文不写状态标记。
   for (const words of ["做到哪一步，就回头读那一段", "**开场与次序。**", "**第一步：盘点。**", "**第二步：草稿与缺口。**", "**第三步：提问。**", "**第四步：答后。**", "**第五步：收尾。**",
@@ -325,7 +325,7 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   const writing = supplement("writing");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
   for (const head of ["整理建模阶段画出的图与材料里的内容都要整理进条目", "1. **照图写条目。**", "2. **每条功能用例的来源写两张图。**", "3. **非功能需求不经图。**",
-    "4. **含糊的记成问题。**", "5. **一批最多写 4 个条目，问题条目放最后一批。**", "6. **一句话既是解释又是规则时。**", "7. **写完对用户说话。**"]) {
+    "4. **含糊的记成问题。**", "5. **一批最多写 2 个条目，问题条目放最后一批。**", "6. **一句话既是解释又是规则时。**", "7. **写完对用户说话。**"]) {
     assert.ok(writing.includes(head), head);
   }
   // 从图到条目的对应：五种图都说到了，功能用例的八个字段都有着落（字段名与任务定义里的相同）。

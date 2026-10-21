@@ -55,8 +55,9 @@ const card = (text: string, enter: [string, string], stay: [string, string]) =>
 const SCRIPT = {
   rules: [],
   sequence: [
-    // 第一句话（核读材料）：立四页主题，发「进入澄清」的卡片。
-    { tool_calls: [{ id: "call-pages", name: "save_revision", arguments: { operations: PAGES } }] },
+    // 第一句话（核读材料）：立四页主题（一次保存最多两个操作，分两次存，各成一次修订），发「进入澄清」的卡片。
+    { tool_calls: [{ id: "call-pages", name: "save_revision", arguments: { operations: PAGES.slice(0, 2) } }] },
+    { tool_calls: [{ id: "call-pages-2", name: "save_revision", arguments: { operations: PAGES.slice(2) } }] },
     reply("材料读完了，我立了四页主题。现在进入澄清吗？", "call-clarify", card("现在进入澄清吗？", ["enter_clarify", "进入澄清"], ["continue_reading", "继续本阶段"])),
     // 用户点了「进入澄清」：发「进入整理建模」的卡片。
     reply("要问的都问到了。现在进入整理建模吗？", "call-model", card("现在进入整理建模吗？", ["enter_consolidate", "进入整理建模"], ["continue_clarify", "继续本阶段"])),
@@ -161,5 +162,5 @@ test("整理建模画出五种图、七盏灯都通过；写条目依据两张�
     assert.equal((await lamps("writing")).basis_diagrams_viewed, false);
     assert.deepEqual(await basisOf(), { item_id: "D-004", reason: "unviewed", see: null });
     const detail = (await call("GET", `/api/v1/tasks/${taskId}/diagrams/D-004`)).body.diagram as Dict;
-    assert.deepEqual([detail.revision_no, detail.viewed, detail.depended_by], [2, false, [{ element_kind: "条目", id: "UC-001", revision_no: 2 }]]);
+    assert.deepEqual([detail.revision_no, detail.viewed, detail.depended_by], [2, false, [{ element_kind: "条目", id: "UC-001", revision_no: 3 }]]);
   }, { seed: false }));
