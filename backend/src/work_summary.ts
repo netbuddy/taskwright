@@ -142,6 +142,27 @@ export function readPastEnd(text: string): boolean {
   return READ_PAST_END.test(text.trim());
 }
 
+/**
+ * pi 在调用工具之前按参数定义核对参数，不合时不调工具、直接回这句话的开头（pi 的 agent-loop：「Validation failed for tool "名字":」后接逐条不合处）。
+ * 这不是任务服务的核对被拒：模型写的参数格式不对，任务库里没有记录，下一步多半自己改正。过程摘要写一句淡色的提示，不写「被拒」；
+ * 同一条会话里连续 ARGS_INVALID_REPEAT 次时换成醒目的说法。details.args_invalid 是到这一次为止连续的次数。
+ */
+const ARGS_INVALID = /^Validation failed for tool "/;
+export const ARGS_INVALID_REPEAT = 3;
+export const ARGS_INVALID_TEXT = "助手写的参数不合格式，已自行改正";
+export const ARGS_INVALID_REPEATED_TEXT = "模型多次写错参数格式，建议换模型或缩短材料";
+
+/** 一次出错的工具调用是不是 pi 的参数校验失败。text 是工具结果的正文。 */
+export function argsInvalid(text: string): boolean {
+  return ARGS_INVALID.test(text.trim());
+}
+
+/** 参数校验失败那一步在页面上的样子：淡色（args_invalid）或者连续多次之后醒目（args_invalid_repeated）；不是这一种时为 null。 */
+export function argsInvalidNote(details: Dict | null): "args_invalid" | "args_invalid_repeated" | null {
+  const streak = Number((details || {}).args_invalid) || 0;
+  return streak <= 0 ? null : streak >= ARGS_INVALID_REPEAT ? "args_invalid_repeated" : "args_invalid";
+}
+
 /** 读分段清单（或位置表）时接在名字后面的说法。 */
 const OUTLINE_WORD = "的分段清单";
 
@@ -302,6 +323,8 @@ export function unfinishedText(tool: string, args: Dict, callId: string | null, 
 export function stepText(tool: string, args: Dict, done: boolean, failed: boolean, details: Dict | null, definition: Dict): string {
   // 连续被拒到上限、由工具停下的那一次（回复、保存修订、完成任务都可能）：模型不会再试了，不写「正在改」。
   if (done && truthy((details || {}).stopped)) return LIMIT_STOPPED_STEP_TEXT;
+  const note = failed ? argsInvalidNote(details) : null;
+  if (note) return note === "args_invalid_repeated" ? ARGS_INVALID_REPEATED_TEXT : ARGS_INVALID_TEXT;
   if (tool === "read") {
     const { what, outline } = readWhat(String(or(args.path, "")), definition);
     // 起始行号超过了文件末尾（调用的一方认出来放进 details.past_end，见 readPastEnd）：这一份已经读完了。
@@ -389,6 +412,11 @@ export function stages(calls: Dict[], definition: Dict) {
     if (truthy(c.unfinished)) {
       key = null;
       text = String(c.text);
+    } else if (failed && argsInvalidNote(c.details ?? null)) {
+      // pi 的参数校验失败：单独一行，带上样子，不进保存图被拒之后又存上的合并。
+      out.push({ text: stepText(tool, args, true, true, c.details ?? null, definition), count: 1, names: [], _key: null, note: argsInvalidNote(c.details ?? null) });
+      lastKey = null;
+      continue;
     } else if (failed) {
       key = null;
       text = stepText(tool, args, true, true, c.details ?? null, definition);
@@ -455,7 +483,7 @@ export function stages(calls: Dict[], definition: Dict) {
     out.push({ text, count: 1, names: [], _key: key });
     lastKey = key;
   }
-  return out.map((s) => ({ text: s.text, count: s.count, ...(truthy(s.reasons) ? { reasons: s.reasons } : {}) }));
+  return out.map((s) => ({ text: s.text, count: s.count, ...(truthy(s.reasons) ? { reasons: s.reasons } : {}), ...(s.note ? { note: s.note } : {}) }));
 }
 
 let names: Record<string, string> | null = null;
@@ -526,6 +554,8 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
   }
   const works: Work[] = [];
   let current: Dict | null = null;
+  // 到目前为止连续几次 pi 的参数校验失败：跨工作计，别的工具结果一来就清零。
+  let invalidStreak = 0;
   const close = () => {
     // 看门狗中止的那一次（后面跟着中止的系统消息）记为失败，不算用户停下的。
     const ended = current?.watch_aborted ? "failed" : current?.last_stop === "aborted" ? "stopped_by_user" : current?.last_stop === "error" ? "failed" : null;
@@ -573,7 +603,9 @@ export function worksFromEntries(pathEntries: Dict[], definition: Dict, fallback
         failed = false;
         details = { ...details, past_end: true };
       }
-      if (failed && part.name === "save_revision") details = { ...details, reasons: rejectionParts(details, resultText(result)) };
+      invalidStreak = failed && argsInvalid(resultText(result)) ? invalidStreak + 1 : 0;
+      if (invalidStreak) details = { ...details, args_invalid: invalidStreak };
+      else if (failed && part.name === "save_revision") details = { ...details, reasons: rejectionParts(details, resultText(result)) };
       if (failed && part.name === REPLY_TOOL) details = { ...details, refusal: replyRefusal(resultText(result)) };
       if (failed && part.name === "save_diagram") details = { ...details, rejection: diagramRejection(resultText(result)) };
       current.calls.push({ tool: or(part.name, ""), args: or(part.arguments, {}), failed, details });

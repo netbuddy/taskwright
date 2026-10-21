@@ -12,7 +12,7 @@
 // 工作中按回车不会停止，只有点方块才停。停下之后会话里留一条界面操作通知（种类 stop_run），对话区画成「你停止了助手这一次的工作」。
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AssistantReply, ConversationMessage, CurrentWork, Inform, RunStatus, SavedFacts, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
+import type { AssistantReply, ConversationMessage, CurrentWork, Inform, RunStatus, SavedFacts, StepNote, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
@@ -256,7 +256,7 @@ export function Conversation({
           <div className="proc" data-testid="work-live">
             {currentWork.steps.length === 0 && <div className="pline doing"><span className="ptxt">助手开始做事了</span></div>}
             {currentWork.steps.map((s) => (
-              <div key={String(s.step_key)} className={`pline${s.in_progress ? " doing" : ""}`} style={s.failed ? { color: "var(--gap)" } : undefined}>
+              <div key={String(s.step_key)} className={`pline${s.in_progress ? " doing" : ""}${noteClass(s.note)}`} style={s.failed ? { color: "var(--gap)" } : undefined}>
                 <span className="ptxt">{s.text}</span>
               </div>
             ))}
@@ -473,12 +473,20 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   }
 }
 
+/**
+ * pi 的参数校验失败（模型写的参数不合格式，在 pi 里就被拦下，不是被拒）那一行的样子：淡色；连续多次时醒目。
+ * 不用被拒的颜色，免得用户以为产品坏了。
+ */
+function noteClass(note: StepNote | undefined): string {
+  return note === "args_invalid" ? " faint" : note === "args_invalid_repeated" ? " warn" : "";
+}
+
 /** 过程摘要：收成一行「助手做了 N 步，用了 X ▸ 展开看做了什么」，点开是合并后的阶段。 */
 /** 过程摘要里的一行。保存修订被拒且原因多于一条时，这一行可以点：点开在下方逐条列出全部原因，再点收起。 */
 function StageLine({ stage, index }: { stage: NonNullable<WorkSummary["stages"]>[number]; index: number }) {
   const [open, setOpen] = useState(false);
   const reasons = stage.reasons ?? [];
-  if (reasons.length <= 1) return <div className="pline"><span className="ptxt">{stage.text}</span></div>;
+  if (reasons.length <= 1) return <div className={`pline${noteClass(stage.note)}`}><span className="ptxt">{stage.text}</span></div>;
   return (
     <>
       <div className="pline" role="button" style={{ cursor: "pointer" }} onClick={() => setOpen(!open)} data-testid={`stage-${index}`}>

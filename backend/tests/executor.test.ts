@@ -17,6 +17,7 @@ import { makeServer } from "../src/http.ts";
 import { Hub, hubSettings } from "../src/hub.ts";
 import { Service } from "../src/service.ts";
 import { captureConsole, makeWorkspace, tempDir } from "./helpers.ts";
+import { ARGS_INVALID_REPEATED_TEXT, ARGS_INVALID_TEXT } from "../src/work_summary.ts";
 
 // 本文件在测试进程里运行会写日志的后端代码，日志收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
 captureConsole();
@@ -183,6 +184,21 @@ test("实时步骤行：保存图被拒时括注认得出的原因（缺来源�
       result: { content: [{ type: "text", text: "这张图没有保存：缺少 sources，至少要有一条来源。\n怎么办：图至少要有一条来源。" }], details: {} } }, { type: "turn_end" });
   const steps = (await drain()).filter(([n, d]) => n === "step" && !d.in_progress).map(([, d]) => [d.text, d.failed]);
   assert.deepEqual(steps, [["图没有存上（缺来源）", true]]);
+});
+
+test("实时步骤行：pi 的参数校验失败写淡色提示、不标成失败；连续三次（中间有别的结果就重新计）换醒目的说法", async () => {
+  const { feed, drain } = setup([user("u1", null, "整理")]);
+  await feed({ type: "agent_start" }, { type: "message_end", message: { role: "user", content: "整理" } });
+  await drain();
+  const INVALID = "Validation failed for tool \"save_revision\":\n  - operations.0.op: must have required properties op";
+  const save = (id: string, text?: string) => [
+    { type: "turn_start" }, { type: "tool_execution_start", toolCallId: id, toolName: "save_revision", args: {} },
+    { type: "tool_execution_end", toolCallId: id, toolName: "save_revision", isError: text !== undefined,
+      result: { content: [{ type: "text", text: text ?? "" }], details: text === undefined ? { revision_no: 2, operations: [] } : {} } }, { type: "turn_end" }];
+  await feed(...save("c1", INVALID), ...save("c2"), ...save("c3", INVALID), ...save("c4", INVALID), ...save("c5", INVALID));
+  const steps = (await drain()).filter(([n, d]) => n === "step" && !d.in_progress).map(([, d]) => [d.text, d.failed, d.note ?? null]);
+  assert.deepEqual(steps.map(([text, failed, note]) => [text === ARGS_INVALID_TEXT ? "淡" : text === ARGS_INVALID_REPEATED_TEXT ? "醒目" : "别的", failed, note]),
+    [["淡", false, "args_invalid"], ["别的", false, null], ["淡", false, "args_invalid"], ["淡", false, "args_invalid"], ["醒目", false, "args_invalid_repeated"]]);
 });
 
 test("事件分发：带会话订阅的只收自己会话的过程事件；Last-Event-ID 补发；差距太大发 resync；不带就不补", () => {

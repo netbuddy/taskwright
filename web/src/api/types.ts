@@ -605,8 +605,8 @@ export interface WorkSummary {
   at?: string;
   seconds: number | null;
   step_count: number;
-  /** reasons：保存修订被拒的那一步的全部原因，一个操作一条；多于一条时这一行可以点开逐条看。 */
-  stages?: { text: string; count?: number; reasons?: string[] }[];
+  /** reasons：保存修订被拒的那一步的全部原因，一个操作一条；多于一条时这一行可以点开逐条看。note 与实时步骤行的同义。 */
+  stages?: { text: string; count?: number; reasons?: string[]; note?: StepNote }[];
   /** 「理解为：……」：执行者对触发这次工作的那句话的理解；还没有合格的理解时是一句说明：事实核对不过时「助手的理解里有对不上的地方，正在重写」，
    *  只写了没匹配上格式的片段时「助手的理解正在重写」，一轮结束仍没有时「助手这一轮没有写下理解」；
    *  界面点击替用户发的那句话没有这一行，为空。 */
@@ -637,7 +637,11 @@ export interface Step {
   text: string;
   in_progress: boolean;
   failed: boolean;
+  /** 这一行里有 pi 的参数校验失败（模型写的参数不合格式，不是被拒）：args_invalid 画淡色；连续多次时 args_invalid_repeated，画醒目。 */
+  note?: StepNote;
 }
+
+export type StepNote = "args_invalid" | "args_invalid_repeated";
 
 export interface CurrentWork {
   work_id: string;

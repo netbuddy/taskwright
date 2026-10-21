@@ -227,6 +227,8 @@ export class Executor {
   activeSession: string | null = null;
   private cursor: string | null = null;
   work: Work | null = null;
+  /** 到目前为止连续几次 pi 的参数校验失败（跨工作计，别的工具结果一来就清零）；与过程摘要里的计法相同。 */
+  private argsInvalidStreak = 0;
   readonly waiters = new Map<string, { resolve: (result: Dict) => void }>();
   /** （发给 pi 的原文, client_id），按先后。 */
   private pendingClients: [string, string | null][] = [];
@@ -1097,8 +1099,11 @@ export class Executor {
       failed = false;
       details = { ...details, past_end: true };
     }
+    // pi 的参数校验失败（不是任务服务被拒）：记下连续第几次，step 行写淡色提示，连续多次时醒目，与过程摘要同一个写法。
+    this.argsInvalidStreak = failed && workSummary.argsInvalid(workSummary.resultText(result)) ? this.argsInvalidStreak + 1 : 0;
+    if (this.argsInvalidStreak) details = { ...details, args_invalid: this.argsInvalidStreak };
     // 保存修订被拒时原因只在结果正文里，先拆出来，实时的 step 行与过程摘要同一个写法。
-    if (failed && tool === "save_revision") details = { ...details, reasons: workSummary.rejectionParts(details, workSummary.resultText(result)) };
+    else if (failed && tool === "save_revision") details = { ...details, reasons: workSummary.rejectionParts(details, workSummary.resultText(result)) };
     // 回复被拒的原因也只在结果正文里：认出是没有写理解、理解不合格还是形式不对，过程摘要按它分写。
     if (failed && tool === REPLY_TOOL) details = { ...details, refusal: workSummary.replyRefusal(workSummary.resultText(result)) };
     // 保存图被拒是因为缺来源还是 Mermaid 文本没有通过校验，同样只在结果正文里：认出来，step 行与过程摘要加个括注。
@@ -1128,7 +1133,11 @@ export class Executor {
     const facts = work.turn_tools.some((t) => !t.done) ? callFacts(this.taskDir) : null;
     const texts = work.turn_tools.map((t) => t.done ? this.stepText(t.tool, t.args, true, t.failed, t.details)
       : workSummary.unfinishedText(t.tool, t.args, t.id, facts, this.definition()));
-    const step = { session_id: sid, work_id: work.work_id, step_key: key, text: texts.join("；"), in_progress: false, failed: work.turn_tools.some((t) => t.failed) };
+    // 参数校验失败不算被拒：不画成被拒的颜色，另带 note 给页面画淡色或醒目的样子。
+    const notes = work.turn_tools.map((t) => t.done && t.failed ? workSummary.argsInvalidNote(t.details) : null);
+    const note = notes.includes("args_invalid_repeated") ? "args_invalid_repeated" : notes.includes("args_invalid") ? "args_invalid" : null;
+    const step = { session_id: sid, work_id: work.work_id, step_key: key, text: texts.join("；"), in_progress: false,
+      failed: work.turn_tools.some((t, i) => t.failed && notes[i] === null), ...(note ? { note } : {}) };
     work.steps.set(key, step);
     this.hub.emit("step", step);
   }
