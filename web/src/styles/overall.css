@@ -106,6 +106,7 @@
 .app .oa-empty { color: var(--text3); font-size: 0.9rem; }
 .app .oa-prose { max-width: 46rem; font-size: 1rem; }
 .app .oa-prose p { margin: 0 0 .55rem; }
+.app .oa-prose .oa-table { margin: 0 0 .7rem; }
 .app .oa-prose.pending { border-left: .2rem solid var(--amber-line); padding-left: .7rem; }
 .app .oa-hl { background: var(--amber-bg); border-bottom: .1rem solid var(--amber); border-radius: .15rem; padding: 0 .15rem; }
 /* 出处：一行小字，几条之间用间隔号；助手补的那一条是琥珀字 */

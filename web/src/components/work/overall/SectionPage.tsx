@@ -51,6 +51,14 @@ function SourceLine({ sources, pending = false, onLocate }: { sources: Source[];
   );
 }
 
+/** 一段正文若每一行都以竖线起头，就是一张 Markdown 表：返回各行各格（去掉分隔行）；不是表时返回 null。 */
+function tableOf(paragraph: string): string[][] | null {
+  const lines = paragraph.split("\n").map((one) => one.trim()).filter(Boolean);
+  if (lines.length < 2 || !lines.every((one) => one.startsWith("|"))) return null;
+  return lines.filter((one) => !/^\|[\s:|-]*-[\s:|-]*$/.test(one))
+    .map((one) => one.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim()));
+}
+
 export function SectionPage({ task, item, def, contents, readOnly, writesOff = false, submit, onSend, onAnswer, onPrefill, onOpen, onBack, onPrev, onNext, onRaw, onLocate, onDirty, figures = null, links = null }: {
   /** 往对话区的输入框里预填一句话，不发送。 */
   onPrefill?: (text: string) => void;
@@ -104,8 +112,11 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
     ...(whatPending ? addedWords(item, TOPIC.what).map((quote) => ({ quote, mark: "added" as const })) : []),
   ];
   const pieces = paragraphs.map((p) => markPassage(p, quotes));
+  // 每一行都以竖线起头的段是一张 Markdown 表（例如步骤表）：画成表格，第一行是表头，分隔行不画；每格照常标底色。
+  const tables = paragraphs.map((p) => tableOf(p)?.map((row) => row.map((cell) => markPassage(cell, quotes))) ?? null);
   // 助手补的在「它是什么」里，但没有写补进了哪几个字（或者那几个字在正文里找不到）：整块旁边画一道琥珀边，来源那一行说明。
-  const whatUnmarked = whatPending && !pieces.some((one) => one.some((part) => part.mark === "added"));
+  const whatUnmarked = whatPending && !pieces.some((one) => one.some((part) => part.mark === "added"))
+    && !tables.some((one) => one?.some((row) => row.some((cell) => cell.some((part) => part.mark === "added"))));
   const examples = examplesOf(item).map((one, index) => ({ index, ...exampleKind(one) }));
   const exceptions = examples.filter((one) => one.kind === "exception");
   const isFlow = section?.chapter === CHAPTER_FLOWS;
@@ -214,14 +225,23 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
         <h3>说明</h3>
         <div className={`oa-prose${whatUnmarked ? " pending" : ""}`}>
           {pieces.length === 0 && <p className="oa-empty">还没有写。</p>}
-          {pieces.map((parts, i) => (
-            <p key={i}>{parts.map((part, k) => (part.mark === "added"
+          {pieces.map((parts, i) => {
+            const marks = (one: typeof parts) => one.map((part, k) => (part.mark === "added"
               ? <span key={k} className="oa-hl" title="这几个字是助手补的，你还没有确认">{part.text}</span>
               : part.mark === "material"
                 ? <span key={k} className={`oa-qt${onLocate ? " link" : ""}`} role={onLocate ? "button" : undefined} title="这一句逐字出自材料，点一下在右边的材料里看原文"
                     onClick={onLocate ? () => onLocate(part.source!.excerpt, part.source!.locator) : undefined}>{part.text}</span>
-                : <span key={k}>{part.text}</span>))}</p>
-          ))}
+                : <span key={k}>{part.text}</span>));
+            const table = tables[i];
+            if (!table) return <p key={i}>{marks(parts)}</p>;
+            const [head, ...body] = table;
+            return (
+              <table key={i} className="oa-table" data-testid="topic-table">
+                <thead><tr>{head.map((cell, k) => <th key={k}>{marks(cell)}</th>)}</tr></thead>
+                <tbody>{body.map((row, r) => <tr key={r}>{row.map((cell, k) => <td key={k}>{marks(cell)}</td>)}</tr>)}</tbody>
+              </table>
+            );
+          })}
         </div>
         <SourceLine sources={[...sourcesFor(item, TOPIC.what), ...wholeSources(item)]} pending={whatPending} onLocate={onLocate} />
       </section>

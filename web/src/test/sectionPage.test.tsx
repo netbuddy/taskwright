@@ -96,6 +96,29 @@ describe("节的各块", () => {
     expect(sources[1]).toHaveClass("v");
   });
 
+  it("它是什么：每行以竖线起头的一段画成表格，第一行是表头、分隔行不画；格里逐字出自材料的字照常标底色；别的段照旧是段落", () => {
+    const t = change(overallTask(), "OA-002", (p) => {
+      p.fields["它是什么"] = [
+        "| 第几步 | 谁做 | 产出什么 | 出处 |",
+        "|---|---|---|---|",
+        "| 1 | 读者 | 借书和还书都可以在自助借还机上办理，也可以到服务台办理。 | 借阅规则 §2 |",
+        "| 2 | 馆员 | 借书记录 | 你 |",
+        "",
+        "借还分两步（借阅规则 §2）。",
+      ].join("\n");
+    });
+    render(<Panel t={t} first="OA-002" />);
+    const what = screen.getByTestId("topic-what");
+    const table = within(what).getByTestId("topic-table");
+    expect([...table.querySelectorAll("th")].map((one) => one.textContent)).toEqual(["第几步", "谁做", "产出什么", "出处"]);
+    expect([...table.querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].map((one) => one.textContent))).toEqual([
+      ["1", "读者", "借书和还书都可以在自助借还机上办理，也可以到服务台办理。", "借阅规则 §2"],
+      ["2", "馆员", "借书记录", "你"],
+    ]);
+    expect(table.querySelectorAll("td .oa-qt").length).toBe(1);
+    expect([...what.querySelectorAll(".oa-prose > p")].map((one) => one.textContent)).toEqual(["借还分两步（借阅规则 §2）。"]);
+  });
+
   it("它是什么：助手补充写了 inserted 时只标 inserted 里的字，理由里用引号引的别的词不标", () => {
     const t = change(overallTask(), "OA-003", (item) => {
       const one = item.sources.find((s) => s.kind === "助手补充")!;
