@@ -53,6 +53,12 @@
 
 请选择（choose）
 
+## `part.kind_choose_open`
+
+用途：拒绝理由里怎样称呼写了 topic 却没有给候选的请选择。
+
+没有候选的请选择（choose）
+
 ## `part.kind_propose`
 
 用途：拒绝理由里怎样称呼提议。
@@ -279,7 +285,7 @@ act.scope 写了 "general"，表示与任何条目都无关，就不要再在 it
 
 用途：请选择的选项不到两个。
 
-请选择（choose）要写 act.options，至少两个选项，每项是 { key, text }；写了 act.topic 的问题卡片可以一个选项也不给，只留自由回答
+请选择（choose）要写 act.options，至少两个选项，每项是 { key, text }；写了 act.topic 的问题卡片可以一个选项也不给，只留自由回答（核读材料时任务类型带分析提纲的除外，那时候选必须给）
 
 ## `reply.option_incomplete`
 
@@ -310,6 +316,12 @@ act.options 的第 {{no}} 项的 reason 要写一句话（这一项出自哪里�
 用途：写了 topic 的请选择，某个候选是归并说法（其他、以上都、几种组合、并存之类）。no 是第几项，text 是那一项的文字。
 
 act.options 的第 {{no}} 项「{{text}}」是归并说法；候选只能是具体说法，用户另有想法走卡片上的自由回答。去掉这一项，或者改写成一个具体的答案
+
+## `reply.outline_card_needs_options`
+
+用途：核读材料时（任务类型有分析提纲），用了提问，或者写了 topic 的请选择没有给候选。what 是用了的那种卡片的称呼。
+
+核读材料时，提问一律用带候选的请选择，这次用的是{{what}}：act.kind 写 "choose"，写 act.topic，act.options 给二到四个候选答案，每个候选的 reason 写一句出处或理由（出自哪份材料哪一处，或者为什么同类系统通常如此）；用户另有想法走卡片上的自由回答，不另列
 
 ## `reply.multiple_invalid`
 

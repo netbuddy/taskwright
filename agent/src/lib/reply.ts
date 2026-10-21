@@ -33,6 +33,8 @@ import { ToolRejection, codesOf, withCodes } from "./tool_rejection.ts";
 import { GUIDANCE_PREFIX, problem, problemText, splitGuide } from "./save_revision.ts";
 import { codeOf, fillText, refusalText } from "./texts.ts";
 import type { Refusal } from "./stage.ts";
+import { stageOf } from "./stage_read.ts";
+import { outlineTextFor } from "./outline_read.ts";
 import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT } from "./schema.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
@@ -149,6 +151,11 @@ export interface ReplyFacts {
   toolCallId: string;
   /** 这一轮助手消息里的全部工具调用，由工具的执行函数从会话当前分支读出。 */
   callsThisTurn: TurnCall[];
+  /**
+   * 这条会话这一刻在核读材料，并且任务类型有分析提纲（outlineReadingOf）：这时提问一律用带候选的请选择，
+   * 提问（ask）与写了 topic 却不给候选的请选择都拒绝。不给按否算。
+   */
+  outlineReading?: boolean;
   /** 查某个条目在某次修订下在库里的情况。 */
   revisionFact: (itemId: string, revisionNo: number) => RevisionFact;
   /** 查某个条目当前所在的修订号，拒绝理由里用；不给就不写它现在是哪次修订。 */
@@ -346,6 +353,7 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
     }
   }
   if (isBlank(raw.text)) errors.push(problem(refusalText("reply.act_text_empty", { name })));
+  if (k === "ask" && facts.outlineReading) errors.push(problem(refusalText("reply.outline_card_needs_options", { what: KIND_NAME.ask })));
   // 提问只给开放问题：写成了是非题或者征求同意的话就拒绝（字面规则，见 closedQuestion）。
   if (k === "ask" && typeof raw.text === "string" && closedQuestion(raw.text)) {
     const said = raw.text.trim();
@@ -386,9 +394,11 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
   if (k === "choose") {
     const options = raw.options;
     // 写了 topic 的请选择是一个问题加候选答案：候选可以一个也不给（开放问，只留自由回答），给了就至少两个。
+    // 有分析提纲的任务在核读材料时不收开放问：候选必须给。
     const open = typeof raw.topic === "string" && !isBlank(raw.topic) && (options === undefined || (Array.isArray(options) && options.length === 0));
     if (open) {
       // 不给候选：卡片上只有自由回答与「先跳过」。
+      if (facts.outlineReading) errors.push(problem(refusalText("reply.outline_card_needs_options", { what: fillText("part.kind_choose_open") })));
     } else if (!Array.isArray(options) || options.length < 2) {
       errors.push(problem(refusalText("reply.options_too_few")));
     } else {
@@ -615,6 +625,24 @@ function textOfContent(content: unknown): string {
  * 按库里的事实回答「某个条目在某次修订下有没有内容、是不是它当前所在的修订」。库以只读方式打开，查完就关。
  * 返回一个查询函数，同一次核对里的几次查询共用一个连接。
  */
+/**
+ * 这条会话这一刻是不是在核读材料、且任务类型有分析提纲（ReplyFacts.outlineReading）。还没有库、没有任务、早先建的任务（没有阶段）都算否。
+ * 位置与保存修订同一个取法（lib/stage_read.ts 的 stageOf），提纲与逐句核对同一个找法（lib/outline_read.ts）。
+ */
+export function outlineReadingOf(workspaceDir: string, sessionId: string): boolean {
+  const path = databasePath(workspaceDir);
+  if (!existsSync(path)) return false;
+  const db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
+  try {
+    const task = db.prepare("SELECT task_id, definition_text FROM task LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
+    if (!task) return false;
+    const definition = validateDefinition(JSON.parse(task.definition_text));
+    return stageOf(db, workspaceDir, task.task_id, definition, sessionId) === "reading" && outlineTextFor(workspaceDir, definition.skillPath) !== null;
+  } finally {
+    db.close();
+  }
+}
+
 export function openRevisionLookup(workspaceDir: string): {
   revisionFact: ReplyFacts["revisionFact"];
   currentRevisionOf: (itemId: string) => number | null;

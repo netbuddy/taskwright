@@ -19,7 +19,7 @@
 
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup } from "../lib/reply.ts";
+import { REPLY_TOOL_NAME, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup, outlineReadingOf } from "../lib/reply.ts";
 import { spoken } from "../lib/speak.ts";
 import { currentRun, openResendLookup, recordReplyActs, requireUnderstanding } from "../lib/dialogue_acts.ts";
 import { reportStopped, stopAtLimit } from "../lib/rejection_limit.ts";
@@ -137,6 +137,7 @@ export function registerReply(pi: ExtensionAPI): void {
           return decideReply(params, {
             toolCallId,
             callsThisTurn: turn.calls,
+            outlineReading: outlineReadingOf(ctx.cwd, ctx.sessionManager.getSessionId()),
             revisionFact: lookup.revisionFact,
             currentRevisionOf: lookup.currentRevisionOf,
             problemItem: lookup.problemItem,

@@ -7,9 +7,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { checkReply, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup, type ReplyFacts } from "../src/lib/reply.ts";
+import { checkReply, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup, outlineReadingOf, type ReplyFacts } from "../src/lib/reply.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
-import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, UI_SESSION, callIn, enterStage, makeWorkspace, overallDefinition } from "./helpers.ts";
+import { copyFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 /** 只有自己一个调用、库里什么都没有时的事实。 */
 function alone(revisionFact: ReplyFacts["revisionFact"] = () => "还没有库"): ReplyFacts {
@@ -272,6 +274,35 @@ test("写了标题的请选择：「不是，请按另一种划分方式处理�
   for (const text of ["不是本期范围", "各部门自行采购模型额度", "重新设计报修表单", "另外收取运维费用", "改用另一种计费：按调用量结算", "由你方信息安全部审批"]) {
     checkReply(ask(text), alone());
   }
+});
+
+test("核读材料且有分析提纲时：提问与没有候选的写了标题的请选择都拒绝；带候选的请选择、不写标题的请选择照收；不在这种情形下开放问照收", () => {
+  const reading = { ...alone(), outlineReading: true };
+  rejected({ informs: [], act: { kind: "ask", text: "现状问题是什么？", scope: "general" }, text: "现状问题是什么？" }, reading,
+    /核读材料时，提问一律用带候选的请选择，这次用的是提问（ask）/);
+  const open = { informs: [], act: { kind: "choose", topic: "背景与目标 · 起因与现状问题 · 缺口 1（材料没写）", text: "为了写清起因：最要紧的是什么？", options: [] }, text: "最要紧的是什么？" };
+  rejected(open, reading, /这次用的是没有候选的请选择（choose）/);
+  checkReply(open, alone());
+  checkReply({ ...open, act: { ...open.act, options: [{ key: "a", text: "费用分散", reason: "预算复函 p2。" }, { key: "b", text: "权限不一", reason: "现状调研 §3。" }] } }, reading);
+  checkReply({ informs: [], act: { kind: "choose", text: "是否进入下一步？", options: [{ key: "next_step", text: "进入下一步：澄清" }, { key: "stay", text: "先停在这里" }] }, text: "是否进入下一步？" }, reading);
+});
+
+test("outlineReadingOf：会话在核读材料且 skill 里有 outline.md 才为真；没有提纲、不在核读、还没有库都为假", () => {
+  const session = "session-outline-reading";
+  const setUp = (withOutline: boolean, stage: "reading" | "clarifying") => {
+    const dir = makeWorkspace(overallDefinition());
+    createTask(callIn(dir, session), { definition_path: DEFINITION_PATH });
+    enterStage(dir, stage, [UI_SESSION, session]);
+    if (withOutline) {
+      const skill = (overallDefinition() as any).执行方法 as string;
+      copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+    }
+    return dir;
+  };
+  assert.equal(outlineReadingOf(setUp(true, "reading"), session), true);
+  assert.equal(outlineReadingOf(setUp(false, "reading"), session), false);
+  assert.equal(outlineReadingOf(setUp(true, "clarifying"), session), false);
+  assert.equal(outlineReadingOf(makeWorkspace(overallDefinition()), session), false);
 });
 
 test("多选、标题只有请选择能写", () => {
