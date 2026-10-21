@@ -138,6 +138,7 @@ export function registerReply(pi: ExtensionAPI): void {
             toolCallId,
             callsThisTurn: turn.calls,
             outlineReading: outlineReadingOf(ctx.cwd, ctx.sessionManager.getSessionId()),
+            lastUserText: userMessagesOnBranch(ctx).at(-1)?.text ?? null,
             revisionFact: lookup.revisionFact,
             currentRevisionOf: lookup.currentRevisionOf,
             problemItem: lookup.problemItem,

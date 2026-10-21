@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { checkReply, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup, outlineReadingOf, type ReplyFacts } from "../src/lib/reply.ts";
+import { checkReply, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup, outlineReadingOf, type ReplyFacts, userAskedToStop } from "../src/lib/reply.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
 import { DEFINITION_PATH, SOURCE, UI_SESSION, callIn, enterStage, makeWorkspace, overallDefinition } from "./helpers.ts";
 import { copyFileSync } from "node:fs";
@@ -285,6 +285,22 @@ test("核读材料且有分析提纲时：提问与没有候选的写了标题�
   checkReply(open, alone());
   checkReply({ ...open, act: { ...open.act, options: [{ key: "a", text: "费用分散", reason: "预算复函 p2。" }, { key: "b", text: "权限不一", reason: "现状调研 §3。" }] } }, reading);
   checkReply({ informs: [], act: { kind: "choose", text: "是否进入下一步？", options: [{ key: "next_step", text: "进入下一步：澄清" }, { key: "stay", text: "先停在这里" }] }, text: "是否进入下一步？" }, reading);
+});
+
+test("核读材料且有分析提纲时：回复不带 act 就拒绝，拒绝语写明两种卡片；用户叫停、汇报单项活动做完、不在这种情形下照收", () => {
+  const plain = { informs: [], act: null, text: "目前刚建立维度页，我会从这个条目继续。" };
+  rejected(plain, { ...alone(), outlineReading: true, lastUserText: "继续" }, /核读材料时每一轮都以一张卡片收尾，这次的 act 是 null：要么发问答卡片[\s\S]*要么发进入下一步的卡片/);
+  rejected(plain, { ...alone(), outlineReading: true }, /act 是 null/);
+  checkReply(plain, { ...alone(), outlineReading: true, lastUserText: "我选：先停在这里" });
+  checkReply({ ...plain, activity_done: true }, { ...alone(), outlineReading: true, lastUserText: "继续" });
+  checkReply(plain, { ...alone(), lastUserText: "继续" });
+});
+
+test("userAskedToStop：只认开头就是叫停的说法；候选答案里说到停止、暂停的内容不算", () => {
+  for (const text of ["我选：先停在这里", "先停在这里", "停下", "暂停一下", "今天先到这里", "就到这吧", "到此为止", "别再继续了", "不用继续了"]) assert.equal(userAskedToStop(text), true, text);
+  for (const text of ["继续", "我选：系统停止服务时转人工", "接着走下一个维度", "我选：保持请求待处理，等资产授权与领导审批完成后再继续。", "", null, undefined]) {
+    assert.equal(userAskedToStop(text as string | null | undefined), false, String(text));
+  }
 });
 
 test("outlineReadingOf：会话在核读材料且 skill 里有 outline.md 才为真；没有提纲、不在核读、还没有库都为假", () => {

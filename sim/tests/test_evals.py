@@ -134,7 +134,7 @@ FIRST_WORDS = "帮我把这份需求整理成规格说明。"
 SCRIPT = {"rules": [
     # 模拟用户：看到助手的问题就说要去问一下并表示目标达成；头一次看完界面先说想做的事；被唤起时先看界面。
     {"when": {"any_contains": FIRST_WAKE, "last_role": "tool", "last_contains": "寒暑假期间借出的书"},
-     "reply": {"tool_calls": [{"name": "respond", "arguments": {"text": "这个我得问一下教务处。", "done": True}}]}},
+     "reply": {"tool_calls": [{"name": "respond", "arguments": {"text": "先停在这里，这个我得问一下教务处。", "done": True}}]}},
     {"when": {"any_contains": FIRST_WAKE, "last_role": "tool"}, "reply": {"tool_calls": [{"name": "respond", "arguments": {"text": FIRST_WORDS}}]}},
     {"when": {"any_contains": FIRST_WAKE, "last_role": "user"}, "reply": {"tool_calls": [{"name": "look", "arguments": {}}]}},
     # 助手：第一句话之后立一页主题、记一条待澄清的问题；工具结果回来之后提问；用户说要去问之后回一句。
@@ -231,7 +231,7 @@ class EvalRunTest(unittest.TestCase):
         self.assertAlmostEqual(summary["清单命中率"], 4 / 128)
         self.assertIn("# 评测汇总：试跑", text)
         self.assertIn(f"- 第 1 轮，请选择：{CARD_TEXT}", text)
-        self.assertIn(f"- 第 2 轮，模拟用户说：「这个我得问一下教务处。」上一轮的问题：{CARD_TEXT}画像里可能已有这件事（寒暑假期间借出的书，借期一律顺延到开学后第一周的周五，"
+        self.assertIn(f"- 第 2 轮，模拟用户说：「先停在这里，这个我得问一下教务处。」上一轮的问题：{CARD_TEXT}画像里可能已有这件事（寒暑假期间借出的书，借期一律顺延到开学后第一周的周五，"
                       "这段时间不算逾期），请看是不是模拟用户演错了。", text)
         self.assertEqual((len(listed), listed[0]["标签"], listed[0]["遍数"], [Path(d).name for d in listed[0]["各遍目录"]]), (1, "试跑", 2, ["sim-001", "sim-002"]))
         self.assertEqual(again, 2)

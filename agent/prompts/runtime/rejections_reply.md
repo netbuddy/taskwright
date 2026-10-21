@@ -317,6 +317,12 @@ act.options 的第 {{no}} 项的 reason 要写一句话（这一项出自哪里�
 
 act.options 的第 {{no}} 项「{{text}}」是归并说法；候选只能是具体说法，用户另有想法走卡片上的自由回答。去掉这一项，或者改写成一个具体的答案
 
+## `reply.outline_reply_needs_card`
+
+用途：核读材料时（任务类型有分析提纲），回复没有带 act，用户也没有叫停。
+
+核读材料时每一轮都以一张卡片收尾，这次的 act 是 null：要么发问答卡片（act.kind 写 "choose"，写 act.topic，act.options 给二到四个带 reason 的候选），问这个提纲条目的下一个缺口；要么发进入下一步的卡片（不写 topic 的请选择，选项照平台说明里进入下一步的写法）；还没做完的事做完再回复，不要只报进度
+
 ## `reply.outline_card_needs_options`
 
 用途：核读材料时（任务类型有分析提纲），用了提问，或者写了 topic 的请选择没有给候选。what 是用了的那种卡片的称呼。

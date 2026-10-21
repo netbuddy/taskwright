@@ -81,6 +81,17 @@ export const TOPIC_CARD_OPENING = "为了写清";
 const CATCH_ALL_OPTION =
   /其他|其它|并存|以上(?:都|皆|几|均|各项|全部)|组合以上|(?:几|多)种.{0,4}组合|^(?:不是|否)[，,]\s*请|(?:另一种|另外的?|别的)(?:方式|划分|分法|拆分|办法|做法|想法|说法|方案|安排)|由你(?![方们])|由我来说|自行(?:说明|填写|补充|描述)|请重新|重新(?:说|想|考虑|来)/;
 
+/**
+ * 用户叫停的说法：停下、停在这里、暂停、先到这里、到此为止、别再继续之类，只认整句的开头（卡片上点「先停在这里」合成的
+ * 「我选：先停在这里」也算），免得候选答案里「系统停止服务时转人工」这类内容被当成叫停。
+ */
+const STOP_WORDS = /^(?:我选：)?\s*(?:那|就|先|今天|我们)?\s*(?:先|就)?(?:停|暂停|到此为止|到这|不要再?继续|别再?继续|不用再?继续)/;
+
+/** 最后一条用户消息是不是叫停：是的话，有分析提纲的核读里这一轮可以只回话、不发卡片。 */
+export function userAskedToStop(text: string | null | undefined): boolean {
+  return typeof text === "string" && STOP_WORDS.test(text);
+}
+
 /** 连续被拒到第几次起，拒绝理由改为只要成文正文。 */
 export const PLAIN_TEXT_FROM = 3;
 
@@ -156,6 +167,8 @@ export interface ReplyFacts {
    * 提问（ask）与写了 topic 却不给候选的请选择都拒绝。不给按否算。
    */
   outlineReading?: boolean;
+  /** 这条会话分支上最后一条用户消息的文字（卡片上的选择也是一条用户消息）；判断用户是不是叫停了（userAskedToStop）。不给按没有叫停算。 */
+  lastUserText?: string | null;
   /** 查某个条目在某次修订下在库里的情况。 */
   revisionFact: (itemId: string, revisionNo: number) => RevisionFact;
   /** 查某个条目当前所在的修订号，拒绝理由里用；不给就不写它现在是哪次修订。 */
@@ -238,6 +251,9 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
     errors.push(problem(refusalText("reply.act_missing")));
   } else if (params.act !== null) {
     act = checkAct(params.act, facts, errors);
+  } else if (facts.outlineReading && done !== true && !userAskedToStop(facts.lastUserText)) {
+    // 有分析提纲的任务在核读材料时，每一轮都以一张卡片收尾：问答卡片，或者进入下一步的卡片；用户叫停时、汇报单项活动做完时除外。
+    errors.push(problem(refusalText("reply.outline_reply_needs_card")));
   }
   if (act && errors.length === 0 && echoedAct(act.text, informs)) errors.push(problem(refusalText("reply.act_echoes_inform")));
 

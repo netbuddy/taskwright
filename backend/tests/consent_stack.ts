@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
 import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
@@ -71,9 +71,11 @@ export type Stack = {
  * seed 为真（缺省）时在开会话之前把任务备到可以写条目的样子（见 TOPIC_CALL 的说明）；为假时任务没有写过东西。
  * launch 为真（seed 为假时的缺省）时在开会话之前由用户启动需求分析、停在核读材料（launchFlow）；为假时任务是刚建好的样子：空闲。
  * args 是另加给后端的命令行参数（例如 --debug），env 是另加给后端的环境变量。
+ * outline 为假时建好任务就删掉任务目录里 skill 的分析提纲（outline.md），任务按没有提纲的做法走：核读不逐句核对、不要求每轮发卡片。
+ * 测平台机制、与分析提纲无关的测试用它，免得脚本里每一轮都要照提纲的规矩写。
  */
 export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>,
-  { autoIntent = true, seed = true, launch = !seed, args = [] as string[], env: extraEnv = {} as Record<string, string> } = {}): Promise<void> {
+  { autoIntent = true, seed = true, launch = !seed, outline = true, args = [] as string[], env: extraEnv = {} as Record<string, string> } = {}): Promise<void> {
   const dir = join(tmp, name);
   mkdirSync(dir, { recursive: true });
   const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent }).start();
@@ -96,6 +98,7 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
     });
     const taskId: string = (await call("POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: name })).body.task_id;
     writeFileSync(join(dir, "tasks", taskId, "inputs", "材料.md"), `${MATERIAL}\n`, "utf-8");
+    if (!outline) rmSync(join(dir, "tasks", taskId, ".pi", "skills", "requirements-engineering", "outline.md"));
     if (seed) seedWriting(join(dir, "tasks", taskId));
     else if (launch) launchFlow(join(dir, "tasks", taskId));
     // 夹具已经启动了需求分析时（seed、launch），这条会话接着做那个工作项：助手能写什么看的是它所在的会话属于的工作项。

@@ -229,4 +229,4 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     assert.deepEqual(db("SELECT record_id, activity, node, flow FROM activity_record ORDER BY record_id"), [{ record_id: 1, activity: "reading", node: "reading", flow: "analysis" }]);
     assert.deepEqual(db("SELECT session_id, record_id, archived_at IS NOT NULL AS archived FROM work_item_session ORDER BY rowid").map((r: Dict) => [r.session_id, r.record_id, r.archived]),
       [[flowSession, 1, 0], [aloneSession, 2, 1], [nextSession, 1, 0], [empty, 1, 0]]);
-  }, { seed: false, launch: false }));
+  }, { seed: false, launch: false, outline: false }));

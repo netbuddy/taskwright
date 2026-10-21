@@ -1,6 +1,7 @@
 """双方连续几轮没有进展就停这一遍：判法的单元测试，与一次假模型的评测（真的后端、真的 pi、假模型端点）。
 
-评测那一例里，助手第一轮立一页主题，之后每轮只回一句不带卡片的话；用户 agent 每轮也只回一句。第 1 轮有修订，算有进展；
+评测那一例里，助手第一轮立一页主题、发一张问答卡片，之后每轮只回一句不带卡片的话；用户 agent 每轮也只回一句，以「先停在这里」开头
+（任务类型有分析提纲时核读的回复要带卡片，用户叫停时除外）。第 1 轮有修订，算有进展；
 第 2 到 5 轮什么都没有，连续 4 轮，停在第 5 轮。判定报告与评测汇总都单独标出这一遍没有做完。
 另一例把 --stall-rounds 设成 0：同样的走法一直跑到轮数上限。本机没有 pi 或 node 时这两例跳过。
 """
@@ -26,15 +27,16 @@ ROUNDS = 8
 SCRIPT = {
     "rules": [
         # 用户 agent：看到助手说等它，就也回一句等；第一轮说想做的事。
-        user(respond(text="好，等我问清楚再来。"), last_role="tool", last_contains="等你问清楚"),
+        user(respond(text="先停在这里，等我问清楚再来。"), last_role="tool", last_contains="等你问清楚"),
         user(respond(text=FIRST_WORDS), last_role="tool"),
         user(look(), last_role="user"),
         # 助手：用户说等，它也只回一句不带卡片的话。用户打字说的话，助手回复之前要先写下对这句话的理解。
         {"when": {"last_role": "user", "last_contains": "等我问清楚"}, "reply": {"text": intent("inform", "等问清楚再来"), **say(WAIT)}},
     ],
-    # 助手第一轮：立一页主题，再说一句不带卡片的话。
+    # 助手第一轮：立一页主题，再发一张问答卡片。
     "sequence": [{"text": intent("request", "把需求整理成规格说明"), **tool("save_revision", {"operations": [PAGE]})},
-                 say("我立了一页主题。智能推荐这件事" + WAIT)],
+                 say("我立了一页主题。智能推荐这件事" + WAIT, {"kind": "choose", "topic": "借书 · 缺口 1（材料没写）", "text": "为了写清借书一页：材料没说要不要智能推荐。这一期要做吗？",
+                                                        "options": [{"key": "a", "text": "这一期做", "reason": "requirements.md 第 4 段提到。"}, {"key": "b", "text": "以后再做", "reason": "同类系统通常放在二期。"}]})],
     "default": {"text": "好的。"},
 }
 
