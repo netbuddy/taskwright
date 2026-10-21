@@ -126,6 +126,10 @@ def source(excerpt: str) -> dict:
 
 
 QUESTION = "寒暑假期间借出的书，借期怎么算？"
+#: 助手问 QUESTION 用的卡片：任务类型有分析提纲时，核读材料里的提问一律是写了 topic、带候选的请选择。
+CARD_TEXT = "为了写清借书一页的借期一段：材料只说寒暑假借期另行规定。" + QUESTION
+CARD = {"kind": "choose", "topic": "借期 · 缺口 1（材料没写）", "text": CARD_TEXT,
+        "options": [{"key": "a", "text": "顺延到开学后第一周", "reason": "高校图书馆通常如此。"}, {"key": "b", "text": "照平时的借期算", "reason": "材料没有另写，照常规办。"}]}
 FIRST_WORDS = "帮我把这份需求整理成规格说明。"
 SCRIPT = {"rules": [
     # 模拟用户：看到助手的问题就说要去问一下并表示目标达成；头一次看完界面先说想做的事；被唤起时先看界面。
@@ -137,7 +141,7 @@ SCRIPT = {"rules": [
     {"when": {"last_role": "user", "last_contains": "帮我把这份需求整理"},
      "reply": {"text": intent("request", "把需求整理成规格说明"), "tool_calls": [
          {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "业务说明", "fields": {
-             "标题": "借书", "它是什么": "读者凭借书证借书，每本书可以续借一次。", "例子": ["读者凭借书证借书"], "标签": ["流程"], "状态": "在用"},
+             "标题": "借书", "它是什么": "读者凭借书证借书，每本书可以续借一次（requirements.md 第 1 段）。", "例子": ["读者凭借书证借书"], "标签": ["流程"], "状态": "在用"},
              "sources": [source("读者凭借书证借书，每本书可以续借一次。")]}]}},
          {"name": "save_revision", "arguments": {"operations": [{"op": "add", "collection": "问题", "fields": {
              "事项": "寒暑假期间的借期怎样算", "种类": "待澄清", "是否阻断下游": "不阻断", "何时回看": "评审确认时", "状态": "未解决"},
@@ -145,7 +149,7 @@ SCRIPT = {"rules": [
     {"when": {"last_role": "user", "last_contains": "教务处"},
      "reply": {"text": intent("inform", "要去问教务处"), "tool_calls": [{"name": "reply", "arguments": {"informs": [], "act": None, "text": "好的，这件事先记着。"}}]}},
     {"when": {"last_role": "tool"},
-     "reply": {"tool_calls": [{"name": "reply", "arguments": {"informs": [], "act": {"kind": "ask", "text": QUESTION, "scope": "general"},
+     "reply": {"tool_calls": [{"name": "reply", "arguments": {"informs": [], "act": CARD,
                                                              "text": "我先立了一页主题，写了一个用例。" + QUESTION}}]}},
 ], "default": {"text": "好的。"}}
 
@@ -209,7 +213,7 @@ class EvalRunTest(unittest.TestCase):
             # 助手的问题取自任务库的对话行为，轮次靠演练记录对上。
             asked = one["助手问过的问题"]
             self.assertEqual((asked["怎样列的"], [(q["轮"], q["功能"], q["文字"]) for q in asked["问题"]]),
-                             ("按任务库的对话行为列，轮次靠演练记录对上", [(1, "提问", QUESTION)]))
+                             ("按任务库的对话行为列，轮次靠演练记录对上", [(1, "请选择", CARD_TEXT)]))
             self.assertRegex(asked["问题"][0]["行为编号"], r"^r1-\d+$")
             # 模拟用户说要去问教务处：上一轮问的是寒暑假借期，画像的隐藏事实里有这件事，所以列在「画像里可能已有」。
             stuck = one["模拟用户答不上的问题"]
@@ -226,8 +230,8 @@ class EvalRunTest(unittest.TestCase):
         self.assertEqual(sum(1 for row in summary["至少应有"] if row["部分"].startswith("模型·")), 22)
         self.assertAlmostEqual(summary["清单命中率"], 4 / 128)
         self.assertIn("# 评测汇总：试跑", text)
-        self.assertIn(f"- 第 1 轮，提问：{QUESTION}", text)
-        self.assertIn(f"- 第 2 轮，模拟用户说：「这个我得问一下教务处。」上一轮的问题：{QUESTION}画像里可能已有这件事（寒暑假期间借出的书，借期一律顺延到开学后第一周的周五，"
+        self.assertIn(f"- 第 1 轮，请选择：{CARD_TEXT}", text)
+        self.assertIn(f"- 第 2 轮，模拟用户说：「这个我得问一下教务处。」上一轮的问题：{CARD_TEXT}画像里可能已有这件事（寒暑假期间借出的书，借期一律顺延到开学后第一周的周五，"
                       "这段时间不算逾期），请看是不是模拟用户演错了。", text)
         self.assertEqual((len(listed), listed[0]["标签"], listed[0]["遍数"], [Path(d).name for d in listed[0]["各遍目录"]]), (1, "试跑", 2, ["sim-001", "sim-002"]))
         self.assertEqual(again, 2)
