@@ -118,6 +118,26 @@ test("核读材料：任务的 skill 里有分析提纲时，页的正文每句�
   assert.equal(refusal(plain, [add(full("起因与现状问题", { 它是什么: "材料尚未说明原因。" }))]), null);
 });
 
+test("核读材料：正文里的表一行算一句，最后一格是出处；表头与分隔行不查，格里有句号也不切；最后一格空着或写占位的行被拦", () => {
+  const dir = workspace("reading");
+  const skill = (overallDefinition() as any).执行方法 as string;
+  copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+  const table = (last: string) => [
+    "| 第几步 | 谁做 | 用什么系统 | 产出什么 | 出处 |",
+    "|---|---|---|---|---|",
+    "| 1 | 员工 | 门户。附发票照片 | 报销单 | 报销制度 p3 |",
+    `| 2 | 部门经理 | 门户 | 审批意见 | ${last} |`,
+    "",
+    "报销分两步走（报销制度 p3）。",
+    "例如员工提交一张差旅报销单（报销制度 p3）。",
+  ].join("\n");
+  assert.equal(refusal(dir, [add(full("主流程步骤", { 它是什么: table("你") }))]), null);
+  for (const last of ["", "—", "无"]) {
+    const loose = refusal(dir, [add(full("主流程步骤", { 它是什么: table(last) }))])!;
+    assert.ok(loose.includes("这一页有 1 句没有：「| 2 | 部门经理 | 门户 | 审批意见 |"), loose);
+  }
+});
+
 test("核读材料：有分析提纲的任务不要求「例子」一栏；要求举例的维度的页正文至少一句以「例如」起头，可选维度不要求；标签照旧要求；没有分析提纲的任务照旧要求例子", () => {
   const dir = workspace("reading");
   const skill = (overallDefinition() as any).执行方法 as string;
