@@ -389,12 +389,16 @@ export interface StageProposal {
 
 /** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），六个阶段各自的灯，以及开着的提议（没有时为 null）。 */
 export interface StageView {
-  /** 任务现在在哪个阶段；空闲时是 idle。 */
+  /** 这条会话正在做的那项活动算作哪个阶段（逆向解析算作核读）；空闲时是 idle。阶段条与进退方向按它画。 */
   current: PositionKey;
-  /** 现在这项活动在需求分析流程里的节点：在流程里时与 current 相同；用户单独开展的活动、空闲时为 null。早先的后端不给。 */
-  node?: StageKey | null;
-  /** 需求分析走到的节点；没有走过是 null。 */
-  flow_node?: StageKey | null;
+  /** 这条会话正在做的那项活动的活动标识符（例如 parse_spec）；会话空闲时为 null。取名与数站用它。早先的后端不给，按 current 算。 */
+  activity?: string | null;
+  /** 流程的工作项现在在哪一站（活动标识符）；单项活动的工作项、空闲时为 null。早先的后端不给。 */
+  node?: string | null;
+  /** 与 node 相同。 */
+  flow_node?: string | null;
+  /** 活动目录（与任务状况里的同名一项相同）；定义读不出来时为 null。早先的后端不给。 */
+  catalog?: ActivityCatalog | null;
   /** 「开展一项活动」一节现在的内容。 */
   launch?: LaunchView | null;
   moved_by: "executor" | "user" | null;
@@ -447,7 +451,7 @@ export interface SessionListEntry extends SessionInfo {
   /** 这条会话产生了几次修订；旧后端没有这一项。 */
   revision_count?: number;
   /** 这条会话属于的工作项；自由讨论的会话、归档的会话为 null。早先的后端不给。 */
-  work_item?: { record_id: number; kind: "flow" | "activity"; name: string; activity: StageKey; flow: string | null } | null;
+  work_item?: { record_id: number; kind: "flow" | "activity"; name: string; activity: string; activity_name?: string; flow: string | null } | null;
   /** 带 archived=1 取清单时才有：是不是归档的会话（它的工作项被删除了）、归档的时刻、它曾属于的那个已经删除的工作项的记录号。 */
   archived?: boolean;
   archived_at?: string | null;
@@ -461,8 +465,10 @@ export interface WorkItemBrief {
   kind: "flow" | "activity";
   /** 工作项的名字：流程的名字或者活动的名字。 */
   name: string;
-  /** 现在做的是哪一项活动。 */
-  activity: StageKey;
+  /** 现在做的是哪一项活动：任务类型声明里的活动标识符（例如 parse_spec）；早先的工作项是六个阶段键之一。 */
+  activity: string;
+  /** 那项活动的名字（取自任务类型的声明）。早先的后端不给。 */
+  activity_name?: string;
   flow: string | null;
   scope: string | null;
   started_at: string | null;
@@ -471,8 +477,8 @@ export interface WorkItemBrief {
 /** 任务状况里的一个工作项（work_items 的每一项）。 */
 export interface WorkItemView extends WorkItemBrief {
   activity_name: string;
-  /** 流程的工作项现在在哪一站，与那一站是第几站；单项活动的为 null。 */
-  node: StageKey | null;
+  /** 流程的工作项现在在哪一站（活动标识符），与那一站在所属流程各站里是第几站；单项活动的为 null。 */
+  node: string | null;
   ordinal: number | null;
   /** 属于它的会话（按挂上的先后）与条数。 */
   session_ids: string[];
@@ -1526,6 +1532,8 @@ export interface NamedKey {
 export interface CatalogActivity {
   key: string;
   name: string;
+  /** 这项活动算作哪个阶段（声明的 stage 一栏）；只能由用户发起的（发布）为 null。早先的后端不给。 */
+  stage?: StageKey | null;
   mode: "batch" | "dialogue" | "user_only";
   mode_name: string;
   purpose: string;
@@ -1570,8 +1578,8 @@ export interface CatalogFlow {
   active_count?: number;
   /** 恒为 null：早先是流程走到的站，现在流程的位置记在工作项上。 */
   at: string | null;
-  /** 现在启动应当从哪一站开始；这条流程现在还不能启动时为 null。 */
-  start: StageKey | null;
+  /** 现在启动应当从哪一站开始（活动标识符：各步里第一个前提都满足的那一站）；这条流程现在还不能启动时为 null。 */
+  start: string | null;
   /**
    * 任务里已有的流程工作项（一个任务至多一个，不论哪条流程）：记录号、名字、所在的一站；没有为 null。有它时流程都不能启动，
    * 页面把流程卡改成「打开它的会话」。早先的后端不给。

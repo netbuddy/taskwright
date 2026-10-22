@@ -77,7 +77,7 @@ import {
   workItemContinuedSentence, workItemDeletedSentence,
 } from "./stage.ts";
 import { openProposal } from "./stage_proposal.ts";
-import { type StageMoveOutcome, attachSession, definitionsOrError, deleteWorkItem, moveStage, sessionWorkItem, startActivity, workItemById, workItemName } from "./stage_read.ts";
+import { type StageMoveOutcome, attachSession, definitionsOrError, deleteWorkItem, moveStage, sessionWorkItem, startActivity, taskDefinitionsOf, workItemById, workItemName } from "./stage_read.ts";
 import { activityNameOf, flowNameOf } from "./activity_def_read.ts";
 import { CATALOG_LATER } from "./activity_catalog.ts";
 import type { FigureTally } from "./versions.ts";
@@ -896,12 +896,13 @@ function continueActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest):
       throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
     }
     attachSession(db, taskId, found.record_id, ctx.sessionId);
-    return found;
+    return { ...found, defs: taskDefinitionsOf(db, ctx.workspaceDir) };
   });
   return {
     op_id: opId, kind: "continue_activity", event_seqs: [], results: [], revision_no: null,
     note: fillText("ui_ops.work_item_continued", {
-      sentence: workItemContinuedSentence(workItemName(item), item.flow !== null && isStage(item.node) ? item.node : null), scope: scopeSentence(item.scope ?? ""),
+      sentence: workItemContinuedSentence(workItemName(item, item.defs), item.flow !== null && item.node !== null ? activityNameOf(item.defs, item.node) : null),
+      scope: scopeSentence(item.scope ?? ""),
     }),
     notify_text: null, undoable: false, record_id: item.record_id,
   };
@@ -922,11 +923,11 @@ function deleteWorkItemByUser(ctx: Ctx, opId: string, request: UserOpRequest): U
       const fact = "这条会话不属于任何工作项，没有可以删除的";
       throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
     }
-    return { item, ...deleteWorkItem(db, item, { taskId, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, WORK_ITEM_DELETED_REASON) };
+    return { item, defs: taskDefinitionsOf(db, ctx.workspaceDir), ...deleteWorkItem(db, item, { taskId, sessionId: ctx.sessionId, callId: opId, actor: ACTOR_USER }, WORK_ITEM_DELETED_REASON) };
   });
   return {
     op_id: opId, kind: "delete_work_item", event_seqs: [deleted.event_seq], results: [], revision_no: null,
-    note: fillText("ui_ops.work_item_deleted", { sentence: workItemDeletedSentence(workItemName(deleted.item), deleted.archived) }),
+    note: fillText("ui_ops.work_item_deleted", { sentence: workItemDeletedSentence(workItemName(deleted.item, deleted.defs), deleted.archived) }),
     notify_text: null, undoable: false, record_id: deleted.item.record_id, archived_sessions: deleted.archived,
   };
 }

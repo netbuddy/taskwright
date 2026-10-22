@@ -102,7 +102,8 @@ export function clickStageUnmoved(details: Record<string, any>): { at: string; w
  */
 export function replyActivityDone(details: Record<string, any>): { activity_done?: { activity: string } } {
   const done = details.activity_done;
-  return isObject(done) && isStageKey(done.activity) ? { activity_done: { activity: done.activity } } : {};
+  // 活动是任务类型声明里的活动标识符（例如 parse_spec），不只是六个阶段的键：是一段非空的文字就收。
+  return isObject(done) && typeof done.activity === "string" && done.activity !== "" ? { activity_done: { activity: done.activity } } : {};
 }
 
 export function normalizeInforms(informs: unknown): Record<string, any>[] {

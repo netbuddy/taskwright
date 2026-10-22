@@ -51,10 +51,16 @@ export function inputBlocks(target: StartTarget, assets: AssetCell[] | undefined
   };
 }
 
-/** 启动时发的两项：流程从它现在该开始的那一站开始；这条流程现在不能启动时是 null。 */
-export function startFields(target: StartTarget): { activity: StageKey; in_flow: boolean } | null {
-  if (target.kind === "activity") return { activity: target.activity.key as StageKey, in_flow: false };
-  return target.flow.start ? { activity: target.flow.start, in_flow: true } : null;
+/** 启动时发的几项：流程从它现在该开始的那一站开始，另带流程的键；这条流程现在不能启动时是 null。 */
+export function startFields(target: StartTarget): { activity: string; in_flow: boolean; flow?: string } | null {
+  if (target.kind === "activity") return { activity: target.activity.key, in_flow: false };
+  return target.flow.start ? { activity: target.flow.start, in_flow: true, flow: target.flow.key } : null;
+}
+
+/** 启动的是哪一项活动（键与名字）：单项活动是它自己，流程是它的起始站；流程现在不能启动时是 null。 */
+export function startActivityOf(target: StartTarget): { key: string; name: string } | null {
+  if (target.kind === "activity") return target.activity;
+  return target.flow.nodes.find((one) => one.key === target.flow.start) ?? null;
 }
 
 /**
@@ -95,8 +101,13 @@ export function missingInput(target: StartTarget, blocks: InputBlocks, assets: A
 }
 
 /** 启动之后替用户发的第一句话：写了目标系统描述就是那段描述，没有写是这项活动的那句固定的话。 */
-export function firstMessage(activity: StageKey, description: string): string {
-  return description.trim() || ACTIVITY_START_TEXTS[activity];
+export function firstMessage(activity: { key: string; name: string }, description: string): string {
+  return description.trim() || startText(activity);
+}
+
+/** 启动一项活动时那句固定的话：六个阶段各有一句（ACTIVITY_START_TEXTS），别的活动写「请开始某某。」（名字取自活动目录）。 */
+export function startText(activity: { key: string; name: string }): string {
+  return (ACTIVITY_START_TEXTS as Record<string, string>)[activity.key] ?? `请开始${activity.name}。`;
 }
 
 /** 前置条件那一句去掉开头的「前置条件：」，放在「前提」一栏里。 */

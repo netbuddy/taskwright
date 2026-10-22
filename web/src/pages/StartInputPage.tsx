@@ -24,7 +24,7 @@ import { MaterialsCard } from "../components/task/MaterialsCard";
 import { useMaterialViewer } from "../components/task/MaterialViewer";
 import { ownMaterials } from "../model/docx";
 import {
-  SCOPE_MAX_LENGTH, blockedLine, existingFlowItem, firstMessage, inputBlocks, missingInput, prerequisiteBody, startButton, startFields, startSubtitle, startTarget, targetName,
+  SCOPE_MAX_LENGTH, blockedLine, existingFlowItem, firstMessage, inputBlocks, missingInput, prerequisiteBody, startActivityOf, startButton, startFields, startSubtitle, startTarget, targetName,
 } from "../model/startInput";
 import { composeScope, pickRows, pickedScope, showsPendingWork } from "../model/pendingWork";
 import { go, href } from "../router";
@@ -135,7 +135,7 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
       return;
     }
     try {
-      await api.sendMessage(taskId, sessionId, { text: firstMessage(fields.activity, blocks.description ? description : ""), client_id: clientId(), attachments: [] });
+      await api.sendMessage(taskId, sessionId, { text: firstMessage(startActivityOf(target)!, blocks.description ? description : ""), client_id: clientId(), attachments: [] });
     } catch (e) {
       toast.error(`已经启动「${name}」，但第一句话没有发出去：${e instanceof ApiError ? e.message : String(e)} 请在对话区再说一遍。`);
     }

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { PROMPTS_DIR } from "../../agent/src/lib/context_assemble.ts";
 import { loadModules } from "../../agent/src/lib/prompt_modules.ts";
 import { captureConsole, movesSql, sendAndWaitTurn, tempDir } from "./helpers.ts";
+import { replyActivityDone } from "../src/conversation.ts";
 import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
 
 /** 空闲的规矩与单项活动的收尾：平台说明里两个模块的正文。 */
@@ -75,7 +76,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     assert.deepEqual([fresh.activity.kind, fresh.activity.key, fresh.activity.name, fresh.activity.ordinal, fresh.missing, fresh.work_items, "recent_done" in fresh],
       ["idle", "idle", "空闲", null, [], [], false]);
     assert.deepEqual(fresh.catalog.flows.map((one: Dict) => [one.key, one.enabled, one.state, one.start, one.active_count]),
-      [["analysis", true, "可以启动", "reading", 0], ["change", false, "还没有已发布的版本", null, 0], ["rewrite", false, "此版本尚未提供", null, 0]]);
+      [["analysis", true, "可以启动", "reading", 0], ["change", false, "还没有已发布的版本", null, 0], ["rewrite", true, "可以启动", "parse_spec", 0]]);
     assert.deepEqual(fresh.catalog.activities.map((one: Dict) => [one.name, one.enabled, one.state]), [
       ["核读材料", true, "可以启动"], ["澄清", true, "可以启动"], ["整理建模", false, "业务说明还没有内容"], ["写条目", false, "业务说明还没有内容"],
       ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"], ["发布", false, "还没有评审过"], ["逆向解析", true, "可以启动"]]);
@@ -115,7 +116,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     const rowOf = async (id: string) => (await sessions()).find((one) => one.session_id === id)!;
     // 那条新会话在建立时就按工作项起了名；任务状况里它的当前活动是需求分析的核读材料。
     assert.deepEqual([(await rowOf(flowSession)).name, (await rowOf(flowSession)).work_item],
-      ["需求分析", { record_id: 1, kind: "flow", name: "需求分析", activity: "reading", flow: "analysis" }]);
+      ["需求分析", { record_id: 1, kind: "flow", name: "需求分析", activity: "reading", activity_name: "核读材料", flow: "analysis" }]);
     const inFlow = await status(flowSession);
     assert.deepEqual([inFlow.activity.kind, inFlow.activity.key, inFlow.activity.ordinal, inFlow.activity.flow, inFlow.activity.moved_by], ["stage", "reading", 1, "analysis", "user"]);
 
@@ -248,6 +249,11 @@ test("经直接操作启动改写既有规格说明、从逆向解析开始：�
       [["flow", "改写既有规格说明", "parse_spec", "逆向解析", "parse_spec", 1, "rewrite"]]);
     assert.deepEqual([now.activity.kind, now.activity.key, now.activity.name, now.activity.ordinal, now.activity.flow], ["stage", "parse_spec", "逆向解析", 1, "rewrite"]);
     assert.equal((await sessions()).find((one) => one.session_id === own)!.name, "改写既有规格说明");
+    // 工作视图：current 是逆向解析算作的阶段（核读），activity 是活动标识符；工作项与会话清单都带活动名。
+    const stage = (await call("GET", `/api/v1/tasks/${taskId}/snapshot?session=${own}`)).body.task.stage as Dict;
+    assert.deepEqual([stage.current, stage.activity, stage.node, stage.work_item.activity_name], ["reading", "parse_spec", "parse_spec", "逆向解析"]);
+    assert.equal((await sessions()).find((one) => one.session_id === own)!.work_item.activity_name, "逆向解析");
+    assert.equal((await status(null)).activity.key, "idle");
 
     // 已有改写既有规格说明的工作项：再启动需求分析被拒，写明现有的那一个；一条会话都不多建。
     const before = (await sessions()).length;
@@ -258,3 +264,9 @@ test("经直接操作启动改写既有规格说明、从逆向解析开始：�
     assert.equal((await act({ kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "analysis" } })).body.error.message, "「逆向解析」不是工作流「需求分析」的一站。");
     assert.equal((await sessions()).length, before);
   }, { seed: false, launch: false }));
+
+test("回复里的 activity_done：活动是任务类型声明里的活动标识符就收（逆向解析也收），空的、不是文字的不收", () => {
+  assert.deepEqual(replyActivityDone({ activity_done: { activity: "parse_spec" } }), { activity_done: { activity: "parse_spec" } });
+  assert.deepEqual(replyActivityDone({ activity_done: { activity: "clarifying" } }), { activity_done: { activity: "clarifying" } });
+  assert.deepEqual([replyActivityDone({ activity_done: { activity: "" } }), replyActivityDone({ activity_done: { activity: 3 } }), replyActivityDone({})], [{}, {}, {}]);
+});

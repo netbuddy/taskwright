@@ -142,12 +142,12 @@ export function SwitchWorkPanel({ open, taskId, sessionId, stage, pendingReview,
       {status?.assets && <AssetCells assets={status.assets} />}
 
       <div className="sw-group" data-testid="switch-own">
-        <div className="gt"><b>本会话的工作项</b>{stage && own ? ownItemHeading(stage) : "本会话是自由讨论，不绑定活动"}</div>
+        <div className="gt"><b>本会话的工作项</b>{stage && own ? ownItemHeading(stage, status) : "本会话是自由讨论，不绑定活动"}</div>
         {stage && own ? (
           <div className="sw-now">
             <div className="sw-now-l">
               <div className="t">{own.name}{own.scope && <small>范围：{own.scope}</small>}</div>
-              <div className="d">{ownItemLine(stage)}</div>
+              <div className="d">{ownItemLine(stage, status)}</div>
             </div>
             <div className="sw-now-r">
               <button className="btn pri" onClick={onClose} data-testid="switch-continue">{continueLabel(stage)}</button>

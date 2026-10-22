@@ -416,6 +416,12 @@ test("启动认声明里的活动与工作流：逆向解析可以单独启动�
   assert.equal(refusedOp(() => start(dir, "s-change", "核读材料", true, { flow: "change" }))?.[0], "rejected");
   assert.equal(refusedOp(() => start(dir, "s-rewrite-2", "parse_spec", true, { flow: "rewrite" }))?.[0], "rejected");
 
+  // 换一条会话接着做、删除：那句通知里的工作项名与站名取自声明，不写键名。
+  const continued = userOp(dir, "s-rewrite-next", { kind: "continue_activity", fields: { activity_record_id: 2 } });
+  assert.ok(continued.note.includes("「改写既有规格说明」") && continued.note.includes("「逆向解析」") && !continued.note.includes("rewrite"), continued.note);
+  const deleted = userOp(dir, "s-rewrite", { kind: "delete_work_item", fields: { activity_record_id: 2 } });
+  assert.ok(deleted.note.includes("「改写既有规格说明」") && !deleted.note.includes("rewrite"), deleted.note);
+
   // 写法上的拒绝：逆向解析不是需求分析的一站、没有这条工作流、没有这项活动、单项活动写了 flow。
   const other = workspace();
   assert.deepEqual(refusedOp(() => start(other.dir, "s-1", "parse_spec", true, { flow: "analysis" })), ["bad_request", "「逆向解析」不是工作流「需求分析」的一站。"]);

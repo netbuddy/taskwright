@@ -133,7 +133,7 @@ describe("活动输入页上算出来的东西", () => {
   });
 
   it("启动时发的两项、标题旁的一句与主按钮上的字", () => {
-    expect([startFields(flow), startFields(of("modeling"))]).toEqual([{ activity: "clarifying", in_flow: true }, { activity: "modeling", in_flow: false }]);
+    expect([startFields(flow), startFields(of("modeling"))]).toEqual([{ activity: "clarifying", in_flow: true, flow: "analysis" }, { activity: "modeling", in_flow: false }]);
     expect(startFields({ kind: "flow", flow: flowOf({ enabled: false, start: null }) })).toBeNull();
     expect(startSubtitle(flow)).toBe("从「澄清」开始；上传项目材料后从「核读材料」开始");
     expect(startSubtitle({ kind: "flow", flow: flowOf({ start: "reading" }) })).toBe("从「核读材料」开始");
@@ -151,9 +151,13 @@ describe("活动输入页上算出来的东西", () => {
     expect(missingInput(flow, blocks, assets(), "  ")).toBe("请先上传项目材料，或填写目标系统描述。");
     expect([missingInput(flow, blocks, assets(), "建设借阅系统"), missingInput(flow, blocks, assets({ materials: 1 }), "")]).toEqual([null, null]);
     expect(missingInput(of("clarifying"), inputBlocks(of("clarifying"), assets(), true), assets(), "")).toBeNull();
-    expect(firstMessage("clarifying", "  建设借阅系统。 ")).toBe("建设借阅系统。");
-    expect([firstMessage("reading", ""), firstMessage("clarifying", ""), firstMessage("modeling", ""), firstMessage("document", " ")]).toEqual([
+    const named = (key: string, name: string) => ({ key, name });
+    expect(firstMessage(named("clarifying", "澄清"), "  建设借阅系统。 ")).toBe("建设借阅系统。");
+    expect([firstMessage(named("reading", "核读材料"), ""), firstMessage(named("clarifying", "澄清"), ""), firstMessage(named("modeling", "整理建模"), ""),
+      firstMessage(named("document", "编写文档"), " ")]).toEqual([
       "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。", "请逐项澄清：一次只问一件事，先给出候选再问。", "请开始整理建模。", "请开始编写文档。"]);
+    // 六个阶段之外的活动没有固定的句子：写「请开始某某。」，名字取自活动目录。
+    expect(firstMessage(named("parse_spec", "逆向解析"), "")).toBe("请开始逆向解析。");
   });
 });
 
@@ -192,7 +196,7 @@ describe("活动输入页：需求分析", () => {
     fireEvent.click(await submit());
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
     expect(calls.order).toEqual(["start_new", "say"]);
-    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "clarifying", in_flow: true });
+    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "clarifying", in_flow: true, flow: "analysis" });
     expect(calls.say.mock.calls[0].slice(0, 2)).toEqual(["TASK-P", "S-new"]);
     expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "建设图书馆借阅管理系统。", attachments: [] });
   });
@@ -204,8 +208,20 @@ describe("活动输入页：需求分析", () => {
     expect(screen.getByTestId("material-row")).toHaveTextContent("调研记录.md");
     fireEvent.click(await submit());
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
-    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "reading", in_flow: true });
+    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "reading", in_flow: true, flow: "analysis" });
     expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。" });
+  });
+
+  it("改写既有规格说明：从逆向解析启动，发 flow: rewrite 与 activity: parse_spec，没有写描述时第一句话是「请开始逆向解析。」", async () => {
+    const rewrite = flowOf({ key: "rewrite", name: "改写既有规格说明", nodes: [kind("parse_spec", "逆向解析"), kind("reading", "核读材料"), kind("publish", "发布")], start: "parse_spec", recommended: false });
+    const calls = page("rewrite", detail({ materials: [material("inputs/旧版规格说明.md")] }),
+      statusOf({ assets: assets({ materials: 1 }), catalog: { flows: [flowOf({ start: "reading" }), rewrite], activities: [READING, activityOf("parse_spec", "逆向解析")] } }));
+    expect(await submit()).toHaveTextContent("启动改写既有规格说明");
+    expect(screen.getByTestId("start-subtitle")).toHaveTextContent("从「逆向解析」开始");
+    fireEvent.click(await submit());
+    await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
+    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "parse_spec", in_flow: true, flow: "rewrite" });
+    expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请开始逆向解析。" });
   });
 
   it("业务说明已有内容：没有目标系统描述与那一段话；「启动后」写从哪一站开始", async () => {

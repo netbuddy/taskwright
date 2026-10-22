@@ -10,6 +10,7 @@ import { ToastProvider } from "../components/Toasts";
 import { WorkViewPage } from "../pages/WorkViewPage";
 import { useWorkView } from "../state/useWorkView";
 import { initialWorkState } from "../state/workState";
+import { sessionTag } from "../model/sessionTag";
 
 vi.mock("../state/useWorkView", () => ({ useWorkView: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -191,5 +192,14 @@ describe("工作视图里点导航栏待处理事项的一行", () => {
     expect(await screen.findByTestId("nav-pending-review")).toHaveTextContent("D-001");
     fireEvent.click(screen.getByTestId("nav-pending-review"));
     await waitFor(() => expect(screen.getByTestId("pane-description")).toHaveClass("on"));
+  });
+});
+
+describe("会话旁的标签", () => {
+  it("流程写「流程名 · 站名」：站名先取后端给的活动名（逆向解析），早先的后端不给时是阶段的名字，再没有就是活动标识符", () => {
+    const of = (work_item: SessionListEntry["work_item"]) => ({ session_id: "S", name: "", started_at: "", last_active_at: "", message_count: 0, active: false, work_item }) as SessionListEntry;
+    expect(sessionTag(of({ record_id: 1, kind: "flow", name: "改写既有规格说明", activity: "parse_spec", activity_name: "逆向解析", flow: "rewrite" }))).toBe("改写既有规格说明 · 逆向解析");
+    expect(sessionTag(of({ record_id: 1, kind: "flow", name: "需求分析", activity: "writing", flow: "analysis" }))).toBe("需求分析 · 写条目");
+    expect(sessionTag(of({ record_id: 1, kind: "flow", name: "改写既有规格说明", activity: "parse_spec", flow: "rewrite" }))).toBe("改写既有规格说明 · parse_spec");
   });
 });

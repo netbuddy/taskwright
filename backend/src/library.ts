@@ -338,7 +338,8 @@ export function proposalView(fact: Omit<OpenProposal, "session_id" | "reply_entr
  * 阶段是按会话算的（sessionId，不给按自由讨论的会话算）。flow 是所属流程：这条会话正在做的工作项属于哪条流程（现在只有需求分析 analysis）；单项活动的工作项、会话空闲时是 null。
  * node 是流程的工作项现在在哪一站（单项活动的工作项、空闲时为 null），flow_node 与它相同，work_item 是这条会话属于的工作项，launch 是早先任务状况卡上那一节的内容
  * （agent/src/lib/stage.ts 的 LaunchView）。
- * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）；moved_by 是最近一次移动由谁做的（executor 或 user），
+ * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）：这条会话正在做的那项活动算作的阶段；
+ * activity 是那项活动的活动标识符（例如逆向解析是 parse_spec，它的 current 是 reading），会话空闲时为 null；moved_by 是最近一次移动由谁做的（executor 或 user），
  * 一次都没有移过时与 moved_at、reason 一起为 null；lamps 按阶段给出各盏灯 { key, summary, ok, items }，ok 为 null 是不适用。
  * 早先建的任务（任务定义里没有「业务说明」集合）没有阶段，返回 null；算不出来时也返回 null。
  * 与完成条件一样，在同一进程里调用 agent 的读取函数（lib/stage_read.ts 的 stageSummaryOf），库另开一个只读连接，
@@ -358,6 +359,9 @@ export function stageView(taskDir: string, sessionId: string | null = null) {
       return { ...summary, work_item: item, moved_at: clock.fromLocalText(summary.moved_at),
         // 这条会话正在做的工作项的所属流程：流程的工作项是流程的键；单项活动的工作项、会话空闲时为 null。
         flow: summary.current !== "idle" && summary.work_item !== null ? summary.work_item.flow : null,
+        // 这条会话正在做的那项活动的活动标识符（例如 parse_spec）：流程的工作项与单项活动的都有，会话空闲时为 null。
+        // current 是它算作的阶段（逆向解析算作核读），页面画阶段条用 current，取名与数站用它。
+        activity: summary.current !== "idle" && summary.work_item !== null ? summary.work_item.activity : null,
         proposal: open === null ? null : proposalView(open, { session_id: open.session_id, reply_entry: open.reply_entry, seq: open.event_seq, at: open.at }) };
     } finally {
       db.close();

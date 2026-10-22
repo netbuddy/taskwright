@@ -608,6 +608,8 @@ export interface WorkItemBrief {
   name: string;
   /** 现在做的是哪一项活动（任务类型声明里的活动标识符）。 */
   activity: string;
+  /** 那项活动的名字（取自声明，见 activityNameOf）。 */
+  activity_name: string;
   flow: string | null;
   scope: string | null;
   /** 启动的时刻（库里的本地时间写法）。 */
@@ -615,7 +617,7 @@ export interface WorkItemBrief {
 }
 
 export function workItemBrief(item: ActivityRecord, defs: Definitions | null = null): WorkItemBrief {
-  return { record_id: item.record_id, kind: item.flow !== null ? "flow" : "activity", name: workItemName(item, defs), activity: item.activity, flow: item.flow,
+  return { record_id: item.record_id, kind: item.flow !== null ? "flow" : "activity", name: workItemName(item, defs), activity: item.activity, activity_name: activityNameOf(defs, item.activity), flow: item.flow,
     scope: item.scope, started_at: item.started_at };
 }
 

@@ -99,7 +99,7 @@ test("前置条件只看数据：每一个各自什么时候满足，缺的时�
   assert.deepEqual(STAGES.map((one) => blockedByStage(DEFS.activities, full)[one]), [null, null, null, null, null, null]);
 });
 
-test("活动目录：空任务只有澄清与需求分析能启动；需求分析推荐，从澄清开始；发布、逆向解析与需求变更写缺什么，改写既有规格说明尚未提供", () => {
+test("活动目录：空任务只有澄清与需求分析能启动；需求分析推荐，从澄清开始；发布、逆向解析与需求变更写缺什么，改写既有规格说明写还没有上传既有规格说明", () => {
   const got = catalog(DEFS, NAMES, EMPTY);
   assert.deepEqual(got.activities.map((one) => [one.key, one.enabled, one.state]), [
     ["reading", false, "还没有项目材料"], ["clarifying", true, "可以启动"], ["modeling", false, "业务说明还没有内容"], ["writing", false, "业务说明还没有内容"],
@@ -113,13 +113,18 @@ test("活动目录：空任务只有澄清与需求分析能启动；需求分�
   assert.equal(got.activities[1].prerequisite_text, "无前置条件；可从空白开始。");
   assert.deepEqual(got.flows.map((one) => [one.key, one.name, one.enabled, one.state, one.recommended, one.at, one.start]), [
     ["analysis", "需求分析", true, "可以启动", true, null, "clarifying"], ["change", "需求变更", false, "还没有已发布的版本", false, null, null],
-    ["rewrite", "改写既有规格说明", false, CATALOG_LATER, false, null, null]]);
+    ["rewrite", "改写既有规格说明", false, "还没有上传「既有规格说明」", false, null, null]]);
   assert.deepEqual(got.flows.map((one) => one.work_item), [null, null, null]);
   assert.deepEqual(got.flows[2].nodes.map((one) => one.name), ["逆向解析", "核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档", "发布"]);
   assert.deepEqual(got.flows[0].nodes.map((one) => one.name), ["核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档", "发布"]);
   assert.equal(got.flows[1].prerequisite_text, "前置条件：存在已发布的版本。");
-  // 有材料：需求分析从核读材料开始。
-  assert.equal(catalog(DEFS, NAMES, { ...EMPTY, materials: 1 }).flows[0].start, "reading");
+  // 有材料：需求分析从核读材料开始；改写既有规格说明可以启动，从逆向解析开始（必填的材料槽位现在按有没有材料算）；需求变更仍未提供。
+  const stocked = catalog(DEFS, NAMES, { ...EMPTY, materials: 1 }).flows;
+  assert.deepEqual(stocked.map((one) => [one.key, one.enabled, one.state, one.start]), [
+    ["analysis", true, "可以启动", "reading"], ["change", false, "还没有已发布的版本", null], ["rewrite", true, "可以启动", "parse_spec"]]);
+  // 每项活动带它算作的阶段：逆向解析算作核读，发布不算作任何阶段。
+  assert.deepEqual(got.activities.map((one) => [one.key, one.stage]), [["reading", "reading"], ["clarifying", "clarifying"], ["modeling", "modeling"], ["writing", "writing"],
+    ["reviewing", "reviewing"], ["document", "document"], ["publish", null], ["parse_spec", "reading"]]);
 });
 
 test("活动目录：单项活动能不能启动只看数据，已经有工作项也不拦；每一项带工作项个数；已有流程工作项时流程都不能启动", () => {
@@ -133,9 +138,14 @@ test("活动目录：单项活动能不能启动只看数据，已经有工作�
   assert.deepEqual(busy.activities.map((one) => [one.key, one.enabled, one.active_count]).filter((one) => one[2] !== 0), [["writing", true, 2]]);
   assert.deepEqual([busy.flows[0].enabled, busy.flows[0].state, busy.flows[0].at, busy.flows[0].start, busy.flows[0].active_count, busy.flows[0].work_item],
     [false, "已有流程工作项「需求分析」，位于「写条目」", null, "reading", 1, flowItem]);
-  assert.deepEqual([busy.flows[1].enabled, busy.flows[1].state, busy.flows[1].active_count, busy.flows[1].work_item], [false, "还没有已发布的版本", 0, flowItem]);
-  assert.deepEqual([busy.flows[2].enabled, busy.flows[2].state], [false, CATALOG_LATER]);
-  // 发布过版本之后推荐的是需求变更与改写既有规格说明（现行推荐规则，归 S7 再看）；两条现在都还不能启动。
+  assert.deepEqual([busy.flows[1].enabled, busy.flows[1].state, busy.flows[1].active_count, busy.flows[1].work_item], [false, "已有流程工作项「需求分析」，位于「写条目」", 0, flowItem]);
+  assert.deepEqual([busy.flows[2].enabled, busy.flows[2].state, busy.flows[2].start], [false, "已有流程工作项「需求分析」，位于「写条目」", "parse_spec"]);
+  // 发布过版本之后只推荐需求变更（它仍未提供）；改写既有规格说明不推荐，但可以启动。
   const released = catalog(DEFS, NAMES, { ...facts, versions: 1 });
-  assert.deepEqual(released.flows.map((one) => [one.recommended, one.enabled, one.state]), [[false, true, "可以启动"], [true, false, CATALOG_LATER], [true, false, CATALOG_LATER]]);
+  assert.deepEqual(released.flows.map((one) => [one.recommended, one.enabled, one.state]), [[false, true, "可以启动"], [true, false, CATALOG_LATER], [false, true, "可以启动"]]);
+  // 任务里已有改写既有规格说明的工作项（在逆向解析这一站）：三张流程卡都不能启动，站名取自声明。
+  const rewriting = { record_id: 5, name: "改写既有规格说明", node: "parse_spec" };
+  assert.deepEqual(catalog(DEFS, NAMES, { ...facts, versions: 1 }, { rewrite: 1 }, rewriting).flows.map((one) => [one.key, one.enabled, one.state]), [
+    ["analysis", false, "已有流程工作项「改写既有规格说明」，位于「逆向解析」"], ["change", false, "已有流程工作项「改写既有规格说明」，位于「逆向解析」"],
+    ["rewrite", false, "已有流程工作项「改写既有规格说明」，位于「逆向解析」"]]);
 });

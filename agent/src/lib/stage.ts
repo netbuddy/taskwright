@@ -285,9 +285,12 @@ export function activityStartSentence(how: StartHow, to: string, from: Position,
   return fillText("stage.start_alone", { to: name, was });
 }
 
-/** 新建一条会话接着做一个进行中的工作项时，对话里那一句（不带「界面操作」的前缀）。name 是工作项的名字，node 是流程的工作项现在在哪一站。 */
-export function workItemContinuedSentence(name: string, node: Stage | null): string {
-  return node ? fillText("stage.continued_at", { name, node: STAGE_NAMES[node] }) : fillText("stage.continued", { name });
+/**
+ * 新建一条会话接着做一个进行中的工作项时，对话里那一句（不带「界面操作」的前缀）。name 是工作项的名字，node 是流程的工作项现在在哪一站：
+ * 那一站的名字（取自声明），或者阶段的键（早先的写法，按阶段的名字写）。
+ */
+export function workItemContinuedSentence(name: string, node: string | null): string {
+  return node ? fillText("stage.continued_at", { name, node: (STAGE_NAMES as Record<string, string>)[node] ?? node }) : fillText("stage.continued", { name });
 }
 
 /** 用户删除一个工作项时，对话里那一句（不带「界面操作」的前缀）。archived 是随之归档了几条会话。 */

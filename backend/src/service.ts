@@ -561,7 +561,7 @@ export class Service {
     return t.executor.listSessions().filter((row) => withArchived || !archived.has(row.session_id)).map((row) => {
       const item = items.find((one) => one.session_ids.includes(row.session_id)) ?? null;
       return { ...row, revision_count: counts.get(row.session_id) ?? 0,
-        work_item: item === null ? null : { record_id: item.record_id, kind: item.kind, name: item.name, activity: item.activity, flow: item.flow },
+        work_item: item === null ? null : { record_id: item.record_id, kind: item.kind, name: item.name, activity: item.activity, activity_name: item.activity_name, flow: item.flow },
         ...(withArchived ? { archived: archived.has(row.session_id), archived_at: archived.get(row.session_id)?.archived_at ?? null,
           archived_record_id: archived.get(row.session_id)?.record_id ?? null } : {}) };
     });

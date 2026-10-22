@@ -97,14 +97,15 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   assert.deepEqual(status.assets.map((one) => one.produced_by), [[], ["核读材料", "澄清", "整理建模", "编写文档", "逆向解析"], ["整理建模"], ["写条目", "评审确认"], ["评审确认"], ["编写文档", "发布"]]);
   assert.deepEqual(status.assets, stage.assets, "与整份数据里的是同一份");
   // 活动目录：七项活动都只按数据判（三张图还没有看过，所以单项的写条目现在不能启动；这与需求分析正在写条目无关），
-  // 需求分析已经有一个工作项：两条流程都不能启动，带着现有的那一个；发布写缺什么。
+  // 需求分析已经有一个工作项：三条流程都不能启动，带着现有的那一个；发布写缺什么。
   assert.deepEqual(status.catalog!.activities.map((one) => [one.key, one.name, one.mode_name, one.enabled, one.state, one.active_count]), [
     ["reading", "核读材料", "批处理", true, "可以启动", 0], ["clarifying", "澄清", "逐项对话", true, "可以启动", 0], ["modeling", "整理建模", "批处理", true, "可以启动", 0],
     ["writing", "写条目", "批处理", false, "有 3 张分析模型还没有查看", 0], ["reviewing", "评审确认", "逐项对话", true, "可以启动", 0], ["document", "编写文档", "批处理", true, "可以启动", 0],
     ["publish", "发布", "仅限用户发起", false, "还没有评审过；还有待确认的内容", 0], ["parse_spec", "逆向解析", "批处理", true, "可以启动", 0]]);
   assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.name, one.enabled, one.state, one.recommended, one.at, one.start, one.active_count]), [
-    ["analysis", "需求分析", false, "已有流程工作项「需求分析」，位于「写条目」", true, null, "reading", 1], ["change", "需求变更", false, "还没有已发布的版本", false, null, null, 0],
-    ["rewrite", "改写既有规格说明", false, "此版本尚未提供", false, null, null, 0]]);
+    ["analysis", "需求分析", false, "已有流程工作项「需求分析」，位于「写条目」", true, null, "reading", 1],
+    ["change", "需求变更", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, null, 0],
+    ["rewrite", "改写既有规格说明", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, "parse_spec", 0]]);
   assert.deepEqual(status.catalog!.flows.map((one) => one.work_item), [{ record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }]);
   const reading = status.catalog!.activities[0];
   assert.deepEqual([reading.reads, reading.writes, reading.prerequisite_text], [[{ key: "materials", name: "材料与证据" }, { key: "knowledge", name: "知识库" }],

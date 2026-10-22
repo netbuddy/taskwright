@@ -45,7 +45,7 @@ test("整份数据带 stage：现在的阶段、最近一次是谁在什么时�
   // 阶段是按会话算的：别的会话不属于这个工作项，是空闲；不给会话时也是。
   assert.deepEqual([library.stageView(ws, "sess-other")!.current, library.stageView(ws)!.current, library.taskSnapshot(ws)[1]!.stage!.current], ["idle", "idle", "idle"]);
   assert.deepEqual([stage.work_item?.record_id, stage.work_item?.kind, stage.work_item?.name, stage.flow, stage.node], [1, "flow", "需求分析", "analysis", "writing"]);
-  assert.deepEqual(Object.keys(stage.work_item!).sort(), ["activity", "flow", "kind", "name", "record_id", "scope", "started_at"], "工作项没有状态与结束的时刻");
+  assert.deepEqual(Object.keys(stage.work_item!).sort(), ["activity", "activity_name", "flow", "kind", "name", "record_id", "scope", "started_at"], "工作项没有状态与结束的时刻");
 });
 
 test("整份数据里与图有关的几盏灯：流程页画了带分叉的流程图就通过；条目依据的图用户看过之前不通过，看过之后通过", () => {
