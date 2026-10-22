@@ -25,12 +25,12 @@ import { formatTime, formatTimeShort } from "../model/format";
 import { ownMaterials } from "../model/docx";
 import { go, href } from "../router";
 import { useService } from "../components/ServiceControls";
-import { allAssetsEmpty, deleteConfirmText, stateLine } from "../model/startPage";
+import { deleteConfirmText, stateLine } from "../model/startPage";
 import { TaskKnowledgeCard } from "../components/TaskKnowledgeCard";
 import { SessionList } from "../components/task/SessionList";
 import { MaterialsCard } from "../components/task/MaterialsCard";
 import { useMaterialViewer } from "../components/task/MaterialViewer";
-import { ActivityCards, AssetCells, FlowCards, FreeTalk, StartGuide, WorkItemCards } from "../components/task/StartBlocks";
+import { ActivityCards, AssetCells, FlowCards, FreeTalk, STEPS_LINE, WorkItemCards } from "../components/task/StartBlocks";
 import { PendingWorkSection } from "../components/task/PendingWork";
 import { showsPendingWork } from "../model/pendingWork";
 import { PENDING_SECTION_ID } from "../model/leftNav";
@@ -111,12 +111,6 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
   const versionNote = taskTypeVersionNote(task.task_type_versions);
   const catalog = status?.catalog ?? null;
   const workItems = status?.work_items ?? [];
-  // 「三步开始」是推荐流程的入口：任务里没有流程工作项时显示（流程工作项每个任务至多一条，有了就从它的卡片接着做）。
-  // 六类资产都空着时排在页头之下；已有资产时排在「工作项」之后、六格之前。任务状况读回来之前不画，免得一闪。
-  const guide = !!status && !workItems.some((one) => one.kind === "flow");
-  const guideFirst = guide && allAssetsEmpty(status?.assets);
-  const materialCount = ownMaterials(task.materials).length;
-  const recommended = catalog?.flows.find((one) => one.recommended) ?? null;
 
   const changeKnowledge = async (ids: string[]) => {
     try {
@@ -227,8 +221,6 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
             </div>
           )}
         </header>
-        {guideFirst && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} materials={materialCount} />}
-
         {showsPendingWork(task, status) && (
           <section className="tp-sec" id={PENDING_SECTION_ID}>
             <div className="tp-sec-h"><h2>待处理事项</h2><span className="tp-sec-note">由需求资产上的记号汇总；每一项可直接启动对应的活动，或打开做它的会话</span></div>
@@ -243,8 +235,6 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
           </section>
         )}
 
-        {guide && !guideFirst && <StartGuide taskId={taskId} flow={recommended} texts={status?.start_page} materials={materialCount} compact />}
-
         {status?.assets && (
           <section className="tp-sec">
             <div className="tp-sec-h"><h2>需求资产现状</h2><span className="tp-sec-note">六类资产构成本项目的需求基础；每类下方写明由哪些活动产出</span></div>
@@ -255,7 +245,7 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
         {catalog && (
           <>
             <section className="tp-sec">
-              <div className="tp-sec-h"><h2>工作流程</h2><span className="tp-sec-note">按推荐次序串联多项活动；每站完成后助手提议下一站，由你确认后进入。每次启动新建一个工作项和一条会话</span></div>
+              <div className="tp-sec-h"><h2>工作流程</h2><span className="tp-sec-note" data-testid="start-steps-line">{STEPS_LINE}</span></div>
               <FlowCards taskId={taskId} flows={catalog.flows} onOpenWorkItem={openFlowItem} />
             </section>
             <section className="tp-sec">

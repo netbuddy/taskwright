@@ -1,72 +1,19 @@
-// 任务起点页的几块：「三步开始」指引与三种常见起点、工作项、需求资产现状六格、工作流程两张卡、单项活动七张卡、「自由讨论」一行。
+// 任务起点页的几块：工作项、需求资产现状六格、工作流程（处境标签与各条流程的卡）、单项活动的卡、「自由讨论」一行。
 // 文字都从任务状况取（资产现状 assets、工作项 work_items、活动目录 catalog、起点页的几段话 start_page），这里只画。
-// 起点页是目录：工作流程卡、活动卡、三种常见起点与主按钮都只是进活动输入页（pages/StartInputPage.tsx），启动在那里提交；
+// 起点页是目录：工作流程卡与活动卡都只是进活动输入页（pages/StartInputPage.tsx），启动在那里提交；处境标签只把对应的流程卡滚到眼前并高亮；
 // 「自由讨论」不经输入页，直接进工作台；工作项卡上的三个按钮由页面去做（打开会话、换一条会话接着、删除）。
 // 样式在 styles/task-page.css，按钮与小标签用工作视图已有的样式（.btn、.chip）。
 
-import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, StartPageTexts, WorkItemView } from "../../api/types";
+import { useEffect, useRef, useState } from "react";
+import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, WorkItemView } from "../../api/types";
 import { START_ARROW, flowInProgress, flowPositionLine, flowTag, producedLine, workItemMeta, workItemPosition, workItemSessionsLine } from "../../model/startPage";
-import { go, href } from "../../router";
+import { href } from "../../router";
 
-/** 三步的一行写法：任务已有资产时「启动需求分析」框里的副标题。 */
-export const STEPS_LINE = "三步：选择工作流程、提供输入、由助手推进";
+/** 「工作流程」标题右边的一行：三步怎样开始。 */
+export const STEPS_LINE = "选一条流程 › 提供输入 › 由助手推进，每一步由你确认";
 
-/**
- * 「三步开始」：任务里没有流程工作项时显示，是启动推荐的那条工作流程的入口。主按钮与三种常见起点都进它的输入页。
- * 六类资产都空着时排在页头之下：黑边的一张卡，标题「三步开始」，三步逐条写，右边主按钮。任务已有资产时（compact）排在「工作项」之后、
- * 六格之前，写成与其他各节同款的一节：标题「启动某流程」，一行灰字写三步，下面是主按钮与三种常见起点。
- * 任务里已有材料时，三种起点各多一句：已上传的材料启动后一并核读。
- */
-export function StartGuide({ taskId, flow, texts, compact = false, materials = 0 }: {
-  taskId: string;
-  /** 推荐的工作流程；没有、或者现在不能启动时主按钮是灰的，三种起点不可点。 */
-  flow: CatalogFlow | null;
-  texts: StartPageTexts | undefined;
-  /** 任务已有资产：写成一节，标题「启动某流程」，三步收成一行。 */
-  compact?: boolean;
-  /** 任务里已上传几份材料。 */
-  materials?: number;
-}) {
-  const name = flow?.name ?? "工作流程";
-  const open = flow?.enabled ? flow : null;
-  const carried = materials > 0 ? <em data-testid="start-case-materials">已上传 {materials} 份材料，启动后一并核读</em> : null;
-  const button = <button className="btn pri tp-lg" disabled={!open} onClick={() => open && go(href.start(taskId, open.key))} data-testid="guide-start">启动{name}</button>;
-  const cases = texts && texts.cases.length > 0 && (
-    <div className="tp-cases" data-testid="start-cases">
-      {texts.cases.map((one, index) => (open
-        ? <a key={one.title} className="tp-case go" href={href.start(taskId, open.key, index)} data-testid={`start-case-${index}`}><b>{one.title}</b><span>{one.text}</span>{carried}</a>
-        : <div key={one.title} className="tp-case"><b>{one.title}</b><span>{one.text}</span>{carried}</div>))}
-    </div>
-  );
-  if (compact) {
-    return (
-      <section className="tp-sec" data-testid="start-guide">
-        <div className="tp-sec-h"><h2>启动{name}</h2><span className="tp-sec-note" data-testid="start-steps-line">{STEPS_LINE}</span></div>
-        <div className="tp-guide-go">{button}{texts?.guide_note && <small>{texts.guide_note}</small>}</div>
-        {cases}
-      </section>
-    );
-  }
-  return (
-    <>
-      <section className="tp-guide" data-testid="start-guide">
-        <div className="tp-guide-l">
-          <div className="gt">三步开始</div>
-          <ol className="tp-steps">
-            <li><span className="no">1</span><div><b>选择工作流程</b>从头编制或整体复查请启动「{name}」流程。</div></li>
-            <li><span className="no">2</span><div><b>提供输入</b>上传项目材料，或直接描述目标系统。</div></li>
-            <li><span className="no">3</span><div><b>由助手推进</b>助手逐站完成并提议下一站，每一步由你确认。</div></li>
-          </ol>
-        </div>
-        <div className="tp-cta">
-          {button}
-          {texts?.guide_note && <small>{texts.guide_note}</small>}
-        </div>
-      </section>
-      {cases}
-    </>
-  );
-}
+/** 点了处境标签之后，对应的流程卡高亮多久（毫秒）。 */
+export const CASE_HIT_MS = 1500;
 
 /** 需求资产现状：六格。writing 是现在这项活动写的那几类（它们的格子着色）。 */
 export function AssetCells({ assets, writing = [] }: { assets: AssetCell[]; writing?: string[] }) {
@@ -116,7 +63,8 @@ export function WorkItemCards({ items, busy, onOpen, onContinue, onDelete }: {
 }
 
 /**
- * 工作流程：每条一张卡。能启动的整张卡可点，进这条流程的输入页。任务里已有这条流程的工作项时（一个任务同一时刻至多一个流程工作项），
+ * 工作流程：上面一行处境标签，按流程的先后、每条流程声明的 cases 的先后生成；点一个标签把对应的流程卡滚到眼前并高亮一会儿，
+ * 不启动、不跳页（流程不能启动时也照样可点，卡上写着原因）。下面每条一张卡，第一行是「适用」。能启动的整张卡可点，进这条流程的输入页。任务里已有这条流程的工作项时（一个任务同一时刻至多一个流程工作项），
  * 卡片不能再启动：标「已在进行」，底部写在第几站，另有「打开它的会话」。现在不能启动的变淡、不可点，卡片底部写前置条件；
  * 因为另一条流程正在进行而不能启动的，底部写那一句原因。
  */
@@ -126,7 +74,27 @@ export function FlowCards({ taskId, flows, onOpenWorkItem }: {
   /** 「打开它的会话」：打开那个流程工作项最近的会话。任务已经结束时不给，不画这个按钮。 */
   onOpenWorkItem?: (recordId: number) => void;
 }) {
+  const cards = useRef<Record<string, HTMLElement | null>>({});
+  const [hit, setHit] = useState<string | null>(null);
+  useEffect(() => {
+    if (hit === null) return;
+    const timer = setTimeout(() => setHit(null), CASE_HIT_MS);
+    return () => clearTimeout(timer);
+  }, [hit]);
+  const show = (key: string) => {
+    cards.current[key]?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    setHit(key);
+  };
+  const chips = flows.flatMap((flow) => (flow.cases ?? []).map((text, index) => ({ flow, text, index })));
   return (
+    <>
+    {chips.length > 0 && (
+      <div className="tp-case-chips" data-testid="case-chips">
+        {chips.map(({ flow, text, index }) => (
+          <button key={`${flow.key}-${index}`} type="button" className="tp-case-chip" onClick={() => show(flow.key)} data-testid={`case-chip-${flow.key}-${index}`}>{text}</button>
+        ))}
+      </div>
+    )}
     <div className="tp-flows">
       {flows.map((flow) => {
         const tag = flowTag(flow);
@@ -135,9 +103,11 @@ export function FlowCards({ taskId, flows, onOpenWorkItem }: {
         const body = (
           <>
             <div className="t"><b>{flow.name}</b>{tag && <span className={`chip${tag.kind === "rec" ? " dark" : tag.kind === "now" ? " okc" : ""}`}>{tag.text}</span>}</div>
+            <dl className="tp-kv tp-applies">
+              <dt>适用</dt><dd>{flow.applies}</dd>
+            </dl>
             <p>{flow.purpose}</p>
             <dl className="tp-kv">
-              <dt>适用</dt><dd>{flow.applies}</dd>
               <dt>各站</dt><dd className="tp-nodes">{flow.nodes.map((one) => one.name).join(" › ")}</dd>
               <dt>输入</dt><dd>{flow.inputs}</dd>
             </dl>
@@ -153,12 +123,14 @@ export function FlowCards({ taskId, flows, onOpenWorkItem }: {
             </div>
           </>
         );
-        const cls = `tp-flow${tag?.kind === "rec" ? " rec" : ""}${running ? " now" : !flow.enabled ? " off" : ""}${to ? " go" : ""}`;
+        const cls = `tp-flow${tag?.kind === "rec" ? " rec" : ""}${running ? " now" : !flow.enabled ? " off" : ""}${to ? " go" : ""}${hit === flow.key ? " hit" : ""}`;
+        const ref = (el: HTMLElement | null) => { cards.current[flow.key] = el; };
         return to
-          ? <a key={flow.key} className={cls} href={to} data-testid={`flow-${flow.key}`}>{body}</a>
-          : <div key={flow.key} className={cls} data-testid={`flow-${flow.key}`}>{body}</div>;
+          ? <a key={flow.key} ref={ref} className={cls} href={to} data-testid={`flow-${flow.key}`}>{body}</a>
+          : <div key={flow.key} ref={ref} className={cls} data-testid={`flow-${flow.key}`}>{body}</div>;
       })}
     </div>
+    </>
   );
 }
 

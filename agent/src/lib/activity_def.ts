@@ -174,6 +174,8 @@ export interface FlowDef {
   inputs: string;
   /** 输入页的槽位，按头里出现的先后；没有写的是空的。 */
   slots: FlowSlot[];
+  /** 用户可能所处的几种处境（「cases」一栏，分号隔开的短句），任务起点页把它们画成一行可点的小签；没有写的是空的。 */
+  cases: string[];
   requires: Condition[];
   /** 一段经过示例。 */
   example: string;
@@ -296,6 +298,14 @@ function parseSlot(key: string, value: string, file: string): FlowSlot {
 }
 
 /** 读一条流程的声明并校验。activities 是这个任务类型的全部活动的标识符：各步只能写它们里的，同一项不能写两次。 */
+/** 「cases」一栏：按中文或英文分号拆成短句，各去首尾空白；没有这一栏是空的，拆出空句抛错。 */
+function casesOf(value: string | undefined, file: string): string[] {
+  if (value === undefined || value.trim() === "") return [];
+  const cases = value.split(/[;；]/).map((one) => one.trim());
+  if (cases.some((one) => one === "")) throw new DefinitionHeadError(`${file} 的声明里「cases」有空句：用分号隔开的每一句都要写内容。`);
+  return cases;
+}
+
 export function parseFlowDef(text: string, key: string, file: string, activities: readonly string[]): FlowDef {
   const head = headOf(text, file);
   const flow = need(head, "flow", file);
@@ -316,7 +326,7 @@ export function parseFlowDef(text: string, key: string, file: string, activities
   const twiceSlot = slotLines.find((one, i) => slotLines.indexOf(one) !== i);
   if (twiceSlot !== undefined) throw new DefinitionHeadError(`${file} 的声明里「slot.${twiceSlot}」写了两次：一个槽位只能写一行。`);
   const slots = Object.entries(head).filter(([field]) => field.startsWith("slot.")).map(([field, value]) => parseSlot(field.slice("slot.".length), value, file));
-  const known = new Set(["flow", "name", "purpose", "applies", "steps", "inputs", "requires", "example"]);
+  const known = new Set(["flow", "name", "purpose", "applies", "steps", "inputs", "cases", "requires", "example"]);
   const extra = Object.keys(head).filter((field) => !known.has(field) && !field.startsWith("note.") && !field.startsWith("slot."));
   if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
   return {
@@ -328,6 +338,7 @@ export function parseFlowDef(text: string, key: string, file: string, activities
     notes,
     inputs: need(head, "inputs", file),
     slots,
+    cases: casesOf(head.cases, file),
     requires: listOf(head, "requires", CONDITIONS, file, false),
     example: need(head, "example", file),
   };

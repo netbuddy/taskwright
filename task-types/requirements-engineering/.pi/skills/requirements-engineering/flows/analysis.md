@@ -5,6 +5,7 @@ purpose: 从项目材料或目标描述出发，完成需求获取、分析建�
 applies: 从头编制，或需要整体复查、重新走一遍各站。
 steps: reading, clarifying, modeling, writing, reviewing, document, publish
 inputs: 项目材料（可选）、目标系统描述
+cases: 我有调研材料；我只有口头想法
 requires:
 example: 第 1 天上传 3 份材料，立出 11 节、14 个问题；第 2 到 3 天逐项澄清；第 4 天建模 5 张图；第 5 天推导 31 条条目并评审；第 6 天编写文档，发布第 1 版。
 ---

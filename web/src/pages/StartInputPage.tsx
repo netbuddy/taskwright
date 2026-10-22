@@ -7,11 +7,10 @@
 // 点主按钮：先发启动的请求（后端新建一个工作项与一条属于它的会话，回应里带新会话的编号），成了再替用户发第一句话
 // （写了目标系统描述就是那段描述，没有写是这项活动的那句固定的话），然后进那条会话的工作台。没有启动成（例如助手正在工作）在页上报后端的原话，不跳转。
 // 这一页不选会话：一条会话在建立时就属于一个工作项，启动一律新建。任务里已有流程工作项时流程不能再启动，主按钮旁给「打开它的会话」。
-// 地址带 ?case=序号 时是从三种常见起点里的某一种进来的：那种起点要先看的那一块描黑边并滚到眼前，块里写着那种起点的做法。
 // 澄清的输入页在范围说明之上另有「待澄清问题」勾选块：还没了结的待澄清问题（阻断下游的在前）与待决定事项（model/pendingWork.ts 的 pickRows）。
 // 勾选的编号写进范围说明（「只澄清这几项：…。」在前，用户自己写的接在后面）；地址带 ?pick=编号,编号 时（从起点页「待处理事项」进来）那几项预先勾好。
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Input, Spin } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
@@ -30,12 +29,10 @@ import { composeScope, pickRows, pickedScope, showsPendingWork } from "../model/
 import { go, href } from "../router";
 import "../styles/task-page.css";
 
-export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
+export function StartInputPage({ taskId, startKey, pick = [] }: {
   taskId: string;
   /** 地址里的键：一条工作流程或一项单项活动的键。 */
   startKey: string;
-  /** 从三种常见起点里的第几种进来的；不是从那里进来的是 null。 */
-  startCase: number | null;
   /** 预先勾好的问题与待决定事项的编号（从起点页「待处理事项」进澄清的输入页时）；没有是空的。 */
   pick?: string[];
 }) {
@@ -63,19 +60,6 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
   };
   useEffect(() => { void load(); }, [taskId]);
 
-  // 从三种常见起点进来：要先看的那一块滚到眼前；目标系统描述那一块另把光标放进文本框。只在这一块第一次画出来时做一次。
-  const focusCase = startCase === null ? null : status?.start_page?.cases[startCase] ?? null;
-  const materialsBlock = useRef<HTMLDivElement>(null);
-  const descriptionBlock = useRef<HTMLDivElement>(null);
-  const focused = useRef(false);
-  const ready = !!task && statusRead;
-  useEffect(() => {
-    if (!ready || focused.current || !focusCase?.focus) return;
-    focused.current = true;
-    const block = focusCase.focus === "materials" ? materialsBlock.current : descriptionBlock.current;
-    block?.scrollIntoView?.({ block: "center" });
-    if (focusCase.focus === "description") block?.querySelector("textarea")?.focus();
-  }, [ready, focusCase]);
 
   const back = <div className="tp-back"><a href={href.task(taskId)} data-testid="back-to-start">‹ 返回任务起点</a></div>;
   const frame = (name: string | undefined, where: string, body: React.ReactNode) => (
@@ -142,9 +126,6 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
     go(href.work(taskId, sessionId));
   };
 
-  const caseNote = (focus: "materials" | "description") =>
-    focusCase?.focus === focus && <p className="tp-in-case" data-testid="start-case-note"><b>{focusCase.title}</b>{focusCase.text}</p>;
-
   return frame(task.task_name, `任务起点 › ${name}`, (
     <>
       <header className="tp-head">
@@ -178,14 +159,13 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
       {(blocks.materials || blocks.knowledge) && (
         <div className={`tp-pair${blocks.materials && blocks.knowledge ? "" : " single"}`}>
           {blocks.materials && (
-            <div ref={materialsBlock} className="tp-in-wrap">
+            <div className="tp-in-wrap">
               <MaterialsCard taskId={taskId} materials={materials} info={service.info} onView={view} onChanged={() => void load()}
-                title="项目材料" aside={target.kind === "flow" ? "可选 · 推荐" : undefined} marked={focusCase?.focus === "materials"}
+                title="项目材料" aside={target.kind === "flow" ? "可选 · 推荐" : undefined}
                 intro={(
                   <>
                     <p className="tp-in-p">属于本项目的文件。助手核读后逐句引用，作为需求的证据。</p>
                     {intake && <ul className="tp-in-kinds">{intake.material_kinds.map((one) => <li key={one}>{one}</li>)}</ul>}
-                    {caseNote("materials")}
                   </>
                 )} />
             </div>
@@ -195,14 +175,13 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
       )}
 
       {blocks.description && (
-        <div ref={descriptionBlock}>
-          <section className={`tp-pane tp-in-block${focusCase?.focus === "description" ? " marked" : ""}`} aria-label="目标系统描述" data-testid="describe-block">
+        <div>
+          <section className="tp-pane tp-in-block" aria-label="目标系统描述" data-testid="describe-block">
             <div className="tp-sec-h">
               <h2><EditOutlined className="tp-hic" />目标系统描述</h2>
               <span className="aside">{target.kind === "flow" ? "无材料时必填" : "可选"} · 作为会话的第一条消息发给助手</span>
             </div>
             {intake && <p className="tp-in-p">{intake.describe_note}</p>}
-            {caseNote("description")}
             <Input.TextArea value={description} onChange={(e) => setDescription(e.target.value)} autoSize={{ minRows: 4, maxRows: 12 }}
               placeholder={intake?.describe_placeholder} data-testid="describe-input" />
             {intake && intake.describe_examples.length > 0 && (

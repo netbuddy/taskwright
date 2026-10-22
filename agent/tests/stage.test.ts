@@ -161,7 +161,7 @@ test("对话里怎样说启动、换站、接着做与删除：启动流程、�
   assert.equal(activityStartSentence("launch", "reading", IDLE), "用户启动工作流程「需求分析」，从「核读材料」开始。");
   assert.equal(activityStartSentence("alone", "modeling", IDLE), "用户启动活动「整理建模」。");
   // 给了名字（取自声明）就用给的；活动标识符不是阶段键、又没有给名字时写键本身。
-  assert.equal(activityStartSentence("launch", "parse_spec", IDLE, { flow: "改写既有规格说明", activity: "逆向解析" }), "用户启动工作流程「改写既有规格说明」，从「逆向解析」开始。");
+  assert.equal(activityStartSentence("launch", "parse_spec", IDLE, { flow: "需求再工程", activity: "逆向解析" }), "用户启动工作流程「需求再工程」，从「逆向解析」开始。");
   assert.equal(activityStartSentence("alone", "parse_spec", IDLE, { activity: "逆向解析" }), "用户启动活动「逆向解析」。");
   assert.equal(activityStartSentence("alone", "parse_spec", IDLE), "用户启动活动「parse_spec」。");
   // 早先的对话里留着的两样：继续需求分析，与启动之前任务正在做别的活动时句末的注明。

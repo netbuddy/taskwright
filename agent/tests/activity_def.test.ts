@@ -67,7 +67,7 @@ test("活动声明的 writes_allowed 超出它所用模板头里的那一栏时�
   }
 });
 
-test("需求工程的三条流程：各步与前置条件；需求分析与改写既有规格说明没有前置条件，需求变更要有已发布的版本", () => {
+test("需求工程的三条流程：各步与前置条件；需求分析与需求再工程没有前置条件，需求变更要有已发布的版本", () => {
   const { flows } = readDefinitions(SRS_SKILL_DIR);
   assert.deepEqual(flows.map((one) => one.key), ["analysis", "change", "rewrite"]);
   const [analysis, change, rewrite] = flows;
@@ -78,12 +78,14 @@ test("需求工程的三条流程：各步与前置条件；需求分析与改�
   assert.equal(change.name, "需求变更");
   assert.deepEqual(change.steps, ["reading", "modeling", "writing", "reviewing", "document", "publish"]);
   assert.deepEqual(change.requires, ["has_version"]);
-  assert.equal(rewrite.name, "改写既有规格说明");
+  assert.equal(rewrite.name, "需求再工程");
   assert.deepEqual(rewrite.steps, ["parse_spec", ...STAGES, "publish"]);
   assert.deepEqual(rewrite.requires, []);
   assert.deepEqual(rewrite.slots.map((one) => [one.key, one.accepts, one.required, one.role]),
     [["spec", "materials", true, "既有规格说明"], ["evidence", "materials", false, "证据"], ["goal", "text", false, null]]);
   assert.deepEqual([analysis.slots, change.slots], [[], []]);
+  // 各条流程的处境（起点页「工作流程」标题下的标签）。
+  assert.deepEqual(flows.map((one) => one.cases), [["我有调研材料", "我只有口头想法"], ["已发布过，现在要改"], ["我有一份旧版规格说明"]]);
   for (const one of flows) for (const field of [one.purpose, one.applies, one.inputs, one.example]) assert.ok(field.length > 0, one.key);
 });
 
@@ -156,6 +158,17 @@ test("流程的声明缺栏、各步不认、同一项写两次、提示指到�
   assert.throws(() => parse(replaced("steps", "reading, clarifying, reading")), /写了两次「reading」/);
   assert.throws(() => parse(replaced("flow", "change")), /「flow」写的是「change」，应当与文件名相同/);
   assert.throws(() => parse([...head, "note.publish: 不在里面。"]), /「note.publish」说的「publish」不在「steps」里/);
+});
+
+test("流程的处境：cases 一栏可以不写（空的），写了按中文或英文分号拆成短句、去掉首尾空白；拆出空句报错", () => {
+  const head = ["flow: analysis", "name: 需求分析", "purpose: 目的。", "applies: 适用。", "steps: reading, clarifying", "inputs: 输入。", "requires:", "example: 示例。"];
+  const parse = (lines: string[]) => parseFlowDef(withHead(lines), "analysis", "flows/analysis.md", ["reading", "clarifying", "publish"]);
+  assert.deepEqual(parse(head).cases, []);
+  assert.deepEqual(parse([...head, "cases:"]).cases, []);
+  assert.deepEqual(parse([...head, "cases: 我有调研材料； 我只有口头想法 ;已发布过，现在要改"]).cases, ["我有调研材料", "我只有口头想法", "已发布过，现在要改"]);
+  for (const value of ["我有调研材料；；我只有口头想法", "我有调研材料；", "；我有调研材料"]) {
+    assert.throws(() => parse([...head, `cases: ${value}`]), (error: Error) => error instanceof DefinitionHeadError && /「cases」有空句/.test(error.message), value);
+  }
 });
 
 test("流程的槽位：slot.<键> 一行一个，按头里的先后；没有槽位行的流程是空的；重键、accepts 不认、收材料缺角色、required 不认、收文字带角色都报错", () => {

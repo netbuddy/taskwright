@@ -236,12 +236,12 @@ describe("流程进度的站", () => {
       .toBe("第 5 站 · 评审确认 · 这一站的几项都齐了");
     expect(flowProgress(stage(), SESSIONS)?.stage).toBe("writing");
     expect(flowProgress(stage(), SESSIONS.slice(1))).toBeNull();
-    // 改写既有规格说明在逆向解析这一站：第几站与站名取自目录里这条流程的各站；灯与进度格按它算作的阶段（核读材料）。
-    const catalog = { flows: [{ key: "rewrite", name: "改写既有规格说明", nodes: [{ key: "parse_spec", name: "逆向解析" }, { key: "reading", name: "核读材料" }, { key: "publish", name: "发布" }] }],
+    // 需求再工程在逆向解析这一站：第几站与站名取自目录里这条流程的各站；灯与进度格按它算作的阶段（核读材料）。
+    const catalog = { flows: [{ key: "rewrite", name: "需求再工程", nodes: [{ key: "parse_spec", name: "逆向解析" }, { key: "reading", name: "核读材料" }, { key: "publish", name: "发布" }] }],
       activities: [{ key: "parse_spec", name: "逆向解析", stage: "reading", mode: "batch" }, { key: "reading", name: "核读材料", stage: "reading", mode: "batch" }, { key: "publish", name: "发布", stage: null, mode: "user_only" }] } as unknown as StageView["catalog"];
     const parsing = flowProgress(stage(LAMPS, { current: "reading", activity: "parse_spec", node: "parse_spec", flow_node: "parse_spec", catalog,
-      work_item: { ...FLOW, name: "改写既有规格说明", activity: "parse_spec", flow: "rewrite", scope: null, started_at: null } }), []);
-    expect([parsing?.name, parsing?.ordinal, parsing?.stage, parsing?.line]).toEqual(["改写既有规格说明", 1, "reading", "第 1 站 · 逆向解析 · 只报数，由你判断"]);
+      work_item: { ...FLOW, name: "需求再工程", activity: "parse_spec", flow: "rewrite", scope: null, started_at: null } }), []);
+    expect([parsing?.name, parsing?.ordinal, parsing?.stage, parsing?.line]).toEqual(["需求再工程", 1, "reading", "第 1 站 · 逆向解析 · 只报数，由你判断"]);
     expect(flowProgress(stage(LAMPS, { flow_node: "document" }), [])?.line).toBe("第 6 站 · 编写文档 · 已在最后一站");
     // 核读材料只有只报数的那一盏：不说齐了、也不说还差，写只报数、由用户判断（ok 是什么都一样）。
     expect(flowProgress(stage(LAMPS, { flow_node: "reading" }), [])?.line).toBe("第 1 站 · 核读材料 · 只报数，由你判断");

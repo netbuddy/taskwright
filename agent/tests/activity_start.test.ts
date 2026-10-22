@@ -385,7 +385,7 @@ test("回复里的 activity_done 怎样核对：单项活动的工作项放行�
   assert.deepEqual(pair(activityDoneGate(makeWorkspace(overallDefinition()), "s"))?.[0], "回复里写了 activity_done，而这个任务没有活动可以汇报做完");
 });
 
-test("启动认声明里的活动与工作流：逆向解析可以单独启动，也可以作为改写既有规格说明的第一站启动；不写 flow 按需求分析；不是那条工作流的一站、没有的工作流、只能由用户发起的活动都拒绝；工作流互斥跨工作流照旧", () => {
+test("启动认声明里的活动与工作流：逆向解析可以单独启动，也可以作为需求再工程的第一站启动；不写 flow 按需求分析；不是那条工作流的一站、没有的工作流、只能由用户发起的活动都拒绝；工作流互斥跨工作流照旧", () => {
   // 单项启动逆向解析：没有材料时缺前提，写的是 has_materials 那一句。
   const bare = workspace(overallDefinition(), false);
   assert.deepEqual(refusedOp(() => start(bare.dir, "s-p", "parse_spec", false)), ["rejected", "现在还不能启动「逆向解析」：还没有项目材料。"]);
@@ -402,25 +402,25 @@ test("启动认声明里的活动与工作流：逆向解析可以单独启动�
   assert.equal(stageIn(dir, taskId, "s-alone"), "reading");
   assert.equal(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-alone"))!.work_item?.name, "逆向解析");
 
-  // 在改写既有规格说明里从逆向解析启动：记录的所属工作流是 rewrite、所在一站是 parse_spec；按名字写活动也认。
+  // 在需求再工程里从逆向解析启动：记录的所属工作流是 rewrite、所在一站是 parse_spec；按名字写活动也认。
   before = count(dir, "event");
   const flow = start(dir, "s-rewrite", "逆向解析", true, { flow: "rewrite" });
-  assert.equal(flow.note, "界面操作（不是用户打的字）：用户启动工作流程「改写既有规格说明」，从「逆向解析」开始。");
+  assert.equal(flow.note, "界面操作（不是用户打的字）：用户启动工作流程「需求再工程」，从「逆向解析」开始。");
   assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 2, activity: "parse_spec", node: "parse_spec", flow: "rewrite", from: null, actor: "user", reason: "", run_id: null }]]);
   const summary = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-rewrite"))!;
-  assert.deepEqual([summary.current, summary.node, summary.work_item?.kind, summary.work_item?.name], ["reading", "parse_spec", "flow", "改写既有规格说明"]);
+  assert.deepEqual([summary.current, summary.node, summary.work_item?.kind, summary.work_item?.name], ["reading", "parse_spec", "flow", "需求再工程"]);
 
-  // 已有改写既有规格说明的工作项：再启动需求分析被拒，写明现有的那一个（互斥不论哪条工作流）；别的两条也一样。
+  // 已有需求再工程的工作项：再启动需求分析被拒，写明现有的那一个（互斥不论哪条工作流）；别的两条也一样。
   assert.deepEqual(refusedOp(() => start(dir, "s-analysis", "核读材料", true)), ["rejected",
-    "任务里已有流程工作项「改写既有规格说明」（记录号 2，位于「逆向解析」），一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着。"]);
+    "任务里已有流程工作项「需求再工程」（记录号 2，位于「逆向解析」），一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着。"]);
   assert.equal(refusedOp(() => start(dir, "s-change", "核读材料", true, { flow: "change" }))?.[0], "rejected");
   assert.equal(refusedOp(() => start(dir, "s-rewrite-2", "parse_spec", true, { flow: "rewrite" }))?.[0], "rejected");
 
   // 换一条会话接着做、删除：那句通知里的工作项名与站名取自声明，不写键名。
   const continued = userOp(dir, "s-rewrite-next", { kind: "continue_activity", fields: { activity_record_id: 2 } });
-  assert.ok(continued.note.includes("「改写既有规格说明」") && continued.note.includes("「逆向解析」") && !continued.note.includes("rewrite"), continued.note);
+  assert.ok(continued.note.includes("「需求再工程」") && continued.note.includes("「逆向解析」") && !continued.note.includes("rewrite"), continued.note);
   const deleted = userOp(dir, "s-rewrite", { kind: "delete_work_item", fields: { activity_record_id: 2 } });
-  assert.ok(deleted.note.includes("「改写既有规格说明」") && !deleted.note.includes("rewrite"), deleted.note);
+  assert.ok(deleted.note.includes("「需求再工程」") && !deleted.note.includes("rewrite"), deleted.note);
 
   // 写法上的拒绝：逆向解析不是需求分析的一站、没有这条工作流、没有这项活动、单项活动写了 flow。
   const other = workspace();

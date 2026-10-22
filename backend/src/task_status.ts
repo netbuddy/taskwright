@@ -24,12 +24,11 @@
  * launch 是早先任务状况卡上那一节的内容（agent/src/lib/stage.ts 的 LaunchView），留给还读它的页面，以后去掉。
  * versions 是发布过的各版（library.versionView），没有发布过是空列表。
  * assets 是需求资产六类的现状，六格，每格 { key, name, count, unit, text, note, produced_by }（agent/src/lib/activity_catalog.ts 的 AssetCell）。
- * catalog 是任务起点页的活动目录：flows 两条工作流程与 activities 七项单项活动，文字取自活动与流程的定义文件开头的头
+ * catalog 是任务起点页的活动目录：flows 是任务类型声明的全部工作流程（各带处境 cases），activities 是声明的全部活动，文字取自活动与流程的定义文件开头的头
  * （任务 skill 目录里的 activities/ 与 flows/，没有就读产品自带的，见 agent/src/lib/activity_def_read.ts），各带现在能不能启动（enabled）、一句状态（state）与工作项个数（active_count）；
  * 单项活动能不能启动只看数据，已经有工作项不拦；流程另带 work_item（任务里已有的流程工作项），有它时流程不能启动。
  * 定义读不出来时 catalog 为 null。
- * start_page 是任务起点页与活动输入页上的几段文字（startPageTexts）：一段定位的话、「三步开始」主按钮下面的一句、三种常见起点各一张小卡、
- * 从头编制时输入页上的几段（intake）。
+ * start_page 是任务起点页与活动输入页上的几段文字（startPageTexts）：一段定位的话、从头编制时输入页上的几段（intake）。
  * 现在都是这里给的缺省文字，照需求规格说明这一类任务写；以后由任务类型的定义给。
  * versions 是任务的版本记录，按版本号从小到大，每项见 versionView。
  * 没有阶段的任务（任务定义里没有「业务说明」集合）没有状况，返回 null。
@@ -44,8 +43,7 @@ import * as library from "./library.ts";
 import { fillText } from "../../agent/src/lib/texts.ts";
 
 /**
- * 任务起点页与活动输入页上的几段文字。lead 是任务名下面那一段定位的话；guide_note 是「三步开始」主按钮下面的一句；
- * cases 是三种常见起点，每种一个标题、一句做法，以及点了它进输入页时先看哪一块（focus：materials 是项目材料，description 是目标系统描述）。
+ * 任务起点页与活动输入页上的几段文字。lead 是任务名下面那一段定位的话（常见起点已并入流程卡：处境写在流程声明的 cases 一栏）。
  * intake 是从头编制时输入页上的几段：lead 是三块输入上面的一段话；material_kinds 是适合上传的几类文件；describe_note、
  * describe_placeholder、describe_examples 是目标系统描述那一块的说明、文本框里的提示与点了就填进去的示例；
  * after 是「启动后」一块里有材料与没有材料两种情形各一句。
@@ -53,12 +51,6 @@ import { fillText } from "../../agent/src/lib/texts.ts";
 export function startPageTexts(taskName: string) {
   return {
     lead: fillText("status_page.lead", { task: taskName }),
-    guide_note: fillText("status_page.guide_note"),
-    cases: [
-      { title: fillText("status_page.case_1_title"), text: fillText("status_page.case_1_text"), focus: "materials" },
-      { title: fillText("status_page.case_2_title"), text: fillText("status_page.case_2_text"), focus: "description" },
-      { title: fillText("status_page.case_3_title"), text: fillText("status_page.case_3_text"), focus: "materials" },
-    ],
     intake: {
       lead: fillText("status_page.intake_lead"),
       material_kinds: [fillText("status_page.material_kind_1"), fillText("status_page.material_kind_2"), fillText("status_page.material_kind_3"), fillText("status_page.material_kind_4")],

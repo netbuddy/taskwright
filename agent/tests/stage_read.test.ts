@@ -108,7 +108,7 @@ test("活动记录认声明里的活动：逆向解析的行读得出来，位�
   write(dir, (db) => launchWorkItem(db, { ...who, to: "parse_spec", flow: "rewrite", reason: "" }));
   assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((one) => [one.activity, one.node, one.flow]), [["parse_spec", "parse_spec", "rewrite"]]);
   assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition, "sess-r")), "reading");
-  // 下一站：改写既有规格说明里逆向解析之后是核读、核读之后是澄清；需求分析照旧。
+  // 下一站：需求再工程里逆向解析之后是核读、核读之后是澄清；需求分析照旧。
   assert.deepEqual([nextStepStage(dir, definition, "rewrite", "parse_spec"), nextStepStage(dir, definition, "rewrite", "reading"), nextStepStage(dir, definition, "analysis", "reading"),
     nextStepStage(dir, definition, "analysis", "parse_spec")], ["reading", "clarifying", "clarifying", null]);
   // 从逆向解析到核读：两站算作同一个阶段，但不是原地不动；这一行的活动与所在一站都写 reading，方向是往前。

@@ -31,7 +31,7 @@ const TAKEN = { record_id: 1, name: "需求分析", node: "writing" as const };
 const NODES = [kind("reading", "核读材料"), kind("clarifying", "澄清"), kind("modeling", "整理建模"), kind("writing", "写条目"), kind("reviewing", "评审确认"), kind("document", "编写文档"), kind("publish", "发布")];
 const flow = (over: Partial<CatalogFlow> = {}): CatalogFlow => ({
   key: "analysis", name: "需求分析", purpose: "从材料出发编制需求规格说明。", applies: "从头编制。", nodes: NODES, inputs: "材料", prerequisite_text: "无前置条件；可从空白开始。",
-  example: "经过。", enabled: false, state: "已有流程工作项「需求分析」，位于「写条目」", recommended: true, at: null, start: "reading", active_count: 1, work_item: TAKEN, ...over,
+  example: "经过。", enabled: false, state: "已有流程工作项「需求分析」，位于「写条目」", recommended: true, at: null, start: "reading", active_count: 1, work_item: TAKEN, cases: [], ...over,
 });
 const item = (recordId: number, over: Partial<WorkItemView> = {}): WorkItemView => ({
   record_id: recordId, kind: "activity", name: "整理建模", activity: "modeling", activity_name: "整理建模", node: null, ordinal: null, flow: null, scope: "只重画对象关系图",
@@ -85,12 +85,12 @@ describe("面板上的几句话", () => {
     expect(ownItemLine(flowStage)).toBe("现在在第 4 站「写条目」。完成后助手将提议进入「评审确认」。");
     expect(ownItemLine({ ...flowStage, current: "document", node: "document" })).toBe("现在在第 6 站「编写文档」。这是最后一站，完成后请你过目。");
     expect(ownItemLine(aloneStage)).toBe("单项活动：做够了由助手在回复里汇报做完，不提议下一站；工作项照旧留着，可以接着说。");
-    // 改写既有规格说明在逆向解析这一站：第几站与站名、下一站取自活动目录里这条流程的各站，不按六个阶段数。
+    // 需求再工程在逆向解析这一站：第几站与站名、下一站取自活动目录里这条流程的各站，不按六个阶段数。
     const rewriteNodes = [kind("parse_spec", "逆向解析"), ...NODES];
-    const catalog = { flows: [flow({ key: "rewrite", name: "改写既有规格说明", nodes: rewriteNodes })], activities: [activity("parse_spec", "逆向解析", { stage: "reading" }), activity("publish", "发布", { mode: "user_only" })] };
+    const catalog = { flows: [flow({ key: "rewrite", name: "需求再工程", nodes: rewriteNodes })], activities: [activity("parse_spec", "逆向解析", { stage: "reading" }), activity("publish", "发布", { mode: "user_only" })] };
     const rewriteStage: StageView = { ...flowStage, current: "reading", activity: "parse_spec", node: "parse_spec", catalog,
-      work_item: { ...FLOW_BRIEF, name: "改写既有规格说明", activity: "parse_spec", flow: "rewrite" } };
-    expect(panelSubtitle(rewriteStage, status({ work_items: [] }))).toBe("本会话属于工作项「改写既有规格说明」（10-08） · 位于第 1 站「逆向解析」 · 本任务没有别的工作项");
+      work_item: { ...FLOW_BRIEF, name: "需求再工程", activity: "parse_spec", flow: "rewrite" } };
+    expect(panelSubtitle(rewriteStage, status({ work_items: [] }))).toBe("本会话属于工作项「需求再工程」（10-08） · 位于第 1 站「逆向解析」 · 本任务没有别的工作项");
     expect(ownItemLine(rewriteStage)).toBe("现在在第 1 站「逆向解析」。完成后助手将提议进入「核读材料」。");
     expect(ownItemLine({ ...rewriteStage, current: "document", activity: "document", node: "document" })).toBe("现在在第 7 站「编写文档」。这是最后一站，完成后请你过目。");
   });

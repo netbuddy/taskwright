@@ -1569,6 +1569,8 @@ export interface CatalogFlow {
   inputs: string;
   /** 输入页的槽位，照流程声明原样给；没有声明槽位的流程是空的。早先的后端不给。 */
   slots?: FlowSlot[];
+  /** 用户可能所处的几种处境（流程声明的「cases」一栏，按写的先后）：起点页「工作流程」标题下的处境标签；没有写的是空的。 */
+  cases: string[];
   prerequisite_text: string;
   example: string;
   enabled: boolean;
@@ -1595,9 +1597,6 @@ export interface ActivityCatalog {
 /** 任务起点页与活动输入页上的几段文字。 */
 export interface StartPageTexts {
   lead: string;
-  guide_note: string;
-  /** 三种常见起点；focus 是点了它进输入页时先看哪一块（早先的后端不给）。 */
-  cases: { title: string; text: string; focus?: "materials" | "description" }[];
   /** 从头编制时输入页上的几段；早先的后端不给。 */
   intake?: {
     lead: string;

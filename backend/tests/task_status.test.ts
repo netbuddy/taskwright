@@ -105,21 +105,20 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.name, one.enabled, one.state, one.recommended, one.at, one.start, one.active_count]), [
     ["analysis", "需求分析", false, "已有流程工作项「需求分析」，位于「写条目」", true, null, "reading", 1],
     ["change", "需求变更", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, null, 0],
-    ["rewrite", "改写既有规格说明", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, "parse_spec", 0]]);
+    ["rewrite", "需求再工程", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, "parse_spec", 0]]);
   assert.deepEqual(status.catalog!.flows.map((one) => one.work_item), [{ record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }]);
   const reading = status.catalog!.activities[0];
   assert.deepEqual([reading.reads, reading.writes, reading.prerequisite_text], [[{ key: "materials", name: "材料与证据" }, { key: "knowledge", name: "知识库" }],
     [{ key: "description", name: "业务说明" }], "前置条件：至少一份项目材料。"]);
   assert.ok(reading.purpose.length > 0 && reading.example.length > 0);
   assert.deepEqual(status.catalog, stage.catalog, "与整份数据里的是同一份");
-  // 起点页上的几段文字：定位的话里带任务名，主按钮下面一句，三种常见起点各有标题与做法。
+  // 起点页上的几段文字：定位的话里带任务名；常见起点已并入流程卡，不再有主按钮下面那一句与三张小卡。
   const name = library.taskSnapshot(ws)[1]!.task_name;
   assert.equal(status.start_page.lead, `本任务用于编制并持续维护「${name}」的需求规格说明。所有工作围绕同一套需求资产进行；每启动一个工作项，资产即得到补充或修正。`);
-  assert.equal(status.start_page.guide_note, "预计首轮产出：业务说明初稿与待澄清问题清单");
-  assert.deepEqual(status.start_page.cases.map((one) => one.title), ["有调研材料", "只有口头想法", "已有旧版规格说明"]);
-  assert.ok(status.start_page.cases.every((one) => one.text.endsWith("。")));
-  // 每种起点写明进输入页时先看哪一块；输入页上的几段：一段话、四类文件、目标系统描述的说明与三句示例、启动后两种情形各一句。
-  assert.deepEqual(status.start_page.cases.map((one) => one.focus), ["materials", "description", "materials"]);
+  assert.deepEqual(Object.keys(status.start_page).sort(), ["intake", "lead"]);
+  // 处境写在流程声明的 cases 一栏，随目录的流程卡给出。
+  assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.cases]), [["analysis", ["我有调研材料", "我只有口头想法"]], ["change", ["已发布过，现在要改"]], ["rewrite", ["我有一份旧版规格说明"]]]);
+  // 输入页上的几段：一段话、四类文件、目标系统描述的说明与三句示例、启动后两种情形各一句。
   const intake = status.start_page.intake;
   assert.match(intake.lead, /^项目材料与目标系统描述至少提供一项。/);
   assert.deepEqual([intake.material_kinds.length, intake.describe_examples.length, intake.after.length], [4, 3, 2]);

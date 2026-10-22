@@ -185,6 +185,8 @@ export interface CatalogFlow {
   inputs: string;
   /** 输入页的槽位，照工作流的声明原样给；没有声明槽位的是空的。页面现在还不读它。 */
   slots: FlowSlot[];
+  /** 用户可能所处的几种处境（工作流声明的「cases」一栏原样），任务起点页画成一行可点的小签；没有写的是空的。 */
+  cases: string[];
   prerequisite_text: string;
   example: string;
   /** 现在能不能启动：看数据前提，另外任务里已有流程的工作项（不论哪条流程）时不能启动。 */
@@ -257,12 +259,12 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
       : blocked ?? (slot ? `还没有上传「${slot.name}」` : null) ?? (later ? CATALOG_LATER : null) ?? unstartable ?? LAUNCH_READY;
     return {
       key: one.key, name: one.name, purpose: one.purpose, applies: one.applies,
-      nodes: one.steps.map((key) => ({ key, name: stepOf(key)?.name ?? key })), inputs: one.inputs, slots: one.slots,
+      nodes: one.steps.map((key) => ({ key, name: stepOf(key)?.name ?? key })), inputs: one.inputs, slots: one.slots, cases: one.cases,
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
       // 能启动：前提满足、必填的材料槽位有着落、不在尚未提供的名单里、有一站可以开始，而且任务里没有流程工作项。
       enabled: start !== null && flowItem === null,
       state,
-      // 推荐：没有发布过版本时推荐需求分析，发布过之后推荐需求变更；改写既有规格说明不推荐（从资产数量看不出有没有一份既有规格说明）。
+      // 推荐：没有发布过版本时推荐需求分析，发布过之后推荐需求变更；需求再工程不推荐（从资产数量看不出有没有一份既有规格说明）。
       recommended: one.key === FLOW_ANALYSIS ? facts.versions === 0 : one.key === FLOW_CHANGE ? facts.versions > 0 : false,
       at: null,
       start,

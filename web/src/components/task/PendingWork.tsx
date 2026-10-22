@@ -15,7 +15,7 @@ export function PendingWorkSection({ task, status }: { task: TaskDetail; status:
   if (!work) return null;
   const activity = (key: StageKey): CatalogActivity | null => status?.catalog?.activities.find((one) => one.key === key) ?? null;
   const clarify = activity("clarifying");
-  const startClarify = (ids: string[]) => go(href.start(task.task_id, "clarifying", null, ids));
+  const startClarify = (ids: string[]) => go(href.start(task.task_id, "clarifying", ids));
   /** 打开做某项活动的工作项最近的会话；没有这样的工作项而那项活动能启动时，进它的输入页。两样都不行时没有按钮。 */
   const sessionOrStart = (key: StageKey, open: string, start: string) => {
     const item = workItemDoing(status, key);

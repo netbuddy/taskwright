@@ -48,7 +48,7 @@ const NODES = [kind("reading", "核读材料"), kind("clarifying", "澄清"), ki
 function flowOf(over: Partial<CatalogFlow> = {}): CatalogFlow {
   return {
     key: "analysis", name: "需求分析", purpose: "需求分析的目的。", applies: "项目尚无需求资产。", nodes: NODES, inputs: "项目材料（可选）、目标系统描述",
-    prerequisite_text: "无前置条件；可从空白开始。", example: "经过。", enabled: true, state: "可以启动", recommended: true, at: null, start: "clarifying", ...over,
+    prerequisite_text: "无前置条件；可从空白开始。", example: "经过。", enabled: true, state: "可以启动", recommended: true, at: null, start: "clarifying", cases: [], ...over,
   };
 }
 const READING = activityOf("reading", "核读材料", { reads: [kind("materials", "材料与证据"), kind("knowledge", "知识库")], writes: [kind("description", "业务说明")], prerequisite_text: "前置条件：至少一份项目材料。" });
@@ -56,8 +56,7 @@ const CLARIFYING = activityOf("clarifying", "澄清", { mode: "dialogue", mode_n
 const MODELING = activityOf("modeling", "整理建模");
 const DOCUMENT = activityOf("document", "编写文档", { reads: [kind("all", "全部资产")] });
 const TEXTS = {
-  lead: "定位的话。", guide_note: "主按钮下面的一句",
-  cases: [{ title: "有调研材料", text: "上传会议记录。", focus: "materials" as const }, { title: "只有口头想法", text: "用三句话描述。", focus: "description" as const }],
+  lead: "定位的话。",
   intake: {
     lead: "项目材料与目标系统描述至少提供一项。", material_kinds: ["需求调研记录、访谈纪要", "现行制度、业务规则、办法"],
     describe_note: "说明三点：建设什么系统、服务哪些用户、解决什么问题。", describe_placeholder: "建设什么系统……",
@@ -74,7 +73,7 @@ function statusOf(over: Partial<TaskStatusView> = {}): TaskStatusView {
 }
 
 /** 画出这一页，记下各次请求的先后。 */
-function page(key: string, task: TaskDetail = detail(), status: TaskStatusView | null = statusOf(), options: { startCase?: number | null; knowledge?: boolean; pick?: string[] } = {}) {
+function page(key: string, task: TaskDetail = detail(), status: TaskStatusView | null = statusOf(), options: { knowledge?: boolean; pick?: string[] } = {}) {
   const order: string[] = [];
   const calls = {
     order,
@@ -89,7 +88,7 @@ function page(key: string, task: TaskDetail = detail(), status: TaskStatusView |
   vi.spyOn(api, "serviceInfo").mockResolvedValue(info(options.knowledge ?? true));
   vi.spyOn(api, "knowledge").mockResolvedValue(LIBS);
   render(<ConfigProvider button={{ autoInsertSpace: false }}><AntApp><ToastProvider><ServiceProvider>
-    <StartInputPage taskId="TASK-P" startKey={key} startCase={options.startCase ?? null} pick={options.pick ?? []} />
+    <StartInputPage taskId="TASK-P" startKey={key} pick={options.pick ?? []} />
   </ServiceProvider></ToastProvider></AntApp></ConfigProvider>);
   return calls;
 }
@@ -98,16 +97,15 @@ const text = (el: Element | null) => (el?.textContent ?? "").replace(/\s+/g, " "
 const type = (testId: string, value: string) => fireEvent.change(screen.getByTestId(testId), { target: { value } });
 
 describe("活动输入页的地址", () => {
-  it("#/tasks/{任务}/start/{键}，可以带 ?case=序号；序号不是数字就当没有带", () => {
-    expect(parseRoute("#/tasks/TASK-P/start/analysis")).toEqual({ page: "start", taskId: "TASK-P", key: "analysis", startCase: null });
-    expect(parseRoute("#/tasks/TASK-P/start/analysis?case=2")).toEqual({ page: "start", taskId: "TASK-P", key: "analysis", startCase: 2 });
-    expect(parseRoute("#/tasks/TASK-P/start/modeling?case=x")).toEqual({ page: "start", taskId: "TASK-P", key: "modeling", startCase: null });
-    expect([href.start("TASK-P", "analysis"), href.start("TASK-P", "analysis", 0)]).toEqual(["#/tasks/TASK-P/start/analysis", "#/tasks/TASK-P/start/analysis?case=0"]);
+  it("#/tasks/{任务}/start/{键}；早先的 ?case=序号（三种常见起点）已经不认，带了也当没有带", () => {
+    expect(parseRoute("#/tasks/TASK-P/start/analysis")).toEqual({ page: "start", taskId: "TASK-P", key: "analysis" });
+    expect(parseRoute("#/tasks/TASK-P/start/analysis?case=2")).toEqual({ page: "start", taskId: "TASK-P", key: "analysis" });
+    expect(href.start("TASK-P", "analysis")).toBe("#/tasks/TASK-P/start/analysis");
     expect(parseRoute("#/tasks/TASK-P")).toEqual({ page: "task", taskId: "TASK-P" });
-    // 从起点页「待处理事项」进澄清的输入页：?pick=编号,编号 是预先勾好的几项，可以与 case 一起带。
-    expect(parseRoute("#/tasks/TASK-P/start/clarifying?pick=TBD-001,OA-003")).toEqual({ page: "start", taskId: "TASK-P", key: "clarifying", startCase: null, pick: ["TBD-001", "OA-003"] });
-    expect(href.start("TASK-P", "clarifying", null, ["TBD-001", "OA-003"])).toBe("#/tasks/TASK-P/start/clarifying?pick=TBD-001,OA-003");
-    expect(href.start("TASK-P", "analysis", 1, [])).toBe("#/tasks/TASK-P/start/analysis?case=1");
+    // 从起点页「待处理事项」进澄清的输入页：?pick=编号,编号 是预先勾好的几项。
+    expect(parseRoute("#/tasks/TASK-P/start/clarifying?pick=TBD-001,OA-003")).toEqual({ page: "start", taskId: "TASK-P", key: "clarifying", pick: ["TBD-001", "OA-003"] });
+    expect(href.start("TASK-P", "clarifying", ["TBD-001", "OA-003"])).toBe("#/tasks/TASK-P/start/clarifying?pick=TBD-001,OA-003");
+    expect(href.start("TASK-P", "analysis", [])).toBe("#/tasks/TASK-P/start/analysis");
   });
 });
 
@@ -212,11 +210,11 @@ describe("活动输入页：需求分析", () => {
     expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。" });
   });
 
-  it("改写既有规格说明：从逆向解析启动，发 flow: rewrite 与 activity: parse_spec，没有写描述时第一句话是「请开始逆向解析。」", async () => {
-    const rewrite = flowOf({ key: "rewrite", name: "改写既有规格说明", nodes: [kind("parse_spec", "逆向解析"), kind("reading", "核读材料"), kind("publish", "发布")], start: "parse_spec", recommended: false });
+  it("需求再工程：从逆向解析启动，发 flow: rewrite 与 activity: parse_spec，没有写描述时第一句话是「请开始逆向解析。」", async () => {
+    const rewrite = flowOf({ key: "rewrite", name: "需求再工程", nodes: [kind("parse_spec", "逆向解析"), kind("reading", "核读材料"), kind("publish", "发布")], start: "parse_spec", recommended: false });
     const calls = page("rewrite", detail({ materials: [material("inputs/旧版规格说明.md")] }),
       statusOf({ assets: assets({ materials: 1 }), catalog: { flows: [flowOf({ start: "reading" }), rewrite], activities: [READING, activityOf("parse_spec", "逆向解析")] } }));
-    expect(await submit()).toHaveTextContent("启动改写既有规格说明");
+    expect(await submit()).toHaveTextContent("启动需求再工程");
     expect(screen.getByTestId("start-subtitle")).toHaveTextContent("从「逆向解析」开始");
     fireEvent.click(await submit());
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
@@ -257,21 +255,6 @@ describe("活动输入页：需求分析", () => {
     expect(screen.queryByTestId("knowledge-choice")).toBeNull();
     expect(screen.queryByTestId("start-split")).toBeNull();
     expect(screen.getByTestId("materials-card")).toBeInTheDocument();
-  });
-
-  it("从三种常见起点进来：要先看的那一块描黑边，块里写那种起点的做法", async () => {
-    page("analysis", detail(), statusOf(), { startCase: 0 });
-    await submit();
-    expect(screen.getByTestId("materials-card")).toHaveClass("marked");
-    expect(text(screen.getByTestId("start-case-note"))).toBe("有调研材料上传会议记录。");
-    expect(screen.getByTestId("describe-block")).not.toHaveClass("marked");
-    cleanup(); vi.restoreAllMocks();
-    page("analysis", detail(), statusOf(), { startCase: 1 });
-    await submit();
-    expect(screen.getByTestId("describe-block")).toHaveClass("marked");
-    expect(screen.getByTestId("describe-block")).toContainElement(screen.getByTestId("start-case-note"));
-    await waitFor(() => expect(screen.getByTestId("describe-input")).toHaveFocus());
-    expect(screen.getByTestId("materials-card")).not.toHaveClass("marked");
   });
 });
 
