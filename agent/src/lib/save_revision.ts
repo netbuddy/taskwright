@@ -85,8 +85,10 @@ import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
 import { OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
-import { IDLE, type Position, itemRefusal, pageRefusal, positionName } from "./stage.ts";
-import { activityTemplateFor, allowedForActivity, gateViewedPageFor, whereActivity } from "./stage_read.ts";
+import { IDLE, type Position, QUESTION_KIND_FIELD, QUESTION_KIND_MISSING, QUESTION_RELATED_FIELD, itemRefusal, pageRefusal, positionName } from "./stage.ts";
+import { activityTemplateFor, allowedForActivity, gateViewedPageFor, sourcesFromRolesFor, whereActivity } from "./stage_read.ts";
+import { materialRoles } from "./material_db.ts";
+import { materialOfLocator, materialRoleOf } from "./source_roles.ts";
 import { type OutlineTitles, examplesRequiredFor, outlineTitlesFor, tableHeaderFor } from "./outline_read.ts";
 import { INSTANCE_HEAD, firstTableHeader, hasInstance, ungroundedSentences } from "./cited_sentences.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
@@ -489,6 +491,29 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   // 核读模板那套做法的两条配套检查（pageGuard 的二、三）只在当前活动用核读模板时查：逆向解析算作核读阶段，
   // 但用自己的 parse_spec 模板，照原文立页，这两条不查它。早先的记录活动标识符就是 reading，模板也是 reading，照旧查。
   const readingTemplate = where !== null && where.activity !== IDLE && activityTemplateFor(call.workspaceDir, definition, where.activity) === "reading";
+  // 当前活动的声明限定了材料的role（「sources_from_roles」，逆向解析写既有规格说明）时，新给的「文档原文」来源所指的材料 role要在里面
+  // （lib/source_roles.ts）。知识库里的文档不是材料，不归这一条管；沿用下来的来源不重新核对。
+  const sourceRoles = where !== null && where.activity !== IDLE ? sourcesFromRolesFor(call.workspaceDir, definition, where.activity) : [];
+  const rolesOfMaterials = sourceRoles.length > 0 ? materialRoles(db) : null;
+  const checkSourceRoles = (sources: readonly Source[] | null, errors: string[]): void => {
+    if (!sources || rolesOfMaterials === null) return;
+    sources.forEach((one, index) => {
+      if (one.kind !== SOURCE_DOCUMENT || isKnowledgeLocator(one.locator)) return;
+      const material = materialOfLocator(one.locator, definition.materialsDir);
+      const role = materialRoleOf(rolesOfMaterials, material);
+      if (sourceRoles.includes(role)) return;
+      errors.push(problem(refusalText("source.material_role", {
+        where: fillText("part.source_no", { no: index + 1 }), material, role, roles: sourceRoles.map((name) => `「${name}」`).join("、"),
+      })));
+    });
+  };
+  // 字段写了「原文未给」的条目（助手写的，问题集合之外）：这一批全部核对通过之后，看它们各有没有种类为缺失、关联它的问题条目。
+  const unstated: { label: string; itemId: string; fields: string[] }[] = [];
+  const noteUnstated = (label: string, itemId: string | undefined, collection: CollectionDef, fields: Fields): void => {
+    if (call.actor === ACTOR_USER || itemId === undefined || keepPendingField(collection) !== null) return;
+    const hit = Object.keys(fields).filter((name) => isUnstated(fields[name]));
+    if (hit.length > 0) unstated.push({ label, itemId, fields: hit });
+  };
   const outline = readingTemplate ? outlineTitlesFor(call.workspaceDir, definition.skillPath) : null;
   /**
    * 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改业务说明的页时改动了的字段名；
@@ -586,6 +611,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         relocatedNote(number, notes));
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
+      checkSourceRoles(sources, errors);
       if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER) {
         for (const one of pageProblems(fields, sources)) errors.push(problemText(one));
       }
@@ -599,6 +625,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       planned.push({ op: "add", collection, fields, sources: sources!, notes });
       const newId = [...addedAt].find(([, at]) => at === number)?.[0];
       if (newId) written.set(newId, { collection: collection.name, fields });
+      noteUnstated(label, newId, collection, fields);
       return;
     }
 
@@ -711,6 +738,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (removed.length) notes.push(fillText("result.save_revision.sources_relabelled", { item: itemId, count: removed.length, removed: removed.map(quoteLabel).join("、") }));
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
+    if (op !== "restore") checkSourceRoles(given, errors);
     if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER && op !== "restore") {
       for (const one of pageProblems(merged, sources)) errors.push(problemText(one));
     }
@@ -735,11 +763,62 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       notes,
     });
     written.set(itemId, { collection: row.collection, fields: merged });
+    if (op !== "restore") noteUnstated(label, itemId, collection, merged);
   });
+
+  // 「原文未给」与缺失问题配对（平台的通用规则）：写了「原文未给」的条目，这一批里或任务里要有一条种类为缺失、「关联条目」写它的问题条目。
+  // 只在别的都通过时查，免得这一批本来就要重写时多报一条。反过来（有缺失问题而条目里没有「原文未给」）不查。
+  // 问题集合里没有能填「缺失」的「种类」一栏（早先的任务定义）时无从配对，不查。
+  if (problems.length === 0 && unstated.length > 0 && canRecordMissing(definition)) {
+    const covered = missingProblemTargets(definition, items, refs, deletedHere, written);
+    for (const one of unstated) {
+      if (covered.has(one.itemId)) continue;
+      problems.push(reasonOf(one.label, one.itemId, one.fields.map((field) => problem(refusalText("save_revision.unstated_without_missing", { item: one.itemId, field })))));
+    }
+  }
 
   if (problems.length > 0) throw new SaveRejected(problems);
 
   return write(db, call, taskId, definition, planned, params);
+}
+
+/** 平台约定的占位值：材料里没有给出的字段写它（逆向解析），并要同批记一条缺失问题。 */
+export const UNSTATED_VALUE = "原文未给";
+
+/** 一个字段的值是不是「原文未给」：文字恰好是它，或者列表里有一项恰好是它。 */
+function isUnstated(value: unknown): boolean {
+  if (typeof value === "string") return value.trim() === UNSTATED_VALUE;
+  return Array.isArray(value) && value.some((one) => typeof one === "string" && one.trim() === UNSTATED_VALUE);
+}
+
+/** 任务定义的问题集合能不能记一条种类为缺失的问题：有「种类」一栏，取值里有「缺失」。 */
+function canRecordMissing(definition: TaskDefinition): boolean {
+  return definition.collections.some((one) => keepPendingField(one) !== null
+    && one.fields.some((field) => field.name === QUESTION_KIND_FIELD && (field.values ?? []).includes(QUESTION_KIND_MISSING)));
+}
+
+/**
+ * 种类为缺失的问题条目关联着的条目编号：库里没删、这一批也没删的取它现在的内容，这一批写过的取写过之后的。
+ */
+function missingProblemTargets(
+  definition: TaskDefinition, items: ReadonlyMap<string, ItemRow>, refs: RefLookups, deletedHere: ReadonlySet<string>,
+  written: ReadonlyMap<string, { collection: string; fields: Record<string, unknown> }>,
+): Set<string> {
+  const problemNames = new Set(definition.collections.filter((one) => keepPendingField(one) !== null).map((one) => one.name));
+  const ids = new Set<string>([...items.keys(), ...written.keys()]);
+  const targets = new Set<string>();
+  for (const id of ids) {
+    if (deletedHere.has(id)) continue;
+    const row = items.get(id);
+    const collection = written.get(id)?.collection ?? row?.collection;
+    if (!collection || !problemNames.has(collection)) continue;
+    if (!written.has(id) && row && row.deleted_in_revision !== null) continue;
+    const fields = refs.fieldsOf(id);
+    if (!fields || fields[QUESTION_KIND_FIELD] !== QUESTION_KIND_MISSING) continue;
+    const related = fields[QUESTION_RELATED_FIELD];
+    for (const one of Array.isArray(related) ? related : [related]) if (typeof one === "string") targets.add(one);
+  }
+  return targets;
 }
 
 /** 任务里全部条目（含已删除的），按条目编号查。 */

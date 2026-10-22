@@ -37,6 +37,7 @@ import { registerIntentRecord } from "./hooks/intent_record.ts";
 import { registerToolLimits } from "./hooks/tool_limits.ts";
 import { registerStagePrompt } from "./hooks/stage_prompt.ts";
 import { registerDefinitionView } from "./hooks/definition_view.ts";
+import { registerSourceRoles } from "./hooks/source_roles.ts";
 
 export default function (pi: ExtensionAPI) {
   registerSaveRevision(withTuiRenderers(pi));
@@ -60,4 +61,6 @@ export default function (pi: ExtensionAPI) {
   registerStagePrompt(pi);
   // 任务定义按会话给视图：助手读任务定义文件时把返回换成本会话能参照、能写的那几个集合；原文件不改（hooks/definition_view.ts）。
   registerDefinitionView(pi);
+  // 按材料 role拦自带的 read 与 grep：当前活动的声明写了「sources_from_roles」时，role不在里面的材料不读不搜（hooks/source_roles.ts）。
+  registerSourceRoles(pi);
 }

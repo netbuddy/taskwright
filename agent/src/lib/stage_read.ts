@@ -216,6 +216,14 @@ export function gateViewedPageFor(workspaceDir: string, definition: Pick<TaskDef
   return definitionsOrError(workspaceDir, definition).defs?.activities.find((one) => one.key === key)?.gateViewedPage ?? true;
 }
 
+/**
+ * 做这项活动时只认哪几种role的材料（活动声明的「sources_from_roles」，lib/source_roles.ts）：声明里找不到这项活动、
+ * 声明读不出来、或者这一栏没写时是空的，不限。
+ */
+export function sourcesFromRolesFor(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): string[] {
+  return definitionsOrError(workspaceDir, definition).defs?.activities.find((one) => one.key === key)?.sourcesFromRoles ?? [];
+}
+
 
 /**
  * 一个工作项是哪一种、叫什么：工作流的工作项叫工作流的名字，单项活动的叫活动的名字。给了声明（defs）时名字取自声明，

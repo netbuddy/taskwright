@@ -12,6 +12,7 @@ import { STAGES, STAGE_NAMES, type Stage } from "../src/lib/stage.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
 import { launchWorkItem } from "../src/lib/stage_read.ts";
+import { insertMaterial } from "../src/lib/material_db.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 const page = (title: string, fields: Record<string, unknown> = {}) =>
@@ -169,6 +170,8 @@ test("逆向解析的工作项：获准写入按当前活动取，能新增条�
   enterStage(dir, "reading");
   assert.ok(refusal(dir, [useCase("还书")])!.includes("任务现在在核读材料阶段，这个阶段不能新增「用例」的条目"));
   // 另一条会话做逆向解析（在需求再工程里）：页与条目都能写，最低门不拦（这时一页都还没有被用户看过）。
+  // 逆向解析只认既有规格说明上传位里的材料：把任务里那份材料记进这个上传位。
+  insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
     launchWorkItem(db, { taskId: task.task_id, sessionId: "sess-parse", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "rewrite", reason: "" });

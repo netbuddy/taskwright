@@ -675,3 +675,15 @@ inserted 里每一段都要照那一处的正文一字不差地抄出你补进�
 用途：index 超出了字段改后的项数。
 
 {{where}}指到字段「{{field}}」的第 {{index}} 项（从 0 起），这个字段改后只有 {{length}} 项，index 最大是 {{max}}{{tail}}
+
+## `save_revision.unstated_without_missing`
+
+用途：条目的某个字段的值是「原文未给」，而这一批里与任务里都没有种类为缺失、关联条目指向它的问题条目。item 是条目编号（这一批新增的写它会得到的编号），field 是字段名。
+
+{{item}} 的「{{field}}」写了「原文未给」
+
+## `save_revision.unstated_without_missing.guide`
+
+用途：上一条的指引。
+
+要同批记一条种类为缺失、「关联条目」写它的问题条目；一条条目缺几个字段记一条问题并列齐

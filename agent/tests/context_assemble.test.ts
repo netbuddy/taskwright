@@ -14,7 +14,7 @@ import { insertMaterial } from "../src/lib/material_db.ts";
 import { IDLE, STAGES, STAGE_NAMES, type Stage } from "../src/lib/stage.ts";
 import {
   ContextCache, ENV_DEBUG_SETTINGS, EXIT_HEADING, HOW_NAMES, NODE_IO, ORIGIN_NAMES, PART_NAMES, PROMPTS_DIR, PROMPT_DIR_MAX_BYTES, PromptAssemblyError, type PromptIo, REQUIRED_MODULES,
-  type StagePrompt, composeContext, debugPromptDir, digestOf, partFact, piTail, promptDirNames, scopeSection, skillBody, stageInWorkspace,
+  type StagePrompt, activitySegmentText, composeContext, debugPromptDir, digestOf, partFact, piTail, promptDirNames, scopeSection, skillBody, stageInWorkspace,
   whereInWorkspace, withoutOpening, withoutSection,
 } from "../src/lib/context_assemble.ts";
 import { STAGE_PROMPT_ERROR_TYPE, STAGE_PROMPT_STATUS_KEY, type StagePromptReport, type StopMessage, stagePromptFor } from "../src/hooks/stage_prompt.ts";
@@ -712,4 +712,15 @@ test("逆向解析的工作项：会话在哪里读出活动标识符 parse_spec
   assert.equal(run.reports[0][1].parts!.find((one) => one.part === "template")!.file, "agent/prompts/templates/parse_spec.md");
   assert.ok(prompt.includes("# 现在这个阶段：逆向解析"), "模板正文是逆向解析的");
   assert.ok(prompt.includes("写条目、改条目"), "获准写入里有条目");
+});
+
+test("逆向解析的正文：常驻段里有第零步与章节去向表，没有字段对位一段；第一次保存成功后附上的是字段对位一段", () => {
+  const input = { stage: "reading" as const, inFlow: true, flow: "rewrite", activity: "parse_spec", workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: "" };
+  const prompt = composeContext(input).text;
+  assert.ok(prompt.includes("**第零步：先判断它是不是一份规格说明。**") && prompt.includes("（A-3、A-4）"));
+  assert.ok(prompt.includes("| 功能需求、用例、功能点表 | 功能用例条目 |") && prompt.includes("| 修订历史、参考资料、文档约定、审批页 | 不提取，在收尾汇报里写明 |"));
+  assert.ok(!prompt.includes("## 字段怎样对位") && !prompt.includes("<!-- segment:"), "字段对位一段不常驻");
+  const afterSave = activitySegmentText(input, "after_save")!;
+  assert.ok(afterSave.startsWith("## 字段怎样对位\n") && afterSave.includes("写「原文未给」四个字") && afterSave.includes("（M-5）"));
+  assert.equal(activitySegmentText(input, "after_reply"), null, "逆向解析只有保存后一段");
 });
