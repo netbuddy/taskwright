@@ -42,7 +42,7 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
   items: Item[];
   /** 只传出处对得上这份材料的定位请求。 */
   locate: LocateRequest | null;
-  /** 跳到第 paragraph 段并把它闪一下（材料区「按章节看引用」点一节时给）；nonce 变了才跳。 */
+  /** 跳到第 paragraph 段并把它闪一下（材料区「分段去向」点一节时给）；nonce 变了才跳。 */
   jump?: { paragraph: number; nonce: number } | null;
   paperRef?: RefObject<HTMLDivElement | null>;
   onOpenItem?: (itemId: string) => void;
