@@ -143,6 +143,11 @@ export interface ActivityDef {
   stage: Stage | null;
   /** 正文分了哪几段（不含常驻段）；没有分段时是空的。 */
   segments: SegmentTiming[];
+  /**
+   * 能不能单独启动（「alone」一栏，yes 或 no，不写或者空着是 yes）：不能的只在工作流里做，目录不给它单项卡，单项启动被拒。
+   * 只看声明本身：只能由用户发起的活动（发布）能不能启动另由 mode 管（startActivity 的 not_startable 先拦）。
+   */
+  alone: boolean;
 }
 
 /** 槽位收什么：材料文件，或者一段文字。 */
@@ -237,7 +242,7 @@ function headOf(text: string, file: string): Record<string, string> {
 export function parseActivityDef(text: string, key: string, file: string): ActivityDef {
   if (!IDENTIFIER_PATTERN.test(key)) throw new DefinitionHeadError(`${file} 的文件名「${key}」不能当活动的标识符：只能是小写字母开头的小写字母、数字、短横线与下划线。`);
   const head = headOf(text, file);
-  const known = new Set(["name", "mode", "purpose", "reads", "writes", "writes_allowed", "requires", "example", "template", "stage", "segments"]);
+  const known = new Set(["name", "mode", "purpose", "reads", "writes", "writes_allowed", "requires", "example", "template", "stage", "segments", "alone"]);
   const extra = Object.keys(head).filter((field) => !known.has(field));
   if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
   const mode = oneOf(head, "mode", MODES, file);
@@ -257,6 +262,8 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
   const segments = head.segments === undefined ? [] : listOf(head, "segments", SEGMENT_TIMINGS, file, true);
   if (segments.length > 0 && mode === "user_only") throw new DefinitionHeadError(`${file} 的声明里「segments」：只能由用户发起的活动不进系统提示，不分段。`);
   checkSegments(segments, splitHead(text).body, file);
+  const aloneText = (head.alone ?? "").trim();
+  if (aloneText !== "" && aloneText !== "yes" && aloneText !== "no") throw new DefinitionHeadError(`${file} 的声明里「alone」写的是「${aloneText}」，只能是 yes、no 之一，或者不写。`);
   return {
     key,
     name: need(head, "name", file),
@@ -270,6 +277,7 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
     template,
     stage: stageText as Stage | null,
     segments,
+    alone: aloneText !== "no",
   };
 }
 

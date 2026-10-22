@@ -357,6 +357,13 @@ describe("活动输入页：启动不了的情形", () => {
     expect(calls.startNew).not.toHaveBeenCalled();
   });
 
+  it("按地址打开不能单独启动的活动（逆向解析只在工作流里做）：与目录里没有这一项一样，不画输入", async () => {
+    const st = statusOf();
+    page("parse_spec", detail(), statusOf({ catalog: { ...st.catalog!, activities: [...st.catalog!.activities, activityOf("parse_spec", "逆向解析", { alone: false })] } }));
+    expect(await screen.findByTestId("start-unknown")).toHaveTextContent("活动目录里没有这一项，请回任务起点重新选择。");
+    expect(screen.queryByTestId("start-submit")).toBeNull();
+  });
+
   it("活动目录里没有这一项、任务已经结束：不画输入，写明原因，留着「返回任务起点」", async () => {
     page("nothing");
     expect(await screen.findByTestId("start-unknown")).toHaveTextContent("活动目录里没有这一项，请回任务起点重新选择。");

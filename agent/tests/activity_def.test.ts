@@ -89,6 +89,17 @@ test("需求工程的三条流程：各步与前置条件；需求分析与需�
   for (const one of flows) for (const field of [one.purpose, one.applies, one.inputs, one.example]) assert.ok(field.length > 0, one.key);
 });
 
+test("能不能单独启动：alone 一栏不写或者空着是能，写 yes、no 各对，别的值报错；只看声明本身；需求工程里只有逆向解析不能单独启动", () => {
+  const head = ["name: 澄清", "mode: dialogue", "purpose: 目的。", "reads: description", "writes: description", "writes_allowed: page, problem", "requires:",
+    "example: 例子。", "template: clarifying", "stage: clarifying"];
+  const parse = (lines: string[]) => parseActivityDef(withHead(lines), "clarifying", "activities/clarifying.md");
+  assert.deepEqual([parse(head).alone, parse([...head, "alone:"]).alone, parse([...head, "alone: yes"]).alone, parse([...head, "alone: no"]).alone], [true, true, true, false]);
+  assert.throws(() => parse([...head, "alone: maybe"]), (error: Error) => error instanceof DefinitionHeadError && /「alone」写的是「maybe」，只能是 yes、no 之一/.test(error.message));
+  // 发布不写这一栏：按声明算是能单独启动，它能不能启动另由 mode（只能由用户发起）管。
+  assert.deepEqual(readDefinitions(SRS_SKILL_DIR).activities.map((one) => [one.key, one.alone]), [["reading", true], ["clarifying", true], ["modeling", true],
+    ["writing", true], ["reviewing", true], ["document", true], ["publish", true], ["parse_spec", false]]);
+});
+
 test("逆向解析算作核读材料阶段、用核读模板，但核读材料阶段的代表仍是 reading：前六项仍是六个阶段的键", () => {
   const { activities, allowed } = readDefinitions(SRS_SKILL_DIR);
   const parse = activities.find((one) => one.key === "parse_spec")!;

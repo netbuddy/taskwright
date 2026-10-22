@@ -238,6 +238,11 @@ test("经直接操作启动需求再工程、从逆向解析开始：任务状�
     const sessions = async () => (await call("GET", `/api/v1/tasks/${taskId}/sessions`)).body.sessions as Dict[];
     const act = (body: Dict) => call("POST", `/api/v1/tasks/${taskId}/actions`, { client_id: `a-${body.kind}-${Math.random()}`, task_id: taskId, targets: [], notify_executor: false, ...body });
 
+    // 单项启动逆向解析：声明为只在工作流里做，答 rejected，不建会话，不记工作项。
+    const sessionsBefore = (await sessions()).length;
+    const alone = await act({ kind: "start_activity", fields: { activity: "parse_spec", in_flow: false } });
+    assert.deepEqual([alone.status >= 400, alone.body.error.code, alone.body.error.message], [true, "rejected", "「逆向解析」只在工作流里做，不能单独启动。"]);
+    assert.deepEqual([(await sessions()).length, db("SELECT COUNT(*) AS n FROM activity_record")], [sessionsBefore, [{ n: 0 }]]);
     const launched = await act({ kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "rewrite" } });
     const own = launched.body.session_id as string;
     assert.ok(launched.status === 200 && typeof own === "string" && own !== "", JSON.stringify(launched.body));

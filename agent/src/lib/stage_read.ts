@@ -330,6 +330,7 @@ export function activityDoneOf(workspaceDir: string, sessionId: string): { activ
  * not_in_flow 这条会话不在做流程的工作项（自由讨论的会话、归档的会话、单项活动的工作项），卡片上的进入与退回不算数，
  * session_bound 这条会话已经属于一个工作项，不能再在它上面启动另一个，flow_exists 任务里已有流程的工作项（existing 里写是哪一个），
  * 不能再以流程方式启动；只在启动时出现的几种：unknown_activity 声明里没有这项活动，not_startable 这项活动只能由用户发起（发布），
+ * not_alone 这项活动声明为不能单独启动、却要单项启动（逆向解析只在工作流里做），
  * unknown_flow 声明里没有这条工作流，not_a_step 这项活动不是这条工作流的一步，no_definitions 活动的声明读不出来（message 里写原因）。
  * from 是这条会话当时在哪里（一个阶段或者空闲），任务没有阶段时为 null。记下了的另带 how（lib/stage.ts 的 StartHow）、in_flow 与工作项的记录号。
  */
@@ -340,7 +341,7 @@ export interface StageMoveOutcome {
   moved: boolean;
   /** 没有做成的原因；not_next 与 not_back 只出现在卡片点击上：点的那个阶段不是紧挨着的下一段、不在现在这个阶段之前。 */
   why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | "not_ready" | "not_in_flow" | "session_bound" | "flow_exists"
-    | "unknown_activity" | "not_startable" | "unknown_flow" | "not_a_step" | "no_definitions" | null;
+    | "unknown_activity" | "not_startable" | "not_alone" | "unknown_flow" | "not_a_step" | "no_definitions" | null;
   event_seq: number | null;
   how?: StartHow;
   in_flow?: boolean;
@@ -368,7 +369,7 @@ function whereIs(db: DatabaseSync, workspaceDir: string, taskId: string, session
  * 在一条会话上启动一个工作项：启动一条工作流（flow 是它的键，to 是从哪一步启动），或者启动一项单项活动（flow 为 null）。
  * to 是任务类型声明里的活动标识符。先看任务有没有阶段、这次行不行，行就记下。不行不抛错，原因写在结果里，由调用方决定怎样告诉助手或用户。
  * 启动只由用户决定；这条会话已经属于一个工作项时不能再启动（一条会话只属于一个工作项，要做别的另开一条会话）；
- * 声明里要有这项活动，它不能是只能由用户发起的那种（发布）；在工作流里启动时声明里要有这条工作流、to 要是它的一步，
+ * 声明里要有这项活动，它不能是只能由用户发起的那种（发布）；单项启动时它要能单独启动（声明的 alone）；在工作流里启动时声明里要有这条工作流、to 要是它的一步，
  * 任务里已有工作流的工作项（不论哪条）就不能启动：一个任务同一时刻至多一个工作流的工作项。
  * 单项活动要够前提（这项活动声明的 requires，lib/activity_catalog.ts 的 blockedText），在工作流里启动不查前提；
  * 同一项单项活动已经有工作项时不拦：再启动是另起一个。
@@ -386,6 +387,8 @@ export function startActivity(db: DatabaseSync, workspaceDir: string, who: Who, 
   const activity = found.defs.activities.find((one) => one.key === to);
   if (!activity) return { ...none, why: "unknown_activity" };
   if (activity.mode === "user_only") return { ...none, why: "not_startable" };
+  // 声明为不能单独启动的活动（逆向解析）只在工作流里做：单项启动拦下，在工作流里启动照常。
+  if (flow === null && !activity.alone) return { ...none, why: "not_alone" };
   if (flow !== null) {
     const declared = found.defs.flows.find((one) => one.key === flow);
     if (!declared) return { ...none, why: "unknown_flow" };

@@ -9,11 +9,11 @@ export { SCOPE_MAX_LENGTH };
 /** 输入页要启动的那一项：一条工作流程，或者一项单项活动。 */
 export type StartTarget = { kind: "flow"; flow: CatalogFlow } | { kind: "activity"; activity: CatalogActivity };
 
-/** 地址里的键在活动目录里指的是哪一项；目录里没有就是 null。 */
+/** 地址里的键在活动目录里指的是哪一项；目录里没有、或者是不能单独启动的活动（逆向解析只在工作流里做）就是 null。 */
 export function startTarget(catalog: ActivityCatalog | null | undefined, key: string): StartTarget | null {
   const flow = catalog?.flows.find((one) => one.key === key);
   if (flow) return { kind: "flow", flow };
-  const activity = catalog?.activities.find((one) => one.key === key);
+  const activity = catalog?.activities.find((one) => one.key === key && one.alone !== false);
   return activity ? { kind: "activity", activity } : null;
 }
 

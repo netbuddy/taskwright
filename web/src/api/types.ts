@@ -1534,6 +1534,8 @@ export interface CatalogActivity {
   name: string;
   /** 这项活动算作哪个阶段（声明的 stage 一栏）；只能由用户发起的（发布）为 null。早先的后端不给。 */
   stage?: StageKey | null;
+  /** 能不能单独启动（声明的「alone」一栏）：为假的只在工作流里做，页面不画它的单项卡。早先的后端不给，按能算。 */
+  alone?: boolean;
   mode: "batch" | "dialogue" | "user_only";
   mode_name: string;
   purpose: string;

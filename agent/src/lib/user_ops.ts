@@ -853,6 +853,10 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
     const fact = `「${names.activity}」${CATALOG_LATER}`;
     throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
   }
+  if (outcome.why === "not_alone") {
+    const fact = `「${names.activity}」只在工作流里做，不能单独启动`;
+    throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+  }
   if (outcome.why === "no_definitions") {
     const fact = `活动的定义读不出来：${outcome.message}`;
     throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });

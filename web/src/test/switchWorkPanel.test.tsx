@@ -97,6 +97,14 @@ describe("面板上的几句话", () => {
 });
 
 describe("切换工作面板", () => {
+  it("「其他活动」只列能单独启动的活动：声明为只在工作流里做的逆向解析不列", async () => {
+    const st = status();
+    panel(flowStage, status({ catalog: { ...st.catalog!, activities: [...st.catalog!.activities, activity("parse_spec", "逆向解析", { alone: false })] } }));
+    await screen.findByTestId("switch-others");
+    expect(screen.queryByTestId("switch-activity-parse_spec")).toBeNull();
+    expect(screen.getByTestId("switch-activity-modeling")).toBeInTheDocument();
+  });
+
   it("流程的工作项的会话：标题与一句、六格；第一组写在第几站、下一站，三个按钮；辅助操作五个；其他活动里流程项写「已在进行」、本会话就是它的会话", async () => {
     const { acts, onClose } = panel(flowStage);
     expect(await screen.findByTestId("switch-title")).toHaveTextContent("切换工作");

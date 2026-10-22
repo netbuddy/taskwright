@@ -222,7 +222,7 @@ function needsNewSession(body: Record<string, any>): boolean {
 
 /**
  * 新建会话之前核对，不行就拒绝、不建会话。启动：活动目录里要有这项活动（按键或名字认，早先的阶段名也认），没有答 bad_request；
- * 只能由用户发起的那项（发布）答 rejected。启动单项活动：这项活动现在能不能启动（任务状况里活动目录的那一项），不能就答 rejected 并写明原因。
+ * 只能由用户发起的那项（发布）答 rejected；声明为不能单独启动的活动（逆向解析）单项启动也答 rejected。启动单项活动：这项活动现在能不能启动（任务状况里活动目录的那一项），不能就答 rejected 并写明原因。
  * 启动流程不查前提，与助手一侧相同；目录里要有 flow 写的那条流程（不写按需求分析）、这项活动要是它的一站，不然答 bad_request；
  * 任务里已有流程的工作项时答 rejected，写明现有的那一个（一个任务同一时刻至多一个流程工作项）。
  * 接着做一个工作项：要有这个工作项。任务没有阶段、活动目录出不来时不在这里拒绝，交给助手一侧。
@@ -240,6 +240,11 @@ function refuseBeforeNewSession(taskDir: string, body: Record<string, any>): voi
   if (catalog !== null && !entry) throw new ApiError("bad_request", `任务类型里没有叫「${text}」的活动。`);
   if (entry && entry.mode === "user_only") {
     const fact = `「${entry.name}」${CATALOG_LATER}`;
+    throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
+  }
+  // 声明为不能单独启动的活动（逆向解析）只在工作流里做：单项启动拒绝，不建会话。
+  if (fields.in_flow === false && entry && entry.alone === false) {
+    const fact = `「${entry.name}」只在工作流里做，不能单独启动`;
     throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
   }
   if (fields.in_flow !== false) {

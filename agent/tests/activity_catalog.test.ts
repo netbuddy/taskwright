@@ -128,6 +128,8 @@ test("活动目录：空任务只有澄清与需求分析能启动；需求分�
   // 每项活动带它算作的阶段：逆向解析算作核读，发布不算作任何阶段。
   assert.deepEqual(got.activities.map((one) => [one.key, one.stage]), [["reading", "reading"], ["clarifying", "clarifying"], ["modeling", "modeling"], ["writing", "writing"],
     ["reviewing", "reviewing"], ["document", "document"], ["publish", null], ["parse_spec", "reading"]]);
+  // 每项活动带它能不能单独启动：只有逆向解析不能（页面不给它单项卡）。
+  assert.deepEqual(got.activities.filter((one) => !one.alone).map((one) => one.key), ["parse_spec"]);
 });
 
 test("活动目录：单项活动能不能启动只看数据，已经有工作项也不拦；每一项带工作项个数；已有流程工作项时流程都不能启动", () => {

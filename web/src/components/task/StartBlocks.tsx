@@ -157,7 +157,8 @@ export function ActivityCards({ taskId, activities }: {
 }) {
   return (
     <div className="tp-acts">
-      {activities.map((one) => {
+      {/* 只画能单独启动的活动：声明为只在工作流里做的（逆向解析）不出单项卡。 */}
+      {activities.filter((one) => one.alone !== false).map((one) => {
         const to = one.enabled ? href.start(taskId, one.key) : null;
         const count = one.active_count ?? 0;
         const body = (

@@ -9,6 +9,7 @@ requires: has_materials
 example: 原文第 3.2 节「用户登录」映射为一条功能用例，前置条件一格原文未给，记一条「缺失」问题。
 template: reading
 stage: reading
+alone: no
 ---
 
 ## 这类任务在逆向解析阶段

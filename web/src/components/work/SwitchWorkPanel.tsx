@@ -176,7 +176,8 @@ export function SwitchWorkPanel({ open, taskId, sessionId, stage, pendingReview,
         <div className="sw-group" data-testid="switch-others">
           <div className="gt"><b>其他活动</b>一律新建一个工作项与一条会话；本会话原地留着，随时从会话菜单或任务起点页回来</div>
           <div className="tp-acts">
-            {catalog.activities.map((one) => {
+            {/* 只列能单独启动的活动：声明为只在工作流里做的（逆向解析）不列。 */}
+            {catalog.activities.filter((one) => one.alone !== false).map((one) => {
               const can = one.enabled && !off;
               const count = one.active_count ?? 0;
               return (

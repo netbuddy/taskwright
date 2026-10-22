@@ -146,6 +146,7 @@ function statusOf(over: Partial<TaskStatusView> = {}): TaskStatusView {
         activityOf("clarifying", "澄清", { mode: "dialogue", mode_name: "逐项对话", prerequisite_text: "无前置条件；可从空白开始。", writes: [kind("description", "业务说明")] }),
         activityOf("writing", "写条目", { enabled: false, state: "业务说明还没有内容；有 1 张分析模型还没有查看", prerequisite_text: "前置条件：业务说明至少一节，分析模型均已查看。" }),
         PUBLISH,
+        activityOf("parse_spec", "逆向解析", { alone: false, prerequisite_text: "前置条件：至少一份项目材料。" }),
       ],
     },
     ...over,
@@ -275,6 +276,10 @@ describe("起点页：空任务", () => {
     expect(text(writing.querySelector(".tp-need"))).toBe("前置条件：业务说明至少一节，分析模型均已查看。");
     expect(writing.querySelector(".tp-need")).toHaveAttribute("title", "业务说明还没有内容；有 1 张分析模型还没有查看。");
     expect([writing.tagName, writing.classList.contains("go"), writing.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
+    // 逆向解析声明为只在工作流里做（alone 为假）：不出单项卡；其余照旧。
+    expect(screen.queryByTestId("activity-parse_spec")).toBeNull();
+    expect([...screen.getByTestId("free-talk").closest(".tp-sec")!.querySelectorAll("[data-testid^=activity-]")].map((one) => one.getAttribute("data-testid")))
+      .toEqual(["activity-reading", "activity-clarifying", "activity-writing", "activity-publish"]);
     // 发布现在还不能启动：写那一句状态，不是琥珀色。
     const publish = screen.getByTestId("activity-publish");
     expect([publish.classList.contains("off"), text(publish.querySelector(".tp-quiet")), publish.querySelector(".tp-need")]).toEqual([true, "此版本尚未提供。", null]);

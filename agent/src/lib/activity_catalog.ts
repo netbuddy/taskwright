@@ -157,6 +157,8 @@ export interface CatalogActivity {
   name: string;
   /** 这项活动算作哪个阶段（声明的 stage 一栏原样）；只能由用户发起的（发布）为 null。页面据此给不是阶段键的活动（逆向解析）取灯、画进度格。 */
   stage: Stage | null;
+  /** 能不能单独启动（声明的「alone」一栏）：不能的只在工作流里做，页面不画它的单项卡。 */
+  alone: boolean;
   mode: Mode;
   mode_name: string;
   purpose: string;
@@ -235,7 +237,7 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
   counts: Readonly<Record<string, number>> = {}, flowItem: FlowItemRef | null = null): Catalog {
   const activities: CatalogActivity[] = defs.activities.map((one) => {
     const base = {
-      key: one.key, name: one.name, stage: one.stage, mode: one.mode, mode_name: MODE_NAMES[one.mode], purpose: one.purpose,
+      key: one.key, name: one.name, stage: one.stage, alone: one.alone, mode: one.mode, mode_name: MODE_NAMES[one.mode], purpose: one.purpose,
       reads: one.reads.map((key) => ({ key, name: readName(key, names) })), writes: one.writes.map((key) => ({ key, name: names[key] })),
       prerequisite_text: prerequisiteText(one.requires), example: one.example, recommended: false, active_count: counts[one.key] ?? 0,
     };
