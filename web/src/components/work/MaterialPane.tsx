@@ -9,7 +9,7 @@
 //
 // Word 材料（.docx）按原版式分页显示，交给 DocxPaper；它的来源出处带段落号（inputs/x.docx#p37），按段落定位。
 // 上传 .docx 时后端生成的投影（x.docx.md）是给助手读的，材料清单里带 derived_from，这里不显示它。
-// Word 材料在说明文字下面另有一栏「按章节看引用」（SectionList，读材料旁的分段清单），点一节跳到那一节的第一段。
+// Word 与 PDF 材料在说明文字下面另有一栏「分段去向」（SectionList，读材料旁的分段清单），逐节列出引用它的条目编号，点一节跳到那一节的开头。
 //
 // PDF 材料（.pdf）按原样分页显示，交给 PdfPaper；它的来源出处带页与块（inputs/x.pdf#p3-2），按块定位。上传 .pdf 时后端生成的投影、
 // 位置表与分段清单同样带 derived_from，这里不显示它们。文件名一行另写页数与有几页没有可读的文字；说明文字下面是目录
@@ -78,7 +78,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
   // Word 文件显示不出来（读不到或画不出来）时不写「按原版式分页显示」那句说明，免得与下面的提示相互矛盾。
   // 由 DocxPaper 在挂上与换文件时报上来；这里换文件时不清，子组件的副作用先于这里执行，清了会盖掉它刚报的值。
   const [docxUnavailable, setDocxUnavailable] = useState(false);
-  // 在「按章节看引用」里点一节：跳到那一节的第一段（每点一次 nonce 加一）。
+  // 在「分段去向」里点一节：跳到那一节的第一段（每点一次 nonce 加一）。
   const [jump, setJump] = useState<{ paragraph: number; nonce: number } | null>(null);
   // 正文连同它属于哪份材料一起记：切材料的那一下旧正文还在，不能拿它去找高亮。
   const [doc, setDoc] = useState<{ path: string; text: string } | null>(null);
@@ -188,11 +188,14 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
         {(isDocx || isPdf) && docxCited != null && <span className="chip">{docxCited ? `被 ${docxCited} 个条目引用过` : "还没有被条目引用"}</span>}
       </div>
       {isDocx && !docxUnavailable && <div className="hint docx-hint">Word 文件按原版式分页显示。页眉页脚、文本框、脚注尾注里的文字只能看，不能被条目引用；批注不显示，修订按接受后的文字显示。</div>}
-      {isDocx && path && <SectionList taskId={taskId} path={path} items={items} onJump={(paragraph) => setJump({ paragraph, nonce: (jump?.nonce ?? 0) + 1 })} />}
+      {isDocx && path && <SectionList taskId={taskId} path={path} items={items} onOpenItem={onOpenItem}
+        onJump={(paragraph) => setJump({ paragraph, nonce: (jump?.nonce ?? 0) + 1 })} />}
       {isPdf && !docxUnavailable && <div className="hint docx-hint" data-testid="pdf-hint">{PDF_HINT}</div>}
       {isPdf && path && !docxUnavailable && (
         <PdfOutline taskId={taskId} path={path} page={pdfPage.page} pages={pdfPages} onJump={(page) => setPdfJump({ page, nonce: (pdfJump?.nonce ?? 0) + 1 })} />
       )}
+      {isPdf && path && <SectionList taskId={taskId} path={path} items={items} onOpenItem={onOpenItem}
+        onJump={(page) => setPdfJump({ page, nonce: (pdfJump?.nonce ?? 0) + 1 })} />}
       {missed && <div className="busy-note locate-miss" data-testid="locate-miss">没有在材料里找到这段原文</div>}
       {(isDocx || isPdf) && docxNote && <div className="busy-note locate-miss" data-testid="locate-note">{docxNote}</div>}
       <div className="doc-wrap sel-host" ref={wrap}>

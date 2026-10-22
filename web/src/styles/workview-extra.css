@@ -342,12 +342,15 @@
 .app .sec-list { max-height: 38vh; overflow: auto; border-top: 1px solid var(--line); }
 .app .sec-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .1rem .6rem; padding: .3rem .8rem .3rem 1.8rem; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 0.901rem; }
 .app .sec-row:hover { background: var(--blue-bg); }
-.app .sec-row .t { grid-column: 1; grid-row: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.app .sec-row .r { grid-column: 1; grid-row: 2; color: var(--mut); font-size: 0.843rem; }
-.app .sec-row .n { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 0.873rem; color: var(--blue); white-space: nowrap; }
+.app .sec-row .t { grid-column: 1; grid-row: 1; display: flex; align-items: baseline; gap: .4rem; min-width: 0; font-weight: 600; }
+.app .sec-row .t .h { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .sec-row .t .tag { flex: none; font-size: 0.79rem; font-weight: 500; color: var(--mut); border: 1px solid var(--line); border-radius: 3px; padding: 0 .3rem; }
+.app .sec-row .r { grid-column: 2; grid-row: 1; color: var(--mut); font-size: 0.843rem; white-space: nowrap; }
+.app .sec-row .n { grid-column: 1 / span 2; grid-row: 2; font-size: 0.873rem; color: var(--mut); }
+.app .sec-row .n .id { color: var(--blue); cursor: pointer; }
+.app .sec-row .n .id:hover { text-decoration: underline; }
 .app .sec-row.none { background: var(--stage); }
 .app .sec-row.none .t { color: var(--mut); font-weight: 500; }
-.app .sec-row.none .n { color: var(--mut); }
 /* 提交交付物的提示条：完成条件都满足、助手不在工作时在条目区顶部。尺寸与 .alertbar 相同，绿色（完成一类的颜色）。 */
 .app .alertbar.submitbar { background: var(--ok-bg); border-bottom: 1px solid var(--ok-line); color: var(--ok-ink); align-items: flex-start; padding: .5rem .7rem; gap: .5rem; }
 .app .submitbar .q { flex: 1 1 20rem; line-height: 1.55; }

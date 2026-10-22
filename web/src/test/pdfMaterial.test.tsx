@@ -138,8 +138,8 @@ describe("材料区里的 PDF 材料", () => {
     expect(screen.getByTestId("pdf-hint").textContent).toBe(PDF_HINT);
     expect(PDF_HINT).toBe("PDF 材料按原样分页显示。PDF 里的表格按行读取，不分格。");
     expect((await screen.findByTestId("pdf-toc-toggle")).textContent).toContain("目录：4 项");
-    // 材料区自己不去读 PDF 的文字（那是显示部件与读取缓存的事），只为目录读了位置表。
-    expect(content.mock.calls.map((call) => call[1])).toEqual([`${PDF}.locations.json`]);
+    // 材料区自己不去读 PDF 的文字（那是显示部件与读取缓存的事），只为目录读了位置表、为「分段去向」读了分段清单。
+    expect(content.mock.calls.map((call) => call[1]).sort()).toEqual([`${PDF}.locations.json`, `${PDF}.segments.json`]);
     expect(screen.queryByTestId("paper")).toBeNull();
     // 显示部件报上来的：被几个条目引用、定位时的一句话。
     fireEvent.click(screen.getByText("两个条目引用"));
