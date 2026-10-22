@@ -1,5 +1,5 @@
 ---
-flow: rewrite
+flow: reengineering
 name: 需求再工程
 purpose: 把一份对目标系统有效力的既有规格说明按作者的结构解析为业务说明页与需求条目，对照补充证据审查，补全后发布新版。
 applies: 存在一份对目标系统有效力的既有规格说明。

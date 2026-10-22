@@ -210,15 +210,15 @@ describe("活动输入页：需求分析", () => {
     expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。" });
   });
 
-  it("需求再工程：从逆向解析启动，发 flow: rewrite 与 activity: parse_spec，没有写描述时第一句话是「请开始逆向解析。」", async () => {
-    const rewrite = flowOf({ key: "rewrite", name: "需求再工程", nodes: [kind("parse_spec", "逆向解析"), kind("reading", "核读材料"), kind("publish", "发布")], start: "parse_spec", recommended: false });
-    const calls = page("rewrite", detail({ materials: [material("inputs/旧版规格说明.md")] }),
-      statusOf({ assets: assets({ materials: 1 }), catalog: { flows: [flowOf({ start: "reading" }), rewrite], activities: [READING, activityOf("parse_spec", "逆向解析")] } }));
+  it("需求再工程：从逆向解析启动，发 flow: reengineering 与 activity: parse_spec，没有写描述时第一句话是「请开始逆向解析。」", async () => {
+    const reengineering = flowOf({ key: "reengineering", name: "需求再工程", nodes: [kind("parse_spec", "逆向解析"), kind("reading", "核读材料"), kind("publish", "发布")], start: "parse_spec", recommended: false });
+    const calls = page("reengineering", detail({ materials: [material("inputs/旧版规格说明.md")] }),
+      statusOf({ assets: assets({ materials: 1 }), catalog: { flows: [flowOf({ start: "reading" }), reengineering], activities: [READING, activityOf("parse_spec", "逆向解析")] } }));
     expect(await submit()).toHaveTextContent("启动需求再工程");
     expect(screen.getByTestId("start-subtitle")).toHaveTextContent("从「逆向解析」开始");
     fireEvent.click(await submit());
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
-    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "parse_spec", in_flow: true, flow: "rewrite" });
+    expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "parse_spec", in_flow: true, flow: "reengineering" });
     expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请开始逆向解析。" });
   });
 
@@ -226,13 +226,13 @@ describe("活动输入页：需求分析", () => {
     const SLOTS = [{ key: "spec", name: "既有规格说明", accepts: "materials" as const, required: true, role: "既有规格说明" },
       { key: "evidence", name: "补充证据", accepts: "materials" as const, required: false, role: "证据" },
       { key: "goal", name: "目标系统描述", accepts: "text" as const, required: false, role: null }];
-    const rewrite = (over: Partial<CatalogFlow> = {}) => flowOf({ key: "rewrite", name: "需求再工程", nodes: [kind("parse_spec", "逆向解析"), kind("reading", "核读材料"), kind("publish", "发布")],
+    const reengineering = (over: Partial<CatalogFlow> = {}) => flowOf({ key: "reengineering", name: "需求再工程", nodes: [kind("parse_spec", "逆向解析"), kind("reading", "核读材料"), kind("publish", "发布")],
       start: null, enabled: false, state: "还没有上传「既有规格说明」", missing_slot: "既有规格说明", recommended: false, slots: SLOTS, ...over });
     const loose = { ...material("inputs/立项申请书.md"), slot: null, role: "证据" } as Material;
     const spec = { ...material("inputs/旧版规格说明.md"), slot: "spec", role: "既有规格说明" } as Material;
     const statusWith = (flow: CatalogFlow) => statusOf({ assets: assets({ materials: 1 }), catalog: { flows: [flowOf({ start: "reading" }), flow], activities: [READING] } });
     const sent = vi.spyOn(api, "uploadMaterial").mockResolvedValue({ path: "inputs/旧版规格说明.md" });
-    page("rewrite", detail({ materials: [loose] }), statusWith(rewrite()));
+    page("reengineering", detail({ materials: [loose] }), statusWith(reengineering()));
     expect(await submit()).toBeDisabled();
     expect(screen.getByTestId("start-blocked")).toHaveTextContent("现在还不能启动：还没有上传「既有规格说明」。");
     // 三块按声明的先后；没有原来的「项目材料」与「目标系统描述」两块，也没有那一段话。
@@ -257,14 +257,14 @@ describe("活动输入页：需求分析", () => {
     await waitFor(() => expect(sent).toHaveBeenCalledWith("TASK-P", file, undefined, "spec"));
     cleanup(); vi.restoreAllMocks();
     // 放进去之后：这一块列着它（角色「既有规格说明」），放进了槽位的能替换；主按钮能点；写了目标系统描述就作为第一句话发出，启动时带 flow。
-    const calls = page("rewrite", detail({ materials: [loose, spec] }), statusWith(rewrite({ enabled: true, state: "可以启动", missing_slot: null, start: "parse_spec" })));
+    const calls = page("reengineering", detail({ materials: [loose, spec] }), statusWith(reengineering({ enabled: true, state: "可以启动", missing_slot: null, start: "parse_spec" })));
     expect(await submit()).toBeEnabled();
     expect(within(screen.getByTestId("slot-spec")).getByTestId("material-role")).toHaveTextContent("既有规格说明");
     expect(within(screen.getByTestId("slot-spec")).getByTestId("material-replace")).toBeInTheDocument();
     expect(within(screen.getByTestId("slot-evidence")).getByTestId("material-row")).toHaveTextContent("立项申请书.md");
     type("describe-input", "借阅系统改版。");
     fireEvent.click(await submit());
-    await waitFor(() => expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "parse_spec", in_flow: true, flow: "rewrite" }));
+    await waitFor(() => expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "parse_spec", in_flow: true, flow: "reengineering" }));
     await waitFor(() => expect(calls.say.mock.calls[0]?.[2]).toMatchObject({ text: "借阅系统改版。" }));
   });
 

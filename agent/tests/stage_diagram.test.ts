@@ -97,7 +97,7 @@ test("逆向解析的工作项：获准写入按当前活动取，逆向解析�
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
-    launchWorkItem(db, { taskId: task.task_id, sessionId: "session-test", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "rewrite", reason: "" });
+    launchWorkItem(db, { taskId: task.task_id, sessionId: "session-test", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "reengineering", reason: "" });
   });
   const got = await refusal(dir, fresh());
   assert.ok(got && got.fact.includes(`任务现在在${STAGE_NAMES.reading}阶段`), JSON.stringify(got));

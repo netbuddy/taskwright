@@ -48,7 +48,7 @@ function workspace(): string {
   enterStage(dir, "reading");
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
-    launchWorkItem(db, { taskId: task.task_id, sessionId: PARSE, runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "rewrite", reason: "" });
+    launchWorkItem(db, { taskId: task.task_id, sessionId: PARSE, runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "reengineering", reason: "" });
   });
   return dir;
 }

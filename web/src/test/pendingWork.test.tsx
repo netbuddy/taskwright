@@ -109,8 +109,8 @@ describe("推进建议", () => {
     expect(adviceLine(taskOf(), statusOf([work({ node: "reading", activity: "reading", ordinal: 1 })]), got)).toBe("第 1 站「核读材料」不判是否做够，看过数字后由你决定是否进入第 2 站「澄清」。");
     expect(adviceLine(taskOf(), statusOf([work({ kind: "activity", node: null, ordinal: null, flow: null })]), got)).toBeNull();
     // 需求再工程在第 1 站逆向解析：站名与下一站取自目录，灯按它算作的阶段（核读材料）取，不说已在最后一站。
-    const rewriting = work({ name: "需求再工程", node: "parse_spec", activity: "parse_spec", activity_name: "逆向解析", ordinal: 1, flow: "rewrite" });
-    const rewriteStatus = { ...statusOf([rewriting]), catalog: { flows: [{ key: "rewrite", name: "需求再工程", nodes: [{ key: "parse_spec", name: "逆向解析" }, ...NODES], work_item: null }],
+    const rewriting = work({ name: "需求再工程", node: "parse_spec", activity: "parse_spec", activity_name: "逆向解析", ordinal: 1, flow: "reengineering" });
+    const rewriteStatus = { ...statusOf([rewriting]), catalog: { flows: [{ key: "reengineering", name: "需求再工程", nodes: [{ key: "parse_spec", name: "逆向解析" }, ...NODES], work_item: null }],
       activities: [{ key: "parse_spec", name: "逆向解析", stage: "reading", mode: "batch" }, { key: "publish", name: "发布", stage: null, mode: "user_only" }] } } as unknown as TaskStatusView;
     expect(adviceLine(taskOf(), rewriteStatus, got)).toBe("第 1 站「逆向解析」不判是否做够，看过数字后由你决定是否进入第 2 站「核读材料」。");
   });
