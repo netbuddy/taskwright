@@ -2,7 +2,7 @@
 name: 写条目
 mode: batch
 purpose: 依据业务说明与分析模型推导需求条目（功能用例、非功能需求、约束），逐条记录依据。
-reads: description, models, materials
+reads: description, models
 writes: items
 writes_allowed: page, problem, diagram, item, review
 requires: has_pages, diagrams_viewed

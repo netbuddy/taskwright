@@ -50,7 +50,7 @@ const CONDITIONAL: Record<Stage | typeof IDLE, string[]> = {
   reading: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "pages_full", "cross_check", "problems", "stage_cards", "flow_transitions"],
   clarifying: ["reply_full", "understanding_full", "pages_full", "problems", "stage_cards", "retell", "flow_transitions"],
   modeling: ["batches", "reply_brief", "understanding_brief", "pages_full", "problems", "diagrams_full", "stage_cards", "flow_transitions"],
-  writing: ["materials", "batches", "reply_brief", "reply_confirm", "understanding_brief", "review", "pages_brief", "cross_check", "problems", "items_full", "diagrams_brief", "stage_cards", "flow_transitions"],
+  writing: ["batches", "reply_brief", "reply_confirm", "understanding_brief", "review", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards", "flow_transitions"],
   reviewing: ["reply_full", "understanding_full", "review", "confirm_publish", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards", "retell", "flow_transitions"],
   document: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "confirm_publish", "pages_full", "problems", "stage_cards", "flow_transitions"],
   idle: ["reply_full", "understanding_full", "pages_full", "problems", "retell", "idle_rules"],

@@ -31,7 +31,7 @@ test("需求工程的八项活动：方式、读、写、前置条件、模板�
     reading: ["核读材料", "batch", "materials knowledge", "description", "has_materials", "reading", "reading"],
     clarifying: ["澄清", "dialogue", "description", "description", "", "clarifying", "clarifying"],
     modeling: ["整理建模", "batch", "description", "models description", "has_pages", "modeling", "modeling"],
-    writing: ["写条目", "batch", "description models materials", "items", "has_pages diagrams_viewed", "writing", "writing"],
+    writing: ["写条目", "batch", "description models", "items", "has_pages diagrams_viewed", "writing", "writing"],
     reviewing: ["评审确认", "dialogue", "items", "review items", "has_items", "reviewing", "reviewing"],
     document: ["编写文档", "batch", "all", "description versions", "has_confirmed_items", "document", "document"],
     publish: ["发布", "user_only", "all", "versions", "no_open_findings confirmations_clear", null, null],
