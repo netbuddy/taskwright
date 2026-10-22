@@ -90,7 +90,13 @@ const ALLOWED: Record<string, string[]> = {
   // upgradeTaskDatabase 是写入：把一个任务库升到现在的格式。它只许在数据升级里调（src/data_upgrade.ts，服务启动时的升级与命令行的
   // 升级都经那里），走的是助手写库时用的同一张步骤表；下面另有一条测试守着别的文件不导入它。
   // 工作的阶段：从任务库读出任务现在的阶段与每个阶段的几盏灯（只读函数，不写库）。
-  "stage_read.ts": ["stageSummaryOf", "activityRecords", "archivedSessions", "WorkItemBrief", "workItemBrief", "workItemSessionName", "workItemSessions"],
+  "stage_read.ts": ["stageSummaryOf", "activityRecords", "archivedSessions", "WorkItemBrief", "workItemBrief", "workItemSessionName", "workItemSessions",
+    // 读任务类型的活动与工作流的声明（只读库里的任务定义、只读声明文件）：工作项与任务状况的名字、第几站取自声明。
+    "taskDefinitionsOf"],
+  // 活动与工作流的声明的类型与按键取名字（只做计算）：工作项、任务状况与新建会话之前的核对里的名字取自声明。
+  "activity_def_read.ts": ["Definitions", "activityNameOf"],
+  // 「此版本尚未提供」那一句（常量）：新建会话之前拒绝启动只能由用户发起的那项活动时用。
+  "activity_catalog.ts": ["CATALOG_LATER"],
   // 开着的提议：从事件表读出任务现在待决定的那一条（只读函数，不写库），与它的类型。
   "stage_proposal.ts": ["OpenProposal", "openProposal"],
   "schema.ts": ["TABLE_NAMES", "TASKS_ROOT_ENV", "TASK_DB_VERSION", "MIN_TASK_DB_VERSION", "olderDataText", "TASK_JSON", "newerDataText", "taskWrittenBy", "upgradeTaskDatabase", "UPGRADED_VERSION_NOTE"],

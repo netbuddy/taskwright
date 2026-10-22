@@ -41,7 +41,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { type ActivityDef, ASSETS, type AssetKey, DefinitionHeadError, type SegmentTiming, prerequisiteText, splitHead, splitSegments } from "./activity_def.ts";
 import { assetNamesOf } from "./asset_names.ts";
-import { ACTIVITIES_SUBDIR, type Definitions, definitionsFor } from "./activity_def_read.ts";
+import { ACTIVITIES_SUBDIR, type Definitions, definitionsFor, positionOfActivity as positionFromDefinitions } from "./activity_def_read.ts";
 import { databasePath } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import {
@@ -49,7 +49,8 @@ import {
 } from "./prompt_modules.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
 import { FLOW_ANALYSIS, FLOW_NAMES, IDLE, type Position, STAGES, STAGE_NAMES, type Stage, type WriteKind, gateStage, isStage } from "./stage.ts";
-import { openActivityRecord, stageOf } from "./stage_read.ts";
+import { hasOverall } from "./overall_analysis.ts";
+import { openActivityRecord } from "./stage_read.ts";
 import { fillText } from "./texts.ts";
 
 export { PromptAssemblyError } from "./prompt_modules.ts";
@@ -660,12 +661,12 @@ export function whereInWorkspace(workspaceDir: string, sessionId: string | null)
     const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
     if (!task) return null;
     const definition = validateDefinition(JSON.parse(task.definition_text));
-    const recorded = stageOf(db, workspaceDir, task.task_id, definition, sessionId) as string | null;
-    if (recorded === null) return null;
+    // 有没有阶段与 stageOf 同一个判法；活动标识符取活动记录里的原样，不经 stageOf（它给的是活动算作的阶段，例如逆向解析算作核读）。
+    if (!hasOverall(definition.collections)) return null;
     const open = openActivityRecord(db, task.task_id, sessionId);
-    if (recorded === IDLE) return { stage: IDLE, inFlow: false, flow: null, scope: null };
-    return { stage: positionOfActivity(workspaceDir, definition.skillPath, recorded), inFlow: open !== null && open.flow !== null, flow: open?.flow ?? null,
-      scope: open?.scope ?? null, activity: recorded, assetNames: assetNamesOf(definition) };
+    if (open === null) return { stage: IDLE, inFlow: false, flow: null, scope: null };
+    return { stage: positionOfActivity(workspaceDir, definition.skillPath, open.activity), inFlow: open.flow !== null, flow: open.flow,
+      scope: open.scope ?? null, activity: open.activity, assetNames: assetNamesOf(definition) };
   } finally {
     db.close();
   }
@@ -691,18 +692,14 @@ export function activitySegmentAt(workspaceDir: string, sessionId: string | null
     skills: [{ name: "", filePath: resolve(workspaceDir, skillPath) }], tail: "", promptDir }, timing);
 }
 
-/** 活动记录里的一个标识符算作哪个阶段（见 whereInWorkspace）。 */
+/** 活动记录里的一个标识符算作哪个阶段（见 whereInWorkspace；算法在 lib/activity_def_read.ts）。声明读不出来、键不对时抛 PromptAssemblyError。 */
 export function positionOfActivity(workspaceDir: string, skillPath: string, key: string): Stage {
-  let found: ActivityDef | undefined;
   try {
-    found = definitionsFor(workspaceDir, skillPath).activities.find((one) => one.key === key);
+    return positionFromDefinitions(workspaceDir, skillPath, key);
   } catch (error) {
     if (error instanceof DefinitionHeadError) throw new PromptAssemblyError(error.message);
     throw error;
   }
-  if (found?.stage) return found.stage;
-  if (!found && isStage(key)) return key;
-  throw new PromptAssemblyError(found ? `活动「${found.name}」只能由用户发起，会话不会在它里面。` : `活动记录里的「${key}」在任务类型的活动声明里找不到，也不是阶段的键。`);
 }
 
 /** 同上，只要位置。 */

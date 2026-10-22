@@ -16,7 +16,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ActivityDef, DefinitionHeadError, type FlowDef, PUBLISH, parseActivityDef, parseFlowDef, splitHead } from "./activity_def.ts";
-import { type AllowedTable, IDLE, STAGES, WRITE_KINDS, type WriteKind } from "./stage.ts";
+import { type AllowedTable, FLOW_NAMES, IDLE, STAGES, STAGE_NAMES, type Stage, WRITE_KINDS, type WriteKind, isStage } from "./stage.ts";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 /** 产品自带的任务类型所在的目录（与后端 backend/src/paths.ts 的 TASK_TYPES_DIR 是同一个）。 */
@@ -155,4 +155,30 @@ export function definitionsFor(workspaceDir: string, skillPath: string): Definit
   const value = readDefinitions(where.dir, where.fallback);
   remembered.set(where.dir, { stamp, value });
   return value;
+}
+
+/**
+ * 活动记录里的一个活动标识符算作哪个阶段（声明的 stage 一栏）：声明里有这项活动且它算作某个阶段，就是那个阶段；声明里没有、而这个键
+ * 正好是阶段的键时（早先的记录，活动标识符与阶段键相同），就是它；别的情形（只能由用户发起的活动、声明里没有又不是阶段的键）抛错。
+ */
+export function activityStage(defs: Pick<Definitions, "activities">, key: string): Stage {
+  const found = defs.activities.find((one) => one.key === key);
+  if (found?.stage) return found.stage;
+  if (!found && isStage(key)) return key;
+  throw new DefinitionHeadError(found ? `活动「${found.name}」只能由用户发起，会话不会在它里面。` : `活动记录里的「${key}」在任务类型的活动声明里找不到，也不是阶段的键。`);
+}
+
+/** 同上，按任务目录与任务定义的「执行方法」读声明。声明读不出来时抛错（DefinitionHeadError）。 */
+export function positionOfActivity(workspaceDir: string, skillPath: string, key: string): Stage {
+  return activityStage(definitionsFor(workspaceDir, skillPath), key);
+}
+
+/** 一项活动给人看的名字：声明里的名字；声明里没有（或者没有声明）时是阶段的名字，再没有就是键本身。 */
+export function activityNameOf(defs: Pick<Definitions, "activities"> | null, key: string): string {
+  return defs?.activities.find((one) => one.key === key)?.name ?? (STAGE_NAMES as Record<string, string>)[key] ?? key;
+}
+
+/** 一条工作流给人看的名字：声明里的名字；声明里没有（或者没有声明）时取 FLOW_NAMES，再没有就是键本身。 */
+export function flowNameOf(defs: Pick<Definitions, "flows"> | null, key: string): string {
+  return defs?.flows.find((one) => one.key === key)?.name ?? FLOW_NAMES[key] ?? key;
 }

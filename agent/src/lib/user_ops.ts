@@ -37,8 +37,9 @@
  * 这条会话要正在做一个流程的工作项；移到哪一站都可以。更新工作项所在的一站，往会话里追加一句说明，不产生修订、不能撤销、不引出执行者的运行。
  * 工作项本来就在那一站时什么都不记、也不追加说明。早先建的任务没有阶段，拒绝。
  *
- * 启动一个工作项（start_activity）：用户在任务起点页或者切换工作面板里选了一条工作流程或一项单项活动。fields 写 { activity, in_flow }：
- * activity 是六项活动（六个阶段）的名字或写法之一；in_flow 为真是启动需求分析这条流程、从这一站开始，为假是启动这项单项活动。
+ * 启动一个工作项（start_activity）：用户在任务起点页或者切换工作面板里选了一条工作流程或一项单项活动。fields 写 { activity, in_flow }，另可以写 flow：
+ * activity 是任务类型声明里一项可以启动的活动的键或名字（早先的写法，六个阶段的名字，也认）；in_flow 为真是启动 flow 指定的那条工作流、
+ * 从这一站开始（不写 flow 按需求分析），为假是启动这项单项活动（这时不写 flow）。
  * fields 里另可以写 scope：范围说明（一段文字，最多 SCOPE_MAX_LENGTH 个字），记进工作项，写进追加的那句说明，
  * 这个工作项的每条会话里助手每次运行的系统提示都带着它。
  * 启动一律新建一个工作项与一条属于它的会话：会话由后端在转交之前建好，这里把工作项记在那条新会话上。早先的 session 一项已经停用，写了就拒绝；
@@ -72,11 +73,13 @@ import { publishVersion } from "./publish_version.ts";
 import { fillText, textPrefix } from "./texts.ts";
 import { ToolRejection } from "./tool_rejection.ts";
 import {
-  IDLE, PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, isStage, scopeSentence, stageByName,
+  FLOW_ANALYSIS, IDLE, PROPOSAL_VOIDED_NOTE, type Position, SCOPE_MAX_LENGTH, STAGES, STAGE_NAMES, type Stage, type StartHow, activityStartSentence, isStage, scopeSentence, stageByName,
   workItemContinuedSentence, workItemDeletedSentence,
 } from "./stage.ts";
 import { openProposal } from "./stage_proposal.ts";
-import { type StageMoveOutcome, attachSession, deleteWorkItem, moveStage, sessionWorkItem, startActivity, workItemById, workItemName } from "./stage_read.ts";
+import { type StageMoveOutcome, attachSession, definitionsOrError, deleteWorkItem, moveStage, sessionWorkItem, startActivity, workItemById, workItemName } from "./stage_read.ts";
+import { activityNameOf, flowNameOf } from "./activity_def_read.ts";
+import { CATALOG_LATER } from "./activity_catalog.ts";
 import type { FigureTally } from "./versions.ts";
 
 export const EVENT_CONFIRMATION_RECORDED = "CONFIRMATION_RECORDED";
@@ -723,9 +726,13 @@ function unwaiveReview(ctx: Ctx, opId: string, targets: Target[]): UserOpResult 
   };
 }
 
-/** 一次启动或者一次换站往会话里追加的那句说明（给助手看，页面原样显示）。写了范围说明时接在后面。 */
-export function activityStartNote(how: StartHow, to: Stage, from: Position, reason = "", scope = ""): string {
-  return fillText("ui_ops.activity_start", { sentence: activityStartSentence(how, to, from), reason: reason ? fillText("ui_ops.reason", { reason }) : "", scope: scopeSentence(scope) });
+/**
+ * 一次启动或者一次换站往会话里追加的那句说明（给助手看，页面原样显示）。写了范围说明时接在后面。
+ * names 是工作流名与活动名（取自声明，见 lib/stage.ts 的 activityStartSentence）；不给时按需求分析与阶段的名字。
+ */
+export function activityStartNote(how: StartHow, to: string, from: Position, reason = "", scope = "", names: { flow?: string; activity?: string } = {}): string {
+  return fillText("ui_ops.activity_start", { sentence: activityStartSentence(how, to, from, names), reason: reason ? fillText("ui_ops.reason", { reason }) : "",
+    scope: scopeSentence(scope) });
 }
 
 /** 启动工作项时早先那一项会话的写法已经停用：写了就拒绝的那句话。 */
@@ -782,13 +789,25 @@ function moveStageByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOp
   };
 }
 
-/** 启动一个工作项：见文件头。fields 写 { activity, in_flow }，另可以写 scope。 */
+/** 可以启动的活动的名字（声明里不是只能由用户发起的那些），写进 start_activity 写法不对时的那句话；读不出声明时是六个阶段的名字。 */
+function startableNames(ctx: Ctx): string[] {
+  const fallback = STAGES.map((one) => STAGE_NAMES[one]);
+  try {
+    return withTaskDatabase(ctx.workspaceDir, { createIfMissing: false }, (db) => {
+      const found = definitionsOrError(ctx.workspaceDir, validateDefinition(JSON.parse(taskRow(db).definition_text)));
+      return found.defs ? found.defs.activities.filter((one) => one.mode !== "user_only").map((one) => one.name) : fallback;
+    });
+  } catch {
+    return fallback;
+  }
+}
+
+/** 启动一个工作项：见文件头。fields 写 { activity, in_flow }，另可以写 flow 与 scope。 */
 function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): UserOpResult {
   const fields = isObject(request.fields) ? request.fields : {};
-  const to = stageByName(fields.activity);
-  if (to === null || typeof fields.in_flow !== "boolean") {
+  if (typeof fields.activity !== "string" || fields.activity.trim() === "" || typeof fields.in_flow !== "boolean") {
     throw new UserOpError("bad_request",
-      `start_activity 要在 fields 里写 activity（${STAGES.map((one) => `「${STAGE_NAMES[one]}」`).join("")}之一）与 in_flow（true 是启动需求分析这条流程、从这一站开始，false 是启动这项单项活动）。`);
+      `start_activity 要在 fields 里写 activity（${startableNames(ctx).map((one) => `「${one}」`).join("")}之一）与 in_flow（true 是启动一条工作流、从这一站开始；flow 写哪一条，不写按需求分析；false 是启动这项单项活动）。`);
   }
   if (fields.scope !== undefined && fields.scope !== null && typeof fields.scope !== "string") {
     throw new UserOpError("bad_request", "start_activity 的 scope 是范围说明，应当是一段文字；不写范围说明就不要带这一项。");
@@ -799,19 +818,48 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
   }
   if (fields.session !== undefined) throw new UserOpError("bad_request", START_SESSION_RETIRED);
   const inFlow = fields.in_flow;
+  let to = "", flow: string | null = null, names: { flow?: string; activity: string } = { activity: "" };
   const outcome: StageMoveOutcome = inTask(ctx, (db) => {
     const taskId = taskIdOf(db, request);
-    return startActivity(db, ctx.workspaceDir, { taskId, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, to, inFlow, "", scope);
+    const found = definitionsOrError(ctx.workspaceDir, validateDefinition(JSON.parse(taskRow(db).definition_text)));
+    const text = (fields.activity as string).trim();
+    const declared = found.defs?.activities.find((one) => one.key === text || one.name === text);
+    const key = declared?.key ?? stageByName(text);
+    if (key === null) throw new UserOpError("bad_request", `任务类型里没有叫「${text}」的活动。`);
+    if (inFlow) {
+      if (fields.flow !== undefined && fields.flow !== null && (typeof fields.flow !== "string" || fields.flow.trim() === "")) {
+        throw new UserOpError("bad_request", "start_activity 的 flow 是要启动的工作流的键，应当是一段文字；不写按需求分析。");
+      }
+      flow = typeof fields.flow === "string" ? fields.flow.trim() : FLOW_ANALYSIS;
+    } else if (fields.flow !== undefined && fields.flow !== null) {
+      throw new UserOpError("bad_request", "单项活动不写 flow。");
+    }
+    to = key;
+    names = { activity: activityNameOf(found.defs, key), ...(flow !== null ? { flow: flowNameOf(found.defs, flow) } : {}) };
+    const done = startActivity(db, ctx.workspaceDir, { taskId, sessionId: ctx.sessionId, runId: null, callId: opId, actor: ACTOR_USER }, key, flow, "", scope);
+    if (done.why === "unknown_activity") throw new UserOpError("bad_request", `任务类型里没有叫「${text}」的活动。`);
+    if (done.why === "unknown_flow") throw new UserOpError("bad_request", `任务类型里没有叫「${flow}」的工作流。`);
+    if (done.why === "not_a_step") throw new UserOpError("bad_request", `「${names.activity}」不是工作流「${names.flow}」的一站。`);
+    if (done.why === "flow_exists") {
+      const existing = done.existing!;
+      const fact = `任务里已有流程工作项「${existing.name}」（记录号 ${existing.record_id}，位于「${activityNameOf(found.defs, existing.node)}」），` +
+        "一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着";
+      throw new UserOpError("rejected", `${fact}。`, { reasons: [fact], existing });
+    }
+    return done;
   });
   if (outcome.from === null) throw new UserOpError("rejected", "这个任务没有阶段。", { reasons: ["这个任务没有阶段"] });
-  if (outcome.why === "not_ready") {
-    const fact = `现在还不能启动「${STAGE_NAMES[to]}」：${outcome.blocked}`;
+  if (outcome.why === "not_startable") {
+    const fact = `「${names.activity}」${CATALOG_LATER}`;
     throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
   }
-  if (outcome.why === "flow_exists") {
-    const fact = `任务里已有流程工作项「${outcome.existing!.name}」（记录号 ${outcome.existing!.record_id}，位于「${STAGE_NAMES[outcome.existing!.node]}」），` +
-      "一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着";
-    throw new UserOpError("rejected", `${fact}。`, { reasons: [fact], existing: outcome.existing });
+  if (outcome.why === "no_definitions") {
+    const fact = `活动的定义读不出来：${outcome.message}`;
+    throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
+  }
+  if (outcome.why === "not_ready") {
+    const fact = `现在还不能启动「${names.activity}」：${outcome.blocked}`;
+    throw new UserOpError("rejected", `${fact}。`, { reasons: [fact] });
   }
   if (outcome.why === "session_bound") {
     const fact = "这条会话已经属于一个工作项，不能再在它上面启动另一个；启动一律在一条新会话里做";
@@ -819,7 +867,7 @@ function startActivityByUser(ctx: Ctx, opId: string, request: UserOpRequest): Us
   }
   return {
     op_id: opId, kind: "start_activity", event_seqs: outcome.event_seq === null ? [] : [outcome.event_seq], results: [], revision_no: null,
-    note: outcome.moved ? activityStartNote(outcome.how!, to, IDLE, "", scope) : "",
+    note: outcome.moved ? activityStartNote(outcome.how!, to, IDLE, "", scope, names) : "",
     notify_text: null, undoable: false, ...(outcome.record_id !== undefined ? { record_id: outcome.record_id } : {}),
   };
 }

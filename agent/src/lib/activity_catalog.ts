@@ -240,7 +240,7 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
       // 只有需求分析现在能启动；需求变更要有已发布的版本，而且它的各站还没有定义。已有流程工作项时都不能启动。
       enabled: ready && flowItem === null,
-      state: ready && flowItem !== null ? flowExistsText(flowItem) : blocked ?? (analysis ? LAUNCH_READY : CATALOG_LATER),
+      state: ready && flowItem !== null ? flowExistsText(flowItem, defs.activities.find((activity) => activity.key === flowItem.node)?.name) : blocked ?? (analysis ? LAUNCH_READY : CATALOG_LATER),
       recommended: analysis ? facts.versions === 0 : facts.versions > 0,
       at: null,
       start: analysis ? flowStartNode(facts.materials > 0) : null,

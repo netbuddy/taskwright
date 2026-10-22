@@ -25,7 +25,8 @@ import { FLOW_ANALYSIS as FLOW_ANALYSIS_KEY, flowKeyOf, QUESTION_KEEP_STATUS, QU
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
 import { type VersionRecord, versionRecords } from "../../agent/src/lib/versions.ts";
 import { type MaterialRole, materialRoles, roleOf } from "../../agent/src/lib/material_db.ts";
-import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
+import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, taskDefinitionsOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
+import type { Definitions } from "../../agent/src/lib/activity_def_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   itemKey, jsonOrText, openReadonly, parseDefinition, readSources,
@@ -436,6 +437,20 @@ export function latestWorkItemAt(taskDir: string): string | null {
   }
 }
 
+/** 任务类型的活动与工作流的声明（agent/src/lib/stage_read.ts 的 taskDefinitionsOf）。库另开一个只读连接；没有库、没有任务、读不出来时是 null。 */
+export function taskDefinitions(taskDir: string): Definitions | null {
+  try {
+    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+    try {
+      return taskDefinitionsOf(db, taskDir);
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 任务的全部工作项，按启动的先后。库另开一个只读连接；还没有库、没有任务或者读不出来时是空的。
  * 时刻是库里的本地时间写法，调用方给页面之前自己换。
@@ -447,9 +462,11 @@ export function workItemRows(taskDir: string): WorkItemRow[] {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       if (!task) return [];
       const sessions = workItemSessions(db, task.task_id);
+      // 名字取自任务类型的声明（工作流与活动的 name），声明读不出来时按 FLOW_NAMES 与阶段的名字。
+      const defs = taskDefinitionsOf(db, taskDir);
       return activityRecords(db, task.task_id).map((one) => ({
-        ...workItemBrief(one), node: one.node, session_ids: sessions.filter((row) => row.record_id === one.record_id).map((row) => row.session_id),
-        session_name: workItemSessionName(one),
+        ...workItemBrief(one, defs), node: one.node, session_ids: sessions.filter((row) => row.record_id === one.record_id).map((row) => row.session_id),
+        session_name: workItemSessionName(one, defs),
       }));
     } finally {
       db.close();

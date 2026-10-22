@@ -411,7 +411,8 @@ export class Service {
       const versions = library.versionRows(t.dir);
       const latest = versions.at(-1) ?? null;
       // 进展：流程工作项在第几站（一个任务至多一个）、工作项个数、未了结的阻断下游的问题有几条（写条目那一段的灯列出的条目）。
-      const items = library.workItemRows(t.dir).map((row) => workItemView(row, null));
+      const defs = library.taskDefinitions(t.dir);
+      const items = library.workItemRows(t.dir).map((row) => workItemView(row, null, defs));
       const flowItem = items.find((one) => one.kind === "flow") ?? null;
       const blocking = (view.stage?.lamps?.writing ?? []).find((one: { key: string }) => one.key === "no_blocking_questions");
       out.push({

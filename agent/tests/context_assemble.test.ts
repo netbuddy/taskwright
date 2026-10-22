@@ -693,3 +693,15 @@ test("工作流里的转移由程序从声明推出来：各步、上一步与�
   assert.equal(prompt.parts.at(-1)!.text, "这一步先问目标。");
   assert.ok(!kinds(composeContext({ stage: "clarifying", inFlow: false, workspaceDir: task, skills, tail: "" })).includes("flow_note"));
 });
+
+test("逆向解析的工作项：会话在哪里读出活动标识符 parse_spec 与它算作的阶段核读；位置说明写改写既有规格说明，选的是逆向解析的声明", () => {
+  const dir = makeWorkspace(overallDefinition(), { material: true });
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  runUserOperation({ workspaceDir: dir, sessionId: CALL_SESSION }, { op_id: "ui-op-rewrite-1", kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "rewrite" } });
+  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "reading", inFlow: true, flow: "rewrite", scope: null, activity: "parse_spec", assetNames: NAMES });
+  const run = start(dir, new ContextCache(), new WeakMap<object, any>());
+  assert.deepEqual([run.reports[0][1].stage, run.reports[0][1].in_flow], ["reading", true]);
+  const prompt = run.result!.systemPrompt;
+  assert.ok(prompt.includes("「改写既有规格说明」") && prompt.includes("「逆向解析」"), "位置说明写的是这条工作流与这一站");
+  assert.ok(prompt.includes("## 这类任务在逆向解析阶段"), "活动补充取的是逆向解析的声明");
+});

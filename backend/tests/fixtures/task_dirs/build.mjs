@@ -53,7 +53,7 @@ const who = (callId) => ({ taskId, sessionId: "session-sample", runId: null, cal
 
 const SEEDS = {
   "format-8-a": `${COMMON}
-const started = withTaskDatabase(dir, { createIfMissing: false }, (db) => startActivity(db, dir, who("ui-op-1"), "reading", true, ""));
+const started = withTaskDatabase(dir, { createIfMissing: false }, (db) => startActivity(db, dir, who("ui-op-1"), "reading", "analysis", ""));
 if (!started.moved) throw new Error("the seed could not start the work item: " + JSON.stringify(started));
 must(saveRevision(call("session-sample", "call-1"), { operations: [page("借书", "读者凭借书证在自助机上借书。", "读者凭借书证在自助机上借书。")] }));
 const moved = withTaskDatabase(dir, { createIfMissing: false }, (db) => moveStage(db, dir, who("ui-op-2"), "clarifying", "用户在卡片上选了「进入澄清」"));

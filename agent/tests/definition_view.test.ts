@@ -38,7 +38,7 @@ function twoSessions(): string {
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
     // 夹具直接记一个编写文档的单项工作项（产品里要先有确认的条目，这里不测启动的前提）。
-    launchWorkItem(db, { taskId: task.task_id, sessionId: DOC_SESSION, runId: null, callId: "ui-op-doc", actor: "user", to: "document", inFlow: false, reason: "" });
+    launchWorkItem(db, { taskId: task.task_id, sessionId: DOC_SESSION, runId: null, callId: "ui-op-doc", actor: "user", to: "document", flow: null, reason: "" });
   });
   return dir;
 }

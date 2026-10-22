@@ -273,12 +273,13 @@ export type StartHow = "move" | "launch" | "resume" | "alone";
 /**
  * 对话里说一次启动或者换站的那一句，不带「界面操作」的前缀。from 是这之前这条会话在哪里（一个阶段或者空闲）。
  * 换站写从哪到哪。早先的对话里另有两样：接着走流程的那一种，以及启动之前任务正在做别的活动时句末注明的原来在做什么。
+ * to 是活动标识符；names 给了时用给的工作流名与活动名（取自声明），没有给时是需求分析与阶段的名字，阶段的名字也取不到时是键本身。
  */
-export function activityStartSentence(how: StartHow, to: Stage, from: Position): string {
-  const name = STAGE_NAMES[to];
+export function activityStartSentence(how: StartHow, to: string, from: Position, names: { flow?: string; activity?: string } = {}): string {
+  const name = names.activity ?? (STAGE_NAMES as Record<string, string>)[to] ?? to;
   if (how === "move") return fillText("stage.start_move", { from: positionName(from), to: name });
   const was = from === IDLE ? "" : fillText("stage.start_was", { activity: STAGE_NAMES[from] });
-  const flow = FLOW_NAMES[FLOW_ANALYSIS];
+  const flow = names.flow ?? FLOW_NAMES[FLOW_ANALYSIS];
   if (how === "launch") return fillText("stage.start_launch", { flow, to: name, was });
   if (how === "resume") return fillText("stage.start_resume", { flow, to: name, was });
   return fillText("stage.start_alone", { to: name, was });
@@ -351,12 +352,13 @@ export interface LaunchFacts {
 export interface FlowItemRef {
   record_id: number;
   name: string;
-  node: Stage;
+  /** 现在在哪一步：活动标识符（早先的记录是阶段键）。 */
+  node: string;
 }
 
 /** 已有流程的工作项时，流程那一项不能启动，写这一句：在进行的是哪条、在哪一站。 */
-export function flowExistsText(item: FlowItemRef): string {
-  return `已有流程工作项「${item.name}」，位于「${STAGE_NAMES[item.node]}」`;
+export function flowExistsText(item: FlowItemRef, nodeName: string = (STAGE_NAMES as Record<string, string>)[item.node] ?? item.node): string {
+  return `已有流程工作项「${item.name}」，位于「${nodeName}」`;
 }
 
 /** 可以点的一项：启动哪一项活动、在不在流程里、按钮上的字、现在能不能启动、一句状态（不能启动时写缺什么）。 */
