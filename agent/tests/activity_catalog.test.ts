@@ -113,20 +113,20 @@ test("活动目录：空任务只有澄清与需求分析能启动；需求分�
   assert.equal(got.activities[1].prerequisite_text, "无前置条件；可从空白开始。");
   assert.deepEqual(got.flows.map((one) => [one.key, one.name, one.enabled, one.state, one.recommended, one.at, one.start]), [
     ["analysis", "需求分析", true, "可以启动", true, null, "clarifying"], ["change", "需求变更", false, "还没有已发布的版本", false, null, null],
-    ["rewrite", "需求再工程", false, "还没有上传「既有规格说明」", false, null, null]]);
+    ["reengineering", "需求再工程", false, "还没有上传「既有规格说明」", false, null, null]]);
   assert.deepEqual(got.flows.map((one) => one.work_item), [null, null, null]);
   // 每条流程带声明里写的处境，原样透传。
   assert.deepEqual(got.flows.map((one) => [one.key, one.name, one.cases]), [["analysis", "需求分析", ["我有调研材料", "我只有口头想法"]],
-    ["change", "需求变更", ["已发布过，现在要改"]], ["rewrite", "需求再工程", ["我有一份旧版规格说明"]]]);
+    ["change", "需求变更", ["已发布过，现在要改"]], ["reengineering", "需求再工程", ["我有一份旧版规格说明"]]]);
   assert.deepEqual(got.flows[2].nodes.map((one) => one.name), ["逆向解析", "核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档", "发布"]);
   assert.deepEqual(got.flows[0].nodes.map((one) => one.name), ["核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档", "发布"]);
   assert.equal(got.flows[1].prerequisite_text, "前置条件：存在已发布的版本。");
   // 有一份没放进槽位的材料：需求分析从核读材料开始；需求再工程仍不能启动（必填的「既有规格说明」槽位里没有材料）；需求变更仍未提供。
   const stocked = catalog(DEFS, NAMES, { ...EMPTY, materials: 1 }).flows;
   assert.deepEqual(stocked.map((one) => [one.key, one.enabled, one.state, one.start, one.missing_slot]), [
-    ["analysis", true, "可以启动", "reading", null], ["change", false, "还没有已发布的版本", null, null], ["rewrite", false, "还没有上传「既有规格说明」", null, "既有规格说明"]]);
+    ["analysis", true, "可以启动", "reading", null], ["change", false, "还没有已发布的版本", null, null], ["reengineering", false, "还没有上传「既有规格说明」", null, "既有规格说明"]]);
   // 能不能进输入页与能不能启动分开：需求再工程缺必填材料、不能启动，但能进去补上传；需求变更还没有提供，进不去。
-  assert.deepEqual(stocked.map((one) => [one.key, one.enabled, one.enterable]), [["analysis", true, true], ["change", false, false], ["rewrite", false, true]]);
+  assert.deepEqual(stocked.map((one) => [one.key, one.enabled, one.enterable]), [["analysis", true, true], ["change", false, false], ["reengineering", false, true]]);
   // 「既有规格说明」槽位里有一份：需求再工程可以启动，从逆向解析开始。
   const filled = catalog(DEFS, NAMES, { ...EMPTY, materials: 1, materialsBySlot: { spec: 1 } }).flows[2];
   assert.deepEqual([filled.enabled, filled.state, filled.start, filled.missing_slot], [true, "可以启动", "parse_spec", null]);
@@ -159,7 +159,7 @@ test("活动目录：单项活动能不能启动只看数据，已经有工作�
   assert.deepEqual(released.flows.map((one) => [one.recommended, one.enabled, one.state]), [[false, true, "可以启动"], [true, false, CATALOG_LATER], [false, true, "可以启动"]]);
   // 任务里已有需求再工程的工作项（在逆向解析这一站）：三张流程卡都不能启动，站名取自声明。
   const rewriting = { record_id: 5, name: "需求再工程", node: "parse_spec" };
-  assert.deepEqual(catalog(DEFS, NAMES, { ...facts, versions: 1 }, { rewrite: 1 }, rewriting).flows.map((one) => [one.key, one.enabled, one.state]), [
+  assert.deepEqual(catalog(DEFS, NAMES, { ...facts, versions: 1 }, { reengineering: 1 }, rewriting).flows.map((one) => [one.key, one.enabled, one.state]), [
     ["analysis", false, "已有流程工作项「需求再工程」，位于「逆向解析」"], ["change", false, "已有流程工作项「需求再工程」，位于「逆向解析」"],
-    ["rewrite", false, "已有流程工作项「需求再工程」，位于「逆向解析」"]]);
+    ["reengineering", false, "已有流程工作项「需求再工程」，位于「逆向解析」"]]);
 });

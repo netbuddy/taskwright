@@ -105,7 +105,7 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.name, one.enabled, one.state, one.recommended, one.at, one.start, one.active_count]), [
     ["analysis", "需求分析", false, "已有流程工作项「需求分析」，位于「写条目」", true, null, "reading", 1],
     ["change", "需求变更", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, null, 0],
-    ["rewrite", "需求再工程", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, null, 0]]);
+    ["reengineering", "需求再工程", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, null, 0]]);
   // 已有需求分析的工作项：三条流程的输入页都进不去。
   assert.deepEqual(status.catalog!.flows.map((one) => one.enterable), [false, false, false]);
   // 能不能单独启动：只有逆向解析不能（页面不给它单项卡）。
@@ -121,7 +121,7 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   assert.equal(status.start_page.lead, `本任务用于编制并持续维护「${name}」的需求规格说明。所有工作围绕同一套需求资产进行；每启动一个工作项，资产即得到补充或修正。`);
   assert.deepEqual(Object.keys(status.start_page).sort(), ["intake", "lead"]);
   // 处境写在流程声明的 cases 一栏，随目录的流程卡给出。
-  assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.cases]), [["analysis", ["我有调研材料", "我只有口头想法"]], ["change", ["已发布过，现在要改"]], ["rewrite", ["我有一份旧版规格说明"]]]);
+  assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.cases]), [["analysis", ["我有调研材料", "我只有口头想法"]], ["change", ["已发布过，现在要改"]], ["reengineering", ["我有一份旧版规格说明"]]]);
   // 输入页上的几段：一段话、四类文件、目标系统描述的说明与三句示例、启动后两种情形各一句。
   const intake = status.start_page.intake;
   assert.match(intake.lead, /^项目材料与目标系统描述至少提供一项。/);

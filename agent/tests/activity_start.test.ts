@@ -397,31 +397,31 @@ test("启动认声明里的活动与工作流：逆向解析不能单独启动�
   assert.equal(count(dir, "activity_record"), 0, "拒绝的都没有记");
   let before = count(dir, "event");
 
-  // 在需求再工程里从逆向解析启动：记录的所属工作流是 rewrite、所在一站是 parse_spec；按名字写活动也认。
+  // 在需求再工程里从逆向解析启动：记录的所属工作流是 reengineering、所在一站是 parse_spec；按名字写活动也认。
   // 任务里那份材料没有放进槽位：需求再工程的必填槽位「既有规格说明」还空着，启动被拒（missing_slot），什么都不记。
-  assert.deepEqual(refusedOp(() => start(dir, "s-rewrite-0", "逆向解析", true, { flow: "rewrite" })), ["rejected", "还没有上传「既有规格说明」，不能启动「需求再工程」。"]);
-  const empty = inDb(dir, (db) => startActivity(db, dir, { taskId, sessionId: "s-rewrite-1", runId: null, callId: "ui-op-y", actor: "user" }, "parse_spec", "rewrite", ""));
+  assert.deepEqual(refusedOp(() => start(dir, "s-reengineering-0", "逆向解析", true, { flow: "reengineering" })), ["rejected", "还没有上传「既有规格说明」，不能启动「需求再工程」。"]);
+  const empty = inDb(dir, (db) => startActivity(db, dir, { taskId, sessionId: "s-reengineering-1", runId: null, callId: "ui-op-y", actor: "user" }, "parse_spec", "reengineering", ""));
   assert.deepEqual([empty.moved, empty.why, empty.slot_name], [false, "missing_slot", "既有规格说明"]);
   assert.equal(count(dir, "activity_record"), 0);
   // 放进「既有规格说明」槽位之后可以启动。
   insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
-  const flow = start(dir, "s-rewrite", "逆向解析", true, { flow: "rewrite" });
+  const flow = start(dir, "s-reengineering", "逆向解析", true, { flow: "reengineering" });
   assert.equal(flow.note, "界面操作（不是用户打的字）：用户启动工作流程「需求再工程」，从「逆向解析」开始。");
-  assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "parse_spec", node: "parse_spec", flow: "rewrite", from: null, actor: "user", reason: "", run_id: null }]]);
-  const summary = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-rewrite"))!;
+  assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "parse_spec", node: "parse_spec", flow: "reengineering", from: null, actor: "user", reason: "", run_id: null }]]);
+  const summary = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-reengineering"))!;
   assert.deepEqual([summary.current, summary.node, summary.work_item?.kind, summary.work_item?.name], ["reading", "parse_spec", "flow", "需求再工程"]);
 
   // 已有需求再工程的工作项：再启动需求分析被拒，写明现有的那一个（互斥不论哪条工作流）；别的两条也一样。
   assert.deepEqual(refusedOp(() => start(dir, "s-analysis", "核读材料", true)), ["rejected",
     "任务里已有流程工作项「需求再工程」（记录号 1，位于「逆向解析」），一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着。"]);
   assert.equal(refusedOp(() => start(dir, "s-change", "核读材料", true, { flow: "change" }))?.[0], "rejected");
-  assert.equal(refusedOp(() => start(dir, "s-rewrite-2", "parse_spec", true, { flow: "rewrite" }))?.[0], "rejected");
+  assert.equal(refusedOp(() => start(dir, "s-reengineering-2", "parse_spec", true, { flow: "reengineering" }))?.[0], "rejected");
 
   // 换一条会话接着做、删除：那句通知里的工作项名与站名取自声明，不写键名。
-  const continued = userOp(dir, "s-rewrite-next", { kind: "continue_activity", fields: { activity_record_id: 1 } });
-  assert.ok(continued.note.includes("「需求再工程」") && continued.note.includes("「逆向解析」") && !continued.note.includes("rewrite"), continued.note);
-  const deleted = userOp(dir, "s-rewrite", { kind: "delete_work_item", fields: { activity_record_id: 1 } });
-  assert.ok(deleted.note.includes("「需求再工程」") && !deleted.note.includes("rewrite"), deleted.note);
+  const continued = userOp(dir, "s-reengineering-next", { kind: "continue_activity", fields: { activity_record_id: 1 } });
+  assert.ok(continued.note.includes("「需求再工程」") && continued.note.includes("「逆向解析」") && !continued.note.includes("reengineering"), continued.note);
+  const deleted = userOp(dir, "s-reengineering", { kind: "delete_work_item", fields: { activity_record_id: 1 } });
+  assert.ok(deleted.note.includes("「需求再工程」") && !deleted.note.includes("reengineering"), deleted.note);
 
   // 写法上的拒绝：逆向解析不是需求分析的一站、没有这条工作流、没有这项活动、单项活动写了 flow。
   const other = workspace();

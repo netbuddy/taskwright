@@ -69,8 +69,8 @@ test("活动声明的 writes_allowed 超出它所用模板头里的那一栏时�
 
 test("需求工程的三条流程：各步与前置条件；需求分析与需求再工程没有前置条件，需求变更要有已发布的版本", () => {
   const { flows } = readDefinitions(SRS_SKILL_DIR);
-  assert.deepEqual(flows.map((one) => one.key), ["analysis", "change", "rewrite"]);
-  const [analysis, change, rewrite] = flows;
+  assert.deepEqual(flows.map((one) => one.key), ["analysis", "change", "reengineering"]);
+  const [analysis, change, reengineering] = flows;
   assert.deepEqual([analysis.key, analysis.name], ["analysis", "需求分析"]);
   assert.deepEqual(analysis.steps, [...STAGES, "publish"]);
   assert.deepEqual(analysis.requires, []);
@@ -78,10 +78,10 @@ test("需求工程的三条流程：各步与前置条件；需求分析与需�
   assert.equal(change.name, "需求变更");
   assert.deepEqual(change.steps, ["reading", "modeling", "writing", "reviewing", "document", "publish"]);
   assert.deepEqual(change.requires, ["has_version"]);
-  assert.equal(rewrite.name, "需求再工程");
-  assert.deepEqual(rewrite.steps, ["parse_spec", ...STAGES, "publish"]);
-  assert.deepEqual(rewrite.requires, []);
-  assert.deepEqual(rewrite.slots.map((one) => [one.key, one.accepts, one.required, one.role]),
+  assert.equal(reengineering.name, "需求再工程");
+  assert.deepEqual(reengineering.steps, ["parse_spec", ...STAGES, "publish"]);
+  assert.deepEqual(reengineering.requires, []);
+  assert.deepEqual(reengineering.slots.map((one) => [one.key, one.accepts, one.required, one.role]),
     [["spec", "materials", true, "既有规格说明"], ["evidence", "materials", false, "证据"], ["goal", "text", false, null]]);
   assert.deepEqual([analysis.slots, change.slots], [[], []]);
   // 各条流程的处境（起点页「工作流程」标题下的标签）。

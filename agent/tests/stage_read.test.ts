@@ -107,18 +107,18 @@ test("活动记录认声明里的活动：逆向解析的行读得出来，位�
   const { dir, taskId } = workspace();
   const definition = validateDefinition(overallDefinition());
   const who = { taskId, sessionId: "sess-r", runId: null, callId: "ui-op-r1", actor: "user" as const };
-  write(dir, (db) => launchWorkItem(db, { ...who, to: "parse_spec", flow: "rewrite", reason: "" }));
-  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((one) => [one.activity, one.node, one.flow]), [["parse_spec", "parse_spec", "rewrite"]]);
+  write(dir, (db) => launchWorkItem(db, { ...who, to: "parse_spec", flow: "reengineering", reason: "" }));
+  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((one) => [one.activity, one.node, one.flow]), [["parse_spec", "parse_spec", "reengineering"]]);
   assert.equal(write(dir, (db) => stageOf(db, dir, taskId, definition, "sess-r")), "reading");
   // 下一站：需求再工程里逆向解析之后是核读、核读之后是澄清；需求分析照旧。
-  assert.deepEqual([nextStepStage(dir, definition, "rewrite", "parse_spec"), nextStepStage(dir, definition, "rewrite", "reading"), nextStepStage(dir, definition, "analysis", "reading"),
+  assert.deepEqual([nextStepStage(dir, definition, "reengineering", "parse_spec"), nextStepStage(dir, definition, "reengineering", "reading"), nextStepStage(dir, definition, "analysis", "reading"),
     nextStepStage(dir, definition, "analysis", "parse_spec")], ["reading", "clarifying", "clarifying", null]);
   // 从逆向解析到核读：两站算作同一个阶段，但不是原地不动；这一行的活动与所在一站都写 reading，方向是往前。
-  const moved = write(dir, (db) => moveStage(db, dir, { ...who, callId: "ui-op-r2" }, nextStepStage(dir, definition, "rewrite", "parse_spec")!, ""));
+  const moved = write(dir, (db) => moveStage(db, dir, { ...who, callId: "ui-op-r2" }, nextStepStage(dir, definition, "reengineering", "parse_spec")!, ""));
   assert.deepEqual([moved.moved, moved.why, moved.from], [true, null, "reading"]);
-  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((one) => [one.activity, one.node, one.flow]), [["reading", "reading", "rewrite"]]);
+  assert.deepEqual(write(dir, (db) => activityRecords(db, taskId)).map((one) => [one.activity, one.node, one.flow]), [["reading", "reading", "reengineering"]]);
   const entered = query<{ payload: string }>(dir, "SELECT payload FROM event WHERE name = ? ORDER BY seq", EVENT_NODE_ENTERED).map((one) => JSON.parse(one.payload));
-  assert.deepEqual(entered.map((one) => [one.flow, one.from, one.node, one.direction]), [["rewrite", "parse_spec", "reading", "forward"]]);
+  assert.deepEqual(entered.map((one) => [one.flow, one.from, one.node, one.direction]), [["reengineering", "parse_spec", "reading", "forward"]]);
   // 再进核读才是原地不动。
   assert.equal(write(dir, (db) => moveStage(db, dir, { ...who, callId: "ui-op-r3" }, "reading", "")).why, "same");
 });

@@ -174,7 +174,7 @@ test("逆向解析的工作项：获准写入按当前活动取，能新增条�
   insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
-    launchWorkItem(db, { taskId: task.task_id, sessionId: "sess-parse", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "rewrite", reason: "" });
+    launchWorkItem(db, { taskId: task.task_id, sessionId: "sess-parse", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "reengineering", reason: "" });
   });
   // 页的两条核读检查（要标签与例子）只在当前活动用核读模板时查：逆向解析照原文立页，一页没有标签与例子也放行。
   saveRevision(callIn(dir, "sess-parse"), { operations: [page("借书"), useCase("借书")] });

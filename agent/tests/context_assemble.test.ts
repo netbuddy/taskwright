@@ -701,8 +701,8 @@ test("逆向解析的工作项：会话在哪里读出活动标识符 parse_spec
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   // 需求再工程要「既有规格说明」槽位里有材料：把任务里那份材料记进这个槽位。
   insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
-  runUserOperation({ workspaceDir: dir, sessionId: CALL_SESSION }, { op_id: "ui-op-rewrite-1", kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "rewrite" } });
-  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "reading", inFlow: true, flow: "rewrite", scope: null, activity: "parse_spec", assetNames: NAMES });
+  runUserOperation({ workspaceDir: dir, sessionId: CALL_SESSION }, { op_id: "ui-op-reengineering-1", kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "reengineering" } });
+  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "reading", inFlow: true, flow: "reengineering", scope: null, activity: "parse_spec", assetNames: NAMES });
   const run = start(dir, new ContextCache(), new WeakMap<object, any>());
   assert.deepEqual([run.reports[0][1].stage, run.reports[0][1].in_flow], ["reading", true]);
   const prompt = run.result!.systemPrompt;
@@ -715,7 +715,7 @@ test("逆向解析的工作项：会话在哪里读出活动标识符 parse_spec
 });
 
 test("逆向解析的正文：常驻段里有第零步与章节去向表，没有字段对位一段；第一次保存成功后附上的是字段对位一段", () => {
-  const input = { stage: "reading" as const, inFlow: true, flow: "rewrite", activity: "parse_spec", workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: "" };
+  const input = { stage: "reading" as const, inFlow: true, flow: "reengineering", activity: "parse_spec", workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: "" };
   const prompt = composeContext(input).text;
   assert.ok(prompt.includes("**第零步：先判断它是不是一份规格说明。**") && prompt.includes("（A-3、A-4）"));
   assert.ok(prompt.includes("| 功能需求、用例、功能点表 | 功能用例条目 |") && prompt.includes("| 修订历史、参考资料、文档约定、审批页 | 不提取，在收尾汇报里写明 |"));

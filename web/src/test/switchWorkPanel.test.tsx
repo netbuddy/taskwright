@@ -87,9 +87,9 @@ describe("面板上的几句话", () => {
     expect(ownItemLine(aloneStage)).toBe("单项活动：做够了由助手在回复里汇报做完，不提议下一站；工作项照旧留着，可以接着说。");
     // 需求再工程在逆向解析这一站：第几站与站名、下一站取自活动目录里这条流程的各站，不按六个阶段数。
     const rewriteNodes = [kind("parse_spec", "逆向解析"), ...NODES];
-    const catalog = { flows: [flow({ key: "rewrite", name: "需求再工程", nodes: rewriteNodes })], activities: [activity("parse_spec", "逆向解析", { stage: "reading" }), activity("publish", "发布", { mode: "user_only" })] };
+    const catalog = { flows: [flow({ key: "reengineering", name: "需求再工程", nodes: rewriteNodes })], activities: [activity("parse_spec", "逆向解析", { stage: "reading" }), activity("publish", "发布", { mode: "user_only" })] };
     const rewriteStage: StageView = { ...flowStage, current: "reading", activity: "parse_spec", node: "parse_spec", catalog,
-      work_item: { ...FLOW_BRIEF, name: "需求再工程", activity: "parse_spec", flow: "rewrite" } };
+      work_item: { ...FLOW_BRIEF, name: "需求再工程", activity: "parse_spec", flow: "reengineering" } };
     expect(panelSubtitle(rewriteStage, status({ work_items: [] }))).toBe("本会话属于工作项「需求再工程」（10-08） · 位于第 1 站「逆向解析」 · 本任务没有别的工作项");
     expect(ownItemLine(rewriteStage)).toBe("现在在第 1 站「逆向解析」。完成后助手将提议进入「核读材料」。");
     expect(ownItemLine({ ...rewriteStage, current: "document", activity: "document", node: "document" })).toBe("现在在第 7 站「编写文档」。这是最后一站，完成后请你过目。");

@@ -198,8 +198,8 @@ describe("工作视图里点导航栏待处理事项的一行", () => {
 describe("会话旁的标签", () => {
   it("流程写「流程名 · 站名」：站名先取后端给的活动名（逆向解析），早先的后端不给时是阶段的名字，再没有就是活动标识符", () => {
     const of = (work_item: SessionListEntry["work_item"]) => ({ session_id: "S", name: "", started_at: "", last_active_at: "", message_count: 0, active: false, work_item }) as SessionListEntry;
-    expect(sessionTag(of({ record_id: 1, kind: "flow", name: "需求再工程", activity: "parse_spec", activity_name: "逆向解析", flow: "rewrite" }))).toBe("需求再工程 · 逆向解析");
+    expect(sessionTag(of({ record_id: 1, kind: "flow", name: "需求再工程", activity: "parse_spec", activity_name: "逆向解析", flow: "reengineering" }))).toBe("需求再工程 · 逆向解析");
     expect(sessionTag(of({ record_id: 1, kind: "flow", name: "需求分析", activity: "writing", flow: "analysis" }))).toBe("需求分析 · 写条目");
-    expect(sessionTag(of({ record_id: 1, kind: "flow", name: "需求再工程", activity: "parse_spec", flow: "rewrite" }))).toBe("需求再工程 · parse_spec");
+    expect(sessionTag(of({ record_id: 1, kind: "flow", name: "需求再工程", activity: "parse_spec", flow: "reengineering" }))).toBe("需求再工程 · parse_spec");
   });
 });
