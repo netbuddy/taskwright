@@ -37,7 +37,7 @@ test("空任务：六类都是零，材料来自上传所以没有产出它的�
   assert.deepEqual(cells.map((one) => [one.key, one.name, one.count, one.unit, one.text, one.note]), [
     ["materials", "材料与证据", 0, "份", "0 份", ""], ["description", "业务说明", 0, "节", "0 节", ""], ["models", "分析模型", 0, "张", "0 张", ""],
     ["items", "需求条目", 0, "条", "0 条", ""], ["review", "评审与确认", 0, "轮", "未评审", ""], ["versions", "文档与版本", 0, "版", "未发布", ""]]);
-  assert.deepEqual(cells.map((one) => one.produced_by), [[], ["核读材料", "澄清", "整理建模", "编写文档", "逆向解析"], ["整理建模"], ["写条目", "评审确认", "逆向解析"], ["评审确认"], ["编写文档", "发布"]]);
+  assert.deepEqual(cells.map((one) => one.produced_by), [[], ["核读材料", "澄清", "整理建模", "编写文档"], ["整理建模"], ["写条目", "评审确认", "逆向解析"], ["评审确认"], ["编写文档", "发布"]]);
 });
 
 test("材料与证据：份数；没有被任何一节或问题引用的算未核读，引用里 # 后面的位置不看", () => {
@@ -107,7 +107,7 @@ test("活动目录：空任务只有澄清与需求分析能启动；需求分�
   assert.ok(got.activities.every((one) => one.recommended === false));
   const writing = got.activities[3];
   assert.deepEqual([writing.name, writing.mode, writing.mode_name, writing.reads, writing.writes, writing.prerequisite_text], ["写条目", "batch", "批处理",
-    [{ key: "description", name: "业务说明" }, { key: "models", name: "分析模型" }], [{ key: "items", name: "需求条目" }], "前置条件：业务说明至少一节，分析模型均已查看。"]);
+    [{ key: "description", name: "业务说明" }, { key: "models", name: "分析模型" }, { key: "materials", name: "材料与证据" }], [{ key: "items", name: "需求条目" }], "前置条件：业务说明至少一节，分析模型均已查看。"]);
   assert.deepEqual(got.activities[0].reads, [{ key: "materials", name: "材料与证据" }, { key: "knowledge", name: "知识库" }]);
   assert.deepEqual(got.activities[5].reads, [{ key: "all", name: "全部资产" }]);
   assert.equal(got.activities[1].prerequisite_text, "无前置条件；可从空白开始。");

@@ -50,7 +50,7 @@ const CONDITIONAL: Record<Stage | typeof IDLE, string[]> = {
   reading: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "pages_full", "cross_check", "problems", "stage_cards", "flow_transitions"],
   clarifying: ["reply_full", "understanding_full", "pages_full", "problems", "stage_cards", "retell", "flow_transitions"],
   modeling: ["batches", "reply_brief", "understanding_brief", "pages_full", "problems", "diagrams_full", "stage_cards", "flow_transitions"],
-  writing: ["batches", "reply_brief", "reply_confirm", "understanding_brief", "review", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards", "flow_transitions"],
+  writing: ["materials", "batches", "reply_brief", "reply_confirm", "understanding_brief", "review", "pages_brief", "cross_check", "problems", "items_full", "diagrams_brief", "stage_cards", "flow_transitions"],
   reviewing: ["reply_full", "understanding_full", "review", "confirm_publish", "pages_brief", "problems", "items_full", "diagrams_brief", "stage_cards", "retell", "flow_transitions"],
   document: ["materials", "knowledge", "batches", "reply_brief", "understanding_brief", "confirm_publish", "pages_full", "problems", "stage_cards", "flow_transitions"],
   idle: ["reply_full", "understanding_full", "pages_full", "problems", "retell", "idle_rules"],
@@ -719,14 +719,25 @@ test("逆向解析的工作项：会话在哪里读出活动标识符 parse_spec
 /** 逆向解析收尾一段开头那句：收尾前查一次知识库（契约 M-9）。 */
 const KNOWLEDGE_NOTE = "**收尾。** 收尾之前用查找知识库工具查一次，查的话写「客户的需求写作规范或需求编写规范」。";
 
-test("逆向解析的正文：常驻段里有第零步与章节去向表，没有字段对位一段；第一次保存成功后附上的是字段对位一段", () => {
+test("逆向解析的正文：常驻段里有第零步与章节去向表（只有三类条目，其余章节不提取），没有字段对位一段；第一次保存成功后附上的是字段对位一段", () => {
   const input = { stage: "reading" as const, inFlow: true, flow: "reengineering", activity: "parse_spec", workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: "" };
   const prompt = composeContext(input).text;
   assert.ok(prompt.includes("**第零步：先判断它是不是一份规格说明。**") && prompt.includes("（A-3、A-4）"));
-  assert.ok(prompt.includes("| 功能需求、用例、功能点表 | 功能用例条目 |") && prompt.includes("| 修订历史、参考资料、文档约定、审批页 | 不提取，在收尾汇报里写明 |"));
+  assert.ok(prompt.includes("| 功能需求的用例表（每个用例一张字段表） | 功能用例条目 |") && prompt.includes("| 设计约束、技术约束、法规约束 | 约束条目 |"));
+  assert.ok(prompt.includes("其余章节一律不提取，留在原件里：") && prompt.includes("以及用例下按条列出的需求语句表（例如「关联需求」一类的表）。"), "叙述章节与需求语句表不提取");
+  assert.ok(prompt.includes("- 不立业务说明页、映射表页、工作记录页、术语对照页（N-7）。") && !prompt.includes("| 术语表 | 概念页 |") && !prompt.includes("在页的「别名」一栏记下原文的叫法"), "逆向解析不立业务说明页");
   assert.ok(!prompt.includes("## 字段怎样对位") && !prompt.includes("<!-- segment:"), "字段对位一段不常驻");
   assert.ok(prompt.includes(KNOWLEDGE_NOTE) && prompt.includes("没查到或任务没有选知识库就什么也不加，汇报里不提（M-9）。"), "收尾一段开头查一次知识库");
   const afterSave = activitySegmentText(input, "after_save")!;
   assert.ok(afterSave.startsWith("## 字段怎样对位\n") && afterSave.includes("写「原文未给」四个字") && afterSave.includes("（M-5）"));
   assert.equal(activitySegmentText(input, "after_reply"), null, "逆向解析只有保存后一段");
+});
+
+test("写条目的正文：两条流程的常驻段都有「条目已经在时怎样做」一段，排在照图写条目之前", () => {
+  for (const flow of ["analysis", "reengineering"]) {
+    const prompt = composeContext({ stage: "writing", inFlow: true, flow, activity: "writing", workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: "" }).text;
+    const at = prompt.indexOf("**条目已经在时怎样做。**");
+    assert.ok(at >= 0 && at < prompt.indexOf("1. **照图写条目。**"), flow);
+    assert.ok(prompt.includes("- 两条规则：改动必须能指到依据，指不到就不改；") && prompt.includes("用到哪句就引述哪句。"), flow);
+  }
 });
