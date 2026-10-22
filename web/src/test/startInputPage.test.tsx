@@ -222,7 +222,7 @@ describe("活动输入页：需求分析", () => {
     expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请开始逆向解析。" });
   });
 
-  it("需求再工程按槽位分块：既有规格说明（必填）、补充证据（可选）、目标系统描述；没放进槽位的材料单列、只能看与删；必填槽位空着时主按钮点不动；在槽位里上传带 slot；放进去之后能启动", async () => {
+  it("需求再工程按槽位分块：既有规格说明（必填）、补充证据（可选）、目标系统描述；没放进槽位的材料按角色并入「补充证据」、能看能删不能替换；必填槽位空着时主按钮点不动；在槽位里上传带 slot；放进去之后能启动", async () => {
     const SLOTS = [{ key: "spec", name: "既有规格说明", accepts: "materials" as const, required: true, role: "既有规格说明" },
       { key: "evidence", name: "补充证据", accepts: "materials" as const, required: false, role: "证据" },
       { key: "goal", name: "目标系统描述", accepts: "text" as const, required: false, role: null }];
@@ -242,22 +242,26 @@ describe("活动输入页：需求分析", () => {
     expect([screen.queryByTestId("materials-card"), screen.queryByTestId("describe-block"), screen.queryByTestId("start-lead")]).toEqual([null, null, null]);
     expect(within(screen.getByTestId("slot-spec")).queryAllByTestId("material-row")).toHaveLength(0);
     expect(screen.getByTestId("slot-spec")).toHaveTextContent("还没有放进这一块的材料。");
-    // 没放进槽位的材料：单列一块，写角色「证据」，只能看与删，没有替换与上传区。
-    const unslotted = screen.getByTestId("unslotted-materials");
-    expect(within(unslotted).getByTestId("material-row")).toHaveTextContent("立项申请书.md");
-    expect(within(unslotted).getByTestId("material-role")).toHaveTextContent("证据");
-    expect([within(unslotted).queryByTestId("material-replace"), within(unslotted).queryByTestId("upload-hint")]).toEqual([null, null]);
-    expect(within(unslotted).getByTestId("material-delete")).toBeInTheDocument();
-    expect(unslotted).toHaveTextContent("要作为某个槽位的输入，请删除后在该槽位重新上传。");
+    // 没放进槽位的材料（角色「证据」）：并入角色相同的「补充证据」块，能看能删，不能替换（替换会沿用空的槽位）；页面上没有单列的一块。
+    expect(screen.queryByTestId("unslotted-materials")).toBeNull();
+    expect(screen.queryByText("未放入槽位的材料")).toBeNull();
+    const evidence = screen.getByTestId("slot-evidence");
+    expect(within(evidence).getByTestId("material-row")).toHaveTextContent("立项申请书.md");
+    expect(within(evidence).getByTestId("material-role")).toHaveTextContent("证据");
+    expect([within(evidence).queryByTestId("material-replace"), within(evidence).queryByTestId("material-replace-off")]).toEqual([null, null]);
+    expect(within(evidence).getByTestId("material-delete")).toBeInTheDocument();
+    expect(within(evidence).getByTestId("upload-hint")).toBeInTheDocument();
     // 在「既有规格说明」块里上传：请求带 slot=spec。
     const file = new File(["# 旧版"], "旧版规格说明.md", { type: "text/markdown" });
     fireEvent.change(screen.getByTestId("slot-spec").querySelector("input[type=file]") as HTMLInputElement, { target: { files: [file] } });
     await waitFor(() => expect(sent).toHaveBeenCalledWith("TASK-P", file, undefined, "spec"));
     cleanup(); vi.restoreAllMocks();
-    // 放进去之后：这一块列着它（角色「既有规格说明」），主按钮能点；写了目标系统描述就作为第一句话发出，启动时带 flow。
+    // 放进去之后：这一块列着它（角色「既有规格说明」），放进了槽位的能替换；主按钮能点；写了目标系统描述就作为第一句话发出，启动时带 flow。
     const calls = page("rewrite", detail({ materials: [loose, spec] }), statusWith(rewrite({ enabled: true, state: "可以启动", missing_slot: null, start: "parse_spec" })));
     expect(await submit()).toBeEnabled();
     expect(within(screen.getByTestId("slot-spec")).getByTestId("material-role")).toHaveTextContent("既有规格说明");
+    expect(within(screen.getByTestId("slot-spec")).getByTestId("material-replace")).toBeInTheDocument();
+    expect(within(screen.getByTestId("slot-evidence")).getByTestId("material-row")).toHaveTextContent("立项申请书.md");
     type("describe-input", "借阅系统改版。");
     fireEvent.click(await submit());
     await waitFor(() => expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "parse_spec", in_flow: true, flow: "rewrite" }));

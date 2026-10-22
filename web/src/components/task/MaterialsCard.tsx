@@ -43,15 +43,16 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
   marked?: boolean;
   /** 这张卡上传的材料放进哪个槽位（活动输入页按槽位分块时给）；不给是不经槽位上传。 */
   slot?: string;
-  /** 有没有上传区；「未放入槽位的材料」那一块没有（只能查看与删除）。 */
+  /** 有没有上传区。 */
   upload?: boolean;
-  /** 有没有「替换」；「未放入槽位的材料」那一块没有。 */
-  replace?: boolean;
+  /** 有没有「替换」：一个值管整张卡，或者按每份材料定（输入页按槽位分块时，没有放进槽位的材料不能替换：替换会沿用空的槽位）。 */
+  replace?: boolean | ((material: Material) => boolean);
   testId?: string;
   /** 清单是空的时那一句；按槽位分块的卡写「还没有放进这一块的材料。」。 */
   emptyText?: string;
 }) {
   const ops = useMaterialOps(taskId, info, onChanged, slot);
+  const canReplace = (m: Material) => (typeof replace === "function" ? replace(m) : replace);
 
   return (
     <section className={`tp-pane${marked ? " marked" : ""}`} aria-label={title} data-testid={testId}>
@@ -75,8 +76,8 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
                 <td className="num">{formatTimeShort(m.modified_at)}</td>
                 <td>
                   <a className="tp-lnk" role="button" onClick={() => onView(m)} data-testid="material-view">查看</a>
-                  {replace && m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.replace(m.path)} data-testid="material-replace">替换</a>}
-                  {replace && !m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
+                  {canReplace(m) && m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.replace(m.path)} data-testid="material-replace">替换</a>}
+                  {canReplace(m) && !m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
                   {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.remove(m.path)} data-testid="material-delete">删除</a>}
                 </td>
               </tr>

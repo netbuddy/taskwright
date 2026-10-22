@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { Alert, Input, Spin } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
-import type { KnowledgeLibrary, TaskDetail, TaskStatusView } from "../api/types";
+import type { KnowledgeLibrary, Material, TaskDetail, TaskStatusView } from "../api/types";
 import { TaskFrame } from "../components/TaskFrame";
 import { useToast } from "../components/Toasts";
 import { useService } from "../components/ServiceControls";
@@ -86,7 +86,10 @@ export function StartInputPage({ taskId, startKey, pick = [] }: {
   // 声明了槽位的流程（需求再工程）按槽位分块画输入；别的流程与单项活动照旧。
   const slots = inputSlots(target);
   const slotted = slots.length > 0;
-  const unslotted = slotted ? materials.filter((one) => !one.slot) : [];
+  // 每个收材料的槽位列哪些材料：放进了槽位的列在那个槽位；没有放进槽位的（起点页上传的、升级前就有的，角色是「证据」）
+  // 按角色并入第一个角色相同的槽位（需求再工程里是「补充证据」）。
+  const materialSlots = slots.filter((one) => one.accepts === "materials");
+  const homeOf = (one: Material): string | null => one.slot ?? materialSlots.find((slot) => slot.role === (one.role ?? "证据"))?.key ?? null;
   // 已有流程工作项时「打开它的会话」进它最近有动静的那条会话（任务状况的工作项清单里有）。
   const flowItem = existingFlowItem(target);
   const flowSession = flowItem === null ? null : status?.work_items?.find((one) => one.record_id === flowItem)?.latest_session?.session_id ?? null;
@@ -165,8 +168,9 @@ export function StartInputPage({ taskId, startKey, pick = [] }: {
         <div className="tp-in-slots" data-testid="slot-blocks">
           {slots.map((slot) => (slot.accepts === "materials" ? (
             <div key={slot.key} className="tp-in-block">
-              <MaterialsCard taskId={taskId} materials={materials.filter((one) => one.slot === slot.key)} info={service.info} onView={view} onChanged={() => void load()}
-                title={slot.name} aside={slot.required ? "必填" : "可选"} slot={slot.key} testId={`slot-${slot.key}`} emptyText="还没有放进这一块的材料。" />
+              <MaterialsCard taskId={taskId} materials={materials.filter((one) => homeOf(one) === slot.key)} info={service.info} onView={view} onChanged={() => void load()}
+                title={slot.name} aside={slot.required ? "必填" : "可选"} slot={slot.key} testId={`slot-${slot.key}`} emptyText="还没有放进这一块的材料。"
+                replace={(one) => !!one.slot} />
             </div>
           ) : (
             <section key={slot.key} className="tp-pane tp-in-block" aria-label={slot.name} data-testid={`slot-${slot.key}`}>
@@ -178,13 +182,6 @@ export function StartInputPage({ taskId, startKey, pick = [] }: {
                 placeholder={intake?.describe_placeholder} data-testid="describe-input" />
             </section>
           )))}
-          {unslotted.length > 0 && (
-            <div className="tp-in-block">
-              <MaterialsCard taskId={taskId} materials={unslotted} info={service.info} onView={view} onChanged={() => void load()}
-                title="未放入槽位的材料" aside="证据" upload={false} replace={false} testId="unslotted-materials"
-                intro={<p className="tp-in-p">要作为某个槽位的输入，请删除后在该槽位重新上传。</p>} />
-            </div>
-          )}
           {blocks.knowledge && <div className="tp-in-block"><KnowledgeChoice libraries={libraries} selected={selected} onChange={(ids) => void changeKnowledge(ids)} /></div>}
         </div>
       )}
