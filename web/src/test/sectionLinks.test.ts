@@ -85,17 +85,19 @@ describe("对应的需求条目", () => {
 });
 
 describe("追溯", () => {
-  it("四段：引的各份材料（引了几处、第一处）、用户的几句话、画在这一节里的图、依据它写的条目", () => {
+  it("材料与澄清记录只数页上的来源行里没有显示过的来源：整页的、支持正文、例子、已经定下的来源不数；只支持别名、标签的数；条目照旧", () => {
     const task = overallTask();
     const contents = toc(task);
-    expect(traceOf(task, contents, itemOf(task, "OA-002"))).toEqual({
-      materials: [{ name: "借阅规则.md", count: 2, first: { excerpt: "学生一次最多借 5 本，教师一次最多借 10 本，借期都是 30 天。", locator: "inputs/借阅规则.md" } }],
-      clarified: 2, figures: 0, items: [],
+    expect(traceOf(task, contents, itemOf(task, "OA-002"))).toEqual({ materials: [], clarified: 0, figures: 0, items: [] });
+    change(task, "OA-002", (page) => {
+      page.sources = [...page.sources,
+        { kind: "文档原文", locator: "inputs/借阅规则.md", excerpt: "借书证也叫读者证。", supports: [{ field: "别名" }] },
+        { kind: "用户的话", locator: "", excerpt: "这算流程。", supports: [{ field: "标签" }] }] as never;
     });
-    const three = traceOf(task, contents, itemOf(task, "OA-003"));
-    expect(three.materials.map((one) => `${one.name}:${one.count}`)).toEqual(["借阅规则.md:1"]);
-    expect(three.clarified).toBe(2);
-    expect(three.items.map((one) => one.item_id)).toEqual(["UC-002", "UC-003"]);
+    const two = traceOf(task, contents, itemOf(task, "OA-002"));
+    expect(two.materials).toEqual([{ name: "借阅规则.md", count: 1, first: { excerpt: "借书证也叫读者证。", locator: "inputs/借阅规则.md" } }]);
+    expect(two.clarified).toBe(1);
+    expect(traceOf(task, contents, itemOf(task, "OA-003")).items.map((one) => one.item_id)).toEqual(["UC-002", "UC-003"]);
   });
 
   it("图只数画在这一节里的：流程节的流程图算，章首的用例图不算", () => {

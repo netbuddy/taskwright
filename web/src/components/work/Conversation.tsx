@@ -12,7 +12,7 @@
 // 工作中按回车不会停止，只有点方块才停。停下之后会话里留一条界面操作通知（种类 stop_run），对话区画成「你停止了助手这一次的工作」。
 
 import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { AssistantReply, ConversationMessage, CurrentWork, Inform, SavedFacts, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
+import type { AssistantReply, ConversationMessage, CurrentWork, Inform, RunStatus, SavedFacts, StepNote, SystemNote, Task, TaskStatusView, UiActionNoted, UserMessage, WorkSummary } from "../../api/types";
 import type { OutgoingMessage } from "../../state/workState";
 import { formatSeconds } from "../../model/format";
 import { statusNoteLine } from "../../model/statusNote";
@@ -23,7 +23,9 @@ import { STATUS_BUTTON, STATUS_CALLED_LINE, STATUS_COMMAND, nobodySpoke, wantsOp
 import { PendingProposal } from "./PendingProposal";
 import { TaskStatusCard } from "./TaskStatusCard";
 import { HOLD_TEXT, ReplyCard, type CardHandlers } from "./ReplyCard";
-import { answeredByStaying, answeredStayKey, answeredText, answeredUnmoved, answeredUnmovedBlocked, answeredUnmovedWhy } from "../../model/cardAnswer";
+import { QuestionCard, isQuestionCard } from "./QuestionCard";
+import { RunStatusBar } from "./RunStatusBar";
+import { answeredByStaying, answeredStayKey, answeredText, answeredTypedText, answeredUnmoved, answeredUnmovedBlocked, answeredUnmovedWhy } from "../../model/cardAnswer";
 import { Markdown, renderInline } from "./Markdown";
 import { restoreOnFailure, type SendResult } from "./sendRestore";
 import { useService } from "../ServiceControls";
@@ -54,7 +56,7 @@ export const TURN_TEXT = "助手正在工作，做完这一轮才能发下一句
 export function Conversation({
   messages, currentWork, outgoing, task, disabled, disabledReason, handlers, onSend, onUndo, onOpenItem,
   onAttach, hasEarlier, onLoadEarlier, revisionOf, attachments, draft: outerDraft, onDraft, onLocate, inputRef,
-  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onStop,
+  hold = false, holdText = HOLD_TEXT, working = false, hint = null, starting = false, revisionsOfReply, revisionsOfWork, onRevisionTag, revisionCount, onShowReviews, onOpenDiff, onStop, runStatus = null,
   loadStatus,
   statusRequest = 0,
   sessionLine = null,
@@ -91,6 +93,8 @@ export function Conversation({
   revisionOf: (note: UiActionNoted) => number | null;
   /** 评审结束那一行的「看评审页签」：右侧栏切到评审页签。 */
   onShowReviews?: () => void;
+  /** 打开一个条目、停在某次修订并和上一次改动比对（修订页签的「查看差异」）；给了时，告知里点名这条回复改出来的修订的条目链接走它。 */
+  onOpenDiff?: (itemId: string, revision: number) => void;
   attachments: string[];
   /** 输入框的内容由页面持有时传进来（「让助手改这一条」要预填它）；不传就由这里自己持有。 */
   draft?: string;
@@ -108,6 +112,8 @@ export function Conversation({
    * 返回真＝停止的请求做成了；假＝没有做成（原因由页面另行提示），停止键恢复成可以再点。
    */
   onStop?: () => Promise<boolean>;
+  /** 这条会话最近一帧运行状态（SSE 的 run_status）：输入框上方的运行状态条照它画。 */
+  runStatus?: RunStatus | null;
   /** 不拦住操作的提示（助手已经退出、正在启动、还没启动），显示成输入框上方的蓝色提示条；见 executorHint.ts。 */
   hint?: string | null;
   /** 助手正在启动：发送按钮暂不可用，输入框照常可以打字。 */
@@ -227,6 +233,7 @@ export function Conversation({
           <MessageView message={m} task={task} handlers={handlers}
             disabled={disabled} hold={hold} holdText={holdText} working={working}
             answered={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredText(messages, index) : null}
+            answeredWith={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredTypedText(messages, index) : null}
             stayed={m.type === "assistant_reply" && !!(m as AssistantReply).act && answeredByStaying(messages, index)}
             stayedKey={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredStayKey(messages, index) : null}
             unmovedAt={m.type === "assistant_reply" && (m as AssistantReply).act ? answeredUnmoved(messages, index) : null}
@@ -235,7 +242,7 @@ export function Conversation({
             onUndo={onUndo} onOpenItem={onOpenItem} onLocate={onLocate} revisionOf={revisionOf}
             revisions={m.type === "assistant_reply" && revisionsOfReply ? revisionsOfReply(m as AssistantReply)
               : m.type === "work_summary" && revisionsOfWork ? revisionsOfWork((m as WorkSummary).work_id) : []} onRevisionTag={onRevisionTag}
-            onShowReviews={onShowReviews} />
+            onShowReviews={onShowReviews} onOpenDiff={onOpenDiff} />
           {calledAfter((m as { message_id?: string }).message_id ?? null)}
         </Fragment>))}
         {outgoing.map((m) => (
@@ -249,7 +256,7 @@ export function Conversation({
           <div className="proc" data-testid="work-live">
             {currentWork.steps.length === 0 && <div className="pline doing"><span className="ptxt">助手开始做事了</span></div>}
             {currentWork.steps.map((s) => (
-              <div key={String(s.step_key)} className={`pline${s.in_progress ? " doing" : ""}`} style={s.failed ? { color: "var(--gap)" } : undefined}>
+              <div key={String(s.step_key)} className={`pline${s.in_progress ? " doing" : ""}${noteClass(s.note)}`} style={s.failed ? { color: "var(--gap)" } : undefined}>
                 <span className="ptxt">{s.text}</span>
               </div>
             ))}
@@ -257,6 +264,7 @@ export function Conversation({
         )}
       </div>
       <div className={`chat-in${disabledReason ? " busy" : ""}`}>
+        <RunStatusBar status={runStatus} />
         <div className={`busybar${note ? " show" : ""}${info ? " info" : ""}`} data-testid={note ? (info ? "executor-hint" : "busy-note") : undefined}>{note}</div>
         <PendingProposal proposal={disabledReason ? null : task?.stage?.proposal} off={sendOff} offTitle={sendTitle} onMessage={handlers.onMessage} onReviewed={handlers.onReviewed} />
         <div className="inbox">
@@ -293,9 +301,13 @@ function itemIds(informs: Inform[]): string[] {
   return [...new Set(informs.flatMap((one) => (one.items ?? []).map((ref) => ref.item_id)))];
 }
 
-/** 告知里点名的一个条目：点它在右侧打开这个条目。 */
-function ItemLink({ id, onOpenItem }: { id: string; onOpenItem: (itemId: string) => void }) {
-  return <span className="ref" role="button" title={`打开 ${id}`} onClick={() => onOpenItem(id)} data-testid={`inform-item-${id}`}>{id}</span>;
+/**
+ * 告知里点名的一个条目：点它在右侧打开这个条目。diff 给了时（告知点名的修订正是这条回复改出来的），点它打开这个条目、
+ * 停在那次修订并和上一次改动比对，与修订页签的「查看差异」相同。
+ */
+function ItemLink({ id, onOpenItem, diff }: { id: string; onOpenItem: (itemId: string) => void; diff?: (() => void) | null }) {
+  return <span className="ref" role="button" title={diff ? `看 ${id} 这次改了什么` : `打开 ${id}`} onClick={() => (diff ? diff() : onOpenItem(id))}
+    data-testid={`inform-item-${id}`} data-diff={diff ? "true" : undefined}>{id}</span>;
 }
 
 /**
@@ -323,7 +335,7 @@ function StatusNote({ line, text }: { line: string; text: string }) {
   );
 }
 
-function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, stayed, stayedKey, unmovedAt, unmovedWhy, unmovedBlocked, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews }: {
+function MessageView({ message, task, handlers, disabled, hold, holdText, working, answered, answeredWith = null, stayed, stayedKey, unmovedAt, unmovedWhy, unmovedBlocked, onUndo, onOpenItem, onLocate, revisionOf, revisions, onRevisionTag, onShowReviews, onOpenDiff }: {
   message: ConversationMessage;
   task: Task | null;
   handlers: CardHandlers;
@@ -334,7 +346,11 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   revisions: number[];
   onRevisionTag?: (revisions: number[]) => void;
   onShowReviews?: () => void;
+  /** 打开一个条目、停在某次修订并和上一次改动比对（修订页签的「查看差异」）；给了时，告知里点名这条回复改出来的修订的条目链接走它。 */
+  onOpenDiff?: (itemId: string, revision: number) => void;
   answered: string | null;
+  /** 用户在这张卡片里写的那句回复（问答卡片收起时据它写选了哪几项）。 */
+  answeredWith?: string | null;
   stayed: boolean;
   stayedKey: string | null;
   /** 答这张卡片的那次点击没有让阶段移动时，任务当时所在的阶段。 */
@@ -369,6 +385,11 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
     }
     case "assistant_reply": {
       const m = message as AssistantReply;
+      /** 告知里点名的条目，点名的修订是这条回复改出来的：点它进那次修订的比对。 */
+      const diffOf = (one: Inform, id: string) => {
+        const revision = (one.items ?? []).find((ref) => ref.item_id === id)?.revision_no;
+        return onOpenDiff && revision != null && revisions.includes(revision) ? () => onOpenDiff(id, revision) : null;
+      };
       return (
         <>
         <div className="m ai" data-testid="assistant-reply">
@@ -383,7 +404,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
                 <ul className="informs">
                   {m.informs.map((one, i) => (
                     <li key={i}>{renderInline(one.text)}{itemIds([one]).map((id) => (
-                      <span key={id}> <ItemLink id={id} onOpenItem={onOpenItem} /></span>
+                      <span key={id}> <ItemLink id={id} onOpenItem={onOpenItem} diff={diffOf(one, id)} /></span>
                     ))}</li>
                   ))}
                 </ul>
@@ -399,7 +420,11 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
               )}
             </>
           )}
-          {m.act && !m.degraded && (
+          {m.act && !m.degraded && isQuestionCard(m.act) && (
+            <QuestionCard act={m.act} replyMessageId={m.message_id} disabled={disabled} hold={hold} holdText={holdText} writesOff={working}
+              answered={answered} answeredWith={answeredWith} handlers={handlers} />
+          )}
+          {m.act && !m.degraded && !isQuestionCard(m.act) && (
             <ReplyCard act={m.act} replyMessageId={m.message_id} replyText={m.text} task={task} disabled={disabled} hold={hold} holdText={holdText} writesOff={working} answered={answered} stayed={stayed} stayedKey={stayedKey} unmovedAt={unmovedAt} unmovedWhy={unmovedWhy} unmovedBlocked={unmovedBlocked}
               handlers={handlers} onOpenItem={onOpenItem} onLocate={onLocate} />
           )}
@@ -432,7 +457,7 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
       if (m.kind === CONTINUE_STAGE_KIND) return <div className="selfnote" data-testid="continue-stage-note">{continueStageLine(m.option_key)}</div>;
       const revision = m.undoable ? revisionOf(m) : null;
       return (
-        <div className="selfnote" data-testid="ui-action">
+        <div className="selfnote" data-testid="ui-action" data-note-kind={m.kind ?? undefined}>
           {m.text}
           {revision != null && (
             <span className={`undo${working ? " off" : ""}`} role="button" title={working ? "助手正在工作，结束后你可以继续修改" : undefined}
@@ -448,12 +473,20 @@ function MessageView({ message, task, handlers, disabled, hold, holdText, workin
   }
 }
 
+/**
+ * pi 的参数校验失败（模型写的参数不合格式，在 pi 里就被拦下，不是被拒）那一行的样子：淡色；连续多次时醒目。
+ * 不用被拒的颜色，免得用户以为产品坏了。
+ */
+function noteClass(note: StepNote | undefined): string {
+  return note === "args_invalid" ? " faint" : note === "args_invalid_repeated" ? " warn" : "";
+}
+
 /** 过程摘要：收成一行「助手做了 N 步，用了 X ▸ 展开看做了什么」，点开是合并后的阶段。 */
 /** 过程摘要里的一行。保存修订被拒且原因多于一条时，这一行可以点：点开在下方逐条列出全部原因，再点收起。 */
 function StageLine({ stage, index }: { stage: NonNullable<WorkSummary["stages"]>[number]; index: number }) {
   const [open, setOpen] = useState(false);
   const reasons = stage.reasons ?? [];
-  if (reasons.length <= 1) return <div className="pline"><span className="ptxt">{stage.text}</span></div>;
+  if (reasons.length <= 1) return <div className={`pline${noteClass(stage.note)}`}><span className="ptxt">{stage.text}</span></div>;
   return (
     <>
       <div className="pline" role="button" style={{ cursor: "pointer" }} onClick={() => setOpen(!open)} data-testid={`stage-${index}`}>

@@ -214,7 +214,7 @@ test("调试模式下真的跑一遍：提示词目录里改一句，再问一�
     const fourth = (await call("GET", `/api/v1/tasks/${taskId}/debug/system-prompt`)).body;
     assert.deepEqual([fourth.how, fourth.text], ["reused", third.text]);
     assert.equal(systemText(requests()[3]), third.text);
-  }, { seed: false, args: ["--debug"], env: { TASKWRIGHT_SETTINGS_FILE: settings } });
+  }, { seed: false, outline: false, args: ["--debug"], env: { TASKWRIGHT_SETTINGS_FILE: settings } });
 });
 
 const USE_CASE = { op: "add", collection: "功能用例", sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: "读者凭借书证在自助机上借书。" }],
@@ -257,5 +257,5 @@ test("调试模式下的阶段记录流水与被拒的工具调用：谁在什�
     assert.match(refused.guidance, /进入写条目要由用户在卡片上选「转到：写条目」/);
     assert.match(refused.work_id, /^w-/);
     assert.equal(view.latest_work_id, refused.work_id);
-  }, { seed: false, args: ["--debug"], env: { TASKWRIGHT_SETTINGS_FILE: join(tmp, "stage-settings.json") } });
+  }, { seed: false, outline: false, args: ["--debug"], env: { TASKWRIGHT_SETTINGS_FILE: join(tmp, "stage-settings.json") } });
 });

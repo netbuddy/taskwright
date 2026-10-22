@@ -63,7 +63,7 @@ export function stageByName(name: unknown): Stage | null {
  * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它已经归档（它的工作项被删除了）。它不是一个阶段，
  * 不排在 STAGES 的次序里，也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「这条会话现在在哪里」的那几处。它与 null 不是一回事：
  * null 是早先建的任务（任务定义里没有「业务说明」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
- * 空闲时助手能写什么取空闲模板头里的「writes_allowed」（见 AllowedTable）。启动哪一项活动由用户在任务起点页上定。
+ * 空闲时助手能写什么取空闲模板头里的「writes_allowed」（lib/activity_def_read.ts 的 allowedFor）。启动哪一项活动由用户在任务起点页上定。
  */
 export const IDLE = "idle";
 export const IDLE_NAME = "空闲";
@@ -273,20 +273,24 @@ export type StartHow = "move" | "launch" | "resume" | "alone";
 /**
  * 对话里说一次启动或者换站的那一句，不带「界面操作」的前缀。from 是这之前这条会话在哪里（一个阶段或者空闲）。
  * 换站写从哪到哪。早先的对话里另有两样：接着走流程的那一种，以及启动之前任务正在做别的活动时句末注明的原来在做什么。
+ * to 是活动标识符；names 给了时用给的工作流名与活动名（取自声明），没有给时是需求分析与阶段的名字，阶段的名字也取不到时是键本身。
  */
-export function activityStartSentence(how: StartHow, to: Stage, from: Position): string {
-  const name = STAGE_NAMES[to];
+export function activityStartSentence(how: StartHow, to: string, from: Position, names: { flow?: string; activity?: string } = {}): string {
+  const name = names.activity ?? (STAGE_NAMES as Record<string, string>)[to] ?? to;
   if (how === "move") return fillText("stage.start_move", { from: positionName(from), to: name });
   const was = from === IDLE ? "" : fillText("stage.start_was", { activity: STAGE_NAMES[from] });
-  const flow = FLOW_NAMES[FLOW_ANALYSIS];
+  const flow = names.flow ?? FLOW_NAMES[FLOW_ANALYSIS];
   if (how === "launch") return fillText("stage.start_launch", { flow, to: name, was });
   if (how === "resume") return fillText("stage.start_resume", { flow, to: name, was });
   return fillText("stage.start_alone", { to: name, was });
 }
 
-/** 新建一条会话接着做一个进行中的工作项时，对话里那一句（不带「界面操作」的前缀）。name 是工作项的名字，node 是流程的工作项现在在哪一站。 */
-export function workItemContinuedSentence(name: string, node: Stage | null): string {
-  return node ? fillText("stage.continued_at", { name, node: STAGE_NAMES[node] }) : fillText("stage.continued", { name });
+/**
+ * 新建一条会话接着做一个进行中的工作项时，对话里那一句（不带「界面操作」的前缀）。name 是工作项的名字，node 是流程的工作项现在在哪一站：
+ * 那一站的名字（取自声明），或者阶段的键（早先的写法，按阶段的名字写）。
+ */
+export function workItemContinuedSentence(name: string, node: string | null): string {
+  return node ? fillText("stage.continued_at", { name, node: (STAGE_NAMES as Record<string, string>)[node] ?? node }) : fillText("stage.continued", { name });
 }
 
 /** 用户删除一个工作项时，对话里那一句（不带「界面操作」的前缀）。archived 是随之归档了几条会话。 */
@@ -351,12 +355,13 @@ export interface LaunchFacts {
 export interface FlowItemRef {
   record_id: number;
   name: string;
-  node: Stage;
+  /** 现在在哪一步：活动标识符（早先的记录是阶段键）。 */
+  node: string;
 }
 
 /** 已有流程的工作项时，流程那一项不能启动，写这一句：在进行的是哪条、在哪一站。 */
-export function flowExistsText(item: FlowItemRef): string {
-  return `已有流程工作项「${item.name}」，位于「${STAGE_NAMES[item.node]}」`;
+export function flowExistsText(item: FlowItemRef, nodeName: string = (STAGE_NAMES as Record<string, string>)[item.node] ?? item.node): string {
+  return `已有流程工作项「${item.name}」，位于「${nodeName}」`;
 }
 
 /** 可以点的一项：启动哪一项活动、在不在流程里、按钮上的字、现在能不能启动、一句状态（不能启动时写缺什么）。 */
@@ -418,12 +423,6 @@ export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "pu
 /** 全部写入种类，按这个次序。 */
 export const WRITE_KINDS: readonly WriteKind[] = ["page", "problem", "diagram", "item", "review", "publish"];
 
-/**
- * 获准能力表：每个位置助手能做哪几类写入。表的内容不在这里写：六个阶段取各自代表活动的声明里的「writes_allowed」，
- * 空闲取空闲模板头里的那一栏（lib/activity_def_read.ts 读声明时生成，随声明一起记着）。这里只是消费它。
- * 页与问题的限制另见 pageRefusal（评审确认阶段对页另有限制）。
- */
-export type AllowedTable = Readonly<Record<Position, readonly WriteKind[]>>;
 
 /** 给定这个位置获准的写入种类，能不能做这一类写入。 */
 export function canWrite(allowed: readonly WriteKind[], kind: WriteKind): boolean {
@@ -532,8 +531,10 @@ export const USE_CASE_COLLECTION = "功能用例";
 /** 问题条目里说明它是哪一种的字段与「待澄清」这个取值；状态字段里表示还没解决的取值；指到相关条目的字段。 */
 export const QUESTION_KIND_FIELD = "种类";
 export const QUESTION_KIND_CLARIFY = "待澄清";
+/** 问题种类里的「缺失」：该有的内容材料没写、用户也答不上。按分析提纲画的目录据它分出「缺失」与还开着的缺口（web/src/model/outlineTree.ts）。 */
+export const QUESTION_KIND_MISSING = "缺失";
 /** 要在澄清时逐条问用户的问题种类：待澄清，以及核读时记下的冲突与缺失。 */
-export const QUESTION_KINDS_TO_CLARIFY: readonly string[] = [QUESTION_KIND_CLARIFY, "冲突", "缺失"];
+export const QUESTION_KINDS_TO_CLARIFY: readonly string[] = [QUESTION_KIND_CLARIFY, "冲突", QUESTION_KIND_MISSING];
 /** 一条问题条目的种类算不算要澄清的：没有写种类（集合没有这个字段，或早先的条目）的也算。 */
 export function clarifyKind(kind: unknown): boolean {
   return kind === undefined || kind === null || QUESTION_KINDS_TO_CLARIFY.includes(String(kind));
@@ -663,6 +664,8 @@ export interface LampInput {
   collections: string[];
   /** 材料清单里不是由别的文件生成的文件，写它在任务目录里的路径（例如 inputs/需求.md）。 */
   materials: string[];
+  /** 上面这些材料按放进的槽位（工作流声明里的槽位键）各几份；不经槽位上传的不计入任何键。没有给时当作空的。 */
+  materialsBySlot?: Record<string, number>;
   /** 业务说明的页与问题条目当前修订上「文档原文」来源的出处，原样（可以带 # 后面的位置）。 */
   citedDocuments: string[];
   /** 任务里还在的图。 */

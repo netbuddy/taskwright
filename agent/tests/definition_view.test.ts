@@ -38,7 +38,7 @@ function twoSessions(): string {
   withTaskDatabase(dir, { createIfMissing: false }, (db) => {
     const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
     // 夹具直接记一个编写文档的单项工作项（产品里要先有确认的条目，这里不测启动的前提）。
-    launchWorkItem(db, { taskId: task.task_id, sessionId: DOC_SESSION, runId: null, callId: "ui-op-doc", actor: "user", to: "document", inFlow: false, reason: "" });
+    launchWorkItem(db, { taskId: task.task_id, sessionId: DOC_SESSION, runId: null, callId: "ui-op-doc", actor: "user", to: "document", flow: null, reason: "" });
   });
   return dir;
 }
@@ -116,4 +116,16 @@ test("空闲的会话：按读全部办，能写页与问题；导语那一栏�
   assert.deepEqual(idle.view.交付物.条目集合.map((one) => one[VIEW_WRITABLE_KEY]), [false, false, false, true, true]);
   assert.ok(!fieldNames(byName(idle.view, OVERALL_COLLECTION)).includes(OVERALL_FIELDS.intro));
   assert.match(idle.view[VIEW_NOTE_KEY], /空闲/);
+});
+
+test("逆向解析的工作项：哪几个集合可写按当前活动取，条目集合都标可写；同一任务里核读的会话照旧只能写页与问题", () => {
+  const dir = twoSessions();
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
+    const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
+    launchWorkItem(db, { taskId: task.task_id, sessionId: "sess-parse", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: null, reason: "" });
+  });
+  const parse = readAs(dir, "sess-parse")!;
+  for (const name of ["功能用例", "非功能需求", "约束", PLATFORM_PROBLEM_NAME, OVERALL_COLLECTION]) assert.equal(byName(parse.view, name)[VIEW_WRITABLE_KEY], true, name);
+  const reading = readAs(dir, READ_SESSION)!;
+  for (const name of ["功能用例", "非功能需求", "约束"]) assert.notEqual(reading.view.交付物.条目集合.find((one) => one.名称 === name)?.[VIEW_WRITABLE_KEY], true, name);
 });

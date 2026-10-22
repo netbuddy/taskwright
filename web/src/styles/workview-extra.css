@@ -411,3 +411,15 @@
 .app .alertbar.verbar { flex-wrap: wrap; background: var(--blue-bg2); border-color: var(--blue-line); color: var(--text2); }
 .app .alertbar.verbar .verlist { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: .3rem .8rem; margin-top: .25rem; }
 .app .oa-ver { color: var(--blue); font-size: 0.643rem; margin-left: .3rem; flex: none; }
+
+/* 运行状态条（components/work/RunStatusBar.tsx）：对话区输入框上方一行；琥珀色是可能卡住了，红色是看门狗中止了。 */
+.app .runbar { display: flex; align-items: center; gap: .45rem; margin: 0 0 .35rem; padding: .25rem .6rem; border-radius: .45rem; font-size: 0.82rem; line-height: 1.4;
+  color: var(--text2); background: var(--sel); }
+.app .runbar .dot { flex: none; width: .5rem; height: .5rem; border-radius: 50%; background: var(--ai); animation: runbar-pulse 1.2s ease-in-out infinite; }
+.app .runbar .txt { flex: 1; min-width: 0; }
+.app .runbar .lnk { flex: none; color: inherit; text-decoration: underline dotted; cursor: pointer; }
+.app .runbar.stalled { color: var(--amber); background: var(--amber-bg); }
+.app .runbar.stalled .dot { background: var(--amber); }
+.app .runbar.aborted { color: var(--gap); background: var(--gap-bg); }
+.app .runbar.aborted .dot { background: var(--gap); animation: none; }
+@keyframes runbar-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }

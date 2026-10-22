@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { assetNamesOf } from "../../agent/src/lib/asset_names.ts";
+import { outlineTextFor } from "../../agent/src/lib/outline_read.ts";
 import { parseAssetNames } from "../../agent/src/lib/assets.ts";
 import { checkCompletion, completionBrief, completionHints } from "../../agent/src/lib/conditions.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
@@ -23,7 +24,9 @@ import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQues
 import { FLOW_ANALYSIS as FLOW_ANALYSIS_KEY, flowKeyOf, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
 import { type VersionRecord, versionRecords } from "../../agent/src/lib/versions.ts";
-import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
+import { type MaterialRole, materialRoles, roleOf } from "../../agent/src/lib/material_db.ts";
+import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, taskDefinitionsOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
+import type { Definitions } from "../../agent/src/lib/activity_def_read.ts";
 import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   itemKey, jsonOrText, openReadonly, parseDefinition, readSources,
@@ -216,7 +219,20 @@ export function definitionView(definition: ParsedDefinition, definitionText: unk
     })),
     // 六类资产给人看的名字：任务定义的「资产显示名」，早先的定义里没有时回退读产品自带的（agent/src/lib/asset_names.ts）。
     asset_names: assetNamesOf({ taskName: String(definition["任务名"] ?? ""), assetNames: parseAssetNames(definition["资产显示名"]) }),
+    // 任务类型的分析提纲（任务目录里 skill 的 outline.md）的原文：页面据它把业务说明的目录画成提纲的树；没有时为 null，目录照旧按章画。
+    outline: outlineOf(definition, taskDir),
   };
+}
+
+/** 一个任务的分析提纲的原文；没有任务目录、没有分析提纲、读不出活动声明时为 null。 */
+function outlineOf(definition: ParsedDefinition, taskDir: string | null): string | null {
+  const skill = definition["执行方法"];
+  if (!taskDir || typeof skill !== "string" || !skill) return null;
+  try {
+    return outlineTextFor(taskDir, skill);
+  } catch {
+    return null;
+  }
 }
 
 /** 一次评审（批次）：第几次、批次编号、时刻、谁发起、范围与计数。row 是 REVIEW_BATCH 事件那一行。 */
@@ -322,7 +338,8 @@ export function proposalView(fact: Omit<OpenProposal, "session_id" | "reply_entr
  * 阶段是按会话算的（sessionId，不给按自由讨论的会话算）。flow 是所属流程：这条会话正在做的工作项属于哪条流程（现在只有需求分析 analysis）；单项活动的工作项、会话空闲时是 null。
  * node 是流程的工作项现在在哪一站（单项活动的工作项、空闲时为 null），flow_node 与它相同，work_item 是这条会话属于的工作项，launch 是早先任务状况卡上那一节的内容
  * （agent/src/lib/stage.ts 的 LaunchView）。
- * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）；moved_by 是最近一次移动由谁做的（executor 或 user），
+ * current 是阶段的写法（reading、clarifying、modeling、writing、reviewing）：这条会话正在做的那项活动算作的阶段；
+ * activity 是那项活动的活动标识符（例如逆向解析是 parse_spec，它的 current 是 reading），会话空闲时为 null；moved_by 是最近一次移动由谁做的（executor 或 user），
  * 一次都没有移过时与 moved_at、reason 一起为 null；lamps 按阶段给出各盏灯 { key, summary, ok, items }，ok 为 null 是不适用。
  * 早先建的任务（任务定义里没有「业务说明」集合）没有阶段，返回 null；算不出来时也返回 null。
  * 与完成条件一样，在同一进程里调用 agent 的读取函数（lib/stage_read.ts 的 stageSummaryOf），库另开一个只读连接，
@@ -342,6 +359,9 @@ export function stageView(taskDir: string, sessionId: string | null = null) {
       return { ...summary, work_item: item, moved_at: clock.fromLocalText(summary.moved_at),
         // 这条会话正在做的工作项的所属流程：流程的工作项是流程的键；单项活动的工作项、会话空闲时为 null。
         flow: summary.current !== "idle" && summary.work_item !== null ? summary.work_item.flow : null,
+        // 这条会话正在做的那项活动的活动标识符（例如 parse_spec）：流程的工作项与单项活动的都有，会话空闲时为 null。
+        // current 是它算作的阶段（逆向解析算作核读），页面画阶段条用 current，取名与数站用它。
+        activity: summary.current !== "idle" && summary.work_item !== null ? summary.work_item.activity : null,
         proposal: open === null ? null : proposalView(open, { session_id: open.session_id, reply_entry: open.reply_entry, seq: open.event_seq, at: open.at }) };
     } finally {
       db.close();
@@ -359,6 +379,21 @@ export interface WorkItemRow extends WorkItemBrief {
   session_ids: string[];
   /** 现在给这个工作项新建一条会话时，那条会话起的名字。 */
   session_name: string;
+}
+
+/** 还在的材料各自的槽位与角色（agent/src/lib/material_db.ts）；没有库、读不出库时是空的，这时每份材料都按不经槽位的「证据」算。 */
+export function materialRoleRows(taskDir: string): Map<string, MaterialRole> {
+  try {
+    const db = openRo(taskDir);
+    if (db === null) return new Map();
+    try {
+      return materialRoles(db);
+    } finally {
+      db.close();
+    }
+  } catch {
+    return new Map();
+  }
 }
 
 /** 一个任务的全部版本记录（agent/src/lib/versions.ts），按版本号从小到大；读不出库时是空的。 */
@@ -406,6 +441,20 @@ export function latestWorkItemAt(taskDir: string): string | null {
   }
 }
 
+/** 任务类型的活动与工作流的声明（agent/src/lib/stage_read.ts 的 taskDefinitionsOf）。库另开一个只读连接；没有库、没有任务、读不出来时是 null。 */
+export function taskDefinitions(taskDir: string): Definitions | null {
+  try {
+    const db = new DatabaseSync(dbFile(taskDir), { readOnly: true });
+    try {
+      return taskDefinitionsOf(db, taskDir);
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 任务的全部工作项，按启动的先后。库另开一个只读连接；还没有库、没有任务或者读不出来时是空的。
  * 时刻是库里的本地时间写法，调用方给页面之前自己换。
@@ -417,9 +466,11 @@ export function workItemRows(taskDir: string): WorkItemRow[] {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
       if (!task) return [];
       const sessions = workItemSessions(db, task.task_id);
+      // 名字取自任务类型的声明（工作流与活动的 name），声明读不出来时按 FLOW_NAMES 与阶段的名字。
+      const defs = taskDefinitionsOf(db, taskDir);
       return activityRecords(db, task.task_id).map((one) => ({
-        ...workItemBrief(one), node: one.node, session_ids: sessions.filter((row) => row.record_id === one.record_id).map((row) => row.session_id),
-        session_name: workItemSessionName(one),
+        ...workItemBrief(one, defs), node: one.node, session_ids: sessions.filter((row) => row.record_id === one.record_id).map((row) => row.session_id),
+        session_name: workItemSessionName(one, defs),
       }));
     } finally {
       db.close();
@@ -1403,6 +1454,7 @@ export function derivedSourceName(name: string, present: ReadonlySet<string>): s
  * 0.2 的任务里是 x.docx.txt）、分段清单（x.docx.segments.json）与位置表（x.docx.locations.json）旁边有那份 .docx 时，derived_from 写那份 .docx 的路径，
  * 界面据此不单独列出；其余为 null。由 PDF 材料生成的投影、分段清单与位置表（x.pdf.md、x.pdf.segments.json、x.pdf.locations.json）同样处理。
  * PDF 材料另带 pdf 一项：总页数、块的总数、没有文字的页码（读自它的位置表；位置表不在时没有这一项）。
+ * 每份另带 slot 与 role：读自任务库的材料表（格式 11 起），没有记录的是槽位空、角色「证据」；派生文件取它所由生成的那份材料的。
  */
 export function materials(taskDir: string, definition: ParsedDefinition | Record<string, any> | null) {
   const rel = or((definition || {})["材料目录"], DEFAULT_MATERIALS_DIR) as string;
@@ -1428,10 +1480,14 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
     const source = derivedSourceName(name, present);
     return source === null ? null : `${rel}${source}`;
   };
+  const roles = files.length > 0 ? materialRoleRows(taskDir) : new Map<string, MaterialRole>();
   return files.map(([name, st]: [string, any]) => {
     const facts = name.toLowerCase().endsWith(".pdf") ? pdfFacts(join(folder, name)) : null;
+    const derivedFrom = sourceOf(name);
+    const { slot, role } = roleOf(roles, derivedFrom ?? `${rel}${name}`);
     return {
-      path: `${rel}${name}`, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), derived_from: sourceOf(name),
+      path: `${rel}${name}`, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), derived_from: derivedFrom,
+      slot, role,
       ...(facts ? { pdf: facts } : {}),
     };
   });

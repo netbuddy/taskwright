@@ -53,6 +53,12 @@
 
 请选择（choose）
 
+## `part.kind_choose_open`
+
+用途：拒绝理由里怎样称呼写了 topic 却没有给候选的请选择。
+
+没有候选的请选择（choose）
+
 ## `part.kind_propose`
 
 用途：拒绝理由里怎样称呼提议。
@@ -279,7 +285,7 @@ act.scope 写了 "general"，表示与任何条目都无关，就不要再在 it
 
 用途：请选择的选项不到两个。
 
-请选择（choose）要写 act.options，至少两个选项，每项是 { key, text }
+请选择（choose）要写 act.options，至少两个选项，每项是 { key, text }；写了 act.topic 的问题卡片可以一个选项也不给，只留自由回答（核读材料时任务类型带分析提纲的除外，那时候选必须给）
 
 ## `reply.option_incomplete`
 
@@ -292,6 +298,48 @@ act.options 的第 {{no}} 项要有不为空的 key 与 text
 用途：请选择的两个选项 key 相同。
 
 act.options 里的 key「{{key}}」重复了，每个选项的 key 要不一样
+
+## `reply.option_reason_invalid`
+
+用途：请选择的某个选项写了 reason，但不是一句不为空的话。
+
+act.options 的第 {{no}} 项的 reason 要写一句话（这一项出自哪里，或者为什么列它）；不写理由就去掉 reason
+
+## `reply.topic_card_opening`
+
+用途：写了 topic 的请选择，问题句没有以规定的说法开头。opening 是那个说法。
+
+写了 act.topic 的请选择，act.text 要以「{{opening}}」开头：第一句写为了写清哪一页的哪一处、缺的是什么，第二句是问题本身；别的说明写在回复的成文的话里，不进卡片
+
+## `reply.option_catch_all`
+
+用途：写了 topic 的请选择，某个候选是归并说法（其他、以上都、几种组合、并存之类）。no 是第几项，text 是那一项的文字。
+
+act.options 的第 {{no}} 项「{{text}}」是归并说法；候选只能是具体说法，用户另有想法走卡片上的自由回答。去掉这一项，或者改写成一个具体的答案
+
+## `reply.outline_reply_needs_card`
+
+用途：核读材料时（任务类型有分析提纲），回复没有带 act，用户也没有叫停。
+
+核读材料时每一轮都以一张卡片收尾，这次的 act 是 null：要么发问答卡片（act.kind 写 "choose"，写 act.topic，act.options 给二到四个带 reason 的候选），问这个提纲条目的下一个缺口；要么发进入下一步的卡片（不写 topic 的请选择，选项照平台说明里进入下一步的写法）；还没做完的事做完再回复，不要只报进度
+
+## `reply.outline_card_needs_options`
+
+用途：核读材料时（任务类型有分析提纲），用了提问，或者写了 topic 的请选择没有给候选。what 是用了的那种卡片的称呼。
+
+核读材料时，提问一律用带候选的请选择，这次用的是{{what}}：act.kind 写 "choose"，写 act.topic，act.options 给二到四个候选答案，每个候选的 reason 写一句出处或理由（出自哪份材料哪一处，或者为什么同类系统通常如此）；用户另有想法走卡片上的自由回答，不另列
+
+## `reply.multiple_invalid`
+
+用途：请选择的 multiple 不是 true 或 false。
+
+act.multiple 只能写 true（可以多选）或 false（只选一项），不写就是只选一项
+
+## `reply.topic_invalid`
+
+用途：请选择的 topic 不是不为空的文字。
+
+act.topic 要写几个字，说这一问问的是哪件事；不写就去掉 topic
 
 ## `reply.suggest_value_missing`
 

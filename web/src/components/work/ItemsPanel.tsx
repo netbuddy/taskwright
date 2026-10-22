@@ -25,6 +25,7 @@
 // 问题跟着条目走（ItemIssues.tsx）：列表行的状态徽标里带「问题 N」（ItemStatus.tsx），详情顶部列出挂在这条上、还没了结的问题；从问题卡片上的「牵涉 UC-003」跳来时
 // 记下来源（fromIssue），详情顶部给「回到问题列表」；换到别的条目或回到列表就清掉。
 
+import { outlineOrder, outlineTree } from "../../model/outlineTree";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input, Modal } from "antd";
 import type { DiagramRow, Item, KnowledgeLibrary, Material, ServiceInfo, Task } from "../../api/types";
@@ -269,9 +270,13 @@ export function ItemsPanel({
   // 导出 Word 用的：全部页签里勾中的条目（已经不在的编号不算）。
   const exportItems = task.items.filter((i) => checked.has(i.item_id));
   const pos = selectedItem ? items.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
-  // 业务说明的节：「上一条」「下一条」照目录从上到下的次序走；看节的版式还是按条目的样子看（修订与全部来源），换一节就回到节的版式。
+  // 业务说明的节：「上一条」「下一条」照目录从上到下的次序走（有分析提纲时照提纲树的次序）；看节的版式还是按条目的样子看（修订与全部来源），换一节就回到节的版式。
   const contents = useMemo(() => (onOverall ? toc(task) : null), [task, onOverall]);
-  const topics = useMemo(() => (contents ? tocOrder(contents) : []), [contents]);
+  const topics = useMemo(() => {
+    if (!contents) return [];
+    const tree = outlineTree(task);
+    return tree ? outlineOrder(tree) : tocOrder(contents);
+  }, [contents, task]);
   const topicPos = selectedItem ? topics.findIndex((i) => i.item_id === selectedItem.item_id) : -1;
   const [rawTopic, setRawTopic] = useState(false);
   useEffect(() => { setRawTopic(false); }, [selected]);

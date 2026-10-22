@@ -209,6 +209,12 @@ export async function spawnBackend(args: string[], options: Omit<SpawnOptions, "
  * （整套测试并行跑时）这一小段时间足够长，调用方会在助手还没有开始的时候就往下走。
  */
 export async function sendAndWaitTurn(port: number, taskId: string, sessionId: string, send: () => Promise<void>, ms = 60_000): Promise<void> {
+  await sendAndWaitTurnEvents(port, taskId, sessionId, send, ms);
+}
+
+/** 同 sendAndWaitTurn，并交回这一轮里收到的全部推送事件（按先后）。 */
+export async function sendAndWaitTurnEvents(port: number, taskId: string, sessionId: string, send: () => Promise<void>, ms = 60_000):
+  Promise<{ event: string; data: Record<string, any> }[]> {
   const events: { event: string; data: Record<string, any> }[] = [];
   let buffer = "";
   const req = request({ host: "127.0.0.1", port, path: `/api/v1/tasks/${taskId}/events` });
@@ -240,6 +246,7 @@ export async function sendAndWaitTurn(port: number, taskId: string, sessionId: s
       if (Date.now() > end) throw new Error(`等这一轮做完超时：${ms / 1000} 秒内没有收到这条会话的 work_ended 事件`);
       await new Promise((ok) => setTimeout(ok, 50));
     }
+    return events;
   } finally {
     req.destroy();
   }

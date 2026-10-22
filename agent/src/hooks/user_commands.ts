@@ -41,7 +41,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { REVIEW_OP_KIND, STOP_RUN_KIND, STOP_RUN_NOTE, UserOpError, checkReviewRequest, runUserOperation, stopRunDetails } from "../lib/user_ops.ts";
+import { OUTPUT_ABORTED_KIND, REVIEW_OP_KIND, STOP_RUN_KIND, STOP_RUN_NOTE, UserOpError, checkReviewRequest, outputAbortedNote, runUserOperation, stopRunDetails } from "../lib/user_ops.ts";
 import { ReviewError } from "../lib/review.ts";
 import { piComplete, startReview } from "../lib/review_ui.ts";
 import { batchCounts } from "../lib/review_run.ts";
@@ -100,6 +100,14 @@ export function registerUserCommands(pi: ExtensionAPI): void {
       if (request.kind === STOP_RUN_KIND) {
         // 用户在界面上停止了这一次运行：后端在运行停下之后发来，这里只留一条通知，不写库。
         pi.sendMessage({ customType: USER_EDIT_CUSTOM_TYPE, content: STOP_RUN_NOTE, display: true, details: stopRunDetails(opId) });
+        report({ ok: true, event_seqs: [], results: [], revision_no: null });
+        return;
+      }
+      if (request.kind === OUTPUT_ABORTED_KIND) {
+        // 模型输出异常、后端的看门狗中止了这一次运行：同停止一样只留一条系统消息，不写库；原因码随 details 留在会话里。
+        const reason = typeof request.reason === "string" ? request.reason : "";
+        pi.sendMessage({ customType: USER_EDIT_CUSTOM_TYPE, content: outputAbortedNote(reason), display: true,
+          details: { ...stopRunDetails(opId, OUTPUT_ABORTED_KIND), reason_code: typeof request.code === "string" ? request.code : null } });
         report({ ok: true, event_seqs: [], results: [], revision_no: null });
         return;
       }

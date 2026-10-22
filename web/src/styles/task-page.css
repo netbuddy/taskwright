@@ -47,29 +47,8 @@
 /* 区块标题后面的一句说明 */
 .tp-sec-note { color: var(--mut); font-size: 0.893rem; }
 
-/* 3 「三步开始」指引：黑边的一张卡，左边三步，右边主按钮；下面三种常见起点各一张小卡。只在六类资产都空着时有 */
-.tp-guide { margin-top: 1.286rem; background: var(--card); border: 1px solid var(--ink); border-radius: 0.714rem; box-shadow: var(--card-shadow);
-  padding: 1rem 1.143rem 1.071rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.429rem; align-items: center; }
-.tp-guide .gt { font-weight: 600; font-size: 1.071rem; margin-bottom: 0.5rem; }
-/* 任务已有资产时写成一节「启动需求分析」：主按钮与它旁边的一句，下面三种常见起点 */
-.tp-guide-go { display: flex; align-items: center; gap: 0.857rem; }
-.tp-guide-go small { font-size: 0.857rem; color: var(--text3); }
-.tp-steps { display: flex; gap: 1.286rem; margin: 0; padding: 0; list-style: none; }
-.tp-steps li { display: flex; gap: 0.5rem; font-size: 0.929rem; color: var(--text2); flex: 1; min-width: 0; }
-.tp-steps .no { flex: none; width: 1.429rem; height: 1.429rem; border-radius: 50%; background: var(--ink); color: var(--on-ink);
-  font-size: 0.857rem; display: grid; place-items: center; margin-top: 0.143rem; }
-.tp-steps b { display: block; color: var(--ink); font-weight: 600; }
-.tp-cta { display: flex; flex-direction: column; gap: 0.429rem; align-items: flex-end; }
-.tp-cta small { font-size: 0.857rem; color: var(--text3); max-width: 15rem; text-align: right; text-wrap: balance; }
-/* 主按钮（「三步开始」与「启动需求分析」一节里的、输入页的「启动」）比卡片里的按钮大一档 */
-.tp-cta .btn, .tp-guide-go .btn, .tp-in-go .btn { font-size: 1rem; padding: 0.429rem 1.143rem; }
-.tp-cases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.714rem; margin-top: 0.714rem; }
-.tp-case { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 0.714rem; padding: 0.714rem 0.929rem 0.786rem; color: inherit; }
-.tp-case b { display: block; font-size: 0.972rem; font-weight: 600; margin-bottom: 0.143rem; }
-.tp-case span { font-size: 0.893rem; color: var(--text2); }
-/* 已有材料时的一句：几张卡里贴底对齐 */
-.tp-case:has(em) { display: flex; flex-direction: column; }
-.tp-case em { display: block; margin-top: auto; padding-top: 0.286rem; font-style: normal; font-size: 0.857rem; color: var(--text3); }
+/* 主按钮（输入页的「启动」）比卡片里的按钮大一档 */
+.tp-in-go .btn { font-size: 1rem; padding: 0.429rem 1.143rem; }
 
 /* 3a 待处理事项：四张卡两列排，窄了一列；每行是编号、标题与一句小字、动作按钮；推进建议一行占满，淡绿底 */
 .tp-todo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.857rem; }
@@ -105,9 +84,9 @@
 .tp-cell.hot { border-color: var(--ai-line); background: var(--ai-bg); }
 .tp-cell.hot .w { color: var(--ai); }
 
-/* 整张可点的卡（工作流程卡、活动卡、三种常见起点）：悬停时边线变黑、带卡片的投影；颜色与投影都是已有的变量 */
-.tp-flow.go, .tp-act.go, .tp-case.go { color: inherit; cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
-.tp-flow.go:hover, .tp-act.go:hover, .tp-case.go:hover, .tp-flow.go:focus-visible, .tp-act.go:focus-visible, .tp-case.go:focus-visible {
+/* 整张可点的卡（工作流程卡、活动卡）：悬停时边线变黑、带卡片的投影；颜色与投影都是已有的变量 */
+.tp-flow.go, .tp-act.go { color: inherit; cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
+.tp-flow.go:hover, .tp-act.go:hover, .tp-flow.go:focus-visible, .tp-act.go:focus-visible {
   border-color: var(--ink); box-shadow: var(--card-shadow); outline: none; }
 /* 卡片右下角提示点了做什么的字：「开展 →」「继续 →」「回到工作台 →」 */
 .tp-arrow { margin-left: auto; font-size: 0.857rem; font-weight: 600; color: var(--ink); white-space: nowrap; }
@@ -131,6 +110,14 @@
 .tp-flow.rec { border-color: var(--ink); box-shadow: var(--card-shadow); }
 .tp-flow.off { opacity: 0.62; }
 .tp-flow.now { border-color: var(--ok-line); }
+/* 点了处境标签之后对应的那张卡：边线变黑、带投影，不能启动的也不变淡，一会儿之后恢复 */
+.tp-flow.hit { border-color: var(--ink); box-shadow: 0 0 0 2px var(--ink), var(--card-shadow); opacity: 1; transition: box-shadow 0.2s; }
+/* 「工作流程」标题下的一行处境标签：圆角小签，点了滚到对应的流程卡 */
+.tp-case-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 0.714rem; }
+.tp-case-chip { font: inherit; font-size: 0.893rem; color: var(--text2); background: var(--card); border: 1px solid var(--line2); border-radius: 71rem;
+  padding: 0.143rem 0.786rem; cursor: pointer; }
+.tp-case-chip:hover, .tp-case-chip:focus-visible { border-color: var(--ink); color: var(--ink); outline: none; }
+.tp-kv.tp-applies { margin: 0.071rem 0 0.143rem; }
 .tp-flow .t { display: flex; align-items: center; gap: 0.571rem; }
 .tp-flow .t b { font-size: 1.071rem; font-weight: 600; }
 .tp-flow p { margin: 0; font-size: 0.929rem; color: var(--text2); }
@@ -206,6 +193,8 @@
 .tp-mtable td { padding: 0.571rem 0.5rem 0.571rem 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .tp-mtable td.nm { white-space: normal; word-break: break-all; width: 100%; }
 .tp-mtable td.num { color: var(--text2); font-variant-numeric: tabular-nums; }
+/* 材料名后面的角色小签：既有规格说明、证据 */
+.tp-mrole { margin-left: 0.5rem; padding: 0 0.429rem; border: 1px solid var(--line2); border-radius: 71rem; font-size: 0.786rem; color: var(--text2); white-space: nowrap; }
 .tp-mtable th:last-child, .tp-mtable td:last-child { text-align: right; padding-right: 0; }
 .tp-mtable td .tp-lnk + .tp-lnk { margin-left: 0.857rem; }
 /* 文件图标按类型分形状，颜色一律灰 */
@@ -250,9 +239,6 @@
 .tp-in-block { margin-top: 1.143rem; }
 .tp-in-p { margin: 0 0 0.571rem; font-size: 0.893rem; color: var(--text2); }
 .tp-in-kinds { margin: 0 0 0.571rem; padding-left: 1.286rem; font-size: 0.893rem; color: var(--text2); }
-/* 从三种常见起点进来时，那种起点的做法：左边一道线的一句 */
-.tp-in-case { margin: 0 0 0.714rem; padding-left: 0.571rem; border-left: 2px solid var(--ink); font-size: 0.893rem; color: var(--text2); }
-.tp-in-case b { color: var(--ink); font-weight: 600; margin-right: 0.5rem; }
 .tp-in-kb { display: flex; flex-direction: column; gap: 0.357rem; }
 .tp-in-kb .pm { margin-left: 0.5rem; color: var(--mut); font-size: 0.857rem; }
 /* 示例：点了填进文本框的几句 */

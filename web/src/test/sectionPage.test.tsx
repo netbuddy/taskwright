@@ -96,6 +96,29 @@ describe("节的各块", () => {
     expect(sources[1]).toHaveClass("v");
   });
 
+  it("它是什么：每行以竖线起头的一段画成表格，第一行是表头、分隔行不画；格里逐字出自材料的字照常标底色；别的段照旧是段落", () => {
+    const t = change(overallTask(), "OA-002", (p) => {
+      p.fields["它是什么"] = [
+        "| 第几步 | 谁做 | 产出什么 | 出处 |",
+        "|---|---|---|---|",
+        "| 1 | 读者 | 借书和还书都可以在自助借还机上办理，也可以到服务台办理。 | 借阅规则 §2 |",
+        "| 2 | 馆员 | 借书记录 | 你 |",
+        "",
+        "借还分两步（借阅规则 §2）。",
+      ].join("\n");
+    });
+    render(<Panel t={t} first="OA-002" />);
+    const what = screen.getByTestId("topic-what");
+    const table = within(what).getByTestId("topic-table");
+    expect([...table.querySelectorAll("th")].map((one) => one.textContent)).toEqual(["第几步", "谁做", "产出什么", "出处"]);
+    expect([...table.querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].map((one) => one.textContent))).toEqual([
+      ["1", "读者", "借书和还书都可以在自助借还机上办理，也可以到服务台办理。", "借阅规则 §2"],
+      ["2", "馆员", "借书记录", "你"],
+    ]);
+    expect(table.querySelectorAll("td .oa-qt").length).toBe(1);
+    expect([...what.querySelectorAll(".oa-prose > p")].map((one) => one.textContent)).toEqual(["借还分两步（借阅规则 §2）。"]);
+  });
+
   it("它是什么：助手补充写了 inserted 时只标 inserted 里的字，理由里用引号引的别的词不标", () => {
     const t = change(overallTask(), "OA-003", (item) => {
       const one = item.sources.find((s) => s.kind === "助手补充")!;
@@ -144,16 +167,11 @@ describe("节的各块", () => {
     expect(screen.getByTestId("topic-what").querySelector(".oa-prose")).not.toHaveClass("pending");
   });
 
-  it("示例：一条一张卡片，反例是灰色卡片、写「这种不算」，正文里不带「反例：」", () => {
+  it("示例不单列一块：具体实例写在正文里；「例子」里平常的与以「反例：」开头的几条页上都不画（条目详情里照旧可看可改）", () => {
     render(<Panel t={overallTask()} />);
-    expect(screen.getByTestId("topic-examples").querySelector("h3")).toHaveTextContent("示例");
-    const first = screen.getByTestId("topic-example-0");
-    const second = screen.getByTestId("topic-example-1");
-    expect(first).not.toHaveClass("neg");
-    expect(first.querySelector(".k")).toBeNull();
-    expect(second).toHaveClass("neg");
-    expect(second.querySelector(".k")).toHaveTextContent("这种不算");
-    expect(second.querySelector("p")!.textContent).toBe("小李想借的《深入理解计算机系统》还在别人手上，他登记的是排队等书，不是预约取书。");
+    expect(screen.queryByTestId("topic-examples")).toBeNull();
+    expect(screen.queryByTestId("topic-example-0")).toBeNull();
+    expect(screen.queryByText("这种不算")).toBeNull();
   });
 
   it("异常分支：以「例外：」开头的例子各一张小卡，正文里不带「例外：」，写出处；流程节末尾有「＋ 补一种例外」，点了进到修改", () => {
@@ -165,11 +183,10 @@ describe("节的各块", () => {
     expect(card).toHaveClass("exc");
     expect(card.querySelector("p")!.textContent).toBe("读者的借书证过期了，不能预约。");
     expect(card.querySelector(".oa-src")).toHaveTextContent("你说的「有人预约的书不能续借。」");
-    // 例外不再出现在示例里；平常的例子与反例还在。
-    expect([...screen.getByTestId("topic-examples").querySelectorAll(".oa-card")].length).toBe(2);
-    // 块的次序：说明、异常分支、示例、适用规则、待澄清事项，然后是相关角色与对象、对应的需求条目。
+    // 平常的例子与反例不单列一块。块的次序：说明、异常分支、适用规则、待澄清事项，然后是相关角色与对象、对应的需求条目。
+    expect(screen.queryByTestId("topic-examples")).toBeNull();
     expect([...screen.getByTestId("topic-page").querySelectorAll(".oa-blk > h3")].map((h) => h.firstChild!.textContent!.trim()))
-      .toEqual(["说明", "异常分支", "示例", "适用规则", "待澄清事项", "相关角色与对象", "对应的需求条目"]);
+      .toEqual(["说明", "异常分支", "适用规则", "待澄清事项", "相关角色与对象", "对应的需求条目"]);
     fireEvent.click(screen.getByTestId("topic-add-exception"));
     expect(screen.getByTestId("topic-edit")).toBeInTheDocument();
   });
@@ -529,15 +546,20 @@ describe("节末尾的三块", () => {
     expect(screen.getByTestId("item-detail")).toHaveTextContent("预约图书");
   });
 
-  it("追溯：材料 › 澄清记录 › 条目 › 文档节号，没有内容的段不画；点材料在右边定位第一处原文，点澄清记录换成条目详情的样子", () => {
+  it("追溯：只写来源行里没有显示过的材料与澄清记录；页上已有的来源、图、条目、文档节号都不重复，没有可写的就不画；点材料在右边定位第一处原文，点澄清记录换成条目详情的样子", () => {
+    render(<Panel t={overallTask()} />);
+    expect(screen.queryByTestId("topic-trace")).toBeNull();
+    cleanup();
     const locate = vi.fn();
-    render(<Panel t={overallTask()} spies={{ locate }} />);
-    // 最后一段是这一节在生成的文档里的节号，与面包屑里的节号是同一个。
-    const no = text(screen.getByTestId("topic-crumb")).match(/›(\d+\.\d+)/)![1];
-    expect(text(screen.getByTestId("topic-trace"))).toBe(`追溯材料 借阅规则.md›澄清记录 2 条›条目 UC-002、UC-003›文档 ${no} 节`);
-    expect(screen.queryByTestId("trace-figures")).toBeNull();
+    const t = change(overallTask(), "OA-003", (page) => {
+      page.sources = [...page.sources,
+        { kind: "文档原文", locator: "inputs/借阅规则.md", excerpt: "预约也叫预借。", supports: [{ field: "别名" }] },
+        { kind: "用户的话", locator: "", excerpt: "这算流程。", supports: [{ field: "标签" }] }] as never;
+    });
+    render(<Panel t={t} first="OA-003" spies={{ locate }} />);
+    expect(text(screen.getByTestId("topic-trace"))).toBe("追溯材料 借阅规则.md›澄清记录 1 条");
     fireEvent.click(within(screen.getByTestId("trace-materials")).getByRole("button"));
-    expect(locate).toHaveBeenCalledWith("同一册图书同一时间只接受一位读者的预约。", "inputs/借阅规则.md");
+    expect(locate).toHaveBeenCalledWith("预约也叫预借。", "inputs/借阅规则.md");
     fireEvent.click(within(screen.getByTestId("trace-clarified")).getByRole("button"));
     expect(screen.getByTestId("item-detail")).toBeInTheDocument();
   });

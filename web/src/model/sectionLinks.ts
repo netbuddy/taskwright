@@ -9,7 +9,7 @@ import type { Item, Task } from "../api/types";
 import type { DiagramGraph } from "../../../agent/src/lib/diagram_scan.ts";
 import { CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_ROLES, type Toc, sectionOf, tocOrder } from "./chapters";
 import { mainStatus } from "./items";
-import { dependents, isDeprecated, isOverall } from "./overall";
+import { TOPIC, dependents, isDeprecated, isOverall } from "./overall";
 import { sectionFigures } from "./sectionDiagrams";
 
 export interface Related {
@@ -80,11 +80,21 @@ export interface Trace {
   items: Item[];
 }
 
-/** 追溯行的四段；哪一段没有内容由页面决定不画。 */
+/**
+ * 一条来源在页上的来源行里显示过没有：没有指明支持哪一处的（整页的来源，写在正文下面），或者支持正文、例子、已经定下的这三处的。
+ * 只支持别的字段（标题、别名、标签之类）的来源，页上没有地方显示它。
+ */
+function shownInLines(source: Item["sources"][number]): boolean {
+  const supports = source.supports ?? [];
+  return supports.length === 0 || supports.some((one) => one.field === TOPIC.what || one.field === TOPIC.examples || one.field === TOPIC.settled);
+}
+
+/** 追溯的数：材料与澄清记录只数页上的来源行里没有显示过的来源（shownInLines）；图与条目照旧数，页面上方另有图与「对应的需求条目」。 */
 export function traceOf(task: Task, contents: Toc, item: Item): Trace {
   const materials: Trace["materials"] = [];
   let clarified = 0;
   for (const source of item.sources) {
+    if (shownInLines(source)) continue;
     const kind = String(source.kind);
     if (kind === "用户的话") clarified += 1;
     if (kind !== "文档原文") continue;

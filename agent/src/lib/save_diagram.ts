@@ -27,7 +27,7 @@ import { type CallContext, type ToolOutcome, activeTasks } from "./create_task.t
 import { ACTOR_EXECUTOR, ACTOR_USER, emit, wallClockText } from "./db.ts";
 import { type TaskDefinition, validateDefinition } from "./definition.ts";
 import { diagramRefusal } from "./stage.ts";
-import { allowedAt, stageOf } from "./stage_read.ts";
+import { allowedForActivity, whereActivity } from "./stage_read.ts";
 import { DIAGRAM_ID, DIAGRAM_KINDS, type DiagramRecord, diagramId, drawnItemIds, kindName, latestVersion, readDiagrams } from "./diagram.ts";
 import { FALLBACK_TEXT } from "../hooks/reply_fallback.ts";
 import { REPLAYED_TEXT, type Source, checkDiagramSources, splitGuide } from "./save_revision.ts";
@@ -161,8 +161,8 @@ function plan(db: DatabaseSync, call: CallContext, params: SaveDiagramParams, us
   const { taskId, definition } = activeTask(db);
   // 工作的阶段（lib/stage.ts）：助手在核读材料与澄清两个阶段、会话空闲时不能画图、改图、删图，看的是这条会话的工作项。用户在页面上改图不看阶段；早先建的任务没有阶段。
   if (!userEdit && call.actor !== ACTOR_USER) {
-    const stage = stageOf(db, call.workspaceDir, taskId, definition, call.sessionId);
-    const refusal = stage ? diagramRefusal(stage, allowedAt(call.workspaceDir, definition, stage)) : null;
+    const where = whereActivity(db, call.workspaceDir, taskId, definition, call.sessionId);
+    const refusal = where ? diagramRefusal(where.position, allowedForActivity(call.workspaceDir, definition, where.activity)) : null;
     if (refusal) throw refused(refusal);
   }
   const records = readDiagrams(db, taskId);

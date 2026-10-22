@@ -2,18 +2,18 @@
 // 标题旁的一句、现在能不能启动、还缺什么输入、启动时发的字段与替用户发的第一句话。只算，不画。
 
 import { ACTIVITY_START_TEXTS, SCOPE_MAX_LENGTH } from "../../../agent/src/lib/stage";
-import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, StageKey } from "../api/types";
+import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, FlowSlot, StageKey } from "../api/types";
 
 export { SCOPE_MAX_LENGTH };
 
 /** 输入页要启动的那一项：一条工作流程，或者一项单项活动。 */
 export type StartTarget = { kind: "flow"; flow: CatalogFlow } | { kind: "activity"; activity: CatalogActivity };
 
-/** 地址里的键在活动目录里指的是哪一项；目录里没有就是 null。 */
+/** 地址里的键在活动目录里指的是哪一项；目录里没有、或者是不能单独启动的活动（逆向解析只在工作流里做）就是 null。 */
 export function startTarget(catalog: ActivityCatalog | null | undefined, key: string): StartTarget | null {
   const flow = catalog?.flows.find((one) => one.key === key);
   if (flow) return { kind: "flow", flow };
-  const activity = catalog?.activities.find((one) => one.key === key);
+  const activity = catalog?.activities.find((one) => one.key === key && one.alone !== false);
   return activity ? { kind: "activity", activity } : null;
 }
 
@@ -51,10 +51,16 @@ export function inputBlocks(target: StartTarget, assets: AssetCell[] | undefined
   };
 }
 
-/** 启动时发的两项：流程从它现在该开始的那一站开始；这条流程现在不能启动时是 null。 */
-export function startFields(target: StartTarget): { activity: StageKey; in_flow: boolean } | null {
-  if (target.kind === "activity") return { activity: target.activity.key as StageKey, in_flow: false };
-  return target.flow.start ? { activity: target.flow.start, in_flow: true } : null;
+/** 启动时发的几项：流程从它现在该开始的那一站开始，另带流程的键；这条流程现在不能启动时是 null。 */
+export function startFields(target: StartTarget): { activity: string; in_flow: boolean; flow?: string } | null {
+  if (target.kind === "activity") return { activity: target.activity.key, in_flow: false };
+  return target.flow.start ? { activity: target.flow.start, in_flow: true, flow: target.flow.key } : null;
+}
+
+/** 启动的是哪一项活动（键与名字）：单项活动是它自己，流程是它的起始站；流程现在不能启动时是 null。 */
+export function startActivityOf(target: StartTarget): { key: string; name: string } | null {
+  if (target.kind === "activity") return target.activity;
+  return target.flow.nodes.find((one) => one.key === target.flow.start) ?? null;
 }
 
 /**
@@ -81,8 +87,15 @@ export function existingFlowItem(target: StartTarget): number | null {
 
 /** 现在不能启动时写在主按钮旁的一句（缺什么前提，或者已有流程工作项）；能启动是 null。 */
 export function blockedLine(target: StartTarget): string | null {
+  // 必填的材料槽位还空着：这一句优先于别的原因（上传到那个槽位就能启动）。
+  if (target.kind === "flow" && target.flow.missing_slot) return `现在还不能启动：还没有上传「${target.flow.missing_slot}」。`;
   const one = target.kind === "flow" ? target.flow : target.activity;
   return one.enabled ? null : `现在还不能启动：${one.state}。`;
+}
+
+/** 输入页按槽位分块画的那几个槽位：目标是声明了槽位的流程时是它的槽位，别的情形（没有槽位的流程、单项活动）是空的。 */
+export function inputSlots(target: StartTarget): FlowSlot[] {
+  return target.kind === "flow" ? target.flow.slots ?? [] : [];
 }
 
 /**
@@ -95,8 +108,13 @@ export function missingInput(target: StartTarget, blocks: InputBlocks, assets: A
 }
 
 /** 启动之后替用户发的第一句话：写了目标系统描述就是那段描述，没有写是这项活动的那句固定的话。 */
-export function firstMessage(activity: StageKey, description: string): string {
-  return description.trim() || ACTIVITY_START_TEXTS[activity];
+export function firstMessage(activity: { key: string; name: string }, description: string): string {
+  return description.trim() || startText(activity);
+}
+
+/** 启动一项活动时那句固定的话：六个阶段各有一句（ACTIVITY_START_TEXTS），别的活动写「请开始某某。」（名字取自活动目录）。 */
+export function startText(activity: { key: string; name: string }): string {
+  return (ACTIVITY_START_TEXTS as Record<string, string>)[activity.key] ?? `请开始${activity.name}。`;
 }
 
 /** 前置条件那一句去掉开头的「前置条件：」，放在「前提」一栏里。 */

@@ -48,6 +48,8 @@ export const NOTIFY_PREFIXES = [textPrefix("ui_ops.viewed_notice"), "我已经�
 export const NOTIFY_KINDS = ["mark_viewed", "confirm"];
 /** 用户在界面上停止了助手一次运行之后留在会话里的那条界面操作通知的种类（agent/src/lib/user_ops.ts 的 STOP_RUN_KIND）。 */
 export const STOP_RUN = "stop_run";
+/** 模型输出异常、后端中止了一次运行之后留在会话里的那条通知的种类（agent/src/lib/user_ops.ts 的 OUTPUT_ABORTED_KIND）。 */
+export const OUTPUT_ABORTED = "output_aborted";
 /** 用户在提议进入下一个阶段的卡片上选了「继续本阶段」之后留在会话里的那条界面操作通知的种类（agent/src/lib/user_stage.ts 的 CONTINUE_STAGE_KIND）。 */
 export const CONTINUE_STAGE = "continue_stage";
 /** 「回复」工具的兜底扩展追加的那句固定文字（模板 result.reply_fallback，agent/src/hooks/reply_fallback.ts 追加它），不是用户说的。 */
@@ -100,7 +102,8 @@ export function clickStageUnmoved(details: Record<string, any>): { at: string; w
  */
 export function replyActivityDone(details: Record<string, any>): { activity_done?: { activity: string } } {
   const done = details.activity_done;
-  return isObject(done) && isStageKey(done.activity) ? { activity_done: { activity: done.activity } } : {};
+  // 活动是任务类型声明里的活动标识符（例如 parse_spec），不只是六个阶段的键：是一段非空的文字就收。
+  return isObject(done) && typeof done.activity === "string" && done.activity !== "" ? { activity_done: { activity: done.activity } } : {};
 }
 
 export function normalizeInforms(informs: unknown): Record<string, any>[] {

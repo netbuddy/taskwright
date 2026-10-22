@@ -74,7 +74,7 @@ export function App() {
           <ServiceProvider>
           {route.page === "tasks" && <TaskListPage />}
           {route.page === "task" && <TaskPage key={route.taskId} taskId={route.taskId} focus={route.focus ?? null} />}
-          {route.page === "start" && <StartInputPage key={`${route.taskId}/${route.key}`} taskId={route.taskId} startKey={route.key} startCase={route.startCase} pick={route.pick ?? []} />}
+          {route.page === "start" && <StartInputPage key={`${route.taskId}/${route.key}`} taskId={route.taskId} startKey={route.key} pick={route.pick ?? []} />}
           {route.page === "knowledge" && <KnowledgePage libraryId={route.libraryId} />}
           {route.page === "work" && <WorkViewPage key={`${route.taskId}/${route.sessionId}`} taskId={route.taskId} sessionId={route.sessionId} collection={route.collection}
             diagrams={route.diagrams} diagram={route.diagram} />}

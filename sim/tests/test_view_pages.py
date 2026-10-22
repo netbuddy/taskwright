@@ -40,10 +40,10 @@ def user(reply: dict, max_uses: int | None = None, **when) -> dict:
 
 
 PAGES = [
-    {"op": "add", "collection": "业务说明", "fields": {"标题": "借书", "它是什么": "读者凭借书证借书，每本书可以续借一次。", "例子": ["读者凭借书证借书"],
+    {"op": "add", "collection": "业务说明", "fields": {"标题": "借书", "它是什么": "读者凭借书证借书，每本书可以续借一次（requirements.md 第 1 段）。", "例子": ["读者凭借书证借书"],
                                                      "标签": ["流程"], "状态": "在用"},
      "sources": [source("读者凭借书证借书，每本书可以续借一次。")]},
-    {"op": "add", "collection": "业务说明", "fields": {"标题": "预约保留期", "它是什么": "书还回来以后只为预约的读者留着的那段时间。", "例子": ["这本书为他保留 3 天"],
+    {"op": "add", "collection": "业务说明", "fields": {"标题": "预约保留期", "它是什么": "由此看，预约保留期是书还回来以后只为预约的读者留着的那段时间。", "例子": ["这本书为他保留 3 天"],
                                                      "标签": ["概念"], "状态": "在用"},
      "sources": [{**source("这本书为他保留 3 天"), "supports": [{"field": "例子", "index": 0}]},
                  {"kind": "助手补充", "excerpt": "材料没有给这个词下定义，按常见的说法补的，等用户确认。", "supports": [{"field": "它是什么", "inserted": ["书还回来以后只为预约的读者留着的那段时间"]}]}]},
@@ -66,7 +66,8 @@ SCRIPT = {"rules": [
     {"when": {"last_role": "user", "last_contains": "两页都看过了"},
      "reply": {"text": intent("inform", "两页都看过了"), "tool_calls": [{"name": "reply", "arguments": {"informs": [], "act": None, "text": "好的，我接着往下做。"}}]}},
     {"when": {"last_role": "tool"},
-     "reply": {"tool_calls": [{"name": "reply", "arguments": {"informs": [], "act": {"kind": "ask", "text": QUESTION, "scope": "general"},
+     "reply": {"tool_calls": [{"name": "reply", "arguments": {"informs": [], "act": {"kind": "choose", "topic": "借书 · 缺口 1（轻重取舍）", "text": "为了写清这两页：" + QUESTION,
+                                                             "options": [{"key": "a", "text": "借书这一页", "reason": "requirements.md 第 1 段。"}, {"key": "b", "text": "预约保留期这一页", "reason": "同类图书馆通常保留三天。"}]},
                                                              "text": "我立了两页主题，请你看一下。" + QUESTION}}]}},
 ], "default": {"text": "好的。"}}
 

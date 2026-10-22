@@ -12,7 +12,7 @@ import type { CatalogFlow, Item, StageKey, StageLamp, Task, TaskStatusView, Work
 import { RESOLVED_VALUE, issueRefs, issueStatus, keepPendingField } from "./items";
 import { allAssetsEmpty } from "./startPage";
 import { basisNote, isBlockingQuestion, questionRevisit } from "./overall";
-import { STAGE_NAMES, clarifyKind, lampShort, reportOnlyStation } from "./stage";
+import { STAGE_NAMES, activityStage, clarifyKind, flowStations, lampShort, reportOnlyStation } from "./stage";
 
 /** 问题集合里「种类」这一项取这个值的才是待澄清问题（另两种是范围外、后续迭代）。 */
 export const QUESTION_KIND_FIELD = "种类";
@@ -133,7 +133,7 @@ export function notBlockingLine(work: PendingWork): string | null {
 }
 
 /** 做某项活动的工作项（单项活动是那一项、流程正在那一站），最近有动静的那个；没有是 null。 */
-export function workItemDoing(status: TaskStatusView | null, activity: StageKey): WorkItemView | null {
+export function workItemDoing(status: TaskStatusView | null, activity: string): WorkItemView | null {
   return status?.work_items?.find((one) => one.activity === activity) ?? null;
 }
 
@@ -150,19 +150,20 @@ function idList(ids: string[]): string {
 export function adviceLine(task: Task, status: TaskStatusView | null, work: PendingWork): string | null {
   const item = status?.work_items?.find((one) => one.kind === "flow");
   if (!item || !item.node || !item.ordinal) return null;
-  const flow: CatalogFlow | undefined = status?.catalog?.flows.find((one) => one.work_item?.record_id === item.record_id) ?? status?.catalog?.flows[0];
-  const nodes = (flow?.nodes ?? []).filter((one) => one.key in STAGE_NAMES);
+  // 各站取自活动目录里这条流程（跳过只能由用户发起的那一站）；每一站的灯按它算作的阶段取（逆向解析算作核读）。
+  const nodes = flowStations(status?.catalog, item.flow);
   const at = nodes.findIndex((one) => one.key === item.node);
   const next = at >= 0 ? nodes[at + 1] ?? null : null;
-  const here = `第 ${item.ordinal} 站「${STAGE_NAMES[item.node]}」`;
+  const stage = at >= 0 ? nodes[at].stage : activityStage(item.node, status?.catalog);
+  const here = `第 ${item.ordinal} 站「${at >= 0 ? nodes[at].name : item.activity_name}」`;
   const ahead = next ? `${item.name}可进入第 ${item.ordinal + 1} 站「${next.name}」` : `${item.name}已在最后一站`;
-  const late = ["writing", "reviewing", "document"].includes(item.node);
+  const late = stage !== null && ["writing", "reviewing", "document"].includes(stage);
   const todo = [
-    work.blocking && item.node !== "reading" ? `解决 ${idList(work.questions.map((one) => one.id))}` : "",
+    work.blocking && stage !== "reading" ? `解决 ${idList(work.questions.map((one) => one.id))}` : "",
     late && work.pendingItems.length ? `核实 ${idList(work.pendingItems.map((one) => one.id))}` : "",
   ].filter(Boolean);
   if (todo.length) return `${todo.join("并")}之后，${ahead}。`;
-  const lamps = task.stage?.lamps?.[item.node] ?? [];
+  const lamps = (stage ? task.stage?.lamps?.[stage] : null) ?? [];
   if (reportOnlyStation(lamps)) {
     return next ? `${here}不判是否做够，看过数字后由你决定是否进入第 ${item.ordinal + 1} 站「${next.name}」。` : `${item.name}在${here}，这一站不判是否做够，由你判断。`;
   }

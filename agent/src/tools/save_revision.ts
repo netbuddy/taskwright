@@ -18,6 +18,8 @@ import { problemClicks } from "../lib/problem_consent.ts";
 import { isUnderstandingGate, reportStopped, stopAtLimit } from "../lib/rejection_limit.ts";
 import { withRejectionRecord, workIdOf } from "../lib/tool_rejection.ts";
 import { fillText } from "../lib/texts.ts";
+import { withSegment } from "../lib/activity_segments.ts";
+import { activitySegmentAt, debugPromptDir } from "../lib/context_assemble.ts";
 
 /** 工具名。模型调用时写的就是它，`--tools` 白名单里也要写上它。 */
 export const TOOL_NAME = "save_revision";
@@ -83,8 +85,13 @@ const operation = Type.Object(
   { additionalProperties: true },
 );
 
+/** 一次保存修订最多带几个操作（工具参数定义的 maxItems，pi 校验参数时就拦）。 */
+export const SAVE_REVISION_MAX_OPERATIONS = 2;
+
 const parameters = Type.Object({
+  // 一次最多两个操作：参数写得太长时模型容易把 JSON 结构写坏（括号提前收尾、冒号写成逗号），宁可多存几次。
   operations: Type.Array(operation, {
+    maxItems: SAVE_REVISION_MAX_OPERATIONS,
     description: fillText("save_revision.param.operations"),
   }),
 });
@@ -135,7 +142,9 @@ export function registerSaveRevision(pi: ExtensionAPI): void {
           },
           params,
         );
-        return { content: [{ type: "text" as const, text: outcome.text }], details: outcome.details };
+        // 这条会话第一次保存做成：附上活动补充里保存之后要用的那一段（lib/activity_segments.ts）。
+        const text = withSegment(outcome.text, "after_save", branch, () => activitySegmentAt(ctx.cwd, ctx.sessionManager.getSessionId(), "after_save", debugPromptDir().dir));
+        return { content: [{ type: "text" as const, text }], details: outcome.details };
       }).catch((error: unknown) => {
         // 因为没有合格的理解而被拒、而且这一轮连续被拒到上限：返回「出错并结束本次运行」的结果（lib/rejection_limit.ts）。
         // 输入不合规的拒绝不算，照常抛出，让模型改正之后再试。

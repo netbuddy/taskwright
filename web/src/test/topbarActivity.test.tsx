@@ -43,6 +43,8 @@ describe("顶栏那一处写什么", () => {
     expect(topbarActivity({ stage: stage("writing") })).toEqual({ kind: "active", text: "当前活动：写条目" });
     expect(topbarActivity({ stage: stage("modeling", null) })).toEqual({ kind: "active", text: "当前活动：整理建模" });
     expect(currentActivityText("clarifying")).toBe("当前活动：澄清");
+    // 名字先查活动目录：逆向解析写声明里的名字。
+    expect(currentActivityText("parse_spec", { flows: [], activities: [{ key: "parse_spec", name: "逆向解析" }] } as never)).toBe("当前活动：逆向解析");
   });
 
   it("自由讨论的会话写「自由讨论 · 不绑定活动」；任务没有阶段写「这个任务没有阶段」；没有「已做完」这种写法", () => {

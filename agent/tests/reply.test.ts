@@ -7,9 +7,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTask } from "../src/lib/create_task.ts";
 import { saveRevision } from "../src/lib/save_revision.ts";
-import { checkReply, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup, type ReplyFacts } from "../src/lib/reply.ts";
+import { checkReply, consecutiveReplyRejections, decideReply, lastAssistantTurn, openRevisionLookup, outlineReadingOf, type ReplyFacts, userAskedToStop } from "../src/lib/reply.ts";
 import { FALLBACK_TEXT } from "../src/hooks/reply_fallback.ts";
-import { DEFINITION_PATH, SOURCE, callIn, makeWorkspace } from "./helpers.ts";
+import { DEFINITION_PATH, SOURCE, UI_SESSION, callIn, enterStage, makeWorkspace, overallDefinition } from "./helpers.ts";
+import { copyFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 /** 只有自己一个调用、库里什么都没有时的事实。 */
 function alone(revisionFact: ReplyFacts["revisionFact"] = () => "还没有库"): ReplyFacts {
@@ -230,6 +232,97 @@ test("请选择的 key 重复时拒绝", () => {
     alone(),
     /key「a」重复了/,
   );
+});
+
+test("请选择的选项可以带理由，卡片可以标多选、写标题，三样原样送达", () => {
+  const options = [{ key: "a", text: "统一模型接入", reason: "出处：立项申请书把它列为一期目标。" }, { key: "b", text: "知识库", reason: "同类平台通常有。（助手补充）" }];
+  const reply = checkReply({ informs: [], act: { kind: "choose", text: "为了写清范围的边界：这一期必须做哪几项？", options, multiple: true, topic: "范围" }, text: "这一期必须做哪几项？" }, alone());
+  assert.deepEqual(reply.act?.options, options);
+  assert.equal(reply.act?.multiple, true);
+  assert.equal(reply.act?.topic, "范围");
+});
+
+test("请选择的理由、多选、标题写错时逐条拒绝", () => {
+  const act = { kind: "choose", text: "选哪个？", options: [{ key: "a", text: "甲", reason: " " }, { key: "b", text: "乙" }], multiple: "yes", topic: "" };
+  rejected({ informs: [], act, text: "选哪个？" }, alone(), /第 1 项的 reason 要写一句话[\s\S]*act\.multiple 只能写 true[\s\S]*act\.topic 要写几个字/);
+});
+
+test("写了标题的请选择可以不给选项：开放问题只留自由回答；没写标题时仍要两个选项", () => {
+  const reply = checkReply({ informs: [], act: { kind: "choose", topic: "起因与现状问题", text: "为了写清起因：你看最要紧的是什么？", options: [] }, text: "你看最要紧的是什么？" }, alone());
+  assert.deepEqual(reply.act?.options, []);
+  checkReply({ informs: [], act: { kind: "choose", topic: "起因与现状问题", text: "为了写清起因：你看最要紧的是什么？" }, text: "你看最要紧的是什么？" }, alone());
+  rejected({ informs: [], act: { kind: "choose", text: "选哪个？", options: [] }, text: "选哪个？" }, alone(), /至少两个选项/);
+  rejected({ informs: [], act: { kind: "choose", topic: "范围", text: "选哪个？", options: [{ key: "a", text: "甲" }] }, text: "选哪个？" }, alone(), /至少两个选项/);
+});
+
+test("写了标题的请选择：问题句以「为了写清」开头才收；候选是归并说法的拒绝，「5000 元以上」一类具体说法照收", () => {
+  const options = [{ key: "a", text: "金额 5000 元以上走二级审批", reason: "制度 p3。" }, { key: "b", text: "一律走一级审批", reason: "同类系统通常如此。" }];
+  checkReply({ informs: [], act: { kind: "choose", topic: "业务规则 · 缺口 1（材料没写）", text: "为了写清业务规则的审批一段：材料没写金额门槛。走哪一级？", options }, text: "走哪一级？" }, alone());
+  rejected({ informs: [], act: { kind: "choose", topic: "业务规则 · 缺口 1（材料没写）", text: "材料没写金额门槛，走哪一级？", options }, text: "走哪一级？" }, alone(), /act\.text 要以「为了写清」开头/);
+  rejected({ informs: [], act: { kind: "choose", topic: "起因 · 缺口 1（材料没写）", text: "为了写清起因：为什么分散？",
+    options: [{ key: "a", text: "需求不同", reason: "x" }, { key: "b", text: "其他原因或多种原因并存", reason: "y" }] }, text: "为什么分散？" }, alone(), /第 2 项「其他原因或多种原因并存」是归并说法/);
+  // 没写标题的请选择（例如进入下一步的卡片）不受这两条约束。
+  checkReply({ informs: [], act: { kind: "choose", text: "是否进入下一步？", options: [{ key: "next_step", text: "进入下一步：澄清" }, { key: "stay", text: "其他时候再说" }] }, text: "是否进入下一步？" }, alone());
+});
+
+test("写了标题的请选择：「不是，请按另一种划分方式处理」一类换个说法的兜底项拒绝，具体说法照收", () => {
+  const ask = (text: string) => ({ informs: [], act: { kind: "choose", topic: "背景与目标 · 范围 · 缺口 1（轻重取舍）", text: "为了写清范围页的子系统一段：材料列了平台与三个应用。这一期必须做的是哪几个？",
+    options: [{ key: "a", text: "共用平台", reason: "立项申请书 p30。" }, { key: "b", text, reason: "同类系统通常如此。" }] }, text: "这一期必须做的是哪几个？" });
+  for (const text of ["不是，请按另一种划分方式处理。", "否，请重新划分", "按别的方式划分", "由你来说", "其它"]) {
+    rejected(ask(text), alone(), /第 2 项「[^」]*」是归并说法/);
+  }
+  for (const text of ["不是本期范围", "各部门自行采购模型额度", "重新设计报修表单", "另外收取运维费用", "改用另一种计费：按调用量结算", "由你方信息安全部审批"]) {
+    checkReply(ask(text), alone());
+  }
+});
+
+test("核读材料且有分析提纲时：提问与没有候选的写了标题的请选择都拒绝；带候选的请选择、不写标题的请选择照收；不在这种情形下开放问照收", () => {
+  const reading = { ...alone(), outlineReading: true };
+  rejected({ informs: [], act: { kind: "ask", text: "现状问题是什么？", scope: "general" }, text: "现状问题是什么？" }, reading,
+    /核读材料时，提问一律用带候选的请选择，这次用的是提问（ask）/);
+  const open = { informs: [], act: { kind: "choose", topic: "背景与目标 · 起因与现状问题 · 缺口 1（材料没写）", text: "为了写清起因：最要紧的是什么？", options: [] }, text: "最要紧的是什么？" };
+  rejected(open, reading, /这次用的是没有候选的请选择（choose）/);
+  checkReply(open, alone());
+  checkReply({ ...open, act: { ...open.act, options: [{ key: "a", text: "费用分散", reason: "预算复函 p2。" }, { key: "b", text: "权限不一", reason: "现状调研 §3。" }] } }, reading);
+  checkReply({ informs: [], act: { kind: "choose", text: "是否进入下一步？", options: [{ key: "next_step", text: "进入下一步：澄清" }, { key: "stay", text: "先停在这里" }] }, text: "是否进入下一步？" }, reading);
+});
+
+test("核读材料且有分析提纲时：回复不带 act 就拒绝，拒绝语写明两种卡片；用户叫停、汇报单项活动做完、不在这种情形下照收", () => {
+  const plain = { informs: [], act: null, text: "目前刚建立维度页，我会从这个条目继续。" };
+  rejected(plain, { ...alone(), outlineReading: true, lastUserText: "继续" }, /核读材料时每一轮都以一张卡片收尾，这次的 act 是 null：要么发问答卡片[\s\S]*要么发进入下一步的卡片/);
+  rejected(plain, { ...alone(), outlineReading: true }, /act 是 null/);
+  checkReply(plain, { ...alone(), outlineReading: true, lastUserText: "我选：先停在这里" });
+  checkReply({ ...plain, activity_done: true }, { ...alone(), outlineReading: true, lastUserText: "继续" });
+  checkReply(plain, { ...alone(), lastUserText: "继续" });
+});
+
+test("userAskedToStop：只认开头就是叫停的说法；候选答案里说到停止、暂停的内容不算", () => {
+  for (const text of ["我选：先停在这里", "先停在这里", "停下", "暂停一下", "今天先到这里", "就到这吧", "到此为止", "别再继续了", "不用继续了"]) assert.equal(userAskedToStop(text), true, text);
+  for (const text of ["继续", "我选：系统停止服务时转人工", "接着走下一个维度", "我选：保持请求待处理，等资产授权与领导审批完成后再继续。", "", null, undefined]) {
+    assert.equal(userAskedToStop(text as string | null | undefined), false, String(text));
+  }
+});
+
+test("outlineReadingOf：会话在核读材料且 skill 里有 outline.md 才为真；没有提纲、不在核读、还没有库都为假", () => {
+  const session = "session-outline-reading";
+  const setUp = (withOutline: boolean, stage: "reading" | "clarifying") => {
+    const dir = makeWorkspace(overallDefinition());
+    createTask(callIn(dir, session), { definition_path: DEFINITION_PATH });
+    enterStage(dir, stage, [UI_SESSION, session]);
+    if (withOutline) {
+      const skill = (overallDefinition() as any).执行方法 as string;
+      copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+    }
+    return dir;
+  };
+  assert.equal(outlineReadingOf(setUp(true, "reading"), session), true);
+  assert.equal(outlineReadingOf(setUp(false, "reading"), session), false);
+  assert.equal(outlineReadingOf(setUp(true, "clarifying"), session), false);
+  assert.equal(outlineReadingOf(makeWorkspace(overallDefinition()), session), false);
+});
+
+test("多选、标题只有请选择能写", () => {
+  rejected({ informs: [], act: { kind: "ask", text: "现状问题是什么？", scope: "general", multiple: true }, text: "现状问题是什么？" }, alone(), /multiple/);
 });
 
 test("给建议值没有写值时拒绝", () => {

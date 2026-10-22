@@ -7,17 +7,19 @@
  */
 
 import {
-  ACTIVITY_NAMES, ASSETS, type ActivityDef, type ActivityKey, type AssetKey, type Condition, type FlowDef, type FlowKey, MODE_NAMES, type Mode,
+  ACTIVITY_NAMES, ASSETS, type ActivityDef, type ActivityKey, type AssetKey, type Condition, type FlowDef, type FlowKey, type FlowSlot, MODE_NAMES, type Mode,
   PUBLISH, prerequisiteText, readName,
 } from "./activity_def.ts";
 import { CHAPTERS, chapterLayout } from "./overall_chapters.ts";
-import { FLOW_ANALYSIS, type FlowItemRef, LAUNCH_READY, type LampInput, type Stage, flowExistsText, flowStartNode, isStage } from "./stage.ts";
+import { FLOW_ANALYSIS, type FlowItemRef, LAUNCH_READY, type LampInput, type Stage, flowExistsText, isStage } from "./stage.ts";
 
 /** 算六类资产的现状与前置条件要的数。 */
 export interface AssetFacts {
   /** 材料的份数（由 Word、PDF 生成的文字版不另算），与其中还没有被任何一节或问题引用的份数。 */
   materials: number;
   materialsUnread: number;
+  /** 材料按放进的槽位（工作流声明里的槽位键）各几份：由 Word、PDF 生成的文字版不算，不经槽位上传的不计入任何键。 */
+  materialsBySlot: Record<string, number>;
   /** 业务说明的节数：在用的主题页，按章归好的与未归类的都算，章的导语页不算。 */
   sections: number;
   /** 在用的主题页里待核实的页数（有助手补充而用户没有确认的内容）。 */
@@ -52,6 +54,7 @@ export function assetFacts(input: LampInput): AssetFacts {
   return {
     materials: input.materials.length,
     materialsUnread: input.materials.filter((one) => !cited.has(one)).length,
+    materialsBySlot: { ...(input.materialsBySlot ?? {}) },
     sections,
     sectionsPending: input.pages.filter((one) => !one.deprecated && one.pending).length,
     openQuestions: input.questions.filter((one) => one.open).length,
@@ -155,6 +158,10 @@ export interface Named {
 export interface CatalogActivity {
   key: string;
   name: string;
+  /** 这项活动算作哪个阶段（声明的 stage 一栏原样）；只能由用户发起的（发布）为 null。页面据此给不是阶段键的活动（逆向解析）取灯、画进度格。 */
+  stage: Stage | null;
+  /** 能不能单独启动（声明的「alone」一栏）：不能的只在工作流里做，页面不画它的单项卡。 */
+  alone: boolean;
   mode: Mode;
   mode_name: string;
   purpose: string;
@@ -181,6 +188,19 @@ export interface CatalogFlow {
   /** 各站，按先后。 */
   nodes: Named[];
   inputs: string;
+  /** 卡上「输入」一行：工作流声明了槽位时由槽位生成（各槽位的名称，必填的注「（必填）」），没有槽位时就是 inputs。 */
+  inputs_text: string;
+  /** 第一个还空着的必填材料槽位的名称（见 missingSlot）；都有了、或者没有必填的材料槽位时为 null。有它时这条工作流不能启动。 */
+  missing_slot: string | null;
+  /**
+   * 能不能进这条工作流的输入页：任务里没有工作流的工作项、它又不在还没有提供的名单里就能进，与能不能启动（enabled）无关。
+   * 缺必填材料时也能进（进去在槽位里补上传），按不按得动启动由输入页与启动接口把关。
+   */
+  enterable: boolean;
+  /** 输入页的槽位，照工作流的声明原样给；没有声明槽位的是空的。页面现在还不读它。 */
+  slots: FlowSlot[];
+  /** 用户可能所处的几种处境（工作流声明的「cases」一栏原样），任务起点页画成一行可点的小签；没有写的是空的。 */
+  cases: string[];
   prerequisite_text: string;
   example: string;
   /** 现在能不能启动：看数据前提，另外任务里已有流程的工作项（不论哪条流程）时不能启动。 */
@@ -191,8 +211,11 @@ export interface CatalogFlow {
   recommended: boolean;
   /** 恒为 null：早先是「流程走到的站」，现在流程的位置记在各个工作项上，这一项只为还读它的页面留着。 */
   at: ActivityKey | null;
-  /** 现在启动这条流程应当从哪一站开始：有材料从核读材料、没有材料从澄清；这条流程现在还不能启动时是 null。 */
-  start: Stage | null;
+  /**
+   * 现在启动这条流程应当从哪一站开始：各步里第一个前提都满足的那一站（需求分析有材料从核读材料、没有材料从澄清）；
+   * 这条流程的前提、必填的材料槽位没有满足，或者它还没有提供时是 null。
+   */
+  start: string | null;
   /** 这条流程现在有几个工作项（至多一个）。 */
   active_count: number;
   /**
@@ -207,19 +230,36 @@ export interface Catalog {
   activities: CatalogActivity[];
 }
 
+/** 工作流里第一个还空着的必填材料槽位：这个槽位里一份材料都没有（按 facts.materialsBySlot 数）；都有了是 undefined。 */
+export function missingSlot(slots: readonly FlowSlot[], facts: Pick<AssetFacts, "materialsBySlot">): FlowSlot | undefined {
+  return slots.find((it) => it.required && it.accepts === "materials" && (facts.materialsBySlot[it.key] ?? 0) === 0);
+}
+
+/** 由槽位生成「输入」一行：各槽位的名称按先后，必填的后面注「（必填）」；没有槽位时是 null。 */
+export function slotsText(slots: readonly FlowSlot[]): string | null {
+  return slots.length === 0 ? null : slots.map((it) => (it.required ? `${it.name}（必填）` : it.name)).join("、");
+}
+
 /** 还不能启动的活动（发布）的状态。 */
 export const CATALOG_LATER = "此版本尚未提供";
+/** 需求变更这条工作流的键。 */
+export const FLOW_CHANGE = "change";
+/**
+ * 还没有提供的工作流：各站虽已声明，但还没有在页面上走过，不因规则按声明推导而悄悄开放；卡上那一句写 CATALOG_LATER。
+ * 需求变更自己的子任务做完之后从这里去掉。
+ */
+export const FLOWS_NOT_YET: readonly string[] = [FLOW_CHANGE];
 
 /**
- * 给页面的活动目录：两条工作流程与七项单项活动，各带现在能不能启动。单项活动能不能启动只看数据前提；counts 是工作项各有几个
- * （单项活动的按活动的键、流程的按流程的键），单项活动已经有工作项不拦，再启动是另起一个。flowItem 是任务里已有的流程工作项：
- * 有它时两条流程都不能启动（一个任务同一时刻至多一个流程工作项）。
+ * 给页面的活动目录：任务类型声明的全部工作流与全部活动，各带现在能不能启动。单项活动能不能启动只看数据前提；counts 是工作项各有几个
+ * （单项活动的按活动的键、流程的按流程的键），单项活动已经有工作项不拦，再启动是另起一个。工作流能不能启动、从哪一站开始由声明推导
+ * （见 flows 一段）。flowItem 是任务里已有的流程工作项：有它时每条工作流都不能启动（一个任务同一时刻至多一个流程工作项）。
  */
 export function catalog(defs: { activities: readonly ActivityDef[]; flows: readonly FlowDef[] }, names: Readonly<Record<AssetKey, string>>, facts: AssetFacts,
   counts: Readonly<Record<string, number>> = {}, flowItem: FlowItemRef | null = null): Catalog {
   const activities: CatalogActivity[] = defs.activities.map((one) => {
     const base = {
-      key: one.key, name: one.name, mode: one.mode, mode_name: MODE_NAMES[one.mode], purpose: one.purpose,
+      key: one.key, name: one.name, stage: one.stage, alone: one.alone, mode: one.mode, mode_name: MODE_NAMES[one.mode], purpose: one.purpose,
       reads: one.reads.map((key) => ({ key, name: readName(key, names) })), writes: one.writes.map((key) => ({ key, name: names[key] })),
       prerequisite_text: prerequisiteText(one.requires), example: one.example, recommended: false, active_count: counts[one.key] ?? 0,
     };
@@ -229,19 +269,29 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
     return { ...base, enabled: blocked === null, state: blocked ?? LAUNCH_READY };
   });
   const flows: CatalogFlow[] = defs.flows.map((one) => {
-    const analysis = one.key === FLOW_ANALYSIS;
     const blocked = blockedText(one.requires, facts);
-    const ready = analysis && blocked === null;
+    const slot = missingSlot(one.slots, facts);
+    const later = FLOWS_NOT_YET.includes(one.key);
+    const open = blocked === null && slot === undefined && !later;
+    // 起始站：各步里第一个前提都满足、不是只能由用户发起的那一站。
+    const stepOf = (key: string) => defs.activities.find((activity) => activity.key === key);
+    const start = open ? one.steps.find((key) => { const step = stepOf(key); return step !== undefined && step.mode !== "user_only" && blockedText(step.requires, facts) === null; }) ?? null : null;
+    const first = stepOf(one.steps[0] ?? "");
+    const unstartable = open && start === null ? (first ? blockedText(first.requires, facts) : null) ?? CATALOG_LATER : null;
+    const state = flowItem !== null ? flowExistsText(flowItem, stepOf(flowItem.node)?.name)
+      : blocked ?? (slot ? `还没有上传「${slot.name}」` : null) ?? (later ? CATALOG_LATER : null) ?? unstartable ?? LAUNCH_READY;
     return {
       key: one.key, name: one.name, purpose: one.purpose, applies: one.applies,
-      nodes: one.steps.map((key) => ({ key, name: defs.activities.find((activity) => activity.key === key)?.name ?? key })), inputs: one.inputs,
+      nodes: one.steps.map((key) => ({ key, name: stepOf(key)?.name ?? key })), inputs: one.inputs, inputs_text: slotsText(one.slots) ?? one.inputs, missing_slot: slot?.name ?? null, slots: one.slots, cases: one.cases,
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
-      // 只有需求分析现在能启动；需求变更要有已发布的版本，而且它的各站还没有定义。已有流程工作项时都不能启动。
-      enabled: ready && flowItem === null,
-      state: ready && flowItem !== null ? flowExistsText(flowItem) : blocked ?? (analysis ? LAUNCH_READY : CATALOG_LATER),
-      recommended: analysis ? facts.versions === 0 : facts.versions > 0,
+      // 能启动：前提满足、必填的材料槽位有着落、不在尚未提供的名单里、有一站可以开始，而且任务里没有流程工作项。
+      enabled: start !== null && flowItem === null,
+      enterable: flowItem === null && !later,
+      state,
+      // 推荐：没有发布过版本时推荐需求分析，发布过之后推荐需求变更；需求再工程不推荐（从资产数量看不出有没有一份既有规格说明）。
+      recommended: one.key === FLOW_ANALYSIS ? facts.versions === 0 : one.key === FLOW_CHANGE ? facts.versions > 0 : false,
       at: null,
-      start: analysis ? flowStartNode(facts.materials > 0) : null,
+      start,
       active_count: counts[one.key] ?? 0,
       work_item: flowItem,
     };

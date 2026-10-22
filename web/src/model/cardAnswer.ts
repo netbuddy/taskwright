@@ -19,6 +19,8 @@ interface CardAnswer {
   stay?: UiActionNoted;
   /** 用户点了卡片上的选项时发出的那句话。 */
   click?: UserMessage;
+  /** 用户在这张卡片里写了回复（问答卡片上选好候选再按「发送」也是这一种）时发出的那句话。 */
+  typed?: UserMessage;
 }
 
 /**
@@ -65,7 +67,7 @@ function answerOf(messages: ConversationMessage[], index: number): CardAnswer | 
       return { text: u.text.startsWith("我已经在界面上确认了") ? "你在界面上确认了" : "你在界面上操作过了" };
     }
     // 在这张卡片的文本框里打的字带着它的标识；底部输入框打的字不带，接着往后找。
-    if (tagged === replyId) return { text: TYPED_IN_CARD_TEXT };
+    if (tagged === replyId) return { text: TYPED_IN_CARD_TEXT, typed: u };
   }
   return null;
 }
@@ -73,6 +75,12 @@ function answerOf(messages: ConversationMessage[], index: number): CardAnswer | 
 /** 卡片答过没有：答过了返回卡片上收成的那一句（「你选了「…」」「你在卡片里回复了」「你回答了这张卡片」等），还开着返回 null。规则见 answerOf。 */
 export function answeredText(messages: ConversationMessage[], index: number): string | null {
   return answerOf(messages, index)?.text ?? null;
+}
+
+/** 答这张卡片的那句话（在卡片里写的回复，或者点选项发出的那句）：问答卡片收起时据它写选了哪几项。还开着时返回 null。 */
+export function answeredTypedText(messages: ConversationMessage[], index: number): string | null {
+  const answer = answerOf(messages, index);
+  return answer?.typed?.text ?? answer?.click?.text ?? null;
 }
 
 /** 用户在进入卡片上选了「继续本阶段」之后，卡片答过了的那一句。 */

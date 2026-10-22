@@ -10,6 +10,8 @@ import { ACTOR_USER } from "../src/lib/db.ts";
 import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { SaveRejected, saveRevision } from "../src/lib/save_revision.ts";
 import { type Stage } from "../src/lib/stage.ts";
+import { copyFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { DEFINITION_PATH, SOURCE, UI_SESSION, enterStage, idleSessions, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 const SESSION = "session-guard";
@@ -98,4 +100,78 @@ test("核读材料：只查这次传入的两个字段，不追溯旧页；把�
   assert.equal(refusal(dir, [update(dir, "OA-002", { 标签: ["流程"] })]), null);
   // 用户的操作不看位置。
   assert.equal(refusal(dir, [add({ 标题: "预约", 它是什么: "预约的说明。", 状态: "在用" })], ACTOR_USER), null);
+});
+
+test("核读材料：任务的 skill 里有分析提纲时，页的正文每句要有句末括注或以推断起头；维度页与登记的固定页不查；没有分析提纲的任务不查", () => {
+  const dir = workspace("reading");
+  const skill = (overallDefinition() as any).执行方法 as string;
+  copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+  const loose = refusal(dir, [add(full("起因与现状问题", { 它是什么: "费用分散，财务无法汇总（预算复函 p2）。\n\n材料尚未说明为什么各部门各自试用。" }))])!;
+  assert.ok(loose.includes("核读材料时页的「它是什么」每一句都要有着落"), loose);
+  assert.ok(loose.includes("这一页有 1 句没有：「材料尚未说明为什么各部门各自试用。」"), loose);
+  assert.ok(loose.includes("怎么办：给这几句补上句末括注"), loose);
+  assert.equal(refusal(dir, [add(full("起因与现状问题", { 它是什么: "费用分散，财务无法汇总（预算复函 p2）。财务部两次要求停掉自购额度（你）。\n\n这意味着统一计量是一期的前置条件。" }))]), null);
+  // 维度页与元数据登记的固定页是综合，不逐句查。
+  assert.equal(refusal(dir, [add(full("背景与目标", { 它是什么: "这一维度写为什么要建平台。" })), add(full("目前的判断", { 它是什么: "这是财务问题逼出来的项目。" }))]), null);
+  // 没有分析提纲的任务（skill 目录里没有 outline.md）不查。
+  const plain = workspace("reading");
+  assert.equal(refusal(plain, [add(full("起因与现状问题", { 它是什么: "材料尚未说明原因。" }))]), null);
+});
+
+test("核读材料：正文里的表一行算一句，最后一格是出处；表头与分隔行不查，格里有句号也不切；最后一格空着或写占位的行被拦", () => {
+  const dir = workspace("reading");
+  const skill = (overallDefinition() as any).执行方法 as string;
+  copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+  const table = (last: string) => [
+    "| 第几步 | 谁做 | 用什么系统 | 产出什么 | 出处 |",
+    "|---|---|---|---|---|",
+    "| 1 | 员工 | 门户。附发票照片 | 报销单 | 报销制度 p3 |",
+    `| 2 | 部门经理 | 门户 | 审批意见 | ${last} |`,
+    "",
+    "报销分两步走（报销制度 p3）。",
+    "例如员工提交一张差旅报销单（报销制度 p3）。",
+  ].join("\n");
+  assert.equal(refusal(dir, [add(full("主流程步骤", { 它是什么: table("你") }))]), null);
+  for (const last of ["", "—", "无"]) {
+    const loose = refusal(dir, [add(full("主流程步骤", { 它是什么: table(last) }))])!;
+    assert.ok(loose.includes("这一页有 1 句没有：「| 2 | 部门经理 | 门户 | 审批意见 |"), loose);
+  }
+});
+
+test("核读材料：分析提纲给提纲条目写了表头时，这个条目的页（含「条目名 · 子系统名」）第一张表的表头要正好是那几列；没有表、列不同、次序不同都拦；别的页与没有提纲的任务不查", () => {
+  const dir = workspace("reading");
+  const skill = (overallDefinition() as any).执行方法 as string;
+  copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+  const body = (head: string) => [head, "|---|---|---|---|---|", "| 1 | 员工 | 门户 | 报销单 | 报销制度 p3 |", "", "报销从员工提交开始（报销制度 p3）。", "例如员工提交一张差旅报销单（报销制度 p3）。"].join("\n");
+  const right = "| 第几步 | 谁做 | 用什么系统 | 产出什么 | 出处 |";
+  assert.equal(refusal(dir, [add(full("主流程步骤 · 服务台", { 它是什么: body(right) }))]), null);
+  const wrong = refusal(dir, [add(full("主流程步骤 · 服务台", { 它是什么: body("| 步骤 | 责任人 | 系统 | 产出 | 出处 |") }))])!;
+  assert.ok(wrong.includes(`表头正好是 ${right}，列数与次序都不变；这一页现在是 | 步骤 | 责任人 | 系统 | 产出 | 出处 |`), wrong);
+  assert.ok(wrong.includes("怎么办：把第一张表的表头改成上面那一行"), wrong);
+  assert.ok(refusal(dir, [add(full("主流程步骤", { 它是什么: body("| 谁做 | 第几步 | 用什么系统 | 产出什么 | 出处 |") }))])!.includes("这一页现在是 | 谁做 | 第几步"));
+  assert.ok(refusal(dir, [add(full("主流程步骤", { 它是什么: "报销从员工提交开始（报销制度 p3）。例如员工提交一张差旅报销单（报销制度 p3）。" }))])!.includes("这一页现在是 没有表"));
+  // 别的提纲条目的页不查表头。
+  assert.equal(refusal(dir, [add(full("触发与交付", { 它是什么: body("| 甲 | 乙 |") }))]), null);
+  // 没有分析提纲的任务不查。
+  const plain = workspace("reading");
+  assert.equal(refusal(plain, [add(full("主流程步骤", { 它是什么: "报销分两步。" }))]), null);
+});
+
+test("核读材料：有分析提纲的任务不要求「例子」一栏；要求举例的维度的页正文至少一句以「例如」起头，可选维度不要求；标签照旧要求；没有分析提纲的任务照旧要求例子", () => {
+  const dir = workspace("reading");
+  const skill = (overallDefinition() as any).执行方法 as string;
+  copyFileSync(join(import.meta.dirname, "../../task-types/requirements-engineering/.pi/skills/requirements-engineering/outline.md"), join(dir, dirname(skill), "outline.md"));
+  const page = (title: string, what: string, more: Record<string, unknown> = {}) => { const { 例子: _, ...rest } = full(title, { 它是什么: what, ...more }); return add(rest); };
+  // 可选维度的页、维度名对不上的子主题页：不要求例如句，也不要求例子。
+  assert.equal(refusal(dir, [page("起因与现状问题", "费用分散（预算复函 p2）。"), page("范围", "一期做三个应用（评审会纪要 第 4 条）。")]), null);
+  // 要求举例的维度：没有例如句被拦，写明要以「例如」起头。
+  const none = refusal(dir, [page("角色与职责", "服务台有八个人，分两班（服务台访谈 p23）。")])!;
+  assert.ok(none.includes("核读材料时这一页的「它是什么」里至少要有一句以「例如」起头的具体实例"), none);
+  assert.ok(refusal(dir, [page("组织与角色 · 平台共用能力", "平台由信息化部维护（立项申请书 p30）。")])!.includes("以「例如」起头的具体实例"));
+  // 有例如句（同样带出处）就放行，「例子」一栏可以空着。
+  assert.equal(refusal(dir, [page("角色与职责", "服务台有八个人，分两班（服务台访谈 p23）。例如早班八点半到下午五点（服务台访谈 p23）。")]), null);
+  // 标签仍然要贴。
+  assert.ok(refusal(dir, [page("背景与目标", "这一维度写为什么要建平台（立项申请书 p30）。", { 标签: [] })])!.includes("这一页缺「标签」。"));
+  // 没有分析提纲的任务照旧要求例子一栏。
+  assert.ok(refusal(workspace("reading"), [page("起因与现状问题", "费用分散。")])!.includes("这一页缺「例子」。"));
 });

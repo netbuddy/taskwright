@@ -13,9 +13,9 @@
 
 import { assetNamesOf } from "./asset_names.ts";
 import type { DatabaseSync } from "node:sqlite";
-import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, blockedText, catalog } from "./activity_catalog.ts";
+import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, blockedText, catalog, missingSlot } from "./activity_catalog.ts";
 import { DefinitionHeadError } from "./activity_def.ts";
-import { type Definitions, definitionsFor } from "./activity_def_read.ts";
+import { type Definitions, activityNameOf, activityStage, definitionsFor, flowNameOf } from "./activity_def_read.ts";
 import { type Entry, chooseActOf } from "./completion_consent.ts";
 import { checkCompletion } from "./conditions.ts";
 import { emit, wallClockText } from "./db.ts";
@@ -37,6 +37,7 @@ import {
 } from "./stage.ts";
 import { refusalText } from "./texts.ts";
 import { listMaterials } from "./task_status.ts";
+import { materialRoles, roleOf } from "./material_db.ts";
 import { envSegmentParams, materialFacts } from "./segments.ts";
 import { versionCount } from "./versions.ts";
 
@@ -67,8 +68,8 @@ const SESSIONS = "work_item_session";
 /** 活动记录表里的一行：一个工作项。 */
 export interface ActivityRecord {
   record_id: number;
-  /** 现在做的是哪一项活动：六个阶段之一。流程的工作项随换站更新。 */
-  activity: Stage;
+  /** 现在做的是哪一项活动：任务类型声明里的活动标识符；早先的记录是六个阶段键之一。工作流的工作项随换站更新。 */
+  activity: string;
   /** 流程的工作项现在在哪一站（与活动同一个写法）；单项活动的工作项为 null。 */
   node: string | null;
   /** 流程的工作项属于哪条流程（lib/stage.ts 的 FLOW_ANALYSIS）；单项活动的工作项为 null。 */
@@ -103,16 +104,19 @@ const recordOf = (row: RecordRow): ActivityRecord => ({
   from: isStage(row.from) ? row.from : null, scope: typeof row.scope === "string" && row.scope !== "" ? row.scope : null,
 });
 
-/** 全部工作项，按启动的先后排。活动的写法不是六个阶段之一的记录不认。 */
+/** 一行活动记录的活动是不是一段非空的文字：是才认这一行（取值合不合规由写入的一侧先判）。 */
+const hasActivity = (row: RecordRow): boolean => typeof row.activity === "string" && row.activity !== "";
+
+/** 全部工作项，按启动的先后排。活动一列是空的记录不认。 */
 export function activityRecords(db: DatabaseSync, taskId: string): ActivityRecord[] {
   const rows = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? ORDER BY r.started_seq, r.record_id`).all(taskId) as unknown as RecordRow[];
-  return rows.filter((row) => isStage(row.activity)).map(recordOf);
+  return rows.filter(hasActivity).map(recordOf);
 }
 
 /** 按记录号取一个工作项；没有时是 null。 */
 export function workItemById(db: DatabaseSync, taskId: string, recordId: number): ActivityRecord | null {
   const row = db.prepare(`SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} WHERE r.task_id = ? AND r.record_id = ?`).get(taskId, recordId) as RecordRow | undefined;
-  return row && isStage(row.activity) ? recordOf(row) : null;
+  return row && hasActivity(row) ? recordOf(row) : null;
 }
 
 /**
@@ -123,7 +127,7 @@ export function sessionWorkItem(db: DatabaseSync, taskId: string, sessionId: str
   const row = db.prepare(
     `SELECT ${RECORD_COLUMNS} FROM ${RECORD_FROM} JOIN ${SESSIONS} s ON s.record_id = r.record_id WHERE r.task_id = ? AND s.session_id = ? AND s.archived_at IS NULL`,
   ).get(taskId, sessionId) as RecordRow | undefined;
-  return row && isStage(row.activity) ? recordOf(row) : null;
+  return row && hasActivity(row) ? recordOf(row) : null;
 }
 
 /** 这条会话正在做的工作项：与 sessionWorkItem 相同（工作项没有终点，会话属于哪个工作项就是在做哪个）。 */
@@ -150,26 +154,83 @@ export function taskHasMaterials(workspaceDir: string, materialsDir: string): bo
   return listMaterials(workspaceDir, materialsDir).files.length > 0;
 }
 
-/** 这条会话现在在哪里：它正在做的工作项现在做的那项活动（那个阶段）；没有就是空闲。不管任务有没有阶段，调用方先用 hasOverall 判。 */
+/**
+ * 这条会话现在在哪里：它正在做的工作项现在做的那项活动（那个阶段）；没有就是空闲。不管任务有没有阶段，调用方先用 hasOverall 判。
+ * 只认阶段键：只给早先的记录（活动标识符与阶段键相同）与测试用；活动标识符不是阶段键的工作项在这里认不出、按空闲算。要位置用 stageOf。
+ */
 export function currentStage(db: DatabaseSync, taskId: string, sessionId: string | null | undefined): Position {
-  return openActivityRecord(db, taskId, sessionId)?.activity ?? IDLE;
+  const activity = openActivityRecord(db, taskId, sessionId)?.activity;
+  return activity !== undefined && isStage(activity) ? activity : IDLE;
+}
+
+/**
+ * 一个活动标识符算作哪个阶段（lib/activity_def_read.ts 的 activityStage）。声明读不出来时，阶段键照它自己算（早先的记录），
+ * 别的键抛错（DefinitionHeadError）。
+ */
+export function positionOf(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): Stage {
+  const found = definitionsOrError(workspaceDir, definition);
+  if (found.defs) return activityStage(found.defs, key);
+  if (isStage(key)) return key;
+  throw new DefinitionHeadError(`活动的定义读不出来，认不出活动记录里的「${key}」：${found.error}`);
 }
 
 /** 这条会话现在在哪个阶段（或者空闲）；早先建的任务（没有「业务说明」集合）没有阶段，返回 null。 */
-export function stageOf(db: DatabaseSync, workspaceDir: string, taskId: string, definition: Pick<TaskDefinition, "collections" | "materialsDir">,
+export function stageOf(db: DatabaseSync, workspaceDir: string, taskId: string, definition: Pick<TaskDefinition, "collections" | "materialsDir" | "skillPath">,
   sessionId: string | null | undefined): Position | null {
   if (!hasOverall(definition.collections)) return null;
-  return currentStage(db, taskId, sessionId);
+  const open = openActivityRecord(db, taskId, sessionId);
+  return open ? positionOf(workspaceDir, definition, open.activity) : IDLE;
 }
 
-/** 在这个位置助手能做哪几类写入：取这个任务的活动声明生成的获准能力表（lib/activity_def_read.ts）。声明读不出来时抛错。 */
-export function allowedAt(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, stage: Position): readonly WriteKind[] {
-  return definitionsFor(workspaceDir, definition.skillPath).allowed[stage];
+/**
+ * 这条会话现在在哪里：position 是它算作的阶段（或者空闲），activity 是工作项记录里的活动标识符（空闲时是 IDLE）。
+ * 早先建的任务没有阶段，返回 null（判法与 stageOf 相同）。
+ */
+export function whereActivity(db: DatabaseSync, workspaceDir: string, taskId: string, definition: Pick<TaskDefinition, "collections" | "materialsDir" | "skillPath">,
+  sessionId: string | null | undefined): { position: Position; activity: string } | null {
+  if (!hasOverall(definition.collections)) return null;
+  const open = openActivityRecord(db, taskId, sessionId);
+  return open ? { position: positionOf(workspaceDir, definition, open.activity), activity: open.activity } : { position: IDLE, activity: IDLE };
 }
 
-/** 一个工作项是哪一种、叫什么：流程的工作项叫流程的名字，单项活动的叫活动的名字。 */
-export function workItemName(item: Pick<ActivityRecord, "activity" | "flow">): string {
-  return item.flow !== null ? FLOW_NAMES[item.flow] ?? item.flow : STAGE_NAMES[item.activity];
+/**
+ * 做这项活动时助手能做哪几类写入（lib/activity_def_read.ts 的 allowedFor）：key 是活动标识符或者 IDLE。系统提示里说的、
+ * 定义视图里标的与工具调用时核的都取这里，三处说的是同一回事。声明读不出来时抛错。
+ */
+export function allowedForActivity(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): readonly WriteKind[] {
+  return definitionsFor(workspaceDir, definition.skillPath).allowedFor(key);
+}
+
+/**
+ * 这项活动用平台的哪一份活动模板（活动声明的 template）：声明里找不到这项活动时，阶段键按同名的模板算（早先的记录），别的是 null。
+ */
+export function activityTemplateFor(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): string | null {
+  const found = definitionsOrError(workspaceDir, definition).defs?.activities.find((one) => one.key === key);
+  return found ? found.template : isStage(key) ? key : null;
+}
+
+/**
+ * 做这项活动时新增别的集合的条目要不要过最低门（活动声明的「gate_viewed_page」）：声明里找不到这项活动、或者声明读不出来时要。
+ */
+export function gateViewedPageFor(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): boolean {
+  return definitionsOrError(workspaceDir, definition).defs?.activities.find((one) => one.key === key)?.gateViewedPage ?? true;
+}
+
+/**
+ * 做这项活动时只认哪几种role的材料（活动声明的「sources_from_roles」，lib/source_roles.ts）：声明里找不到这项活动、
+ * 声明读不出来、或者这一栏没写时是空的，不限。
+ */
+export function sourcesFromRolesFor(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): string[] {
+  return definitionsOrError(workspaceDir, definition).defs?.activities.find((one) => one.key === key)?.sourcesFromRoles ?? [];
+}
+
+
+/**
+ * 一个工作项是哪一种、叫什么：工作流的工作项叫工作流的名字，单项活动的叫活动的名字。给了声明（defs）时名字取自声明，
+ * 声明里没有、或者没有给时取 FLOW_NAMES 与 STAGE_NAMES，再没有就是键本身。
+ */
+export function workItemName(item: Pick<ActivityRecord, "activity" | "flow">, defs: Definitions | null = null): string {
+  return item.flow !== null ? flowNameOf(defs, item.flow) : activityNameOf(defs, item.activity);
 }
 
 /**
@@ -177,8 +238,8 @@ export function workItemName(item: Pick<ActivityRecord, "activity" | "flow">): s
  * （站会往下走，名字不跟着改，带上站名会被读成现在的阶段）；写了范围说明的在后面接「 · 」与范围说明的前 12 个字。
  */
 export const SESSION_NAME_SCOPE_LENGTH = 12;
-export function workItemSessionName(item: Pick<ActivityRecord, "activity" | "flow" | "scope">): string {
-  const base = workItemName(item);
+export function workItemSessionName(item: Pick<ActivityRecord, "activity" | "flow" | "scope">, defs: Definitions | null = null): string {
+  const base = workItemName(item, defs);
   const scope = [...(item.scope ?? "").replace(/\s+/g, " ").trim()].slice(0, SESSION_NAME_SCOPE_LENGTH).join("");
   return scope ? `${base} · ${scope}` : base;
 }
@@ -200,15 +261,16 @@ export function attachSession(db: DatabaseSync, taskId: string, recordId: number
 
 /**
  * 启动一个工作项：插一行活动记录，把启动时所在的会话挂上去，记一条事件 ACTIVITY_STARTED。返回记录号与那条事件的序号。
- * 在流程里启动时，这一行的所在一站与活动同一个写法，所属流程是需求分析；单项活动的这两列为空。
+ * 在工作流里启动时（flow 不是 null），这一行的所在一站与活动同一个写法，所属工作流由调用方给出；单项活动的这两列为空。
  * 写了范围说明时记进范围说明一列，事件的内容里也带上（scope）。这次行不行由 startActivity 先判，这里只管写。
  * 必须在调用方已经开好的写事务里调用（withTaskDatabase）。
  */
-export function launchWorkItem(db: DatabaseSync, launch: Who & { to: Stage; inFlow: boolean; reason: string; scope?: string }): { record_id: number; event_seq: number } {
-  // 库不检查活动的取值（lib/schema.ts），所以写之前在这里判：不是阶段表里的写法就不记。
-  if (!isStage(launch.to)) throw new Error(`活动记录里的活动写法不对：「${String(launch.to)}」。`);
+export function launchWorkItem(db: DatabaseSync, launch: Who & { to: string; flow: string | null; reason: string; scope?: string }): { record_id: number; event_seq: number } {
+  // 库不检查活动的取值（lib/schema.ts）；是不是声明里的活动由 startActivity 先判，这里只拦空的。
+  if (typeof launch.to !== "string" || launch.to === "") throw new Error(`活动记录里的活动写法不对：「${String(launch.to)}」。`);
+  if (launch.flow !== null && (typeof launch.flow !== "string" || launch.flow === "")) throw new Error(`活动记录里的所属工作流写法不对：「${String(launch.flow)}」。`);
   const at = wallClockText();
-  const node = launch.inFlow ? launch.to : null, flow = launch.inFlow ? FLOW_ANALYSIS : null;
+  const flow = launch.flow, node = flow !== null ? launch.to : null;
   const scope = (launch.scope ?? "").trim() || null;
   // 事件的内容里要写记录号，所以先定下它：用过的最大记录号加一（在同一个写事务里，不会与别的写入撞上）。
   // 用过的最大记录号取自增计数与表里现有的最大记录号两者的大者：删掉的工作项的记录号不再用。
@@ -228,13 +290,19 @@ export function launchWorkItem(db: DatabaseSync, launch: Who & { to: Stage; inFl
 
 /**
  * 流程的工作项换一站：更新这一行的活动与所在的一站，记一条事件 ACTIVITY_NODE_ENTERED，返回那条事件的序号。不另开一行。
- * 必须在调用方已经开好的写事务里调用。
+ * steps 是这条工作流声明的各步（活动标识符）：给了时要去的一步要在里面，方向按各步的先后算；没有给（声明读不出来）时只认阶段键。
+ * 去的一步或者现在这一步不在各步里时，方向按阶段的先后算；都不是阶段时记 forward。必须在调用方已经开好的写事务里调用。
  */
-export function enterNode(db: DatabaseSync, item: ActivityRecord, to: Stage, who: Who, reason: string): number {
-  if (!isStage(to)) throw new Error(`活动记录里的活动写法不对：「${String(to)}」。`);
+export function enterNode(db: DatabaseSync, item: ActivityRecord, to: string, who: Who, reason: string, steps: readonly string[] | null = null): number {
+  if (steps !== null ? !steps.includes(to) : !isStage(to)) throw new Error(`活动记录里的活动写法不对：「${String(to)}」。`);
+  const order = (list: readonly string[]): number | null => {
+    const a = list.indexOf(to), b = list.indexOf(item.activity);
+    return a < 0 || b < 0 ? null : a - b;
+  };
+  const delta = (steps !== null ? order(steps) : null) ?? order(STAGES) ?? 1;
   const seq = emit(db, {
     taskId: who.taskId, sessionId: who.sessionId, callId: who.callId, actor: who.actor, name: EVENT_NODE_ENTERED,
-    payload: { record_id: item.record_id, flow: item.flow, node: to, from: item.node, direction: STAGES.indexOf(to) > STAGES.indexOf(item.activity) ? "forward" : "back",
+    payload: { record_id: item.record_id, flow: item.flow, node: to, from: item.node, direction: delta > 0 ? "forward" : "back",
       actor: who.actor, reason, run_id: who.runId },
   });
   db.prepare(`UPDATE ${TABLE} SET activity = ?, node = ? WHERE record_id = ?`).run(to, to, item.record_id);
@@ -282,7 +350,7 @@ export function activityDoneGate(workspaceDir: string, sessionId: string): Refus
  * 助手在回复里汇报这条会话的工作项做完了时，那条回复下面要写的是哪一项活动：这条会话正在做单项活动的工作项时是那项活动，
  * 别的情形（流程的工作项、自由讨论的会话、没有任务）是 null。只读，不改任何记录。
  */
-export function activityDoneOf(workspaceDir: string, sessionId: string): { activity: Stage; record_id: number } | null {
+export function activityDoneOf(workspaceDir: string, sessionId: string): { activity: string; record_id: number } | null {
   try {
     return withTaskDatabase(workspaceDir, { createIfMissing: false }, (db) => {
       const task = db.prepare("SELECT task_id FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string } | undefined;
@@ -300,15 +368,19 @@ export function activityDoneOf(workspaceDir: string, sessionId: string): { activ
  * user_only 启动与换站要由用户决定，no_stages 这个任务没有阶段（早先建的任务），not_ready 启动这项单项活动缺前提（blocked 里写缺什么），
  * not_in_flow 这条会话不在做流程的工作项（自由讨论的会话、归档的会话、单项活动的工作项），卡片上的进入与退回不算数，
  * session_bound 这条会话已经属于一个工作项，不能再在它上面启动另一个，flow_exists 任务里已有流程的工作项（existing 里写是哪一个），
- * 不能再以流程方式启动。
+ * 不能再以流程方式启动；只在启动时出现的几种：unknown_activity 声明里没有这项活动，not_startable 这项活动只能由用户发起（发布），
+ * not_alone 这项活动声明为不能单独启动、却要单项启动（逆向解析只在工作流里做），missing_slot 工作流的必填材料槽位还空着（slot_name 写是哪一个），
+ * unknown_flow 声明里没有这条工作流，not_a_step 这项活动不是这条工作流的一步，no_definitions 活动的声明读不出来（message 里写原因）。
  * from 是这条会话当时在哪里（一个阶段或者空闲），任务没有阶段时为 null。记下了的另带 how（lib/stage.ts 的 StartHow）、in_flow 与工作项的记录号。
  */
 export interface StageMoveOutcome {
-  requested: Stage;
+  /** 要启动或者要去的那项活动的键。 */
+  requested: string;
   from: Position | null;
   moved: boolean;
   /** 没有做成的原因；not_next 与 not_back 只出现在卡片点击上：点的那个阶段不是紧挨着的下一段、不在现在这个阶段之前。 */
-  why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | "not_ready" | "not_in_flow" | "session_bound" | "flow_exists" | null;
+  why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | "not_ready" | "not_in_flow" | "session_bound" | "flow_exists"
+    | "unknown_activity" | "not_startable" | "not_alone" | "unknown_flow" | "not_a_step" | "missing_slot" | "no_definitions" | null;
   event_seq: number | null;
   how?: StartHow;
   in_flow?: boolean;
@@ -317,6 +389,10 @@ export interface StageMoveOutcome {
   blocked?: string;
   /** why 为 flow_exists 时：任务里已有的那个流程的工作项。 */
   existing?: FlowItemRef;
+  /** why 为 no_definitions 时：声明为什么读不出来。 */
+  message?: string;
+  /** why 为 missing_slot 时：还空着的那个必填材料槽位的名称。 */
+  slot_name?: string;
 }
 
 /** 这条会话现在的位置与它正在做的工作项（没有是 null）。任务没有阶段（或者库里没有这个任务）时为 null。 */
@@ -327,32 +403,48 @@ function whereIs(db: DatabaseSync, workspaceDir: string, taskId: string, session
   const definition = validateDefinition(JSON.parse(task.definition_text));
   if (!hasOverall(definition.collections)) return null;
   const item = openActivityRecord(db, taskId, sessionId);
-  return { from: item?.activity ?? IDLE, item, definition };
+  return { from: item ? positionOf(workspaceDir, definition, item.activity) : IDLE, item, definition };
 }
 
 /**
- * 在一条会话上启动一个工作项：启动一条流程（inFlow 为真，to 是从哪一站启动），或者启动一项单项活动（inFlow 为假）。
- * 先看任务有没有阶段、这次行不行，行就记下。不行不抛错，原因写在结果里，由调用方决定怎样告诉助手或用户。
+ * 在一条会话上启动一个工作项：启动一条工作流（flow 是它的键，to 是从哪一步启动），或者启动一项单项活动（flow 为 null）。
+ * to 是任务类型声明里的活动标识符。先看任务有没有阶段、这次行不行，行就记下。不行不抛错，原因写在结果里，由调用方决定怎样告诉助手或用户。
  * 启动只由用户决定；这条会话已经属于一个工作项时不能再启动（一条会话只属于一个工作项，要做别的另开一条会话）；
- * 以流程方式启动时，任务里已有流程的工作项（不论哪条流程）就不能启动：一个任务同一时刻至多一个流程的工作项。
- * 单项活动要够前提（这项活动的定义里写的数据条件，lib/activity_catalog.ts 的 blockedByStage），在流程里启动不查前提；
+ * 声明里要有这项活动，它不能是只能由用户发起的那种（发布）；单项启动时它要能单独启动（声明的 alone）；在工作流里启动时声明里要有这条工作流、to 要是它的一步，
+ * 任务里已有工作流的工作项（不论哪条）就不能启动：一个任务同一时刻至多一个工作流的工作项。
+ * 单项活动要够前提（这项活动声明的 requires，lib/activity_catalog.ts 的 blockedText），在工作流里启动不查前提；
  * 同一项单项活动已经有工作项时不拦：再启动是另起一个。
  * scope 是用户写的范围说明（可以不写）。必须在调用方已经开好的写事务里调用。
  */
-export function startActivity(db: DatabaseSync, workspaceDir: string, who: Who, to: Stage, inFlow: boolean, reason: string, scope = ""): StageMoveOutcome {
+export function startActivity(db: DatabaseSync, workspaceDir: string, who: Who, to: string, flow: string | null, reason: string, scope = ""): StageMoveOutcome {
   const where = whereIs(db, workspaceDir, who.taskId, who.sessionId);
   if (where === null) return { requested: to, from: null, moved: false, why: "no_stages", event_seq: null };
   const none = { requested: to, from: where.from, moved: false, event_seq: null };
   if (who.actor !== "user") return { ...none, why: "user_only" };
   if (sessionWorkItem(db, who.taskId, who.sessionId) !== null) return { ...none, why: "session_bound" };
-  if (inFlow) {
-    const existing = flowWorkItem(db, who.taskId);
+  const found = definitionsOrError(workspaceDir, where.definition);
+  // 声明读不出来：单项活动照早先的办法按缺前提拦（缺的是「活动的定义读不出来」），在工作流里启动拦下并写明原因。
+  if (!found.defs) return flow === null ? { ...none, why: "not_ready", blocked: `活动的定义读不出来：${found.error}` } : { ...none, why: "no_definitions", message: found.error };
+  const activity = found.defs.activities.find((one) => one.key === to);
+  if (!activity) return { ...none, why: "unknown_activity" };
+  if (activity.mode === "user_only") return { ...none, why: "not_startable" };
+  // 声明为不能单独启动的活动（逆向解析）只在工作流里做：单项启动拦下，在工作流里启动照常。
+  if (flow === null && !activity.alone) return { ...none, why: "not_alone" };
+  if (flow !== null) {
+    const declared = found.defs.flows.find((one) => one.key === flow);
+    if (!declared) return { ...none, why: "unknown_flow" };
+    if (!declared.steps.includes(to)) return { ...none, why: "not_a_step" };
+    const existing = flowWorkItem(db, who.taskId, found.defs);
     if (existing !== null) return { ...none, why: "flow_exists", existing };
+    // 必填的收材料的槽位要有材料（按放进的槽位数，lib/activity_catalog.ts 的 missingSlot）；没有槽位的工作流不查。
+    const slot = declared.slots.length > 0 ? missingSlot(declared.slots, assetFacts(lampInput(db, workspaceDir, who.taskId, where.definition))) : undefined;
+    if (slot !== undefined) return { ...none, why: "missing_slot", slot_name: slot.name };
   } else {
-    const blocked = launchFacts(db, workspaceDir, who.taskId, where.definition, who.sessionId).blocked[to];
+    const blocked = blockedText(activity.requires, assetFacts(lampInput(db, workspaceDir, who.taskId, where.definition)));
     if (blocked !== null) return { ...none, why: "not_ready", blocked };
   }
-  const { record_id, event_seq } = launchWorkItem(db, { ...who, to, inFlow, reason, scope });
+  const { record_id, event_seq } = launchWorkItem(db, { ...who, to, flow, reason, scope });
+  const inFlow = flow !== null;
   return { requested: to, from: where.from, moved: true, why: null, event_seq, how: inFlow ? "launch" : "alone", in_flow: inFlow, record_id };
 }
 
@@ -365,9 +457,12 @@ export function moveStage(db: DatabaseSync, workspaceDir: string, who: Who, to: 
   if (where === null) return { requested: to, from: null, moved: false, why: "no_stages", event_seq: null };
   const none = { requested: to, from: where.from, moved: false, event_seq: null };
   if (where.item === null || where.item.flow === null) return { ...none, why: "not_in_flow" };
-  if (where.from === to) return { ...none, why: "same" };
+  // 原地不动按活动标识符比：工作流里两步可以算作同一个阶段（逆向解析与核读都算作核读），从一步到另一步不是原地不动。
+  if (where.item.activity === to) return { ...none, why: "same" };
   if (who.actor !== "user") return { ...none, why: "user_only" };
-  const event_seq = enterNode(db, where.item, to, who, reason);
+  const flowKey = where.item.flow;
+  const steps = definitionsOrError(workspaceDir, where.definition).defs?.flows.find((one) => one.key === flowKey)?.steps ?? null;
+  const event_seq = enterNode(db, where.item, to, who, reason, steps);
   return { requested: to, from: where.from, moved: true, why: null, event_seq, how: "move", in_flow: true, record_id: where.item.record_id };
 }
 
@@ -384,6 +479,12 @@ export function definitionsOrError(workspaceDir: string, definition: Pick<TaskDe
   }
 }
 
+/** 库里第一个任务的活动与工作流的声明（见 definitionsOrError）；库里没有任务、声明读不出来时是 null。只读。 */
+export function taskDefinitionsOf(db: DatabaseSync, workspaceDir: string): Definitions | null {
+  const task = db.prepare("SELECT definition_text FROM task ORDER BY started_at LIMIT 1").get() as { definition_text: string } | undefined;
+  return task ? definitionsOrError(workspaceDir, validateDefinition(JSON.parse(task.definition_text))).defs : null;
+}
+
 /** 活动的定义读不出来时，六项活动缺的前提都写这一句。 */
 function allBlocked(reason: string): Record<Stage, string | null> {
   return Object.fromEntries(STAGES.map((one) => [one, `活动的定义读不出来：${reason}`])) as Record<Stage, string | null>;
@@ -398,15 +499,19 @@ export function launchFacts(db: DatabaseSync, workspaceDir: string, taskId: stri
   const facts = assets ?? assetFacts(lampInput(db, workspaceDir, taskId, definition));
   const found = definitionsOrError(workspaceDir, definition);
   return {
-    position: open?.activity ?? IDLE, inFlow: open !== null && open.flow !== null, flowNode: null, flowItem: flowWorkItem(db, taskId), hasMaterials: facts.materials > 0,
+    position: open ? positionOf(workspaceDir, definition, open.activity) : IDLE, inFlow: open !== null && open.flow !== null, flowNode: null,
+    flowItem: flowWorkItem(db, taskId, found.defs), hasMaterials: facts.materials > 0,
     blocked: found.defs ? blockedByStage(found.defs.activities, facts) : allBlocked(found.error),
   };
 }
 
-/** 任务里已有的那个流程的工作项（一个任务至多一个）；没有是 null。早先的库里若有几个，取最早启动的那个。 */
-export function flowWorkItem(db: DatabaseSync, taskId: string): FlowItemRef | null {
+/**
+ * 任务里已有的那个流程的工作项（一个任务至多一个）；没有是 null。早先的库里若有几个，取最早启动的那个。
+ * 给了声明（defs）时名字取自声明（见 workItemName）。
+ */
+export function flowWorkItem(db: DatabaseSync, taskId: string, defs: Definitions | null = null): FlowItemRef | null {
   const item = activityRecords(db, taskId).find((one) => one.flow !== null);
-  return item ? { record_id: item.record_id, name: workItemName(item), node: item.activity } : null;
+  return item ? { record_id: item.record_id, name: workItemName(item, defs), node: item.activity } : null;
 }
 
 /** 工作项各有几个：单项活动的按活动数，流程的按流程的键数。 */
@@ -476,7 +581,7 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
       const from = where?.from ?? null;
       const who: Who = { taskId: task.task_id, sessionId, runId: null, callId: click.opId, actor: "user" };
       const fromStage = from !== null && from !== IDLE ? from : null;
-      const to = move.kind === "next" ? (fromStage ? nextStepStage(workspaceDir, definition, where?.item?.flow ?? null, fromStage) : null) : move.to;
+      const to = move.kind === "next" ? (fromStage && where?.item ? nextStepStage(workspaceDir, definition, where.item.flow, where.item.activity) : null) : move.to;
       const unmoved = (why: "not_next" | "not_in_flow" | "not_ready", blocked?: string) =>
         ({ requested: to ?? fromStage ?? "reading", from, moved: false, why, event_seq: null, ...(blocked ? { blocked } : {}) });
       // 这条会话不在做工作流的工作项：转移都不算数。任务没有阶段时照常交给 moveStage，它写明原因（no_stages）。
@@ -509,16 +614,17 @@ export function recordStageCardClick(workspaceDir: string, sessionId: string, br
 }
 
 /**
- * 一条流程里某个阶段的下一步算作哪个阶段：按流程声明的各步（steps）的先后，取这一步之后的那一项活动的阶段；
- * 这一步是最后一步、下一项活动只能由用户发起（发布）、或者流程的声明读不出来时是 null。flow 为 null 时按需求分析。
+ * 一条工作流里某一步的下一步算作哪个阶段：在工作流声明的各步（steps）里找 from（活动标识符）的位置，取它之后那一项活动的阶段；
+ * from 不在各步里、这一步是最后一步、下一项活动只能由用户发起（发布）、或者声明读不出来时是 null。flow 为 null 时按需求分析。
+ * 按各步的位置找而不按阶段找：一条工作流里两步可以算作同一个阶段（逆向解析与核读都算作核读）。
  */
-export function nextStepStage(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, flow: string | null, from: Stage): Stage | null {
+export function nextStepStage(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, flow: string | null, from: string): Stage | null {
   const found = definitionsOrError(workspaceDir, definition);
   if (!found.defs) return null;
   const steps = found.defs.flows.find((one) => one.key === (flow ?? FLOW_ANALYSIS))?.steps ?? [];
-  const stages = steps.map((key) => found.defs.activities.find((one) => one.key === key)?.stage ?? null);
-  const at = stages.indexOf(from);
-  return at < 0 ? null : stages[at + 1] ?? null;
+  const at = steps.indexOf(from);
+  if (at < 0 || at + 1 >= steps.length) return null;
+  return found.defs.activities.find((one) => one.key === steps[at + 1])?.stage ?? null;
 }
 
 // ───────────── 现在在哪个阶段、每个阶段还差什么 ─────────────
@@ -547,16 +653,18 @@ export interface WorkItemBrief {
   kind: "flow" | "activity";
   /** 工作项的名字：流程的名字或者活动的名字。 */
   name: string;
-  /** 现在做的是哪一项活动。 */
-  activity: Stage;
+  /** 现在做的是哪一项活动（任务类型声明里的活动标识符）。 */
+  activity: string;
+  /** 那项活动的名字（取自声明，见 activityNameOf）。 */
+  activity_name: string;
   flow: string | null;
   scope: string | null;
   /** 启动的时刻（库里的本地时间写法）。 */
   started_at: string;
 }
 
-export function workItemBrief(item: ActivityRecord): WorkItemBrief {
-  return { record_id: item.record_id, kind: item.flow !== null ? "flow" : "activity", name: workItemName(item), activity: item.activity, flow: item.flow,
+export function workItemBrief(item: ActivityRecord, defs: Definitions | null = null): WorkItemBrief {
+  return { record_id: item.record_id, kind: item.flow !== null ? "flow" : "activity", name: workItemName(item, defs), activity: item.activity, activity_name: activityNameOf(defs, item.activity), flow: item.flow,
     scope: item.scope, started_at: item.started_at };
 }
 
@@ -566,10 +674,13 @@ export function workItemBrief(item: ActivityRecord): WorkItemBrief {
  */
 export interface StageSummary {
   current: Position;
-  /** 这条会话正在做的工作项在流程里的哪一站：流程的工作项与 current 同一个写法；单项活动的工作项、空闲时为 null。 */
-  node: Stage | null;
+  /**
+   * 这条会话正在做的工作项在流程里的哪一站：活动标识符（早先的记录与 current 同一个写法；逆向解析这类算作某个阶段的活动，current 是那个阶段）；
+   * 单项活动的工作项、空闲时为 null。
+   */
+  node: string | null;
   /** 与 node 相同，留给还按「流程走到哪一站」读的页面。 */
-  flow_node: Stage | null;
+  flow_node: string | null;
   /** 这条会话属于的工作项；自由讨论的会话、归档的会话为 null。 */
   work_item: WorkItemBrief | null;
   /** 早先任务状况卡上「开展一项活动」一节的内容（lib/stage.ts 的 LaunchView）；新的页面不用它。 */
@@ -694,9 +805,17 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
   const completion = checkCompletion(db, taskId, definition.completion, { workspaceDir });
   const listed = listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path);
   const materials = sourceMaterials(listed);
+  // 按槽位数材料：材料表里还在的那一行记着槽位（lib/material_db.ts）；生成的文字版不在 materials 里，所以不算。
+  const roles = materialRoles(db);
+  const materialsBySlot: Record<string, number> = {};
+  for (const path of materials) {
+    const slot = roleOf(roles, path).slot;
+    if (slot !== null) materialsBySlot[slot] = (materialsBySlot[slot] ?? 0) + 1;
+  }
   return {
     ...facts,
     materials,
+    materialsBySlot,
     coverage: materialCoverage(db, workspaceDir, taskId, listed, materials),
     review: {
       failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined,
@@ -745,7 +864,7 @@ export function stageSummary(db: DatabaseSync, workspaceDir: string, taskId: str
     current: facts.position,
     node,
     flow_node: node,
-    work_item: open ? workItemBrief(open) : null,
+    work_item: open ? workItemBrief(open, found.defs) : null,
     launch: launchView(facts),
     assets: assetCells(assets, found.defs?.activities ?? [], assetNamesOf(definition)),
     catalog: found.defs ? catalog(found.defs, assetNamesOf(definition), assets, activeCounts(db, taskId), facts.flowItem) : null,

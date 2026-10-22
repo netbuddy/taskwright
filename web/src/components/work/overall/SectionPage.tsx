@@ -3,7 +3,7 @@
 //   说明 ── 「它是什么」，一段一段；逐字出自材料的句子用底色标出，点它在右边的材料里看原文；助手补的、用户还没有确认的字句用琥珀底标出；
 //           块尾一行来源。
 //   异常分支 ── 「例子」里以「例外：」开头的各条，一条一张小卡，写出处；流程节末尾有「＋ 补一种例外」。
-//   示例 ── 「例子」里其余各条，一条一张卡片；以「反例：」开头的是灰色卡片，写「这种不算」。
+//   「例子」里其余各条（具体情形、以「反例：」开头的）不在这里单列：具体实例写进正文（以「例如」起头）；条目详情里「例子」字段照旧可看可改。
 //   适用规则 ── 「已经定下的」，一句一条，每条下面一行出处；助手补的那一条前面是琥珀点；规则表里标了冲突的那一条写明与哪一节的规则冲突。
 //   待澄清事项 ── 每个问题挂一枚「阻断下游」或「不阻断」（不阻断的写何时回看），阻断下游的排在前面；已经了结的问题列在
 //                 下面，写它落实到了哪里。
@@ -19,6 +19,7 @@
 // 这里只画；数由 model/overall.ts 与 model/chapters.ts 算，写入一律走条目区交进来的直接操作与发送。
 
 import { useState, type ReactNode } from "react";
+import { outlinePlace, outlineTree } from "../../../model/outlineTree";
 import type { CollectionDef, Item, Source, Task } from "../../../api/types";
 import { CHAPTER_FLOWS, INTRO_NAME, UNSORTED_NAME, chapterByNo, introChapter, sectionLabel, sectionOf, type Toc } from "../../../model/chapters";
 import { SOURCE_SUPPLEMENT, issueAnswerText, writeOffReason } from "../../../model/items";
@@ -48,6 +49,14 @@ function SourceLine({ sources, pending = false, onLocate }: { sources: Source[];
       })}
     </div>
   );
+}
+
+/** 一段正文若每一行都以竖线起头，就是一张 Markdown 表：返回各行各格（去掉分隔行）；不是表时返回 null。 */
+function tableOf(paragraph: string): string[][] | null {
+  const lines = paragraph.split("\n").map((one) => one.trim()).filter(Boolean);
+  if (lines.length < 2 || !lines.every((one) => one.startsWith("|"))) return null;
+  return lines.filter((one) => !/^\|[\s:|-]*-[\s:|-]*$/.test(one))
+    .map((one) => one.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim()));
 }
 
 export function SectionPage({ task, item, def, contents, readOnly, writesOff = false, submit, onSend, onAnswer, onPrefill, onOpen, onBack, onPrev, onNext, onRaw, onLocate, onDirty, figures = null, links = null }: {
@@ -88,6 +97,9 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
   // 导语页不是节：面包屑写它是哪一章的导语，不算没有归类。
   const introOf = introChapter(contents, item.item_id);
   const chapter = section ? chapterByNo(section.chapter) : introOf?.chapter ?? null;
+  // 任务类型有分析提纲时，面包屑写这一页在提纲里的位置：「维度 › 提纲条目」；不在提纲树里的页写「其他页」。
+  const tree = outlineTree(task);
+  const place = tree ? outlinePlace(tree, item.item_id) : null;
   const labels = labelsOf(item);
   const lead = sectionLead(item);
   const pending = pendingCount(item);
@@ -100,11 +112,13 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
     ...(whatPending ? addedWords(item, TOPIC.what).map((quote) => ({ quote, mark: "added" as const })) : []),
   ];
   const pieces = paragraphs.map((p) => markPassage(p, quotes));
+  // 每一行都以竖线起头的段是一张 Markdown 表（例如步骤表）：画成表格，第一行是表头，分隔行不画；每格照常标底色。
+  const tables = paragraphs.map((p) => tableOf(p)?.map((row) => row.map((cell) => markPassage(cell, quotes))) ?? null);
   // 助手补的在「它是什么」里，但没有写补进了哪几个字（或者那几个字在正文里找不到）：整块旁边画一道琥珀边，来源那一行说明。
-  const whatUnmarked = whatPending && !pieces.some((one) => one.some((part) => part.mark === "added"));
+  const whatUnmarked = whatPending && !pieces.some((one) => one.some((part) => part.mark === "added"))
+    && !tables.some((one) => one?.some((row) => row.some((cell) => cell.some((part) => part.mark === "added"))));
   const examples = examplesOf(item).map((one, index) => ({ index, ...exampleKind(one) }));
   const exceptions = examples.filter((one) => one.kind === "exception");
-  const samples = examples.filter((one) => one.kind !== "exception");
   const isFlow = section?.chapter === CHAPTER_FLOWS;
   const settled = settledOf(item);
   const questions = openQuestions(task, item);
@@ -152,7 +166,9 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
     <div className="oa-page" data-testid="topic-page">
       <div className="oa-crumb" data-testid="topic-crumb">
         <span className="back" role="button" onClick={onBack} data-testid="topic-back">‹ 回到目录</span>
-        {chapter
+        {tree
+          ? (place ? <><span className="up">{place.dimension}</span>{place.entry && <><i>›</i><span className="here">{place.entry}</span></>}</> : <span className="up">其他页</span>)
+          : chapter
           ? <><span className="up">{chapter.no} {chapter.name}</span>{introOf ? <><i>›</i><span className="here">{INTRO_NAME}</span></> : section!.no && <><i>›</i><span className="here">{section!.no}</span></>}</>
           : <span className="up">{UNSORTED_NAME}</span>}
         <span className="oa-nav">
@@ -209,14 +225,23 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
         <h3>说明</h3>
         <div className={`oa-prose${whatUnmarked ? " pending" : ""}`}>
           {pieces.length === 0 && <p className="oa-empty">还没有写。</p>}
-          {pieces.map((parts, i) => (
-            <p key={i}>{parts.map((part, k) => (part.mark === "added"
+          {pieces.map((parts, i) => {
+            const marks = (one: typeof parts) => one.map((part, k) => (part.mark === "added"
               ? <span key={k} className="oa-hl" title="这几个字是助手补的，你还没有确认">{part.text}</span>
               : part.mark === "material"
                 ? <span key={k} className={`oa-qt${onLocate ? " link" : ""}`} role={onLocate ? "button" : undefined} title="这一句逐字出自材料，点一下在右边的材料里看原文"
                     onClick={onLocate ? () => onLocate(part.source!.excerpt, part.source!.locator) : undefined}>{part.text}</span>
-                : <span key={k}>{part.text}</span>))}</p>
-          ))}
+                : <span key={k}>{part.text}</span>));
+            const table = tables[i];
+            if (!table) return <p key={i}>{marks(parts)}</p>;
+            const [head, ...body] = table;
+            return (
+              <table key={i} className="oa-table" data-testid="topic-table">
+                <thead><tr>{head.map((cell, k) => <th key={k}>{marks(cell)}</th>)}</tr></thead>
+                <tbody>{body.map((row, r) => <tr key={r}>{row.map((cell, k) => <td key={k}>{marks(cell)}</td>)}</tr>)}</tbody>
+              </table>
+            );
+          })}
         </div>
         <SourceLine sources={[...sourcesFor(item, TOPIC.what), ...wholeSources(item)]} pending={whatPending} onLocate={onLocate} />
       </section>
@@ -237,21 +262,6 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
               <button type="button" className="oa-card add" disabled={!!offTitle} title={offTitle ?? "在「例子」里加一条以「例外：」开头的例子"} onClick={() => { setTagging(null); setEditing(true); }}
                 data-testid="topic-add-exception">＋ 补一种例外</button>
             )}
-          </div>
-        </section>
-      )}
-
-      {samples.length > 0 && (
-        <section className="oa-blk" data-testid="topic-examples">
-          <h3>示例</h3>
-          <div className="oa-ex">
-            {samples.map((one) => (
-              <div key={one.index} className={`oa-card${one.kind === "counter" ? " neg" : ""}${marked.examples.has(one.index) ? " pending" : ""}`} data-testid={`topic-example-${one.index}`}>
-                {one.kind === "counter" && <div className="k">这种不算</div>}
-                <p>{one.text}</p>
-                <SourceLine sources={sourcesFor(item, TOPIC.examples, one.index)} pending={marked.examples.has(one.index)} onLocate={onLocate} />
-              </div>
-            ))}
           </div>
         </section>
       )}

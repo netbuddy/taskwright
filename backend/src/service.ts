@@ -11,6 +11,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { MIN_TASK_DB_VERSION, TASK_DB_VERSION, newerDataText, olderDataText, taskWrittenBy } from "../../agent/src/lib/schema.ts";
 import { MEDIA_SUFFIX } from "../../agent/src/lib/docx_markdown.ts";
+import { DEFAULT_MATERIAL_ROLE, type MaterialRole, insertMaterial, materialSlot, retireMaterial } from "../../agent/src/lib/material_db.ts";
 import { DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, parseDefinition } from "../../agent/src/lib/task_read.ts";
 import * as clock from "./clock.ts";
 import { FALLBACK_TEXT, USER_EDIT, baseMessages, branch, messages as conversationMessages, page as conversationPage, textOf } from "./conversation.ts";
@@ -410,7 +411,8 @@ export class Service {
       const versions = library.versionRows(t.dir);
       const latest = versions.at(-1) ?? null;
       // 进展：流程工作项在第几站（一个任务至多一个）、工作项个数、未了结的阻断下游的问题有几条（写条目那一段的灯列出的条目）。
-      const items = library.workItemRows(t.dir).map((row) => workItemView(row, null));
+      const defs = library.taskDefinitions(t.dir);
+      const items = library.workItemRows(t.dir).map((row) => workItemView(row, null, defs));
       const flowItem = items.find((one) => one.kind === "flow") ?? null;
       const blocking = (view.stage?.lamps?.writing ?? []).find((one: { key: string }) => one.key === "no_blocking_questions");
       out.push({
@@ -559,7 +561,7 @@ export class Service {
     return t.executor.listSessions().filter((row) => withArchived || !archived.has(row.session_id)).map((row) => {
       const item = items.find((one) => one.session_ids.includes(row.session_id)) ?? null;
       return { ...row, revision_count: counts.get(row.session_id) ?? 0,
-        work_item: item === null ? null : { record_id: item.record_id, kind: item.kind, name: item.name, activity: item.activity, flow: item.flow },
+        work_item: item === null ? null : { record_id: item.record_id, kind: item.kind, name: item.name, activity: item.activity, activity_name: item.activity_name, flow: item.flow },
         ...(withArchived ? { archived: archived.has(row.session_id), archived_at: archived.get(row.session_id)?.archived_at ?? null,
           archived_record_id: archived.get(row.session_id)?.record_id ?? null } : {}) };
     });
@@ -720,10 +722,13 @@ export class Service {
    * 上传一份材料。PDF 材料要另起一次运行生成派生文件，所以这一种是异步的（uploadPdf）；别的类型当场做完。
    * replacing 只在替换材料时给（见 Replacing）：新文件可以存的时候先把被换掉的那份移走，存好之后连同两条事件一起报出去；
    * 移走之后新文件没有存成，就把它原样移回去。
+   * slot 是放进哪个槽位（流程声明里收材料的槽位键）：给了时角色取那个槽位的，找不到这个槽位就拒绝，什么都不写；
+   * 没给时槽位空、角色「证据」。替换材料时不看它，新文件沿用被换掉的那份的槽位与角色。
    */
-  upload(t: Task, filename: string, data: Buffer, session: string | null = null, replacing: Replacing | null = null): { ok: true; path: string } | Promise<{ ok: true; path: string }> {
+  upload(t: Task, filename: string, data: Buffer, session: string | null = null, replacing: Replacing | null = null, slot: string | null = null): { ok: true; path: string } | Promise<{ ok: true; path: string }> {
+    const placement = this.placementOf(t, replacing ? null : slot);
     const { folderRel, folder } = this.checkUpload(t, filename, data);
-    if (filename.toLowerCase().endsWith(".pdf")) return this.uploadPdf(t, filename, data, session, folderRel, folder, replacing);
+    if (filename.toLowerCase().endsWith(".pdf")) return this.uploadPdf(t, filename, data, session, folderRel, folder, replacing, placement);
     const isDocx = filename.toLowerCase().endsWith(".docx");
     // 从这里到写完文件都是同步的：同一个服务里两个上传请求不会在比较与写入之间交错；不同的服务不会同时接手一个任务（占用标记）。
     const putBack = replacing ? replacing.takeAway() : null;
@@ -754,7 +759,7 @@ export class Service {
           throw new ApiError("unsupported_type", `${error.message}，请用 Word 另存为 .docx 后再上传。`);
         }
       }
-      this.announceAdded(t, session, path, target, replacing);
+      this.announceAdded(t, session, path, target, replacing, placement);
       return { ok: true, path };
     } catch (error) {
       putBack?.();
@@ -762,17 +767,28 @@ export class Service {
     }
   }
 
+  /** 上传时给的槽位键 → 记进材料表的槽位与角色。没给（或是空的）时是不经槽位的「证据」；任务的流程声明里没有这个收材料的槽位时拒绝。 */
+  private placementOf(t: Task, slot: string | null): MaterialRole {
+    if (slot === null || slot === "") return { slot: null, role: DEFAULT_MATERIAL_ROLE };
+    const skillPath = String((t.definition() as Record<string, any>)["执行方法"] ?? "");
+    const found = skillPath ? materialSlot(t.dir, skillPath, slot) : null;
+    if (found === null) throw new ApiError("bad_request", `没有叫「${slot}」的材料槽位。`);
+    return { slot: found.key, role: found.role! };
+  }
+
   /**
    * 材料清单只在整份数据里读一次；上传之后推一条过程类事件 material_added，工作视图与任务页据此更新清单。
    * 材料属于任务，session_id 只说明是从哪条会话上传的（可空），订阅了别的会话的页面也收得到。PDF 材料另带 pdf 一项。
    * 替换材料时先说旧的那份没有了（replaced_by 是换上来的这份），再说新的这份（replaces 是被换掉的那份）：两份同名时页面也是先去掉再加上。
+   * 发之前先在任务库的材料表里记下这份材料的槽位与角色（替换时连同旧的那份写上删除的时刻），事件里也带这两项。
    */
-  private announceAdded(t: Task, session: string | null, path: string, target: string, replacing: Replacing | null): void {
+  private announceAdded(t: Task, session: string | null, path: string, target: string, replacing: Replacing | null, placement: MaterialRole): void {
     const st = statSync(target, { bigint: true });
     const facts = target.toLowerCase().endsWith(".pdf") ? pdfFacts(target) : null;
+    const { slot, role } = insertMaterial(t.dir, path, placement, replacing?.path ?? null);
     if (replacing) t.hub.emit("material_removed", { session_id: session, at: clock.now(), path: replacing.path, replaced_by: path });
     t.hub.emit("material_added", {
-      session_id: session, at: clock.now(), path, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), ...(facts ? { pdf: facts } : {}),
+      session_id: session, at: clock.now(), path, bytes: Number(st.size), modified_at: clock.fromEpochNs(st.mtimeNs), slot, role, ...(facts ? { pdf: facts } : {}),
       ...(replacing ? { replaces: replacing.path } : {}),
     });
   }
@@ -786,7 +802,7 @@ export class Service {
    * replacing 的意思与 upload 的相同。被换掉的那份在第 1、2 步里一直留在材料目录里（比较时不算它），到第 3 步才移走，紧接着移进新的四个文件；
    * 所以等解析的这段时间里它照旧在材料清单里、照旧可以查看，解析不成时材料目录从头到尾没有动过。
    */
-  private async uploadPdf(t: Task, filename: string, data: Buffer, session: string | null, folderRel: string, folder: string, replacing: Replacing | null = null): Promise<{ ok: true; path: string }> {
+  private async uploadPdf(t: Task, filename: string, data: Buffer, session: string | null, folderRel: string, folder: string, replacing: Replacing | null, placement: MaterialRole): Promise<{ ok: true; path: string }> {
     this.refuseDuplicate(t, filename, data, replacing?.path ?? null);
     const path = `${folderRel}${filename}`;
     const holding = join(t.dir, UPLOADING_DIR);
@@ -824,7 +840,7 @@ export class Service {
         putBack?.();
         throw error;
       }
-      this.announceAdded(t, session, path, target, replacing);
+      this.announceAdded(t, session, path, target, replacing, placement);
       return { ok: true, path };
     } finally {
       rmSync(staging, { recursive: true, force: true });
@@ -868,6 +884,7 @@ export class Service {
       }
     }
     if (target.toLowerCase().endsWith(".pdf")) removePdfProjection(target);
+    retireMaterial(t.dir, path);
     t.hub.emit("material_removed", { session_id: session, at: clock.now(), path });
     return { ok: true, path };
   }

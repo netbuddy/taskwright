@@ -1,4 +1,4 @@
-// 任务起点页：任务头、「三步开始」与三种常见起点、需求资产现状六格、工作流程、单项活动、会话清单、材料卡、选用的知识库；
+// 任务起点页：任务头、需求资产现状六格、工作流程（三步一行、处境标签、流程卡）、单项活动、会话清单、材料卡、选用的知识库；
 // 从任务列表打开一个任务时去哪里。随助手做完一轮重读见 taskPageEvents.test.tsx。完成条件的句子（model/completionLines.ts）也在这里测。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -115,13 +115,12 @@ const NODES = [kind("reading", "核读材料"), kind("clarifying", "澄清"), ki
 function flowOf(key: string, name: string, over: Partial<CatalogFlow> = {}): CatalogFlow {
   return {
     key, name, purpose: `${name}的目的。`, applies: `${name}的适用情形。`, nodes: NODES, inputs: "项目材料（可选）、目标系统描述",
-    prerequisite_text: "无前置条件；可从空白开始。", example: `${name}的经过。`, enabled: true, state: "可以启动", recommended: false, at: null, start: "clarifying", ...over,
+    prerequisite_text: "无前置条件；可从空白开始。", example: `${name}的经过。`, enabled: true, state: "可以启动", recommended: false, at: null, start: "clarifying", cases: [], ...over,
   };
 }
-const CHANGE = flowOf("change", "需求变更", { enabled: false, state: "还没有已发布的版本", prerequisite_text: "前置条件：存在已发布的版本。", start: null });
+const CHANGE = flowOf("change", "需求变更", { enabled: false, state: "还没有已发布的版本", prerequisite_text: "前置条件：存在已发布的版本。", start: null, cases: ["已发布过，现在要改"] });
 const PUBLISH = activityOf("publish", "发布", { mode: "user_only", mode_name: "仅限用户发起", enabled: false, state: "此版本尚未提供", prerequisite_text: "前置条件：评审无未处理发现，确认记录待处理为 0。" });
-const TEXTS = { lead: "本任务用于编制并持续维护「退款需求走查」的需求规格说明。", guide_note: "预计首轮产出：业务说明初稿与待澄清问题清单",
-  cases: [{ title: "有调研材料", text: "上传会议记录。" }, { title: "只有口头想法", text: "用三句话描述。" }, { title: "已有旧版规格说明", text: "旧版规格说明作为项目材料核读。" }] };
+const TEXTS = { lead: "本任务用于编制并持续维护「退款需求走查」的需求规格说明。" };
 const IDLE_ACTIVITY = { kind: "idle" as const, key: "idle" as const, name: "空闲", ordinal: null, flow: "analysis", moved_by: null, moved_at: null, reason: null };
 /** 任务状况里的一个工作项。 */
 function workItem(recordId: number, over: Partial<WorkItemView> = {}): WorkItemView {
@@ -141,12 +140,13 @@ function statusOf(over: Partial<TaskStatusView> = {}): TaskStatusView {
     generated_at: "2026-10-13T09:00:00", activity: IDLE_ACTIVITY, description: { sections: 0, chapters: [], unsorted: 0, open_questions: 0 }, models: [], items: [],
     missing: [], proposal: null, versions: [], launch: null, assets: EMPTY_ASSETS, start_page: TEXTS, work_items: [],
     catalog: {
-      flows: [flowOf("analysis", "需求分析", { recommended: true }), CHANGE],
+      flows: [flowOf("analysis", "需求分析", { recommended: true, cases: ["我有调研材料", "我只有口头想法"] }), CHANGE],
       activities: [
         activityOf("reading", "核读材料", { enabled: false, state: "还没有项目材料", prerequisite_text: "前置条件：至少一份项目材料。" }),
         activityOf("clarifying", "澄清", { mode: "dialogue", mode_name: "逐项对话", prerequisite_text: "无前置条件；可从空白开始。", writes: [kind("description", "业务说明")] }),
         activityOf("writing", "写条目", { enabled: false, state: "业务说明还没有内容；有 1 张分析模型还没有查看", prerequisite_text: "前置条件：业务说明至少一节，分析模型均已查看。" }),
         PUBLISH,
+        activityOf("parse_spec", "逆向解析", { alone: false, prerequisite_text: "前置条件：至少一份项目材料。" }),
       ],
     },
     ...over,
@@ -210,18 +210,17 @@ describe("任务头", () => {
 });
 
 describe("起点页：空任务", () => {
-  it("任务名旁写「尚无需求资产」，下面是一段定位的话、「三步开始」与三种常见起点；六格都是零，各写由哪些活动产出", async () => {
+  it("任务名旁写「尚无需求资产」，下面是一段定位的话；没有「三步开始」与三种常见起点：三步写在「工作流程」标题旁，处境是标题下的标签；六格都是零，各写由哪些活动产出", async () => {
     page(detail(), info, statusOf());
     await ready();
     expect(await screen.findByTestId("task-state")).toHaveTextContent("尚无需求资产");
     expect(screen.getByTestId("task-lead")).toHaveTextContent("本任务用于编制并持续维护「退款需求走查」的需求规格说明。");
-    const guide = screen.getByTestId("start-guide");
-    expect([...guide.querySelectorAll(".tp-steps li")].map(text)).toEqual([
-      "1选择工作流程从头编制或整体复查请启动「需求分析」流程。", "2提供输入上传项目材料，或直接描述目标系统。", "3由助手推进助手逐站完成并提议下一站，每一步由你确认。"]);
-    expect(screen.getByTestId("guide-start")).toHaveTextContent("启动需求分析");
+    expect([screen.queryByTestId("start-guide"), screen.queryByTestId("start-cases"), screen.queryByTestId("guide-start")]).toEqual([null, null, null]);
+    expect(text(screen.getByTestId("start-steps-line"))).toBe("选一条流程 › 提供输入 › 由助手推进，每一步由你确认");
+    // 处境标签按流程的先后、每条流程声明的 cases 的先后。
+    expect([...screen.getByTestId("case-chips").querySelectorAll("button")].map((one) => [one.getAttribute("data-testid"), text(one)])).toEqual([
+      ["case-chip-analysis-0", "我有调研材料"], ["case-chip-analysis-1", "我只有口头想法"], ["case-chip-change-0", "已发布过，现在要改"]]);
     expect(screen.queryByTestId("work-items")).toBeNull();
-    expect(guide).toHaveTextContent("预计首轮产出：业务说明初稿与待澄清问题清单");
-    expect([...screen.getByTestId("start-cases").querySelectorAll(".tp-case b")].map(text)).toEqual(["有调研材料", "只有口头想法", "已有旧版规格说明"]);
     const cells = [...screen.getByTestId("asset-cells").querySelectorAll(".tp-cell")];
     expect(cells.map((one) => [text(one.querySelector(".n")), text(one.querySelector(".v")), text(one.querySelector(".w"))])).toEqual([
       ["材料与证据", "0 份", "来源：上传"], ["业务说明", "0 节", "核读材料、澄清、整理建模、编写文档"], ["分析模型", "0 张", "整理建模"],
@@ -229,13 +228,16 @@ describe("起点页：空任务", () => {
     expect(cells.every((one) => one.querySelector(".v")!.classList.contains("zero") && one.querySelector(".s") === null)).toBe(true);
   });
 
-  it("工作流程两张卡：推荐的那条带「推荐」，整张卡可点、进它的输入页，右下角写「启动 →」；不能启动的那条变淡、不可点，写「前置条件未满足」与它的前置条件", async () => {
+  it("工作流程两张卡：推荐的那条带「推荐」，整张卡可点、进它的输入页，右下角写「启动 →」；不能启动的那条变淡、不可点，写「前置条件未满足」与后端给的不能启动的原因", async () => {
     page(detail(), info, statusOf());
     await ready();
     const analysis = await screen.findByTestId("flow-analysis");
     expect(analysis).toHaveClass("rec");
     expect(text(analysis.querySelector(".t"))).toBe("需求分析推荐");
     expect([...analysis.querySelectorAll(".tp-kv dd")].map(text)).toEqual(["需求分析的适用情形。", "核读材料 › 澄清 › 写条目 › 发布", "项目材料（可选）、目标系统描述"]);
+    // 卡上第一行是「适用」，目的排在它后面。
+    expect(text(analysis.querySelector("dl dt"))).toBe("适用");
+    expect(analysis.querySelector("dl")!.compareDocumentPosition(analysis.querySelector("p")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(text(analysis.querySelector(".eg"))).toBe("示例需求分析的经过。");
     expect([analysis.tagName, analysis.getAttribute("href"), analysis.classList.contains("go")]).toEqual(["A", "#/tasks/TASK-P/start/analysis", true]);
     expect(text(analysis.querySelector(".tp-arrow"))).toBe("启动 →");
@@ -243,8 +245,21 @@ describe("起点页：空任务", () => {
     const change = screen.getByTestId("flow-change");
     expect(change).toHaveClass("off");
     expect(text(change.querySelector(".t"))).toBe("需求变更前置条件未满足");
-    expect(text(change.querySelector(".tp-need"))).toBe("前置条件：存在已发布的版本。");
+    expect(text(change.querySelector(".tp-need"))).toBe("还没有已发布的版本。");
     expect([change.tagName, change.classList.contains("go"), change.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
+  });
+
+  it("能进不能启动的流程卡（例如缺必填的材料）：不变淡、整张卡可点进输入页，底部照写原因，右下写「去提供输入 →」；进不去的仍是灰的、不可点", async () => {
+    const base = statusOf();
+    const rewrite = flowOf("rewrite", "需求再工程", { enabled: false, enterable: true, state: "还没有上传「既有规格说明」", missing_slot: "既有规格说明", start: null });
+    page(detail(), info, statusOf({ catalog: { ...base.catalog!, flows: [...base.catalog!.flows.map((one) => (one.key === "change" ? { ...one, enterable: false } : one)), rewrite] } }));
+    await ready();
+    const card = await screen.findByTestId("flow-rewrite");
+    expect([card.tagName, card.getAttribute("href"), card.classList.contains("off"), card.classList.contains("go")]).toEqual(["A", "#/tasks/TASK-P/start/rewrite", false, true]);
+    expect([text(card.querySelector(".tp-need")), text(card.querySelector(".tp-arrow"))]).toEqual(["还没有上传「既有规格说明」。", "去提供输入 →"]);
+    const change = screen.getByTestId("flow-change");
+    expect([change.tagName, change.classList.contains("off"), change.querySelector(".tp-arrow")]).toEqual(["DIV", true, null]);
+    expect(text(screen.getByTestId("flow-analysis").querySelector(".tp-arrow"))).toBe("启动 →");
   });
 
   it("有了发布版本之后：需求变更的前提满足了，但这一版还没有提供，标签写「此版本尚未提供」，不写「前置条件未满足」", async () => {
@@ -274,6 +289,10 @@ describe("起点页：空任务", () => {
     expect(text(writing.querySelector(".tp-need"))).toBe("前置条件：业务说明至少一节，分析模型均已查看。");
     expect(writing.querySelector(".tp-need")).toHaveAttribute("title", "业务说明还没有内容；有 1 张分析模型还没有查看。");
     expect([writing.tagName, writing.classList.contains("go"), writing.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
+    // 逆向解析声明为只在工作流里做（alone 为假）：不出单项卡；其余照旧。
+    expect(screen.queryByTestId("activity-parse_spec")).toBeNull();
+    expect([...screen.getByTestId("free-talk").closest(".tp-sec")!.querySelectorAll("[data-testid^=activity-]")].map((one) => one.getAttribute("data-testid")))
+      .toEqual(["activity-reading", "activity-clarifying", "activity-writing", "activity-publish"]);
     // 发布现在还不能启动：写那一句状态，不是琥珀色。
     const publish = screen.getByTestId("activity-publish");
     expect([publish.classList.contains("off"), text(publish.querySelector(".tp-quiet")), publish.querySelector(".tp-need")]).toEqual([true, "此版本尚未提供。", null]);
@@ -288,23 +307,21 @@ describe("起点页：空任务", () => {
     expect(screen.getByTestId("enter-workbench")).toBeEnabled();
   });
 
-  it("点「启动需求分析」进需求分析的输入页；三种常见起点各是一个链接，进同一页并带上是第几种；这一页上不发启动请求", async () => {
+  it("点一个处境标签：对应的流程卡高亮一会儿，不跳页、不发请求；流程不能启动时标签照样可点", async () => {
     const calls = page(detail(), info, statusOf());
     await ready();
-    expect([0, 1, 2].map((index) => screen.getByTestId(`start-case-${index}`).getAttribute("href"))).toEqual([
-      "#/tasks/TASK-P/start/analysis?case=0", "#/tasks/TASK-P/start/analysis?case=1", "#/tasks/TASK-P/start/analysis?case=2"]);
-    fireEvent.click(await screen.findByTestId("guide-start"));
-    await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/start/analysis"));
+    const hash = window.location.hash;
+    fireEvent.click(await screen.findByTestId("case-chip-change-0"));
+    const change = screen.getByTestId("flow-change");
+    expect(change).toHaveClass("hit");
+    expect(screen.getByTestId("flow-analysis")).not.toHaveClass("hit");
+    expect(window.location.hash).toBe(hash);
     expect(calls.start).not.toHaveBeenCalled();
     expect(calls.action).not.toHaveBeenCalled();
-  });
-
-  it("推荐的流程现在不能启动时：主按钮是灰的，三种常见起点不可点", async () => {
-    page(detail(), info, statusOf({ catalog: { flows: [flowOf("analysis", "需求分析", { recommended: true, enabled: false, state: "活动的定义读不出来", start: null }), CHANGE], activities: [] } }));
-    await ready();
-    expect(await screen.findByTestId("guide-start")).toBeDisabled();
-    expect(screen.queryByTestId("start-case-0")).toBeNull();
-    expect(screen.getByTestId("start-cases").querySelectorAll("a")).toHaveLength(0);
+    fireEvent.click(screen.getByTestId("case-chip-analysis-1"));
+    expect(screen.getByTestId("flow-analysis")).toHaveClass("hit");
+    expect(change).not.toHaveClass("hit");
+    await waitFor(() => expect(screen.getByTestId("flow-analysis")).not.toHaveClass("hit"), { timeout: 3000 });
   });
 
   it("点「自由讨论」的「进入工作台」：只新建会话、不启动工作项，直接进工作台；请求回来之前按钮点不动；没有建成照写后端的原话，留在这一页", async () => {
@@ -327,21 +344,29 @@ describe("起点页：空任务", () => {
   });
 });
 
+describe("起点页：材料的角色与流程卡的输入一行", () => {
+  it("材料行写角色（放进槽位的写槽位的角色，别的写「证据」，早先的后端不给时不写）；流程卡的「输入」一行有 inputs_text 时用它", async () => {
+    const row = (path: string, over: Record<string, unknown>) => ({ path, bytes: 5, modified_at: "2026-09-28T17:50:00", derived_from: null, deletable: true, ...over });
+    const base = statusOf();
+    const flows = base.catalog!.flows.map((one) => (one.key === "analysis" ? { ...one, inputs_text: "既有规格说明（必填）、补充证据" } : one));
+    page(detail({ materials: [row("inputs/旧版.md", { slot: "spec", role: "既有规格说明" }), row("inputs/纪要.md", { slot: null, role: "证据" }), row("inputs/早先.md", {})] } as unknown as Partial<TaskDetail>),
+      info, statusOf({ catalog: { ...base.catalog!, flows } }));
+    await ready();
+    const rows = await screen.findAllByTestId("material-row");
+    expect(rows.map((one) => [text(one.querySelector(".nm")), one.querySelector("[data-testid=material-role]")?.textContent ?? null])).toEqual([
+      ["旧版.md既有规格说明", "既有规格说明"], ["纪要.md证据", "证据"], ["早先.md", null]]);
+    expect(text(screen.getByTestId("flow-analysis").querySelectorAll(".tp-kv dd")[2])).toBe("既有规格说明（必填）、补充证据");
+  });
+});
+
 describe("起点页：有内容的任务", () => {
   const sessions = [session("S1", "第一句", "2026-09-28T18:02:00"), session("S2", "第二句", "2026-09-29T10:02:00")];
 
-  it("有内容、没有工作项：「三步开始」改为「启动需求分析」一节排在六格之前，三步写成一行灰字；没有「工作项」一节；任务名旁写「没有工作项 · 未发布」，发布过写第几版；格子里有数的写那一句", async () => {
+  it("有内容、没有工作项：没有「启动需求分析」一节；没有「工作项」一节；任务名旁写「没有工作项 · 未发布」，发布过写第几版；格子里有数的写那一句", async () => {
     page(detail({ sessions }), info, statusOf({ assets: FILLED_ASSETS }));
     await ready();
     expect(await screen.findByTestId("task-state")).toHaveTextContent("没有工作项 · 未发布");
-    const guide = screen.getByTestId("start-guide");
-    expect(text(guide.querySelector(".tp-sec-h h2"))).toBe("启动需求分析");
-    expect(text(screen.getByTestId("start-steps-line"))).toBe("三步：选择工作流程、提供输入、由助手推进");
-    expect([guide.querySelector(".tp-steps"), guide.querySelector(".gt")]).toEqual([null, null]);
-    expect(screen.getByTestId("guide-start")).toHaveTextContent("启动需求分析");
-    expect(guide.compareDocumentPosition(screen.getByTestId("asset-cells")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByTestId("start-cases")).toBeInTheDocument();
-    expect(screen.queryByTestId("start-case-materials")).toBeNull();
+    expect([screen.queryByTestId("start-guide"), screen.queryByTestId("guide-start"), screen.queryByTestId("start-cases")]).toEqual([null, null, null]);
     expect(screen.queryByTestId("work-items")).toBeNull();
     expect([...screen.getByTestId("asset-cells").querySelectorAll(".tp-cell")].map((one) => [text(one.querySelector(".v")), text(one.querySelector(".s"))])).toEqual([
       ["2 份", "均有引用"], ["9 节", "1 处待澄清"], ["4 张", "1 未查看"], ["6 条", "6 未读 · 1 待核实"], ["未评审", ""], ["未发布", ""]]);
@@ -456,33 +481,17 @@ describe("起点页：有内容的任务", () => {
     expect(screen.queryByTestId("pending-work")).toBeNull();
   });
 
-  it("只有单项活动的工作项时「三步开始」仍显示：六格都空着时在页头之下、「工作项」一节之前，任务名旁写个数", async () => {
-    page(detail({ sessions }), info, statusOf({ work_items: [workItem(1)] }));
-    await ready();
-    expect(await screen.findByTestId("task-state")).toHaveTextContent("1 个工作项 · 未发布");
-    const guide = screen.getByTestId("start-guide");
-    expect(text(guide.querySelector(".gt"))).toBe("三步开始");
-    expect(guide.compareDocumentPosition(screen.getByTestId("work-items")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByTestId("start-cases")).toBeInTheDocument();
-  });
-
-  it("有流程工作项时不显示「三步开始」与三种常见起点：流程从它的工作项卡接着做", async () => {
-    page(detail({ sessions }), info, statusOf({ assets: FILLED_ASSETS, work_items: [FLOW_ITEM, workItem(2)] }));
-    await ready();
-    await screen.findByTestId("work-items");
-    expect(screen.queryByTestId("start-guide")).toBeNull();
-    expect(screen.queryByTestId("start-cases")).toBeNull();
-  });
-
-  it("任务里已有材料时，三种常见起点各多一句：已上传的材料启动后一并核读；排在「工作项」之后、六格之前", async () => {
-    const materials = [{ path: "inputs/借阅说明.md", bytes: 5, modified_at: "2026-09-28T17:50:00", derived_from: null, deletable: true },
-      { path: "inputs/续借办法.md", bytes: 5, modified_at: "2026-09-28T17:51:00", derived_from: null, deletable: true }];
-    page(detail({ sessions, materials } as unknown as Partial<TaskDetail>), info, statusOf({ assets: FILLED_ASSETS, work_items: [workItem(2)] }));
-    await ready();
-    const guide = await screen.findByTestId("start-guide");
-    expect(screen.getByTestId("work-items").compareDocumentPosition(guide) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getAllByTestId("start-case-materials").map(text)).toEqual(Array(3).fill("已上传 2 份材料，启动后一并核读"));
-    expect(screen.getByTestId("start-case-2").getAttribute("href")).toBe("#/tasks/TASK-P/start/analysis?case=2");
+  it("只有单项活动的工作项、有流程工作项、已有材料时：都没有「三步开始」与三种常见起点，处境标签照常在「工作流程」标题下", async () => {
+    const materials = [{ path: "inputs/借阅说明.md", bytes: 5, modified_at: "2026-09-28T17:50:00", derived_from: null, deletable: true }];
+    for (const [over, extra] of [[{ work_items: [workItem(1)] }, {}], [{ assets: FILLED_ASSETS, work_items: [FLOW_ITEM, workItem(2)] }, {}],
+      [{ assets: FILLED_ASSETS, work_items: [workItem(2)] }, { materials }]] as const) {
+      page(detail({ sessions, ...extra } as unknown as Partial<TaskDetail>), info, statusOf(over as unknown as Partial<TaskStatusView>));
+      await ready();
+      await screen.findByTestId("work-items");
+      expect([screen.queryByTestId("start-guide"), screen.queryByTestId("start-cases"), screen.queryByTestId("start-case-materials")]).toEqual([null, null, null]);
+      expect(screen.getByTestId("case-chips")).toBeInTheDocument();
+      cleanup(); vi.restoreAllMocks();
+    }
   });
 
   it("工作项卡上三个按钮都在：打开最新会话、换一条干净的会话接着、删除这个工作项", async () => {

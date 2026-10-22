@@ -204,7 +204,9 @@ export class FakeModel {
     }));
     const text: string = truthy(reply.text) ? reply.text : "";
     const finish = calls.length ? "tool_calls" : "stop";
-    if (truthy(body.stream)) {
+    if (truthy(body.stream) && truthy(reply.stream)) {
+      await sendScripted(res, requestNo, reply.stream as Dict);
+    } else if (truthy(body.stream)) {
       sendStream(res, requestNo, text, calls, finish);
     } else {
       const message: Dict = { role: "assistant", content: text || null };
@@ -244,5 +246,46 @@ function sendStream(res: ServerResponse, requestNo: number, text: string, calls:
   pieces.push(chunk({}, finish));
   pieces.push({ ...base, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
   for (const piece of pieces) res.write(`data: ${pyDumps(piece)}\n\n`);
+  res.end("data: [DONE]\n\n");
+}
+
+/**
+ * 按脚本一段一段地流式发（回答里写了 stream 时）：先发 text 的各段（文字增量），再发一个工具调用，参数按 pieces 一段一段地发；
+ * repeat 写了就把 repeat.piece 再发 repeat.times 次（模拟模型退化成一连串空白）；每段之间等 interval_ms 毫秒；
+ * 全部发完之后再等 hold_s 秒才结束（模拟模型卡住）。客户端断开（被中止）就不再发。用来测看门狗与运行状态条。
+ */
+async function sendScripted(res: ServerResponse, requestNo: number, stream: Dict): Promise<void> {
+  res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "close" });
+  const base = { id: `chatcmpl-fake-${requestNo}`, object: "chat.completion.chunk", created: Math.trunc(Date.now() / 1000), model: MODEL_ID };
+  const chunk = (delta: Dict, finishReason: string | null = null) => ({ ...base, choices: [{ index: 0, delta, finish_reason: finishReason }] });
+  const wait = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+  const gone = () => res.destroyed || res.writableEnded;
+  const send = (piece: Dict) => { if (!gone()) res.write(`data: ${pyDumps(piece)}\n\n`); };
+  const interval = Number(stream.interval_ms ?? 0);
+  send(chunk({ role: "assistant", content: "" }));
+  for (const text of (stream.text ?? []) as string[]) {
+    if (gone()) return;
+    send(chunk({ content: text }));
+    if (interval) await wait(interval);
+  }
+  const tool = stream.tool as Dict | undefined;
+  if (tool) {
+    send(chunk({ tool_calls: [{ index: 0, id: tool.id ?? `call_fake_${requestNo}_0`, type: "function", function: { name: tool.name, arguments: "" } }] }));
+    const pieces = [...((tool.pieces ?? []) as string[])];
+    const repeat = stream.repeat as Dict | undefined;
+    if (repeat) for (let i = 0; i < Number(repeat.times ?? 0); i++) pieces.push(String(repeat.piece ?? " "));
+    for (const piece of pieces) {
+      if (gone()) return;
+      send(chunk({ tool_calls: [{ index: 0, function: { arguments: piece } }] }));
+      if (interval) await wait(interval);
+    }
+  }
+  if (stream.hold_s) {
+    const until = Date.now() + Number(stream.hold_s) * 1000;
+    while (Date.now() < until && !gone()) await wait(200);
+  }
+  if (gone()) return;
+  send(chunk({}, tool ? "tool_calls" : "stop"));
+  send({ ...base, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } });
   res.end("data: [DONE]\n\n");
 }

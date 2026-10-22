@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Item, StageKey, StageLamp, StageView } from "../api/types";
 import { StageBar } from "../components/work/StageBar";
-import { IDLE_TEXT, forwardTarget, STAGES, isAlone, isIdle, lampGroups, lampShort, lampTarget, splitNumbers, stageMarks } from "../model/stage";
+import { IDLE_TEXT, activityLabel, forwardTarget, STAGES, isAlone, isIdle, lampGroups, lampShort, lampTarget, splitNumbers, stageMarks, topbarActivity } from "../model/stage";
 import { workReducer, initialWorkState } from "../state/workState";
 
 afterEach(cleanup);
@@ -50,6 +50,19 @@ describe("阶段条", () => {
     // 在流程里的阶段（节点与阶段相同）、早先的后端不给节点：都不是单独开展，没有那一句。
     expect([isAlone({ ...alone, node: "writing" }), isAlone(stage("writing", []))]).toEqual([false, false]);
     expect(stageMarks("idle").every((one) => one.mark === "ahead")).toBe(true);
+  });
+
+  it("逆向解析：current 是它算作的阶段（核读材料），activity 是 parse_spec；阶段条的当前格是核读材料，顶栏与单项活动的那一句写逆向解析", () => {
+    const catalog = { flows: [], activities: [{ key: "parse_spec", name: "逆向解析", stage: "reading" }] } as unknown as StageView["catalog"];
+    const inFlow: StageView = { ...stage("reading", []), activity: "parse_spec", node: "parse_spec", catalog };
+    const { unmount } = render(<StageBar stage={inFlow} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
+    expect(screen.getByTestId("stage-reading")).toHaveAttribute("aria-current", "step");
+    expect(topbarActivity({ stage: inFlow })).toEqual({ kind: "active", text: "当前活动：逆向解析" });
+    unmount();
+    render(<StageBar stage={{ ...inFlow, node: null }} items={[]} onOpenItem={() => {}} onOpenMaterial={() => {}} />);
+    expect(screen.getByTestId("stage-position")).toHaveTextContent("本会话的工作项是单项活动：逆向解析（不在工作流程里）。");
+    // 没有目录（早先的后端）时退回阶段的名字，再退回活动标识符本身。
+    expect([activityLabel("reading"), activityLabel("parse_spec"), activityLabel("parse_spec", catalog)]).toEqual(["核读材料", "parse_spec", "逆向解析"]);
   });
 
   it("没通过的灯每盏一句（冒号之前的半句、数字加重、悬停是整句），通过的收成「其余 N 项已齐」，不适用的不显示也不计数", () => {

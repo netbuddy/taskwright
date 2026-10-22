@@ -8,6 +8,7 @@ import "./styles/workview.css";
 import "./styles/workview-extra.css";
 import "./styles/leftnav.css";
 import "./styles/proposal.css";
+import "./styles/question-card.css";
 import "./styles/issues.css";
 import "./styles/status.css";
 import "./styles/docx.css";

@@ -9,6 +9,7 @@
  * 锁：一把不可重入的异步锁。公开方法取锁，内部方法（startPi、openLocked）不取锁；持锁时不调用会取锁的公开方法，否则会自己等自己。
  */
 
+import { type AbortReason, RunWatch, limitsOf, reasonText } from "./run_watch.ts";
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { parseDefinition } from "../../agent/src/lib/task_read.ts";
@@ -76,6 +77,10 @@ export function stateText(state: string, detail: string): string {
 export const EXITED_AT_START_TEXT = "助手启动之后立刻退出了。请把这个页面的地址告诉管理员。";
 /** 没有选定语言模型、启动配置里也没有写模型时，不启动助手；页面上与接口错误里都是这一句（页面在前面加「助手现在不可用：」）。 */
 export const NO_MODEL_TEXT = "还没有选定语言模型，请先到设置里添加模型服务并选定。";
+/** 看门狗中止了一次运行时报给页面的那句话；reason 是给人看的原因（run_watch.ts 的 reasonText）。 */
+export function fillTextAborted(reason: string): string {
+  return `模型输出异常（${reason}），这一步已中止，没有写入任何内容；发一句「继续」即可接着做。`;
+}
 /** 助手没有启动起来、原因不是下面 startFailure 里已经写好说明的那几种时，页面上的那句。 */
 export const START_FAILED_TEXT = "助手没有启动起来。请把这个页面的地址告诉管理员。";
 
@@ -188,6 +193,8 @@ interface Work {
   /** 这一轮连续被拒到上限、由工具停下了这次运行（工具结果的 details.stopped 为真）。 */
   limit_stopped: boolean;
   failed: boolean;
+  /** 看门狗中止了这一次运行（run_watch.ts）。不用 failed：消息结束时 failed 会按那条消息的停止原因重算，被中止的消息算「中止」。 */
+  watch_aborted?: boolean;
   last_text: string | null;
   last_user_id: string | null;
   replied_since_user: boolean;
@@ -195,6 +202,12 @@ interface Work {
 }
 
 export class Executor {
+  /** 一次运行的看门狗与运行状态（run_watch.ts）；阈值取启动配置的「看门狗」一段。 */
+  private readonly watch: RunWatch;
+  /** 上一次推运行状态的时刻（毫秒）与那时的阶段加工具名：阶段或工具变了、或者过了一秒才再推。 */
+  private statusSent = { at: 0, phase: "" };
+  /** 看门狗中止了上一次运行时的原因（给人看的一句）；下一次运行开始时清掉。运行状态条据此变红。 */
+  private aborted: string | null = null;
   readonly taskId: string;
   readonly taskDir: string;
   readonly runsDir: string;
@@ -214,6 +227,8 @@ export class Executor {
   activeSession: string | null = null;
   private cursor: string | null = null;
   work: Work | null = null;
+  /** 到目前为止连续几次 pi 的参数校验失败（跨工作计，别的工具结果一来就清零）；与过程摘要里的计法相同。 */
+  private argsInvalidStreak = 0;
   readonly waiters = new Map<string, { resolve: (result: Dict) => void }>();
   /** （发给 pi 的原文, client_id），按先后。 */
   private pendingClients: [string, string | null][] = [];
@@ -235,6 +250,7 @@ export class Executor {
     this.taskDir = taskDir;
     this.runsDir = runsDir;
     this.profile = profile;
+    this.watch = new RunWatch(limitsOf((profile as Record<string, unknown>)["看门狗"]));
     this.hub = hub;
     this.sessions = new Sessions(runsDir, taskId);
   }
@@ -672,6 +688,50 @@ export class Executor {
    * 助手下一次运行时据此知道上一次没有做完（pi 不把被停下的那条助手消息发给模型）。中止请求返回时这次运行已经结束，
    * 通知立即加进会话。没有写成不算停下失败：运行已经停了，只记进后端补记。
    */
+  /** 推一帧运行状态（SSE 的 run_status）：阶段变了就推；clock 为真时（每秒的那一下）过了一秒也推。 */
+  private pushStatus(sid: string | null, clock = false): void {
+    const now = Date.now();
+    const status = this.watch.status(now);
+    const key = `${status.phase}|${status.tool ?? ""}`;
+    if (key === this.statusSent.phase && !(clock && now - this.statusSent.at >= 1000)) return;
+    this.statusSent = { at: now, phase: key };
+    this.hub.emit("run_status", { session_id: sid, ...status, aborted: this.aborted });
+  }
+
+  /**
+   * 看门狗越线时中止这一次运行：这次运行记为失败，服务记录里记一笔（原因码与计量），页面上报一条问题，运行状态条变红；
+   * 运行停下之后往会话里留一条系统消息（扩展命令 /tw-user 的 output_aborted，不写库），说明原因、这一步没有写入任何内容、
+   * 发一句「继续」即可接着做；助手下一次运行时也据此知道上一次没有做完。
+   */
+  private async abortRun(sid: string | null, reason: AbortReason): Promise<void> {
+    const work = this.work;
+    if (work === null || work.watch_aborted) return;
+    work.watch_aborted = true;
+    work.failed = true;
+    this.watch.stop();
+    const text = reasonText(reason);
+    this.aborted = text;
+    this.pi?.note("看门狗中止了这一次运行", { 原因码: reason.code, 计量: reason, 工作: work.work_id });
+    this.hub.emit("problem", { session_id: sid, code: "model_output_aborted", text: fillTextAborted(text) });
+    this.statusSent = { at: Date.now(), phase: "idle" };
+    this.hub.emit("run_status", { session_id: sid, ...this.watch.status(Date.now()), aborted: text });
+    try {
+      await this.lock.run(async () => {
+        if (this.running()) await this.pi!.request("abort");
+      });
+    } catch (error) {
+      if (!(error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
+    }
+    const opId = newId("ui-op-");
+    try {
+      const result = await this.command("/tw-user", { op_id: opId, kind: conversation.OUTPUT_ABORTED, reason: text, code: reason.code }, opId);
+      if (!truthy(result.ok)) this.pi?.note("中止说明没有写成", { 操作编号: opId, 结果: result });
+    } catch (error) {
+      if (!(error instanceof ApiError || error instanceof PiExited || error instanceof PiRefused || error instanceof PiTimeout)) throw error;
+      this.pi?.note("中止说明没有写成", { 操作编号: opId, 原因: error instanceof ApiError ? error.message : technicalOf(error) });
+    }
+  }
+
   private async noteStop(): Promise<void> {
     const opId = newId("ui-op-");
     try {
@@ -713,6 +773,12 @@ export class Executor {
       const event = await pi.nextEvent(1000);
       if (event === null) {
         if (!pi.alive()) break;
+        // 每秒看一眼钟：长时间没有新内容、一次模型调用太久都要中止；顺带推一帧运行状态。
+        if (this.work !== null && !this.work.watch_aborted) {
+          const reason = this.watch.clock(Date.now());
+          if (reason) void this.abortRun(this.activeSession, reason);
+          else this.pushStatus(this.activeSession, true);
+        }
         continue;
       }
       if (event.type === "进程已退出") break;
@@ -751,6 +817,14 @@ export class Executor {
   private async handle(pi: PiSession, event: PiEvent): Promise<void> {
     const kind = event.type;
     const sid = this.activeSession;
+    if (kind === "agent_start") this.aborted = null;
+    // 看门狗：模型输出退化或卡住时中止这一次运行（run_watch.ts）；运行状态随阶段变化推给页面。
+    if (this.work === null || !this.work.watch_aborted) {
+      const reason = this.watch.feed(event, Date.now());
+      if (reason && this.work !== null) void this.abortRun(sid, reason);
+      else this.pushStatus(sid);
+    }
+    if (kind === "message_start" || kind === "message_update") return;
     if (kind === "agent_start") {
       if (this.work === null) {
         this.work = { work_id: newId("work-"), started: Date.now() / 1000, started_at: clock.now(), triggered_by: null, announced: false, steps: new Map(),
@@ -1025,8 +1099,11 @@ export class Executor {
       failed = false;
       details = { ...details, past_end: true };
     }
+    // pi 的参数校验失败（不是任务服务被拒）：记下连续第几次，step 行写淡色提示，连续多次时醒目，与过程摘要同一个写法。
+    this.argsInvalidStreak = failed && workSummary.argsInvalid(workSummary.resultText(result)) ? this.argsInvalidStreak + 1 : 0;
+    if (this.argsInvalidStreak) details = { ...details, args_invalid: this.argsInvalidStreak };
     // 保存修订被拒时原因只在结果正文里，先拆出来，实时的 step 行与过程摘要同一个写法。
-    if (failed && tool === "save_revision") details = { ...details, reasons: workSummary.rejectionParts(details, workSummary.resultText(result)) };
+    else if (failed && tool === "save_revision") details = { ...details, reasons: workSummary.rejectionParts(details, workSummary.resultText(result)) };
     // 回复被拒的原因也只在结果正文里：认出是没有写理解、理解不合格还是形式不对，过程摘要按它分写。
     if (failed && tool === REPLY_TOOL) details = { ...details, refusal: workSummary.replyRefusal(workSummary.resultText(result)) };
     // 保存图被拒是因为缺来源还是 Mermaid 文本没有通过校验，同样只在结果正文里：认出来，step 行与过程摘要加个括注。
@@ -1056,7 +1133,11 @@ export class Executor {
     const facts = work.turn_tools.some((t) => !t.done) ? callFacts(this.taskDir) : null;
     const texts = work.turn_tools.map((t) => t.done ? this.stepText(t.tool, t.args, true, t.failed, t.details)
       : workSummary.unfinishedText(t.tool, t.args, t.id, facts, this.definition()));
-    const step = { session_id: sid, work_id: work.work_id, step_key: key, text: texts.join("；"), in_progress: false, failed: work.turn_tools.some((t) => t.failed) };
+    // 参数校验失败不算被拒：不画成被拒的颜色，另带 note 给页面画淡色或醒目的样子。
+    const notes = work.turn_tools.map((t) => t.done && t.failed ? workSummary.argsInvalidNote(t.details) : null);
+    const note = notes.includes("args_invalid_repeated") ? "args_invalid_repeated" : notes.includes("args_invalid") ? "args_invalid" : null;
+    const step = { session_id: sid, work_id: work.work_id, step_key: key, text: texts.join("；"), in_progress: false,
+      failed: work.turn_tools.some((t, i) => t.failed && notes[i] === null), ...(note ? { note } : {}) };
     work.steps.set(key, step);
     this.hub.emit("step", step);
   }
@@ -1072,6 +1153,8 @@ export class Executor {
     if (work.limit_stopped && !work.stopped) {
       // 连续被拒到上限、由工具停下：只告诉用户已经停下。这一轮的助手正文不转发，它多半是没写合格的那份理解。
       this.hub.emit("problem", { session_id: sid, code: "stopped_by_limit", text: LIMIT_STOPPED_TEXT, retry: null });
+    } else if (work.watch_aborted) {
+      // 看门狗中止的这一轮：中止时已经报过问题，会话里也有说明，不再报「没有说话就停下了」。
     } else if (!work.replied_since_user) {
       // 兜底：这段话之后没有一次被接受的「回复」。转发最后一条助手正文；正文也没有就发 problem。
       if (work.last_text) {
@@ -1088,7 +1171,9 @@ export class Executor {
     // 结束原因与步数以会话记录算出的为准，与摘要里的、刷新后重算的相同；会话记录读不出这次工作时按本轮记下的情况。
     // 步数不能只看本轮的计数：一条消息里有几个工具调用、执行到一半被停下时，后面没有开始的调用只在会话记录里有。
     const found = await this.emitSummary(pi, sid, work);
-    const outcome = found?.outcome ?? (work.stopped ? "stopped_by_user" : work.failed ? "failed" : work.limit_stopped ? "stopped_by_limit" : work.replied ? "replied" : "no_reply");
+    // 看门狗中止的这一轮记为失败：中止的系统消息这时可能还没写进会话，会话记录算出的是「停下」。
+    const outcome = work.watch_aborted ? "failed"
+      : found?.outcome ?? (work.stopped ? "stopped_by_user" : work.failed ? "failed" : work.limit_stopped ? "stopped_by_limit" : work.replied ? "replied" : "no_reply");
     this.hub.emit("work_ended", { session_id: sid, work_id: work.work_id, at: clock.now(), seconds: workSummary.round1(Date.now() / 1000 - work.started),
       step_count: found?.step_count ?? work.step_count, outcome });
     this.work = null;

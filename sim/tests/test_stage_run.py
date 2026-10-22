@@ -35,9 +35,11 @@ HAS_STAGES = (REPO / "agent" / "src" / "lib" / "stage.ts").is_file()
 
 FIRST_WORDS = "帮我把这份需求整理成规格说明。"
 QUOTE = "读者凭借书证借书，每本书可以续借一次。"
+#: 页的正文：材料原句加句末括注（任务类型有分析提纲时，核读材料的页每句都要有着落）；用例的条目来源摘它不带句号的那一段。
+PAGE_TEXT = "读者凭借书证借书，每本书可以续借一次（requirements.md 第 1 段）。"
 PAGE = {"op": "add", "collection": "业务说明", "sources": [source(QUOTE)],
-        "fields": {"标题": "借书", "它是什么": QUOTE, "例子": ["读者凭借书证借书", "例外：名下有逾期未还图书的读者不能续借"], "标签": ["流程"], "状态": "在用"}}
-USE_CASE = {"op": "add", "collection": "功能用例", "sources": [{"kind": "条目", "locator": "OA-001", "excerpt": QUOTE}],
+        "fields": {"标题": "借书", "它是什么": PAGE_TEXT, "例子": ["读者凭借书证借书", "例外：名下有逾期未还图书的读者不能续借"], "标签": ["流程"], "状态": "在用"}}
+USE_CASE = {"op": "add", "collection": "功能用例", "sources": [{"kind": "条目", "locator": "OA-001", "excerpt": QUOTE.rstrip("。")}],
             "fields": {"用例名称": "借书", "用例功能": "读者凭借书证借书。", "参与者": ["读者"], "基本流程": ["读者出示借书证", "系统登记借出的图书"]}}
 START_CARD = {"kind": "choose", "text": "这一页你看过之后，现在开始写条目吗？", "items": [{"item_id": "OA-001", "revision_no": 1}],
               "options": [{"key": "start_items", "text": "开始写条目"}, {"key": "continue_reading", "text": "再核读一遍"}]}

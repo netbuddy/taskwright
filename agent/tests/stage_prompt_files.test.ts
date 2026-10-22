@@ -13,6 +13,7 @@ import { EXCEPTION_EXAMPLE_PREFIX } from "../src/lib/overall_analysis.ts";
 import { closedQuestion } from "../src/lib/reply.ts";
 import { CHAPTERS } from "../src/lib/overall_chapters.ts";
 import { RULE_CONFLICT_PREFIX } from "../src/lib/overall_views.ts";
+import { splitSegments } from "../src/lib/activity_def.ts";
 import { PROBLEM_BLOCKING, PROBLEM_BLOCKING_FIELD, PROBLEM_LANDED_FIELD, PROBLEM_NOT_BLOCKING, PROBLEM_REVISIT_FIELD } from "../src/lib/definition.ts";
 import { type LampInput, PENDING_MARK, STAGES, STAGE_NAMES, type Stage, type WriteKind, canWrite, nextStage, stageLamps } from "../src/lib/stage.ts";
 import { NO_PROPOSAL_LINE, openCardsLine } from "../src/lib/stage_proposal.ts";
@@ -24,7 +25,8 @@ import { readDefinitions } from "../src/lib/activity_def_read.ts";
 import { SRS_SKILL_DIR as SKILL_DIR_FOR_ALLOWED } from "./helpers.ts";
 
 /** 获准能力表：取真实任务类型的活动声明生成的那一份。 */
-const ALLOWED = readDefinitions(SKILL_DIR_FOR_ALLOWED).allowed;
+const DEFS_FOR_ALLOWED = readDefinitions(SKILL_DIR_FOR_ALLOWED);
+const ALLOWED_FOR = (key: string) => DEFS_FOR_ALLOWED.allowedFor(key);
 
 /** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
 const EMPTY_LAMP_INPUT: LampInput = {
@@ -135,6 +137,22 @@ test("活动模板只有做什么、不做什么、做到什么算够；工作�
   assert.equal(skillBody(flow).trim(), "", "流程文件只有声明");
 });
 
+test("模板目录里的全部活动模板：头里的 template 与文件名相同；逆向解析有自己的 parse_spec 模板，上限是页、问题、条目，结构与六个阶段的相同，不写第几个阶段", () => {
+  const names = readdirSync(TEMPLATES_DIR).filter((name) => name.endsWith(".md")).sort();
+  assert.deepEqual(names, [...STAGES, "idle", "parse_spec"].sort().map((one) => `${one}.md`));
+  for (const name of names) {
+    const head = /^---\ntemplate: ([a-z_]+)\n/.exec(readFileSync(join(TEMPLATES_DIR, name), "utf-8"));
+    assert.ok(head && `${head[1]}.md` === name, name);
+  }
+  const raw = readFileSync(join(TEMPLATES_DIR, "parse_spec.md"), "utf-8");
+  assert.ok(raw.startsWith("---\ntemplate: parse_spec\nwrites_allowed: page, problem, item\n---\n"));
+  const template = skillBody(raw);
+  assert.ok(template.startsWith("# 现在这个阶段：逆向解析\n"));
+  assert.ok(template.includes("任务现在在逆向解析这一步，算作核读材料阶段。"));
+  assert.deepEqual([...sections(template).keys()], STAGE_HEADINGS);
+  assert.doesNotMatch(template, /六个阶段里的第/);
+});
+
 test("工作流里的转移只写一次，在 planning/flow_transitions：卡片的键是 next_step、goto:<活动标识符>、stay；你不能自己移动；用户的话按落在哪一步分；各步与分工表由程序填", () => {
   const moves = moduleText("flow_transitions");
   for (const said of ["{{flow}}", "{{steps}}", "{{here}}", "{{prev}}", "{{next}}", "{{division}}", "你不能自己把任务移到别的一步", "用户在对话里打字说可以了不算",
@@ -201,7 +219,7 @@ test("每一段的「不做什么」与工具守的一致：这一段不能写�
   for (const stage of STAGES) {
     const not = sections(read(`${stage}.md`)).get("这一段不做什么")!;
     for (const [kind, word] of Object.entries(WORDS) as [WriteKind, string][]) {
-      assert.equal(not.includes(word), !canWrite(ALLOWED[stage], kind), `${stage}：${word}`);
+      assert.equal(not.includes(word), !canWrite(ALLOWED_FOR(stage), kind), `${stage}：${word}`);
     }
   }
   // 评审确认阶段主题页只能改两处。
@@ -281,31 +299,61 @@ test("需求规格任务的说明拆成四份：SKILL.md 只留每个阶段都�
   // 「材料里的内容都要整理进条目」这句只在写条目那一段里：核读材料与澄清阶段不该有写条目的要求。
   assert.doesNotMatch(common, /都要整理进条目/);
   assert.doesNotMatch(common, /分拣成/);
-  assert.doesNotMatch(common, /一批最多写 4 个条目/);
+  assert.doesNotMatch(common, /一批最多写 2 个条目/);
   for (const head of ["1. **材料没按块读完不要动笔。**", "2. **问用户与记下答复。**", "3. **用户的说法与材料原文对不上时**", "4. **业务说明的每一页怎样填。**"]) {
     assert.ok(common.includes(head), head);
   }
   // 问题条目的写法与「用户决定保留」只认对话里的用户，挪进了平台说明的模块「问题条目」。
   for (const head of ["1. **含糊的地方不要自己定。**", "2. **「用户决定保留」只认对话里的用户。**"]) assert.ok(moduleText("problems").includes(head), head);
   assert.ok(!common.includes("含糊的地方不要自己定") && !common.includes("只认对话里的用户"));
-  // 七项活动各一份声明；六个阶段都有收尾一节，「这类任务在某阶段」的补充只有核读材料、写条目与编写文档三项。
-  assert.deepEqual(readdirSync(join(SRS_SKILL, "activities")).sort(), ["clarifying.md", "document.md", "modeling.md", "publish.md", "reading.md", "reviewing.md", "writing.md"]);
+  // 八项活动各一份声明（逆向解析算作核读材料阶段，不在六个阶段的补充里）；六个阶段都有收尾一节，「这类任务在某阶段」的补充只有核读材料、写条目与编写文档三项。
+  assert.deepEqual(readdirSync(join(SRS_SKILL, "activities")).sort(), ["clarifying.md", "document.md", "modeling.md", "parse_spec.md", "publish.md", "reading.md", "reviewing.md", "writing.md"]);
   const supplement = (name: string) => withoutSection(body(readFileSync(join(SRS_SKILL, "activities", `${name}.md`), "utf-8")), ENDING).replace(/^\n+/, "");
   assert.deepEqual(STAGES.filter((one) => supplement(one).trim() !== ""), ["reading", "writing", "document"]);
   const document = supplement("document");
   assert.ok(document.startsWith("## 这类任务在编写文档阶段\n"));
   for (const words of ["概述与范围那一章的导语写三段。背景：", "读者对象：", "范围边界：", "导语只概括各节与已经确认的条目里写下的内容，不写新的规定", "来源写「助手补充」",
-    "一次保存最多写 4 页", "「是否阻断下游」照实写，不要改条目"]) assert.ok(document.includes(words), words);
+    "一次保存最多写 2 页", "「是否阻断下游」照实写，不要改条目"]) assert.ok(document.includes(words), words);
   for (const chapter of CHAPTERS.slice(1)) assert.ok(document.includes(`${chapter.name}：`), chapter.name);
   const reading = supplement("reading");
   assert.ok(reading.startsWith("## 这类任务在核读材料阶段\n"));
   assert.ok(!reading.includes("12 页"));
-  for (const words of ["这几批里不要夹着用例、需求或约束", "一次保存最多写 4 页主题", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
-    "7. 人工怎样接管", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "「例子」写两条"]) assert.ok(reading.includes(words), words);
+  for (const words of ["这个阶段用例、需求与约束存不进去", "一次保存只写一个操作", "**第二遍各样东西记成什么。**", "种类「冲突」", "种类「缺失」", "标签「假设」",
+    "「风险、假设与运维」这一维度的七个问题逐项问", "**总体观察。**", "标题固定为「总体观察」，标签「范围」，「导语所属章」不填", "各接一句以「例如」起头的具体情形"]) assert.ok(reading.includes(words), words);
+  // 核读按提纲与用户对话：规则分三段，常驻段进系统提示，盘点、草稿与提问的写法附在第一次保存的结果后面，答后及之后的附在第一次回复的结果后面；
+  // 一个提纲条目五步，缺口记成挂在页上的问题条目，正文不写状态标记。
+  const segmented = splitSegments(body(readFileSync(join(SRS_SKILL, "activities", "reading.md"), "utf-8")));
+  for (const words of ["规则分三处给你", "第一步盘点、第二步草稿与缺口、第三步提问、第四步答后、第五步收尾", "**开场与次序。**", "**一直要守的三条。**", "不把别的页当出处",
+    "不用提问（ask）卡片", "一次保存只写一个操作", "## 这一步怎样收尾"]) assert.ok(segmented.always.includes(words), `常驻段：${words}`);
+  for (const words of ["**第一步：盘点。**", "**第二步：草稿与缺口。**", "**第三步：提问。**", "**正文的写法。**", "**页怎样分。**", "**每页至少有什么。**"]) {
+    assert.ok(segmented.segments.after_save?.includes(words) && !segmented.always.includes(words), `保存后段：${words}`);
+  }
+  for (const words of ["**第四步：答后。**", "**第五步：收尾。**", "**一个维度走完时。**", "**已经定下的。**", "**第二遍各样东西记成什么。**", "**总体观察。**", "标了 `per_unit: true` 的维度"]) {
+    assert.ok(segmented.segments.after_reply?.includes(words) && !segmented.always.includes(words), `回复后段：${words}`);
+  }
+  for (const words of ["**开场与次序。**", "**第一步：盘点。**", "**第二步：草稿与缺口。**", "**第三步：提问。**", "**第四步：答后。**", "**第五步：收尾。**",
+    "**一个维度走完时。**", "**正文的写法。**", "**已经定下的。**", "不得自动续读", "每条消息只问一件事", "子系统以用户在「范围」里认的为准", "标题「维度名 · 子系统名」",
+    "标题以「候选：」开头", "不写「待定：」「候选：」这类状态标记", "每个提纲条目最多问两问", "「维度名 · 条目名 · 缺口 N（种类）」", "「维度名 · 第 k 条目 条目名（共 n 条）」", "一行一个列出各提纲条目的状态", "改了〈页名〉：原来……，现在……",
+    "决定。理由：……。另有备选：……（未取）。", "候选只来自材料或行业常识", "所有提问都用这种带候选的请选择卡片", "`text` 必须以「为了写清」开头", "缺口没有存成问题条目，就不发卡片", "存页前逐句核对", "提纲条目的内容一律写进条目页，不写进维度页", "不发不带候选的卡片，也不用提问（ask）卡片", "正文只写已经知道的事，不写材料缺什么", "`topic` 必须写", "「例子」一栏在核读里只用来放流程页的例外"]) {
+    assert.ok(reading.includes(words), words);
+  }
+  // 领域参照的七问在任务类型的分析提纲里，是最后一个分析维度的七个节点。
+  const outline = readFileSync(join(SRS_SKILL, "outline.md"), "utf-8");
+  for (const words of ["outline: requirements-engineering", "unsorted: 未归类的发现", "ideas: 解决方案创意", "judgement: 目前的判断", "overview: 总体观察", "- 业务事件与时间 —— ", "## 风险、假设与运维", "人工怎样接管，接管的情况怎样统计、怎样回流改进？"]) {
+    assert.ok(outline.includes(words), words);
+  }
+  // 提纲条目写的每个方法，在同一目录的 methods/ 下都有同名的文件，文件里有三个必有的节。
+  const named = [...outline.matchAll(/—— 方法：(.+)$/gm)].flatMap((one) => one[1].split("、").map((name) => name.trim()));
+  assert.ok(named.length > 0);
+  for (const name of new Set(named)) {
+    const method = readFileSync(join(SRS_SKILL, "methods", `${name}.md`), "utf-8");
+    assert.ok(method.startsWith(`# ${name}\n`), name);
+    for (const head of ["## 怎么问", "## 问到什么算够", "## 产物写在哪", "## 怎么问用户"]) assert.ok(method.includes(`\n${head}\n`), `${name}：${head}`);
+  }
   const writing = supplement("writing");
   assert.ok(writing.startsWith("## 这类任务在写条目阶段\n"));
   for (const head of ["整理建模阶段画出的图与材料里的内容都要整理进条目", "1. **照图写条目。**", "2. **每条功能用例的来源写两张图。**", "3. **非功能需求不经图。**",
-    "4. **含糊的记成问题。**", "5. **一批最多写 4 个条目，问题条目放最后一批。**", "6. **一句话既是解释又是规则时。**", "7. **写完对用户说话。**"]) {
+    "4. **含糊的记成问题。**", "5. **一批最多写 2 个条目，问题条目放最后一批。**", "6. **一句话既是解释又是规则时。**", "7. **写完对用户说话。**"]) {
     assert.ok(writing.includes(head), head);
   }
   // 从图到条目的对应：五种图都说到了，功能用例的八个字段都有着落（字段名与任务定义里的相同）。

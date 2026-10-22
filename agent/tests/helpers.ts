@@ -14,7 +14,7 @@ import { recordAtSettle } from "../src/lib/dialogue_acts.ts";
 import { type ProblemClick, problemClicks } from "../src/lib/problem_consent.ts";
 import { REGISTERED_OUTPUTS } from "../src/lib/registered_outputs.ts";
 import { withTaskDatabase } from "../src/lib/schema.ts";
-import type { Stage } from "../src/lib/stage.ts";
+import { FLOW_ANALYSIS, type Stage } from "../src/lib/stage.ts";
 import { attachSession, flowWorkItem, moveStage, openActivityRecord, startActivity } from "../src/lib/stage_read.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
 // 仓库脚本是普通 .mjs（只用 Node 自带模块），直接引它的抽取函数
@@ -196,7 +196,7 @@ export function enterStage(workspaceDir: string, stage: Stage, sessions: readonl
       moveStage(db, workspaceDir, who, stage, "");
       return existing.record_id;
     }
-    const started = startActivity(db, workspaceDir, who, stage, true, "");
+    const started = startActivity(db, workspaceDir, who, stage, FLOW_ANALYSIS, "");
     if (started.record_id === undefined) return null;
     for (const one of sessions.slice(1)) attachSession(db, task.task_id, started.record_id, one);
     return started.record_id;
@@ -359,10 +359,21 @@ export function problemClicksOn(workspaceDir: string, sessionId: string, branch:
 }
 
 /**
- * 把一个现在格式（10）的任务库退回格式 9 的样子：来源表去掉 inserted 一列，版本号记 9。格式 9 与 10 只差这一列。
+ * 把一个现在格式（11）的任务库退回格式 10 的样子：去掉材料表，版本号记 10。格式 10 与 11 只差这张表。
  * 直接开库改，不经 withTaskDatabase（它一打开就会升级）。
  */
+export function asFormat10(workspaceDir: string): void {
+  const db = new DatabaseSync(databasePath(workspaceDir));
+  try {
+    db.exec("DROP TABLE IF EXISTS material; PRAGMA user_version = 10");
+  } finally {
+    db.close();
+  }
+}
+
+/** 再退回格式 9 的样子：来源表也去掉 inserted 一列，版本号记 9。格式 9 与 10 只差这一列。 */
 export function asFormat9(workspaceDir: string): void {
+  asFormat10(workspaceDir);
   const db = new DatabaseSync(databasePath(workspaceDir));
   try {
     db.exec("ALTER TABLE item_source DROP COLUMN inserted; PRAGMA user_version = 9");

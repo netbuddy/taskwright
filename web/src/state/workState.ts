@@ -27,6 +27,7 @@ import type {
   MaterialAdded,
   MaterialRemoved,
   Problem,
+  RunStatus,
   ReviewBatchEvent,
   ReviewFinished,
   ReviewInProgress,
@@ -113,6 +114,8 @@ export interface WorkState {
   latestRevision: number;
   /** 最近一批界面发起的评审；没有时为 null。 */
   review: ReviewRun | null;
+  /** 这条会话最近一帧运行状态（SSE 的 run_status）；还没有收到时为 null。 */
+  runStatus: RunStatus | null;
 }
 
 export function initialWorkState(sessionId: string): WorkState {
@@ -138,6 +141,7 @@ export function initialWorkState(sessionId: string): WorkState {
     focusMaterial: null,
     latestRevision: 0,
     review: null,
+    runStatus: null,
   };
 }
 
@@ -651,6 +655,12 @@ function applyProcess(state: WorkState, name: string, data: unknown): WorkState 
     }
     case "problem":
       return { ...state, problems: [...state.problems, data as Problem] };
+    case "run_status": {
+      // 别的会话的运行状态不管（一个任务同时只有一条会话在跑，但页面可能开着另一条）。
+      const d = data as RunStatus;
+      if (d.session_id && d.session_id !== state.sessionId) return state;
+      return { ...state, runStatus: d };
+    }
     default:
       return state; // 不认识的事件一律忽略（第 3 节）
   }

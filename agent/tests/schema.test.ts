@@ -9,7 +9,7 @@ import { databasePath } from "../src/lib/db.ts";
 import { MIN_TASK_DB_VERSION, NewerTaskDatabase, NoDatabaseYet, OlderTaskDatabase, TABLE_NAMES, TASK_DB_VERSION, TASK_JSON, upgradeTaskDatabase, withTaskDatabase } from "../src/lib/schema.ts";
 import { createTask } from "../src/lib/create_task.ts";
 import { reviewSpecOf, rulesHash } from "../src/lib/review_state.ts";
-import { asFormat8, asFormat9, callIn, makeWorkspace, query } from "./helpers.ts";
+import { asFormat10, asFormat8, asFormat9, callIn, makeWorkspace, query } from "./helpers.ts";
 
 /** 库里记的格式版本（PRAGMA user_version）。 */
 const version = (dir: string) => query<{ user_version: number }>(dir, "PRAGMA user_version")[0].user_version;
@@ -130,12 +130,34 @@ test("格式版本：新建的库里活动记录表不检查活动的取值，�
 
 const columnsOf = (dir: string, table: string) => query<{ name: string }>(dir, `PRAGMA table_info(${table})`).map((one) => one.name);
 
-test("格式 10：新建的库照现在的建表语句建齐，格式号是 10，工具拒绝表带原因码两列，来源表带 inserted 一列；本程序还能升级的最早格式是 8", () => {
+test("格式 11：新建的库照现在的建表语句建齐，格式号是 11，工具拒绝表带原因码两列，来源表带 inserted 一列，有材料表；本程序还能升级的最早格式是 8", () => {
   const dir = makeWorkspace();
   withTaskDatabase(dir, { createIfMissing: true }, () => null);
-  assert.deepEqual([TASK_DB_VERSION, MIN_TASK_DB_VERSION, version(dir)], [10, 8, 10]);
+  assert.deepEqual([TASK_DB_VERSION, MIN_TASK_DB_VERSION, version(dir)], [11, 8, 11]);
   assert.deepEqual(columnsOf(dir, "tool_rejection").slice(-2), ["reason_code", "reason_codes"]);
   assert.equal(columnsOf(dir, "item_source").at(-1), "inserted");
+  assert.deepEqual(columnsOf(dir, "material"), ["material_id", "task_id", "path", "slot", "role", "added_at", "removed_at"]);
+});
+
+test("格式 10 升到 11：只建材料表，不回填，别的表不动；再升一次不出错、不改数据", () => {
+  const dir = makeWorkspace();
+  createTask(callIn(dir), { definition_path: "docs/task-definitions/demo.json" });
+  asFormat10(dir);
+  assert.ok(!tables(dir).includes("material"));
+  const before = query<{ seq: number; name: string }>(dir, "SELECT seq, name FROM event ORDER BY seq").map((one) => ({ ...one }));
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 10, to: 11, notes: [] });
+  assert.ok(tables(dir).includes("material"));
+  assert.deepEqual(query(dir, "SELECT * FROM material"), []);
+  assert.deepEqual(query<{ seq: number; name: string }>(dir, "SELECT seq, name FROM event ORDER BY seq").map((one) => ({ ...one })), before);
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => db.prepare(
+    "INSERT INTO material (task_id, path, slot, role, added_at) VALUES ('TASK-001', 'inputs/甲.md', 'spec', '既有规格说明', '2026-10-21T10:00:00.000')").run());
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 11, to: 11, notes: [] });
+  // 版本号退回 10 再升：建表语句带 IF NOT EXISTS，已有的表与行原样留着。
+  const db = new DatabaseSync(databasePath(dir));
+  db.exec("PRAGMA user_version = 10");
+  db.close();
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 10, to: 11, notes: [] });
+  assert.deepEqual(query<{ path: string; role: string }>(dir, "SELECT path, role FROM material").map((one) => ({ ...one })), [{ path: "inputs/甲.md", role: "既有规格说明" }]);
 });
 
 test("格式 9 升到 10：来源表补上 inserted 一列，助手补充的旧行由理由里的直角引号抽出这一处正文里有的那几段，抽不出的留空；再升一次不出错", () => {
@@ -155,9 +177,9 @@ test("格式 9 升到 10：来源表补上 inserted 一列，助手补充的旧�
   });
   asFormat9(dir);
   assert.ok(!columnsOf(dir, "item_source").includes("inserted"));
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 9, to: 10, notes: ["助手补充的来源里 1 处由理由里的直角引号抽出了补进正文的字串"] });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: 9, to: TASK_DB_VERSION, notes: ["助手补充的来源里 1 处由理由里的直角引号抽出了补进正文的字串"] });
   assert.deepEqual(query<{ inserted: string | null }>(dir, "SELECT inserted FROM item_source ORDER BY position").map((one) => one.inserted), [JSON.stringify(["输入口令"]), null, null]);
-  assert.deepEqual(upgradeTaskDatabase(dir), { from: 10, to: 10, notes: [] });
+  assert.deepEqual(upgradeTaskDatabase(dir), { from: TASK_DB_VERSION, to: TASK_DB_VERSION, notes: [] });
 });
 
 test("格式 8 升到 9：写入一侧第一次打开时给工具拒绝表补上原因码两列，原有的拒绝记录还在、原因码为空；再打开不重做", () => {

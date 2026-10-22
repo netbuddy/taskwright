@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FALLBACK_TEXT, baseMessages, branch, normalizeInforms, page, textOf } from "../src/conversation.ts";
 import { Sessions } from "../src/sessions.ts";
-import { LIMIT_STOPPED_STEP_TEXT, diagramRejection, docxDerived, readPastEnd, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
+import { ARGS_INVALID_REPEATED_TEXT, ARGS_INVALID_TEXT, LIMIT_STOPPED_STEP_TEXT, argsInvalid, diagramRejection, docxDerived, readPastEnd, rejectionParts, rejectionReasons, replyRefusal, stepText, worksFromEntries } from "../src/work_summary.ts";
 import { tempDir } from "./helpers.ts";
 
 const works = (entries: Record<string, unknown>[], definition: Record<string, unknown> = {}) =>
@@ -153,8 +153,8 @@ test("过程摘要：read 的起始行号超过了文件末尾不算没读成，
     [["看了目录", 1], ["材料《说明.docx》已经读到末尾", 1], ["读了材料《乙.md》", 1]]);
   assert.deepEqual(run(["read", { path: "inputs/乙.md" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST]).stages,
     [["读了材料《乙.md》", 1], ["材料《说明.docx》已经读到末尾", 1]]);
-  // 真读不到：文件不存在、参数不合模式、被停下，都照旧。
-  for (const error of ["ENOENT: no such file or directory, access '/w/inputs/没有.md'", "Validation failed for tool \"read\":\n  - path: must be string", "Operation aborted"]) {
+  // 真读不到：文件不存在、被停下，都照旧。参数不合模式是 pi 的参数校验失败，另写（见下面一条测试）。
+  for (const error of ["ENOENT: no such file or directory, access '/w/inputs/没有.md'", "Operation aborted"]) {
     assert.deepEqual(run(["read", { path: "inputs/没有.md" }, error]).stages, [["读材料《没有.md》没有读成", 1]], error);
   }
 });
@@ -175,7 +175,35 @@ test("过程摘要：保存修订被拒附上原因，多于一条时写还有�
   assert.deepEqual(work.stages[0].reasons, ["第 1 条来源的摘录「借书」在 inputs/甲.md 里找不到。", "这个条目已经被用户改到修订 3。"]);
   assert.equal(work.stages[1].text, "保存修订被拒：字段「关联条目」是条目引用类型，第 1 个编号 \"UC-006\" 指向的条目在这个任务里不存在。");
   assert.equal(work.stages[1].reasons.length, 1);
-  assert.deepEqual(work.stages[2], { text: "保存修订被拒，助手正在照原因改", count: 1 }, "不是保存修订自己的拒绝正文时照旧写固定的一句");
+  assert.deepEqual(work.stages[2], { text: ARGS_INVALID_TEXT, count: 1, note: "args_invalid" }, "pi 的参数校验失败不写被拒");
+  const [other] = works([{ type: "session", id: "h" }, msg("u1", null, "user", "整理材料"), call("a1", "u1", "c1"), rejected("r1", "a1", "c1", "这次没有保存。")]);
+  assert.deepEqual(other.stages[0], { text: "保存修订被拒，助手正在照原因改", count: 1 }, "不是保存修订自己的拒绝正文时照旧写固定的一句");
+});
+
+test("过程摘要：pi 的参数校验失败写淡色提示，不写被拒；同一条会话里连续三次（跨工作计）换成醒目的说法，中间有别的结果就重新计", () => {
+  const INVALID = "Validation failed for tool \"save_revision\":\n  - operations.0.op: must have required properties op\n\nReceived arguments:\n{}";
+  assert.equal(argsInvalid(INVALID), true);
+  for (const text of ["这次「保存修订」什么都没有写入，因为有 1 个操作不对：", "ENOENT: no such file", "Offset 3 is beyond end of file (2 lines total)", ""]) assert.equal(argsInvalid(text), false, text);
+  assert.equal(stepText("read", { path: "inputs/甲.md" }, true, true, { args_invalid: 1 }, {}), ARGS_INVALID_TEXT);
+  assert.equal(stepText("save_revision", {}, true, true, { args_invalid: 3 }, {}), ARGS_INVALID_REPEATED_TEXT);
+
+  const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-20T01:00:00.000Z", message: { role, content } });
+  const entries: Record<string, unknown>[] = [{ type: "session", id: "h" }];
+  let parent: string | null = null;
+  /** 一次工具调用与它的结果；text 为 undefined 时成功。 */
+  const call = (i: number, name: string, text?: string) => {
+    entries.push(msg(`a${i}`, parent, "assistant", [{ type: "toolCall", id: `c${i}`, name, arguments: {} }]));
+    entries.push({ type: "message", id: `r${i}`, parentId: `a${i}`, timestamp: "2026-10-20T01:00:01.000Z",
+      message: { role: "toolResult", toolCallId: `c${i}`, isError: text !== undefined, details: {}, content: [{ type: "text", text: text ?? "" }] } });
+    parent = `r${i}`;
+  };
+  const user = (id: string) => { entries.push(msg(id, parent, "user", "接着整理")); parent = id; };
+  user("u1"); call(1, "save_revision", INVALID); call(2, "save_revision", INVALID); call(3, "get_task_status"); call(4, "save_revision", INVALID);
+  user("u2"); call(5, "save_revision", INVALID); call(6, "save_diagram", INVALID.replace("save_revision", "save_diagram"));
+  const [first, second] = works(entries);
+  assert.deepEqual(first.stages.map((s) => s.note ?? null), ["args_invalid", "args_invalid", null, "args_invalid"]);
+  assert.deepEqual(second.stages, [{ text: ARGS_INVALID_TEXT, count: 1, note: "args_invalid" }, { text: ARGS_INVALID_REPEATED_TEXT, count: 1, note: "args_invalid_repeated" }],
+    "第四次接着第五次、第六次连成三次；保存图的参数校验失败不进「图没有存上」");
 });
 
 test("过程摘要：拒绝原因分两层，摘要与展开只用事实", () => {

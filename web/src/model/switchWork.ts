@@ -1,9 +1,11 @@
 // 切换工作面板与启动确认框上由数据算出的几句话（components/work/SwitchWorkPanel.tsx）。只算，不画。
 // 数据是这条会话的整份数据里的 stage（它属于的工作项、现在在哪一站）与带这条会话取的任务状况（全部工作项、资产现状、活动目录）。
 
-import { ACTIVITY_START_TEXTS, STAGE_NAMES, nextStage } from "../../../agent/src/lib/stage";
-import type { CatalogActivity, CatalogFlow, StageKey, StageView, TaskStatusView, WorkItemView } from "../api/types";
+import { IDLE } from "../../../agent/src/lib/stage";
+import type { CatalogActivity, CatalogFlow, StageView, TaskStatusView, WorkItemView } from "../api/types";
+import { activityLabel, flowStations, stageActivity } from "./stage";
 import { formatTime } from "./format";
+import { startText } from "./startInput";
 
 /** 一个工作项启动的日子：月-日；时刻不详时是空文字。 */
 const dayOf = (iso: string | null | undefined): string => (iso ? formatTime(iso).slice(5, 10) : "");
@@ -23,32 +25,44 @@ export function panelSubtitle(stage: StageView | null | undefined, status: TaskS
   const others = otherItemCount(status, own);
   if (!own) return `本会话是自由讨论，不绑定活动 · ${others > 0 ? `本任务有 ${others} 个工作项` : "本任务还没有工作项"}`;
   const day = dayOf(own.started_at);
-  const at = own.kind === "flow" && stage?.node ? ` · 位于第 ${stationNumber(stage.node)} 站「${STAGE_NAMES[stage.node]}」` : "";
+  const station = stage ? ownStation(stage, status) : null;
+  const at = station ? ` · 位于第 ${station.ordinal} 站「${station.name}」` : "";
   return `本会话属于工作项「${own.name}」${day ? `（${day}）` : ""}${at} · ${others > 0 ? `本任务另有 ${others} 个工作项` : "本任务没有别的工作项"}`;
 }
 
-/** 六个阶段里的第几站（从 1 数）。 */
-const STATION_ORDER: StageKey[] = ["reading", "clarifying", "modeling", "writing", "reviewing", "document"];
-export const stationNumber = (stage: StageKey): number => STATION_ORDER.indexOf(stage) + 1;
+/**
+ * 这条会话的流程工作项在哪一站：第几站（后端任务状况给的 ordinal，没有时按目录里这条流程的各站数）、站名与下一站（取自活动目录，
+ * 跳过只能由用户发起的那一站）。不是流程的工作项时是 null。
+ */
+export function ownStation(stage: StageView, status?: TaskStatusView | null): { ordinal: number; name: string; next: string | null } | null {
+  const own = stage.work_item;
+  if (!own || own.kind !== "flow" || !stage.node) return null;
+  const catalog = stage.catalog ?? status?.catalog ?? null;
+  const stations = flowStations(catalog, own.flow);
+  const at = stations.findIndex((one) => one.key === stage.node);
+  const ordinal = status?.work_items?.find((one) => one.record_id === own.record_id)?.ordinal ?? (at >= 0 ? at + 1 : null);
+  if (ordinal === null) return null;
+  return { ordinal, name: at >= 0 ? stations[at].name : activityLabel(stage.node, catalog), next: at >= 0 ? stations[at + 1]?.name ?? null : null };
+}
 
 /** 第一组「本会话的工作项」的小标题：流程写「流程名 · 所在的一站」，单项活动写活动名。 */
-export function ownItemHeading(stage: StageView): string {
+export function ownItemHeading(stage: StageView, status?: TaskStatusView | null): string {
   const own = stage.work_item!;
-  return own.kind === "flow" && stage.node ? `${own.name} · ${STAGE_NAMES[stage.node]}` : own.name;
+  const station = ownStation(stage, status);
+  return station ? `${own.name} · ${station.name}` : own.name;
 }
 
 /** 第一组卡片上的说明：流程写在第几站、做完之后助手提议进入哪一站；单项活动写做够了怎样办。 */
-export function ownItemLine(stage: StageView): string {
-  const own = stage.work_item!;
-  if (own.kind === "flow" && stage.node) {
-    const next = nextStage(stage.node);
-    return `现在在第 ${stationNumber(stage.node)} 站「${STAGE_NAMES[stage.node]}」。${next ? `完成后助手将提议进入「${STAGE_NAMES[next]}」。` : "这是最后一站，完成后请你过目。"}`;
+export function ownItemLine(stage: StageView, status?: TaskStatusView | null): string {
+  const station = ownStation(stage, status);
+  if (station) {
+    return `现在在第 ${station.ordinal} 站「${station.name}」。${station.next ? `完成后助手将提议进入「${station.next}」。` : "这是最后一站，完成后请你过目。"}`;
   }
   return "单项活动：做够了由助手在回复里汇报做完，不提议下一站；工作项照旧留着，可以接着说。";
 }
 
 /** 「继续某项活动」：关掉面板，留在本会话。 */
-export const continueLabel = (stage: StageView): string => `继续${STAGE_NAMES[stage.current as StageKey] ?? stage.work_item?.name ?? ""}`;
+export const continueLabel = (stage: StageView): string => `继续${stage.current === IDLE ? stage.work_item?.name ?? "" : activityLabel(stageActivity(stage), stage.catalog)}`;
 
 /** 「其他活动」里能点的一项：单项活动或者工作流程。 */
 export type LaunchPick = { kind: "activity"; activity: CatalogActivity } | { kind: "flow"; flow: CatalogFlow };
@@ -74,7 +88,7 @@ export function confirmPurpose(pick: LaunchPick): string {
 export function confirmEffects(pick: LaunchPick, stage: StageView | null | undefined, status: TaskStatusView | null): { label: string; text: string }[] {
   const own = stage?.work_item ?? null;
   const here = own
-    ? `不受影响：「${own.name}」${own.kind === "flow" && stage?.node ? `仍在「${STAGE_NAMES[stage.node]}」` : "照旧留着"}；本会话留在会话菜单里，随时回来。`
+    ? `不受影响：「${own.name}」${stage && ownStation(stage, status) ? `仍在「${ownStation(stage, status)!.name}」` : "照旧留着"}；本会话留在会话菜单里，随时回来。`
     : "不受影响：本会话是自由讨论，留在会话菜单里，随时回来。";
   const rows = [
     { label: "本会话", text: here },
@@ -98,14 +112,14 @@ export const confirmButton = (pick: LaunchPick): string => `启动${pick.kind ==
 
 /** 启动之后替用户在新会话里发的第一句话（与活动输入页没有写目标系统描述时相同）。 */
 export function confirmFirstMessage(pick: LaunchPick): string | null {
-  const key = pick.kind === "activity" ? pick.activity.key : pick.flow.start;
-  return key && key in ACTIVITY_START_TEXTS ? ACTIVITY_START_TEXTS[key as StageKey] : null;
+  const activity = pick.kind === "activity" ? pick.activity : pick.flow.nodes.find((one) => one.key === pick.flow.start);
+  return activity ? startText(activity) : null;
 }
 
 /** 发给启动接口的那几项。流程从它的起始站启动；流程现在不能启动（没有起始站）时为 null。 */
-export function confirmFields(pick: LaunchPick, scope: string): { activity: string; in_flow: boolean; scope?: string } | null {
+export function confirmFields(pick: LaunchPick, scope: string): { activity: string; in_flow: boolean; flow?: string; scope?: string } | null {
   const note = scope.trim();
   const extra = note ? { scope: note } : {};
   if (pick.kind === "activity") return { activity: pick.activity.key, in_flow: false, ...extra };
-  return pick.flow.start ? { activity: pick.flow.start, in_flow: true, ...extra } : null;
+  return pick.flow.start ? { activity: pick.flow.start, in_flow: true, flow: pick.flow.key, ...extra } : null;
 }

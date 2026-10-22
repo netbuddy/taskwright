@@ -1,7 +1,7 @@
 /**
  * 有阶段的任务的系统提示怎样拼：按会话的三样输入选段、按固定的次序接起来。不碰 pi，挂到事件上的那一半在 hooks/stage_prompt.ts。
  *
- * 三样输入：活动的头（方式、读哪几类、写哪几类，lib/activity_def.ts）、获准能力表（这个位置助手能做哪几类写入，由任务类型的活动声明生成，lib/activity_def_read.ts）、
+ * 三样输入：活动的头（方式、读哪几类、写哪几类，lib/activity_def.ts）、获准能力（做这项活动时助手能做哪几类写入，取活动声明，lib/activity_def_read.ts 的 allowedFor）、
  * 会话的位置（工作流的工作项、单项活动的工作项、空闲）。拼出来的次序是：
  *   1 系统提示（agent/prompts/system.md）
  *   2 一段由程序生成的位置说明：本次会话在哪里、主要做什么、获准做什么（模板 stage_prompt.position）
@@ -9,7 +9,8 @@
  *   4 平台说明里条件满足的模块，按次序号
  *   5 活动模板（agent/prompts/templates/<模板>.md，「现在这个阶段」；用哪一份看活动声明的 template）
  *   6 任务类型说明的共用部分（任务 skill 的 SKILL.md 正文）
- *   7 任务类型说明里这项活动的补充（任务 skill 目录下 activities/<活动>.md 声明之后的正文，没有就没有；工作流之外去掉收尾一节）
+ *   7 任务类型说明里这项活动的补充（任务 skill 目录下 activities/<活动>.md 声明之后的正文，没有就没有；工作流之外去掉收尾一节）；
+ *     正文分了段的只放常驻段，别的段由工具附在结果后面（activitySegmentText，lib/activity_segments.ts）
  *   8 工作流声明里这一步的提示（note.<活动标识符>，写了才有）。工作流里的转移（各步、上一步、下一步、分工表）由程序从声明推出来，
  *     填进第 4 步里 planning/flow_transitions 模块的占位；单项活动的收尾与空闲的规矩也是第 4 步里的模块
  *   9 用户启动工作项时写的说明（写了才有）
@@ -34,13 +35,13 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { type ActivityDef, ASSETS, type AssetKey, DefinitionHeadError, prerequisiteText, splitHead } from "./activity_def.ts";
+import { type ActivityDef, ASSETS, type AssetKey, DefinitionHeadError, type SegmentTiming, prerequisiteText, splitHead, splitSegments } from "./activity_def.ts";
 import { assetNamesOf } from "./asset_names.ts";
-import { ACTIVITIES_SUBDIR, type Definitions, definitionsFor } from "./activity_def_read.ts";
+import { ACTIVITIES_SUBDIR, type Definitions, definitionsFor, positionOfActivity as positionFromDefinitions } from "./activity_def_read.ts";
 import { databasePath } from "./db.ts";
 import { validateDefinition } from "./definition.ts";
 import {
@@ -48,7 +49,8 @@ import {
 } from "./prompt_modules.ts";
 import { BUSY_TIMEOUT_MS } from "./schema.ts";
 import { FLOW_ANALYSIS, FLOW_NAMES, IDLE, type Position, STAGES, STAGE_NAMES, type Stage, type WriteKind, gateStage, isStage } from "./stage.ts";
-import { openActivityRecord, stageOf } from "./stage_read.ts";
+import { hasOverall } from "./overall_analysis.ts";
+import { openActivityRecord } from "./stage_read.ts";
 import { fillText } from "./texts.ts";
 
 export { PromptAssemblyError } from "./prompt_modules.ts";
@@ -316,7 +318,8 @@ function activityOf(input: ComposeInput): ActivityDef {
 /** 这次会话的三样输入合成的 Situation。 */
 export function situationOf(input: ComposeInput, activity: ActivityDef = activityOf(input)): Situation {
   if (activity.mode === "user_only") throw new PromptAssemblyError(`「${activity.name}」只能由用户发起，不是工作阶段，没有系统提示。`);
-  return { mode: activity.mode, reads: activity.reads, writes: activity.writes, allowed: definitionsOf(input).allowed[input.stage], session: sessionKind(input) };
+  // 获准写入按当前活动取（活动标识符；空闲时是 IDLE），与工具调用时的守卫、定义视图同一个来源（lib/activity_def_read.ts 的 allowedFor）。
+  return { mode: activity.mode, reads: activity.reads, writes: activity.writes, allowed: definitionsOf(input).allowedFor(input.activity ?? input.stage), session: sessionKind(input) };
 }
 
 /** 位置说明的「在哪里」那半句。 */
@@ -532,8 +535,7 @@ export function composeContext(input: ComposeInput, io: PromptIo = NODE_IO): Sta
   for (const one of byPart("task_activity")) {
     const got = readWanted(one, input, io, notes);
     if (!got) continue;
-    const body = skillBody(got.text);
-    add({ part: "task_activity", from: got.from, file: got.file, text: at.session === "flow" ? body : withoutSection(withoutSection(body, EXIT_HEADING), ENDING_HEADING) });
+    add({ part: "task_activity", from: got.from, file: got.file, text: forSession(splitSegments(skillBody(got.text)).always, at.session) });
   }
   // 8 工作流声明里这一步的提示（note.<活动标识符>），写了才有。
   if (at.session === "flow") {
@@ -545,6 +547,27 @@ export function composeContext(input: ComposeInput, io: PromptIo = NODE_IO): Sta
   // 10 pi 接的那一截
   add({ part: "tail", from: "pi", file: null, text: input.tail });
   return { stage: input.stage, text: parts.map((one) => one.text).join("\n\n"), parts, notes };
+}
+
+/** 活动补充在工作流之外（单项活动、空闲）去掉「出口」与收尾一节。 */
+function forSession(text: string, session: SessionKind): string {
+  return session === "flow" ? text : withoutSection(withoutSection(text, EXIT_HEADING), ENDING_HEADING);
+}
+
+/**
+ * 这次会话的活动补充里某个时机的那一段（lib/activity_def.ts 的分段），与拼系统提示读的是同一份文件（含调试模式的提示词目录），
+ * 同样在工作流之外去掉「出口」与收尾一节。空闲、活动没有分段、或者没有这一段时返回 null。拼不成时抛 PromptAssemblyError。
+ */
+export function activitySegmentText(input: ComposeInput, timing: SegmentTiming, io: PromptIo = NODE_IO): string | null {
+  if (input.stage === IDLE) return null;
+  const activity = activityOf(input);
+  if (!activity.segments.includes(timing)) return null;
+  const at = situationOf(input, activity);
+  const wanted = wantedFiles(input, activity, activity.template!).find((one) => one.part === "task_activity")!;
+  const got = readWanted(wanted, input, io, []);
+  if (!got) return null;
+  const text = splitSegments(skillBody(got.text)).segments[timing];
+  return text ? forSession(text, at.session) || null : null;
 }
 
 // ───────────── 缓存 ─────────────
@@ -639,29 +662,45 @@ export function whereInWorkspace(workspaceDir: string, sessionId: string | null)
     const task = db.prepare("SELECT task_id, definition_text FROM task ORDER BY started_at LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
     if (!task) return null;
     const definition = validateDefinition(JSON.parse(task.definition_text));
-    const recorded = stageOf(db, workspaceDir, task.task_id, definition, sessionId) as string | null;
-    if (recorded === null) return null;
+    // 有没有阶段与 stageOf 同一个判法；活动标识符取活动记录里的原样，不经 stageOf（它给的是活动算作的阶段，例如逆向解析算作核读）。
+    if (!hasOverall(definition.collections)) return null;
     const open = openActivityRecord(db, task.task_id, sessionId);
-    if (recorded === IDLE) return { stage: IDLE, inFlow: false, flow: null, scope: null };
-    return { stage: positionOfActivity(workspaceDir, definition.skillPath, recorded), inFlow: open !== null && open.flow !== null, flow: open?.flow ?? null,
-      scope: open?.scope ?? null, activity: recorded, assetNames: assetNamesOf(definition) };
+    if (open === null) return { stage: IDLE, inFlow: false, flow: null, scope: null };
+    return { stage: positionOfActivity(workspaceDir, definition.skillPath, open.activity), inFlow: open.flow !== null, flow: open.flow,
+      scope: open.scope ?? null, activity: open.activity, assetNames: assetNamesOf(definition) };
   } finally {
     db.close();
   }
 }
 
-/** 活动记录里的一个标识符算作哪个阶段（见 whereInWorkspace）。 */
-export function positionOfActivity(workspaceDir: string, skillPath: string, key: string): Stage {
-  let found: ActivityDef | undefined;
+/**
+ * 这条会话现在的活动补充里某个时机的那一段（activitySegmentText），按任务库里的位置与任务定义的「执行方法」找文件。
+ * 任务库不在、空闲、活动没有这一段时返回 null。
+ */
+export function activitySegmentAt(workspaceDir: string, sessionId: string | null, timing: SegmentTiming, promptDir: string | null = null): string | null {
+  const where = whereInWorkspace(workspaceDir, sessionId);
+  if (where === null || where.stage === IDLE) return null;
+  const db = new DatabaseSync(databasePath(workspaceDir), { readOnly: true, timeout: BUSY_TIMEOUT_MS });
+  let skillPath: string;
   try {
-    found = definitionsFor(workspaceDir, skillPath).activities.find((one) => one.key === key);
+    const task = db.prepare("SELECT definition_text FROM task ORDER BY started_at LIMIT 1").get() as { definition_text: string };
+    skillPath = validateDefinition(JSON.parse(task.definition_text)).skillPath;
+  } finally {
+    db.close();
+  }
+  const { stage, inFlow, flow, activity, assetNames } = where;
+  return activitySegmentText({ stage, inFlow, flow, activity: activity ?? null, ...(assetNames ? { assetNames } : {}), workspaceDir,
+    skills: [{ name: "", filePath: resolve(workspaceDir, skillPath) }], tail: "", promptDir }, timing);
+}
+
+/** 活动记录里的一个标识符算作哪个阶段（见 whereInWorkspace；算法在 lib/activity_def_read.ts）。声明读不出来、键不对时抛 PromptAssemblyError。 */
+export function positionOfActivity(workspaceDir: string, skillPath: string, key: string): Stage {
+  try {
+    return positionFromDefinitions(workspaceDir, skillPath, key);
   } catch (error) {
     if (error instanceof DefinitionHeadError) throw new PromptAssemblyError(error.message);
     throw error;
   }
-  if (found?.stage) return found.stage;
-  if (!found && isStage(key)) return key;
-  throw new PromptAssemblyError(found ? `活动「${found.name}」只能由用户发起，会话不会在它里面。` : `活动记录里的「${key}」在任务类型的活动声明里找不到，也不是阶段的键。`);
 }
 
 /** 同上，只要位置。 */
@@ -671,10 +710,20 @@ export function stageInWorkspace(workspaceDir: string, sessionId: string | null)
 
 // ───────────── 调试模式的提示词目录 ─────────────
 
+/** 一个模板目录里的 .md 文件名，按名字排；目录不在时是空的。 */
+function templateFiles(dir: string): string[] {
+  try {
+    return readdirSync(dir).filter((name) => name.endsWith(".md") && name !== "README.md").sort();
+  } catch {
+    return [];
+  }
+}
+
 /** 调试模式的提示词目录里认的全部文件名：产品自带的系统提示、每个模块、每份活动模板与工作流的定义，加上任务类型一级的几份。 */
 export function promptDirNames(platformDir: string = PROMPTS_DIR): string[] {
   const modules = loadModules(join(platformDir, CAPABILITIES_SUBDIR)).map((one) => `${CAPABILITIES_SUBDIR}/${one.file}`);
-  const templates = [...STAGES, IDLE_TEMPLATE].map((key) => `${TEMPLATES_SUBDIR}/${key}.md`);
+  // 模板清单读模板目录（模板名不必与阶段名相同：逆向解析用自己的 parse_spec 模板）。
+  const templates = templateFiles(join(platformDir, TEMPLATES_SUBDIR)).map((name) => `${TEMPLATES_SUBDIR}/${name}`);
   return [SYSTEM_FILE, ...modules, ...templates,
     `${PROMPT_DIR_TASK_SUBDIR}/${PROMPT_DIR_TASK_COMMON}`, ...STAGES.map((one) => `${PROMPT_DIR_TASK_SUBDIR}/${one}.md`)];
 }

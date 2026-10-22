@@ -6,7 +6,7 @@ import {
   DOCUMENT_REVIEWED_OPTION, DOCUMENT_REVISE_OPTION, FLOW_NAMES, clarifyKind, IDLE, IDLE_NAME, LEGACY_CARD_MOVES, REPORT_ONLY_LAMPS, STAGES, STAGE_NAMES, STAY_TEXT,
   activityDoneSentence, activityStartSentence, cardMove, flowKeyOf,
 } from "../../../agent/src/lib/stage";
-import type { Item, PositionKey, StageKey, StageLamp, StageMove, StageView } from "../api/types";
+import type { ActivityCatalog, Item, PositionKey, StageKey, StageLamp, StageMove, StageView } from "../api/types";
 
 export { STAGES, STAGE_NAMES, STAY_TEXT, clarifyKind };
 
@@ -45,15 +45,50 @@ export const isIdle = (stage: Pick<StageView, "current"> | null | undefined): bo
 export const isAlone = (stage: Pick<StageView, "current" | "node"> | null | undefined): boolean => !!stage && stage.current !== IDLE && stage.node === null;
 /** 阶段条下面、调试页签里说任务现在在哪里的那一句；任务在流程里的某个阶段时不用它。 */
 export const IDLE_TEXT = "本会话没有在进行的工作项：自由讨论，或者它的工作项已经结束。";
-export const aloneText = (stage: StageKey): string => `本会话的工作项是单项活动：${STAGE_NAMES[stage]}（不在工作流程里）。`;
+export const aloneText = (activity: string, catalog?: ActivityCatalog | null): string => `本会话的工作项是单项活动：${activityLabel(activity, catalog)}（不在工作流程里）。`;
 /** 位置给人看的名字：阶段的名字，或者「空闲」。 */
 export const positionLabel = (position: PositionKey | string): string => (position === IDLE ? IDLE_NAME : (STAGE_NAMES as Record<string, string>)[position] ?? position);
+/**
+ * 一项活动给人看的名字：先查活动目录（任务类型声明里的名字，例如 parse_spec 是「逆向解析」），查不到是阶段的名字，再查不到是活动标识符本身；
+ * 空闲是「空闲」。
+ */
+export function activityLabel(activity: string, catalog?: ActivityCatalog | null): string {
+  if (activity === IDLE) return IDLE_NAME;
+  return catalog?.activities.find((one) => one.key === activity)?.name ?? (STAGE_NAMES as Record<string, string>)[activity] ?? activity;
+}
+/** 流程的一站：活动标识符、名字、算作哪个阶段（只能由用户发起的那一站不在里面）。 */
+export type Station = { key: string; name: string; stage: StageKey | null };
+
+/**
+ * 一条流程能走的各站，按先后：取自活动目录里这条流程的 nodes，跳过只能由用户发起的那一站（发布）；目录里没有这条流程（或者没有目录）时
+ * 按六个阶段。flow 为 null 时按需求分析。
+ */
+export function flowStations(catalog: ActivityCatalog | null | undefined, flow: string | null | undefined): Station[] {
+  const declared = catalog?.flows.find((one) => one.key === (flowKeyOf(flow) ?? "analysis"));
+  if (!declared) return STAGES.map((key) => ({ key, name: STAGE_NAMES[key], stage: key }));
+  return declared.nodes.flatMap((node) => {
+    const activity = catalog!.activities.find((one) => one.key === node.key);
+    // 只能由用户发起的那一站不算；目录里没有这项活动、它又不是阶段键的也不算（为早先的目录与测试夹具：它们的活动里没有发布这一项）。
+    if (activity?.mode === "user_only" || (!activity && stageOfKey(node.key) === null)) return [];
+    return [{ key: node.key, name: node.name, stage: activity?.stage ?? stageOfKey(node.key) }];
+  });
+}
+
+/** 一项活动算作哪个阶段：活动目录里写的（声明的 stage 一栏）；目录里没有时，阶段键就是它自己，别的是 null。 */
+export function activityStage(activity: string, catalog?: ActivityCatalog | null): StageKey | null {
+  return catalog?.activities.find((one) => one.key === activity)?.stage ?? stageOfKey(activity);
+}
+
+const stageOfKey = (key: string): StageKey | null => ((STAGES as readonly string[]).includes(key) ? (key as StageKey) : null);
+
+/** 这条会话正在做的那项活动的活动标识符：后端给的 activity（早先的后端不给，按 current 算）。 */
+export const stageActivity = (stage: Pick<StageView, "current" | "activity">): string => stage.activity ?? stage.current;
 
 /** 工作视图顶栏上会话空闲时的两处字：这条会话是自由讨论（不属于任何工作项，或者归档了），与去任务起点页启动工作的那一枚。 */
 export const NO_ACTIVITY_TEXT = "自由讨论 · 不绑定活动";
 export const START_WORK_TEXT = "启动工作";
 /** 顶栏上有活动在进行时的那一处：「当前活动：整理建模」。 */
-export const currentActivityText = (position: PositionKey | string): string => `当前活动：${positionLabel(position)}`;
+export const currentActivityText = (activity: PositionKey | string, catalog?: ActivityCatalog | null): string => `当前活动：${activityLabel(activity, catalog)}`;
 
 /**
  * 工作视图顶栏上任务名与会话名后面的那一处写什么：
@@ -62,10 +97,10 @@ export const currentActivityText = (position: PositionKey | string): string => `
  *   idle   这条会话是自由讨论，写「自由讨论 · 不绑定活动」（点了同样打开面板），旁边另有一枚「启动工作」去任务起点页。
  */
 export type TopbarActivity = { kind: "plain" | "active" | "idle"; text: string };
-export function topbarActivity(task: { stage?: Pick<StageView, "current"> | null }): TopbarActivity {
+export function topbarActivity(task: { stage?: Pick<StageView, "current" | "activity" | "catalog"> | null }): TopbarActivity {
   if (!task.stage) return { kind: "plain", text: "这个任务没有阶段" };
   if (isIdle(task.stage)) return { kind: "idle", text: NO_ACTIVITY_TEXT };
-  return { kind: "active", text: currentActivityText(task.stage.current) };
+  return { kind: "active", text: currentActivityText(stageActivity(task.stage), task.stage.catalog) };
 }
 
 /**

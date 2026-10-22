@@ -40,10 +40,10 @@ describe("任务起点页的样式文件", () => {
     expect(selectorsWith("ai-line").sort()).toEqual([".tp-act.now", ".tp-cell.hot", ".tp-rw .l span.w"]);
   });
 
-  it("这一页不另写按钮与小标签的样子：只给按钮的字色，与两处主按钮（指引里的「启动需求分析」、输入页的「启动某项」）大一档的尺寸；小标签只摆位置（活动卡标题上的、会话名旁的）", () => {
+  it("这一页不另写按钮与小标签的样子：只给按钮的字色，与输入页主按钮「启动某项」大一档的尺寸；小标签只摆位置（活动卡标题上的、会话名旁的）", () => {
     const buttonRules = [...rules.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter((m) => /\.btn\b/.test(m[1])).map((m) => [m[1].trim(), m[2].trim()]);
     expect(buttonRules).toEqual([
-      [".tp-page .btn", "color: var(--ink);"], [".tp-page .btn.pri", "color: var(--on-ink);"], [".tp-cta .btn, .tp-guide-go .btn, .tp-in-go .btn", "font-size: 1rem; padding: 0.429rem 1.143rem;"]]);
+      [".tp-page .btn", "color: var(--ink);"], [".tp-page .btn.pri", "color: var(--on-ink);"], [".tp-in-go .btn", "font-size: 1rem; padding: 0.429rem 1.143rem;"]]);
     expect([...rules.matchAll(/([^{}]+)\{[^{}]*\}/g)].map((m) => m[1].trim()).filter((selector) => /\.chip\b/.test(selector))).toEqual([".tp-act .t .chip", ".tp-srow .sfirst .chip"]);
   });
 

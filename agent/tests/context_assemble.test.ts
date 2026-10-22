@@ -10,10 +10,11 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
+import { insertMaterial } from "../src/lib/material_db.ts";
 import { IDLE, STAGES, STAGE_NAMES, type Stage } from "../src/lib/stage.ts";
 import {
   ContextCache, ENV_DEBUG_SETTINGS, EXIT_HEADING, HOW_NAMES, NODE_IO, ORIGIN_NAMES, PART_NAMES, PROMPTS_DIR, PROMPT_DIR_MAX_BYTES, PromptAssemblyError, type PromptIo, REQUIRED_MODULES,
-  type StagePrompt, composeContext, debugPromptDir, digestOf, partFact, piTail, promptDirNames, scopeSection, skillBody, stageInWorkspace,
+  type StagePrompt, activitySegmentText, composeContext, debugPromptDir, digestOf, partFact, piTail, promptDirNames, scopeSection, skillBody, stageInWorkspace,
   whereInWorkspace, withoutOpening, withoutSection,
 } from "../src/lib/context_assemble.ts";
 import { STAGE_PROMPT_ERROR_TYPE, STAGE_PROMPT_STATUS_KEY, type StagePromptReport, type StopMessage, stagePromptFor } from "../src/hooks/stage_prompt.ts";
@@ -306,7 +307,9 @@ test("文件改了、模块目录里多了一份文件、任务目录里多了�
   assert.equal(cache.get(input).how, "recomposed");
   // 任务目录里这项活动的补充多了一句。
   const activity = join(skillDir, "activities", "reading.md");
-  writeFileSync(activity, `${readFileSync(activity, "utf-8")}\n补充的一句。\n`, "utf-8");
+  // 分了段的活动文件：加在常驻段末尾（第一个分段标记之前）。
+  const before = readFileSync(activity, "utf-8"), cut = before.indexOf("\n<!-- segment:");
+  writeFileSync(activity, cut < 0 ? `${before}\n补充的一句。\n` : `${before.slice(0, cut)}\n补充的一句。\n${before.slice(cut)}`, "utf-8");
   const more = cache.get(input);
   assert.equal(more.how, "recomposed");
   assert.ok(more.prompt.parts.find((one) => one.part === "task_activity")!.text.endsWith("补充的一句。"));
@@ -402,11 +405,12 @@ test("事件处理：早先的任务什么都不返回、什么都不报；读�
 
 // ───────────── 调试模式的提示词目录 ─────────────
 
-test("提示词目录认的文件名：系统提示、每个模块、七份活动模板、流程的定义，加任务类型一级的七份", () => {
+test("提示词目录认的文件名：系统提示、每个模块、模板目录里的全部活动模板（含逆向解析的 parse_spec）、加任务类型一级的七份", () => {
   const names = promptDirNames();
   assert.equal(names[0], "system.md");
   assert.equal(names.filter((one) => one.startsWith("capabilities/")).length, REQUIRED_MODULES.length);
-  assert.deepEqual(names.filter((one) => one.startsWith("templates/")), [...STAGES, "idle"].map((one) => `templates/${one}.md`));
+  // 模板清单读模板目录，按文件名排：模板名不必与阶段名相同。
+  assert.deepEqual(names.filter((one) => one.startsWith("templates/")), [...STAGES, "idle", "parse_spec"].sort().map((one) => `templates/${one}.md`));
   assert.deepEqual(names.slice(-7), ["task-type/common.md", ...STAGES.map((one) => `task-type/${one}.md`)]);
 });
 
@@ -690,4 +694,33 @@ test("工作流里的转移由程序从声明推出来：各步、上一步与�
   assert.deepEqual(kinds(prompt).slice(-2), ["task_activity", "flow_note"]);
   assert.equal(prompt.parts.at(-1)!.text, "这一步先问目标。");
   assert.ok(!kinds(composeContext({ stage: "clarifying", inFlow: false, workspaceDir: task, skills, tail: "" })).includes("flow_note"));
+});
+
+test("逆向解析的工作项：会话在哪里读出活动标识符 parse_spec 与它算作的阶段核读；位置说明写需求再工程，选的是逆向解析的声明", () => {
+  const dir = makeWorkspace(overallDefinition(), { material: true });
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  // 需求再工程要「既有规格说明」槽位里有材料：把任务里那份材料记进这个槽位。
+  insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
+  runUserOperation({ workspaceDir: dir, sessionId: CALL_SESSION }, { op_id: "ui-op-rewrite-1", kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "rewrite" } });
+  assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "reading", inFlow: true, flow: "rewrite", scope: null, activity: "parse_spec", assetNames: NAMES });
+  const run = start(dir, new ContextCache(), new WeakMap<object, any>());
+  assert.deepEqual([run.reports[0][1].stage, run.reports[0][1].in_flow], ["reading", true]);
+  const prompt = run.result!.systemPrompt;
+  assert.ok(prompt.includes("「需求再工程」") && prompt.includes("「逆向解析」"), "位置说明写的是这条工作流与这一站");
+  assert.ok(prompt.includes("## 这类任务在逆向解析阶段"), "活动补充取的是逆向解析的声明");
+  // 所用模板是逆向解析自己的 parse_spec.md；获准写入按当前活动取，含条目（与工具调用时的守卫同一个来源）。
+  assert.equal(run.reports[0][1].parts!.find((one) => one.part === "template")!.file, "agent/prompts/templates/parse_spec.md");
+  assert.ok(prompt.includes("# 现在这个阶段：逆向解析"), "模板正文是逆向解析的");
+  assert.ok(prompt.includes("写条目、改条目"), "获准写入里有条目");
+});
+
+test("逆向解析的正文：常驻段里有第零步与章节去向表，没有字段对位一段；第一次保存成功后附上的是字段对位一段", () => {
+  const input = { stage: "reading" as const, inFlow: true, flow: "rewrite", activity: "parse_spec", workspaceDir: SRS_TYPE, skills: [SRS_SKILL], tail: "" };
+  const prompt = composeContext(input).text;
+  assert.ok(prompt.includes("**第零步：先判断它是不是一份规格说明。**") && prompt.includes("（A-3、A-4）"));
+  assert.ok(prompt.includes("| 功能需求、用例、功能点表 | 功能用例条目 |") && prompt.includes("| 修订历史、参考资料、文档约定、审批页 | 不提取，在收尾汇报里写明 |"));
+  assert.ok(!prompt.includes("## 字段怎样对位") && !prompt.includes("<!-- segment:"), "字段对位一段不常驻");
+  const afterSave = activitySegmentText(input, "after_save")!;
+  assert.ok(afterSave.startsWith("## 字段怎样对位\n") && afterSave.includes("写「原文未给」四个字") && afterSave.includes("（M-5）"));
+  assert.equal(activitySegmentText(input, "after_reply"), null, "逆向解析只有保存后一段");
 });

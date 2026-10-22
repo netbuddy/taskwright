@@ -20,6 +20,7 @@ import {
   workItemSessionName, workItemSessions,
 } from "../src/lib/stage_read.ts";
 import { ToolRejection } from "../src/lib/tool_rejection.ts";
+import { insertMaterial } from "../src/lib/material_db.ts";
 import { NOT_IN_FLOW_TEXT, START_SESSION_RETIRED, UserOpError, runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, makeWorkspace, nodeMoves, overallDefinition, query } from "./helpers.ts";
 import { assetNamesOf } from "../src/lib/asset_names.ts";
@@ -126,7 +127,7 @@ test("范围说明记进工作项与事件，接在对话那一句后面；早�
   assert.equal("scope" in (events(dir, mark).at(-1)![1] as Record<string, unknown>), false);
   assert.equal(inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-3"))!.scope, null);
   // 会话的名字：单项活动是活动名，流程是流程名（不带所在的一站），写了范围说明的接前 12 个字。
-  assert.deepEqual(inDb(dir, (db) => activityRecords(db, taskId)).map(workItemSessionName), ["澄清 · 只问续借的规则", "需求分析 · 先写续借那几条。", "澄清"]);
+  assert.deepEqual(inDb(dir, (db) => activityRecords(db, taskId)).map((one) => workItemSessionName(one)), ["澄清 · 只问续借的规则", "需求分析 · 先写续借那几条。", "澄清"]);
   assert.equal(workItemSessionName({ activity: "modeling", flow: "analysis", scope: null }), "需求分析");
   assert.equal(workItemSessionName({ activity: "modeling", flow: null, scope: "只重画对象关系图，图书与副本分开建模；流程图与状态图不动。" }), "整理建模 · 只重画对象关系图，图书与");
   // 写法不对的拒绝，什么都不记：范围说明不是文字、太长；session 一项已经停用。
@@ -243,7 +244,7 @@ test("启动单项活动的前提只看数据：核读材料要有材料，整�
   // 启动流程不查前提：没有页也能从写条目这一站启动。
   assert.equal(start(dir, "s-flow", "写条目", true).note, "界面操作（不是用户打的字）：用户启动工作流程「需求分析」，从「写条目」开始。");
   const states = () => inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, null))!.catalog!.activities.map((one) => one.state);
-  assert.deepEqual(states(), ["还没有项目材料", "可以启动", "业务说明还没有内容", "业务说明还没有内容", "还没有需求条目", "还没有已确认的需求条目", "还没有评审过"]);
+  assert.deepEqual(states(), ["还没有项目材料", "可以启动", "业务说明还没有内容", "业务说明还没有内容", "还没有需求条目", "还没有已确认的需求条目", "还没有评审过", "还没有项目材料"]);
   // 另一个有材料的任务：立一页主题、写一条用例、用户看过这条用例之后，前提都够了（已废弃的页、问题条目不算数）。
   const full = workspace();
   const fullStates = () => inDb(full.dir, (db) => stageSummary(db, full.dir, full.taskId, DEFINITION, null))!.catalog!.activities.slice(0, 6).map((one) => one.state);
@@ -265,12 +266,15 @@ test("启动单项活动的前提只看数据：核读材料要有材料，整�
 
 test("拒绝：没有写活动或 in_flow；任务已经完成；早先建的任务没有阶段；助手不能启动", () => {
   const { dir, taskId } = workspace();
-  for (const fields of [{}, { activity: "澄清" }, { activity: "发布", in_flow: false }, { activity: "澄清", in_flow: "是" }]) {
+  // 写法不对时列出声明里可以启动的活动（只能由用户发起的发布不在里面）。
+  for (const fields of [{}, { activity: "澄清" }, { activity: "澄清", in_flow: "是" }]) {
     assert.throws(() => userOp(dir, "s-x", { kind: "start_activity", fields }), (error: unknown) => error instanceof UserOpError && error.code === "bad_request"
-      && /^start_activity 要在 fields 里写 activity（「核读材料」「澄清」「整理建模」「写条目」「评审确认」「编写文档」之一）与 in_flow/.test(error.message));
+      && /^start_activity 要在 fields 里写 activity（「核读材料」「澄清」「整理建模」「写条目」「评审确认」「编写文档」「逆向解析」之一）与 in_flow/.test(error.message));
   }
+  // 发布是声明里的活动，但只能由用户发起：不是写法不对，是这个版本还不能这样启动。
+  assert.deepEqual(refusedOp(() => userOp(dir, "s-x", { kind: "start_activity", fields: { activity: "发布", in_flow: false } })), ["rejected", "「发布」此版本尚未提供。"]);
   // 助手一侧没有启动的路：核心函数对助手一律不记。
-  const byExecutor = inDb(dir, (db) => startActivity(db, dir, { taskId, sessionId: "s", runId: "r1", callId: "call-x", actor: "executor" }, "clarifying", false, ""));
+  const byExecutor = inDb(dir, (db) => startActivity(db, dir, { taskId, sessionId: "s", runId: "r1", callId: "call-x", actor: "executor" }, "clarifying", null, ""));
   assert.deepEqual([byExecutor.moved, byExecutor.why], [false, "user_only"]);
   const old = workspace(demoDefinition());
   assert.deepEqual(refusedOp(() => start(old.dir, "s-z", "澄清", false)), ["rejected", "这个任务没有阶段。"]);
@@ -380,4 +384,60 @@ test("回复里的 activity_done 怎样核对：单项活动的工作项放行�
   const old = workspace(demoDefinition());
   assert.deepEqual(pair(activityDoneGate(old.dir, "s")), ["回复里写了 activity_done，而这个任务没有活动可以汇报做完", "去掉 activity_done 这一项再回复"]);
   assert.deepEqual(pair(activityDoneGate(makeWorkspace(overallDefinition()), "s"))?.[0], "回复里写了 activity_done，而这个任务没有活动可以汇报做完");
+});
+
+test("启动认声明里的活动与工作流：逆向解析不能单独启动，只能作为需求再工程的第一站启动；不写 flow 按需求分析；不是那条工作流的一站、没有的工作流、只能由用户发起的活动都拒绝；工作流互斥跨工作流照旧", () => {
+  // 单项启动逆向解析：声明为只在工作流里做（alone: no），有没有材料都拒绝，什么都不记。
+  const bare = workspace(overallDefinition(), false);
+  assert.deepEqual(refusedOp(() => start(bare.dir, "s-p", "parse_spec", false)), ["rejected", "「逆向解析」只在工作流里做，不能单独启动。"]);
+  const why = inDb(bare.dir, (db) => startActivity(db, bare.dir, { taskId: bare.taskId, sessionId: "s-p2", runId: null, callId: "ui-op-x", actor: "user" }, "parse_spec", null, ""));
+  assert.deepEqual([why.moved, why.why], [false, "not_alone"]);
+  const { dir, taskId } = workspace();
+  assert.deepEqual(refusedOp(() => start(dir, "s-alone", "逆向解析", false)), ["rejected", "「逆向解析」只在工作流里做，不能单独启动。"]);
+  assert.equal(count(dir, "activity_record"), 0, "拒绝的都没有记");
+  let before = count(dir, "event");
+
+  // 在需求再工程里从逆向解析启动：记录的所属工作流是 rewrite、所在一站是 parse_spec；按名字写活动也认。
+  // 任务里那份材料没有放进槽位：需求再工程的必填槽位「既有规格说明」还空着，启动被拒（missing_slot），什么都不记。
+  assert.deepEqual(refusedOp(() => start(dir, "s-rewrite-0", "逆向解析", true, { flow: "rewrite" })), ["rejected", "还没有上传「既有规格说明」，不能启动「需求再工程」。"]);
+  const empty = inDb(dir, (db) => startActivity(db, dir, { taskId, sessionId: "s-rewrite-1", runId: null, callId: "ui-op-y", actor: "user" }, "parse_spec", "rewrite", ""));
+  assert.deepEqual([empty.moved, empty.why, empty.slot_name], [false, "missing_slot", "既有规格说明"]);
+  assert.equal(count(dir, "activity_record"), 0);
+  // 放进「既有规格说明」槽位之后可以启动。
+  insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
+  const flow = start(dir, "s-rewrite", "逆向解析", true, { flow: "rewrite" });
+  assert.equal(flow.note, "界面操作（不是用户打的字）：用户启动工作流程「需求再工程」，从「逆向解析」开始。");
+  assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "parse_spec", node: "parse_spec", flow: "rewrite", from: null, actor: "user", reason: "", run_id: null }]]);
+  const summary = inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, "s-rewrite"))!;
+  assert.deepEqual([summary.current, summary.node, summary.work_item?.kind, summary.work_item?.name], ["reading", "parse_spec", "flow", "需求再工程"]);
+
+  // 已有需求再工程的工作项：再启动需求分析被拒，写明现有的那一个（互斥不论哪条工作流）；别的两条也一样。
+  assert.deepEqual(refusedOp(() => start(dir, "s-analysis", "核读材料", true)), ["rejected",
+    "任务里已有流程工作项「需求再工程」（记录号 1，位于「逆向解析」），一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着。"]);
+  assert.equal(refusedOp(() => start(dir, "s-change", "核读材料", true, { flow: "change" }))?.[0], "rejected");
+  assert.equal(refusedOp(() => start(dir, "s-rewrite-2", "parse_spec", true, { flow: "rewrite" }))?.[0], "rejected");
+
+  // 换一条会话接着做、删除：那句通知里的工作项名与站名取自声明，不写键名。
+  const continued = userOp(dir, "s-rewrite-next", { kind: "continue_activity", fields: { activity_record_id: 1 } });
+  assert.ok(continued.note.includes("「需求再工程」") && continued.note.includes("「逆向解析」") && !continued.note.includes("rewrite"), continued.note);
+  const deleted = userOp(dir, "s-rewrite", { kind: "delete_work_item", fields: { activity_record_id: 1 } });
+  assert.ok(deleted.note.includes("「需求再工程」") && !deleted.note.includes("rewrite"), deleted.note);
+
+  // 写法上的拒绝：逆向解析不是需求分析的一站、没有这条工作流、没有这项活动、单项活动写了 flow。
+  const other = workspace();
+  assert.deepEqual(refusedOp(() => start(other.dir, "s-1", "parse_spec", true, { flow: "analysis" })), ["bad_request", "「逆向解析」不是工作流「需求分析」的一站。"]);
+  assert.deepEqual(refusedOp(() => start(other.dir, "s-2", "核读材料", true, { flow: "nothing" })), ["bad_request", "任务类型里没有叫「nothing」的工作流。"]);
+  assert.deepEqual(refusedOp(() => start(other.dir, "s-3", "没有这项", false)), ["bad_request", "任务类型里没有叫「没有这项」的活动。"]);
+  assert.deepEqual(refusedOp(() => start(other.dir, "s-4", "澄清", false, { flow: "analysis" })), ["bad_request", "单项活动不写 flow。"]);
+  // 核心函数给的原因：只能由用户发起的发布、没有的工作流、不是一站。
+  const who = { taskId: other.taskId, sessionId: "s-5", runId: null, callId: "ui-op-y", actor: "user" as const };
+  assert.deepEqual(inDb(other.dir, (db) => [startActivity(db, other.dir, who, "publish", null, "").why, startActivity(db, other.dir, who, "publish", "analysis", "").why,
+    startActivity(db, other.dir, who, "reading", "nothing", "").why, startActivity(db, other.dir, who, "parse_spec", "analysis", "").why]),
+  ["not_startable", "not_startable", "unknown_flow", "not_a_step"]);
+  assert.equal(count(other.dir, "activity_record"), 0, "拒绝的都没有记");
+
+  // in_flow 为真、不写 flow：与早先一样记成需求分析，事件内容逐字段相同。
+  before = count(other.dir, "event");
+  start(other.dir, "s-6", "核读材料", true);
+  assert.deepEqual(events(other.dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "reading", node: "reading", flow: "analysis", from: null, actor: "user", reason: "", run_id: null }]]);
 });

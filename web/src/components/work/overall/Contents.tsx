@@ -9,6 +9,8 @@ import { useState } from "react";
 import type { Task } from "../../../api/types";
 import { CHAPTER_DECISIONS, CHAPTER_FLOWS, CHAPTER_OBJECTS, CHAPTER_RULES, GLOSSARY_NAME, INTRO_NAME, UNSORTED_NAME, type Toc, tocTotals } from "../../../model/chapters";
 import { STATE_TEXT, isDeprecated, titleOf, topicState, type TopicState } from "../../../model/overall";
+import { outlineTree } from "../../../model/outlineTree";
+import { OutlineContents } from "./OutlineContents";
 
 /** 中栏右边现在显示的不是某一节时，显示的是哪一样：某一章的章首页，或者术语表。 */
 export type HeadView = { kind: "chapter"; no: number } | { kind: "glossary" } | { kind: "loose" };
@@ -35,6 +37,9 @@ export function Contents({ task, contents, current, head, onOpen, onHead, onRete
 }) {
   // 第 3 章的各节收起了没有。缺省展开。
   const [flowsFolded, setFlowsFolded] = useState(false);
+  // 任务类型有分析提纲：目录按提纲画（维度、提纲条目与挂在下面的页），不按章。
+  const tree = outlineTree(task);
+  if (tree) return <OutlineContents task={task} tree={tree} current={current} onOpen={onOpen} onRetell={onRetell} retellOff={retellOff} />;
   const sum = tocTotals(task, contents);
   const views = task.overall_views ?? null;
   const pageCount = contents.chapters.reduce((n, one) => n + one.sections.length, 0) + contents.unsorted.length;

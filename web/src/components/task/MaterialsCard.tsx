@@ -25,7 +25,7 @@ export function pdfSummary(pdf: { pages: number; no_text_pages: number[] }): str
   return `${pdf.pages} 页${pdf.no_text_pages.length > 0 ? `，其中 ${pdf.no_text_pages.length} 页没有可读的文字` : ""}`;
 }
 
-export function MaterialsCard({ taskId, materials, info, onView, onChanged, title = "材料", aside, intro, marked = false }: {
+export function MaterialsCard({ taskId, materials, info, onView, onChanged, title = "材料", aside, intro, marked = false, slot, upload = true, replace = true, testId = "materials-card", emptyText = "这个任务还没有材料。" }: {
   taskId: string;
   /** 用户放进来的材料（不含由 Word 材料生成的文件）。 */
   materials: Material[];
@@ -41,17 +41,27 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
   intro?: ReactNode;
   /** 这张卡是不是页面现在要用户先看的那一块：是的话描黑边。 */
   marked?: boolean;
+  /** 这张卡上传的材料放进哪个槽位（活动输入页按槽位分块时给）；不给是不经槽位上传。 */
+  slot?: string;
+  /** 有没有上传区。 */
+  upload?: boolean;
+  /** 有没有「替换」：一个值管整张卡，或者按每份材料定（输入页按槽位分块时，没有放进槽位的材料不能替换：替换会沿用空的槽位）。 */
+  replace?: boolean | ((material: Material) => boolean);
+  testId?: string;
+  /** 清单是空的时那一句；按槽位分块的卡写「还没有放进这一块的材料。」。 */
+  emptyText?: string;
 }) {
-  const ops = useMaterialOps(taskId, info, onChanged);
+  const ops = useMaterialOps(taskId, info, onChanged, slot);
+  const canReplace = (m: Material) => (typeof replace === "function" ? replace(m) : replace);
 
   return (
-    <section className={`tp-pane${marked ? " marked" : ""}`} aria-label={title} data-testid="materials-card">
+    <section className={`tp-pane${marked ? " marked" : ""}`} aria-label={title} data-testid={testId}>
       <div className="tp-sec-h">
         <h2><FileTextOutlined className="tp-hic" />{title}</h2><span className="cnt" data-testid="material-count">{materials.length} 份</span>
         {aside && <span className="aside">{aside}</span>}
       </div>
       {intro}
-      {materials.length === 0 ? <div className="tp-none">这个任务还没有材料。</div> : (
+      {materials.length === 0 ? <div className="tp-none">{emptyText}</div> : (
         <table className="tp-mtable">
           <thead><tr><th>名称</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
           <tbody>
@@ -60,13 +70,14 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
                 <td className="nm">
                   {/\.docx$/i.test(m.path) ? <FileWordOutlined className="fic" /> : /\.pdf$/i.test(m.path) ? <FilePdfOutlined className="fic" /> : <FileTextOutlined className="fic" />}{fileName(m.path)}
                   {m.pdf && <span className="tp-mnote" data-testid="material-pdf">{pdfSummary(m.pdf)}</span>}
+                  {m.role && <span className="tp-mrole" data-testid="material-role">{m.role}</span>}
                 </td>
                 <td className="num">{formatBytes(m.bytes)}</td>
                 <td className="num">{formatTimeShort(m.modified_at)}</td>
                 <td>
                   <a className="tp-lnk" role="button" onClick={() => onView(m)} data-testid="material-view">查看</a>
-                  {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.replace(m.path)} data-testid="material-replace">替换</a>}
-                  {!m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
+                  {canReplace(m) && m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.replace(m.path)} data-testid="material-replace">替换</a>}
+                  {canReplace(m) && !m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
                   {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.remove(m.path)} data-testid="material-delete">删除</a>}
                 </td>
               </tr>
@@ -74,7 +85,7 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
           </tbody>
         </table>
       )}
-      <div className="tp-drop">
+      {upload && <div className="tp-drop">
         {/* 可以一次选几份。filter: "native" 只让文件选择框按类型过滤：拖进来的几份照样交给上传处理，类型不符的由它报那句话，
             不被悄悄丢掉（多选时上传组件默认按 accept 筛掉拖进来的文件）。 */}
         <Upload.Dragger
@@ -86,7 +97,7 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
           <UploadOutlined className="up" />
           <span data-testid="upload-hint">{uploadHintText(info)}</span>
         </Upload.Dragger>
-      </div>
+      </div>}
       {ops.elements}
     </section>
   );

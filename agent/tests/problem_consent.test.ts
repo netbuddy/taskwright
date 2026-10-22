@@ -108,7 +108,7 @@ test("以最近一次点击为准：先点「已解决」，后来在新卡片�
   assert.match(settle(dir, "已解决", clicks, "TBD-002").text, /修改了条目 TBD-002/);
 });
 
-test("问别的事的请选择（选项不是这三个）点名了问题条目，不顶替先前的点击", () => {
+test("问别的事的请选择（选项不是这三个）点名了问题条目：点了就算回答了这个问题，改为已解决照样放行", () => {
   const dir = workspace();
   const other = [{ key: "a", text: "允许" }, { key: "b", text: "不允许" }];
   const clicks = problemClicksOn(dir, SESSION, [
@@ -116,6 +116,20 @@ test("问别的事的请选择（选项不是这三个）点名了问题条目�
     problemCard("k2", TBD1, other), ...cardClick("k2", "b", "不允许"),
   ]);
   assert.match(settle(dir, "已解决", clicks).text, /修改了条目 TBD-001/);
+});
+
+test("问答卡片点名了缺口的问题条目：用户点了任一候选就算作答，可以改为已解决，作答后重写牵涉的页不算过期；只打字、改为用户决定保留都不行", () => {
+  const dir = workspace();
+  const gap = [{ key: "a", text: "费用分散最要紧" }, { key: "b", text: "权限与日志各自为政" }];
+  const clicks = problemClicksOn(dir, SESSION, [userEntry("好"), problemCard("k1", TBD1, gap), ...cardClick("k1", "b", "权限与日志各自为政")]);
+  // 作答之后助手重写牵涉的 UC-001，再关缺口：放行。
+  saveRevision(call(dir, clicks), { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 步骤: ["输入口令", "核对权限"] } }] });
+  assert.match(refused(() => settle(dir, "用户决定保留", clicks)), /用户还没有在问 TBD-001 是否已解决的卡片上点/);
+  assert.match(settle(dir, "已解决", clicks).text, /修改了条目 TBD-001/);
+  // 只在卡片里打字（没有点击）不算作答。
+  const other = workspace();
+  const typed = problemClicksOn(other, SESSION, [userEntry("好"), problemCard("k1", TBD1, gap), userEntry("我觉得都要紧")]);
+  assert.match(refused(() => settle(other, "已解决", typed)), /用户还没有在问 TBD-001 是否已解决的卡片上点「已解决」/);
 });
 
 test("一张卡片问两个问题：一次点击对两条都算", () => {

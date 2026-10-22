@@ -4,7 +4,7 @@
 // 任务没有阶段（早先建的任务）时不画这一行。
 
 import type { Item, StageKey, StageView } from "../../api/types";
-import { IDLE_TEXT, aloneText, isAlone, isIdle, lampGroups, lampShort, lampTarget, splitNumbers, stageMarks } from "../../model/stage";
+import { IDLE_TEXT, aloneText, isAlone, isIdle, lampGroups, lampShort, lampTarget, splitNumbers, stageActivity, stageMarks } from "../../model/stage";
 
 export function StageBar({ stage, items, onOpenItem, onOpenMaterial }: {
   stage: StageView | null | undefined;
@@ -35,7 +35,7 @@ export function StageBar({ stage, items, onOpenItem, onOpenMaterial }: {
           </span>
         ))}
       </div>
-      {(idle || alone) && <div className="sb-lamps" data-testid="stage-position"><span className="sb-lamp none">{idle ? IDLE_TEXT : aloneText(stage.current as StageKey)}</span></div>}
+      {(idle || alone) && <div className="sb-lamps" data-testid="stage-position"><span className="sb-lamp none">{idle ? IDLE_TEXT : aloneText(stageActivity(stage), stage.catalog)}</span></div>}
       {!idle && <div className="sb-lamps" data-testid="stage-lamps">
         {applicable === 0 ? <span className="sb-lamp none" data-testid="lamps-none">这一段还没有可以核对的内容。</span>
           : failing.length === 0 ? <span className="sb-lamp ok" data-testid="lamps-all-ok"><span className="sb-d" />这一段的几项都齐了。</span>

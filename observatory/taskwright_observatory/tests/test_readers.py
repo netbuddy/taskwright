@@ -665,3 +665,11 @@ class DialogueReaderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_工具结果后面附的活动规则段与工具本身的结果分开():
+    """保存修订、回复做成时平台在结果后面附上活动补充里的一段（agent/src/lib/activity_segments.ts），前面一行是分段记号。"""
+    from taskwright_observatory.runs import split_segment
+    text = "已保存为任务 T 的修订 1。\n\n<!-- activity-segment: after_save -->\n以下是这项活动接下来要用的规则。\n\n第一步。"
+    assert split_segment(text) == ("已保存为任务 T 的修订 1。", {"时机": "after_save", "文字": "以下是这项活动接下来要用的规则。\n\n第一步。"})
+    assert split_segment("已保存。") == ("已保存。", None)

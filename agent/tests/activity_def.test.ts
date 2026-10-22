@@ -13,7 +13,7 @@ import {
   parseActivityDef, parseFlowDef, prerequisiteText, splitHead,
 } from "../src/lib/activity_def.ts";
 import { definitionsFor, readDefinitions, templateWritesAllowed } from "../src/lib/activity_def_read.ts";
-import { STAGES } from "../src/lib/stage.ts";
+import { IDLE, STAGES } from "../src/lib/stage.ts";
 import { composeContext } from "../src/lib/context_assemble.ts";
 import { SRS_SKILL_DIR } from "./helpers.ts";
 
@@ -22,10 +22,10 @@ const HEAD = ["name: 核读材料", "mode: batch", "purpose: 通读材料。", "
 const withHead = (lines: readonly string[], body = "# 正文\n") => `---\n${lines.join("\n")}\n---\n\n${body}`;
 const SKILL_PATH = ".pi/skills/requirements-engineering/SKILL.md";
 
-test("需求工程的七项活动：方式、读、写、前置条件、模板与阶段照表", () => {
+test("需求工程的八项活动：方式、读、写、前置条件、模板与阶段照表；逆向解析排在发布之后", () => {
   const { activities, fallback } = readDefinitions(SRS_SKILL_DIR);
   assert.equal(fallback, false);
-  assert.deepEqual(activities.map((one) => one.key), [...ACTIVITIES]);
+  assert.deepEqual(activities.map((one) => one.key), [...ACTIVITIES, "parse_spec"]);
   const table = Object.fromEntries(activities.map((one) => [one.key, [one.name, one.mode, one.reads.join(" "), one.writes.join(" "), one.requires.join(" "), one.template, one.stage]]));
   assert.deepEqual(table, {
     reading: ["核读材料", "batch", "materials knowledge", "description", "has_materials", "reading", "reading"],
@@ -35,17 +35,18 @@ test("需求工程的七项活动：方式、读、写、前置条件、模板�
     reviewing: ["评审确认", "dialogue", "items", "review items", "has_items", "reviewing", "reviewing"],
     document: ["编写文档", "batch", "all", "description versions", "has_confirmed_items", "document", "document"],
     publish: ["发布", "user_only", "all", "versions", "no_open_findings confirmations_clear", null, null],
+    parse_spec: ["逆向解析", "batch", "materials", "description items", "has_materials", "parse_spec", "reading"],
   });
   for (const one of activities) assert.ok(one.purpose.endsWith("。") && one.example.endsWith("。"), one.key);
 });
 
-test("获准能力表由活动声明生成：六个阶段取各自代表活动的 writes_allowed，空闲取空闲模板头；与原来手写的表相同", () => {
-  const { activities, allowed } = readDefinitions(SRS_SKILL_DIR);
+test("获准能力由活动声明给出：六个阶段的活动各取自己的 writes_allowed，空闲取空闲模板头；与原来手写的表相同", () => {
+  const { activities, allowedFor } = readDefinitions(SRS_SKILL_DIR);
   assert.deepEqual(Object.fromEntries(activities.map((one) => [one.key, one.writesAllowed.join(" ")])), {
     reading: "page problem", clarifying: "page problem", modeling: "page problem diagram", writing: "page problem diagram item review",
-    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "",
+    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "", parse_spec: "page problem item",
   });
-  assert.deepEqual(allowed, {
+  assert.deepEqual(Object.fromEntries([...STAGES, IDLE].map((key) => [key, allowedFor(key)])), {
     reading: ["page", "problem"], clarifying: ["page", "problem"], modeling: ["page", "problem", "diagram"],
     writing: ["page", "problem", "diagram", "item", "review"], reviewing: ["page", "problem", "diagram", "item", "review", "publish"],
     document: ["page", "problem", "publish"], idle: ["page", "problem"],
@@ -66,10 +67,10 @@ test("活动声明的 writes_allowed 超出它所用模板头里的那一栏时�
   }
 });
 
-test("需求工程的两条流程：各步与前置条件；需求分析没有前置条件，需求变更要有已发布的版本", () => {
+test("需求工程的三条流程：各步与前置条件；需求分析与需求再工程没有前置条件，需求变更要有已发布的版本", () => {
   const { flows } = readDefinitions(SRS_SKILL_DIR);
-  assert.deepEqual(flows.map((one) => one.key), ["analysis", "change"]);
-  const [analysis, change] = flows;
+  assert.deepEqual(flows.map((one) => one.key), ["analysis", "change", "rewrite"]);
+  const [analysis, change, rewrite] = flows;
   assert.deepEqual([analysis.key, analysis.name], ["analysis", "需求分析"]);
   assert.deepEqual(analysis.steps, [...STAGES, "publish"]);
   assert.deepEqual(analysis.requires, []);
@@ -77,7 +78,77 @@ test("需求工程的两条流程：各步与前置条件；需求分析没有�
   assert.equal(change.name, "需求变更");
   assert.deepEqual(change.steps, ["reading", "modeling", "writing", "reviewing", "document", "publish"]);
   assert.deepEqual(change.requires, ["has_version"]);
+  assert.equal(rewrite.name, "需求再工程");
+  assert.deepEqual(rewrite.steps, ["parse_spec", ...STAGES, "publish"]);
+  assert.deepEqual(rewrite.requires, []);
+  assert.deepEqual(rewrite.slots.map((one) => [one.key, one.accepts, one.required, one.role]),
+    [["spec", "materials", true, "既有规格说明"], ["evidence", "materials", false, "证据"], ["goal", "text", false, null]]);
+  assert.deepEqual([analysis.slots, change.slots], [[], []]);
+  // 各条流程的处境（起点页「工作流程」标题下的标签）。
+  assert.deepEqual(flows.map((one) => one.cases), [["我有调研材料", "我只有口头想法"], ["已发布过，现在要改"], ["我有一份旧版规格说明"]]);
   for (const one of flows) for (const field of [one.purpose, one.applies, one.inputs, one.example]) assert.ok(field.length > 0, one.key);
+});
+
+test("能不能单独启动：alone 一栏不写或者空着是能，写 yes、no 各对，别的值报错；只看声明本身；需求工程里只有逆向解析不能单独启动", () => {
+  const head = ["name: 澄清", "mode: dialogue", "purpose: 目的。", "reads: description", "writes: description", "writes_allowed: page, problem", "requires:",
+    "example: 例子。", "template: clarifying", "stage: clarifying"];
+  const parse = (lines: string[]) => parseActivityDef(withHead(lines), "clarifying", "activities/clarifying.md");
+  assert.deepEqual([parse(head).alone, parse([...head, "alone:"]).alone, parse([...head, "alone: yes"]).alone, parse([...head, "alone: no"]).alone], [true, true, true, false]);
+  assert.throws(() => parse([...head, "alone: maybe"]), (error: Error) => error instanceof DefinitionHeadError && /「alone」写的是「maybe」，只能是 yes、no 之一/.test(error.message));
+  // 发布不写这一栏：按声明算是能单独启动，它能不能启动另由 mode（只能由用户发起）管。
+  assert.deepEqual(readDefinitions(SRS_SKILL_DIR).activities.map((one) => [one.key, one.alone]), [["reading", true], ["clarifying", true], ["modeling", true],
+    ["writing", true], ["reviewing", true], ["document", true], ["publish", true], ["parse_spec", false]]);
+});
+
+test("逆向解析算作核读材料阶段、用自己的 parse_spec 模板，但核读材料阶段的代表仍是 reading：前六项仍是六个阶段的键", () => {
+  const { activities, allowedFor } = readDefinitions(SRS_SKILL_DIR);
+  const parse = activities.find((one) => one.key === "parse_spec")!;
+  assert.deepEqual([parse.name, parse.stage, parse.template, parse.requires], ["逆向解析", "reading", "parse_spec", ["has_materials"]]);
+  assert.deepEqual(templateWritesAllowed("parse_spec"), ["page", "problem", "item"]);
+  assert.deepEqual(activities.slice(0, STAGES.length).map((one) => one.key), [...STAGES]);
+  assert.deepEqual(allowedFor("reading"), ["page", "problem"]);
+});
+
+test("获准写入按当前活动取（allowedFor）：逆向解析是页、问题、条目；核读是页、问题；空闲取空闲模板；认不出的阶段键取那个阶段的代表活动，别的键报错", () => {
+  const defs = readDefinitions(SRS_SKILL_DIR);
+  assert.deepEqual([defs.allowedFor("parse_spec"), defs.allowedFor("reading"), defs.allowedFor(IDLE)], [["page", "problem", "item"], ["page", "problem"], ["page", "problem"]]);
+  // 既不是声明里的活动、也不是阶段键：报错。
+  assert.throws(() => defs.allowedFor("nothing"), (error: Error) => error instanceof DefinitionHeadError && error.message === "活动记录里的「nothing」在任务类型的活动声明里找不到。");
+  // 阶段键而声明里没有同名的活动（早先的记录写的是阶段键，任务类型里那个阶段的活动另起了名字）：取算作这个阶段的代表活动。
+  const dir = mkdtempSync(join(tmpdir(), "allowed-for-"));
+  try {
+    cpSync(SRS_SKILL_DIR, dir, { recursive: true });
+    cpSync(join(dir, "activities", "modeling.md"), join(dir, "activities", "modeling_v2.md"));
+    rmSync(join(dir, "activities", "modeling.md"));
+    rmSync(join(dir, "flows"), { recursive: true, force: true });  // 工作流的各步写的是 modeling，这里只看获准写入
+    const renamed = readDefinitions(dir);
+    assert.deepEqual([renamed.allowedFor("modeling"), renamed.allowedFor("modeling_v2")], [["page", "problem", "diagram"], ["page", "problem", "diagram"]]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("逆向解析的 writes_allowed 不超出 parse_spec 模板头：写了 diagram 读声明报错", () => {
+  const dir = mkdtempSync(join(tmpdir(), "parse-spec-"));
+  try {
+    cpSync(SRS_SKILL_DIR, dir, { recursive: true });
+    const file = join(dir, "activities", "parse_spec.md");
+    writeFileSync(file, readFileSync(file, "utf-8").replace("writes_allowed: page, problem, item", "writes_allowed: page, problem, item, diagram"));
+    assert.throws(() => readDefinitions(dir), (error: Error) => error instanceof DefinitionHeadError
+      && error.message === "activities/parse_spec.md 的声明里「writes_allowed」写了 diagram，超出了它所用的模板 parse_spec.md 头里写的（page、problem、item）。");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("要不要过最低门：gate_viewed_page 一栏不写或者空着是要，写 yes、no 各对，别的值报错；需求工程里只有逆向解析写 no", () => {
+  const head = ["name: 写条目", "mode: batch", "purpose: 目的。", "reads: description", "writes: items", "writes_allowed: page, problem, item", "requires:",
+    "example: 例子。", "template: writing", "stage: writing"];
+  const parse = (lines: string[]) => parseActivityDef(withHead(lines), "writing", "activities/writing.md");
+  assert.deepEqual([parse(head).gateViewedPage, parse([...head, "gate_viewed_page:"]).gateViewedPage, parse([...head, "gate_viewed_page: yes"]).gateViewedPage,
+    parse([...head, "gate_viewed_page: no"]).gateViewedPage], [true, true, true, false]);
+  assert.throws(() => parse([...head, "gate_viewed_page: 0"]), (error: Error) => error instanceof DefinitionHeadError && /「gate_viewed_page」写的是「0」/.test(error.message));
+  assert.deepEqual(readDefinitions(SRS_SKILL_DIR).activities.filter((one) => !one.gateViewedPage).map((one) => one.key), ["parse_spec"]);
 });
 
 test("六类资产的键是平台定的、名字由任务定义给；前置条件各有给人看的名字；几个前置条件合成一句", () => {
@@ -143,6 +214,37 @@ test("流程的声明缺栏、各步不认、同一项写两次、提示指到�
   assert.throws(() => parse([...head, "note.publish: 不在里面。"]), /「note.publish」说的「publish」不在「steps」里/);
 });
 
+test("流程的处境：cases 一栏可以不写（空的），写了按中文或英文分号拆成短句、去掉首尾空白；拆出空句报错", () => {
+  const head = ["flow: analysis", "name: 需求分析", "purpose: 目的。", "applies: 适用。", "steps: reading, clarifying", "inputs: 输入。", "requires:", "example: 示例。"];
+  const parse = (lines: string[]) => parseFlowDef(withHead(lines), "analysis", "flows/analysis.md", ["reading", "clarifying", "publish"]);
+  assert.deepEqual(parse(head).cases, []);
+  assert.deepEqual(parse([...head, "cases:"]).cases, []);
+  assert.deepEqual(parse([...head, "cases: 我有调研材料； 我只有口头想法 ;已发布过，现在要改"]).cases, ["我有调研材料", "我只有口头想法", "已发布过，现在要改"]);
+  for (const value of ["我有调研材料；；我只有口头想法", "我有调研材料；", "；我有调研材料"]) {
+    assert.throws(() => parse([...head, `cases: ${value}`]), (error: Error) => error instanceof DefinitionHeadError && /「cases」有空句/.test(error.message), value);
+  }
+});
+
+test("流程的槽位：slot.<键> 一行一个，按头里的先后；没有槽位行的流程是空的；重键、accepts 不认、收材料缺角色、required 不认、收文字带角色都报错", () => {
+  const head = ["flow: analysis", "name: 需求分析", "purpose: 目的。", "applies: 适用。", "steps: reading, clarifying", "inputs: 输入。",
+    "slot.spec: name=既有规格说明; accepts=materials; required=true; role=既有规格说明", "slot.goal: name=目标系统描述; accepts=text; required=false; role=",
+    "slot.note: name=备注; accepts=text; required=false", "requires:", "example: 示例。"];
+  const parse = (lines: string[]) => parseFlowDef(withHead(lines), "analysis", "flows/analysis.md", ["reading", "clarifying", "publish"]);
+  assert.deepEqual(parse(head).slots, [
+    { key: "spec", name: "既有规格说明", accepts: "materials", required: true, role: "既有规格说明" },
+    { key: "goal", name: "目标系统描述", accepts: "text", required: false, role: null },
+    { key: "note", name: "备注", accepts: "text", required: false, role: null }]);
+  assert.deepEqual(parse(head.filter((line) => !line.startsWith("slot."))).slots, []);
+  const spec = (value: string) => head.map((line) => (line.startsWith("slot.spec:") ? `slot.spec: ${value}` : line));
+  const wrong = (lines: string[], pattern: RegExp) => assert.throws(() => parse(lines), (error: Error) => error instanceof DefinitionHeadError && pattern.test(error.message), String(pattern));
+  wrong([...head.slice(0, 7), "slot.spec: name=又一个; accepts=materials; required=false; role=证据", ...head.slice(7)], /「slot\.spec」写了两次/);
+  wrong(spec("name=既有规格说明; accepts=files; required=true; role=既有规格说明"), /「slot\.spec」的 accepts 写的是「files」/);
+  wrong(spec("name=既有规格说明; accepts=materials; required=true; role="), /「slot\.spec」收材料，要写 role/);
+  wrong(spec("name=既有规格说明; accepts=materials; required=yes; role=既有规格说明"), /「slot\.spec」的 required 写的是「yes」/);
+  wrong(head.map((line) => (line.startsWith("slot.goal:") ? "slot.goal: name=目标系统描述; accepts=text; required=false; role=证据" : line)), /「slot\.goal」收文字，role 要空着/);
+  wrong(spec("accepts=materials; name=既有规格说明; required=true; role=既有规格说明"), /「slot\.spec」第 1 项应当是「name=…」/);
+});
+
 /** 产品自带的需求工程 skill 目录的一份拷贝，在一个临时的任务目录里。 */
 function skillCopy(): { root: string; skill: string } {
   const root = mkdtempSync(join(tmpdir(), "activity-def-"));
@@ -162,7 +264,9 @@ test("从目录里读：六个阶段各至少要有一项活动（可以有几�
     const interview = join(skill, "activities", "interview.md");
     writeFileSync(interview, readFileSync(join(skill, "activities", "reading.md"), "utf-8").replace("name: 核读材料", "name: 访谈"));
     const both = readDefinitions(skill).activities;
-    assert.deepEqual([both[0].key, both.at(-1)!.key, both.at(-1)!.stage], ["reading", "interview", "reading"]);
+    const added = both.findIndex((one) => one.key === "interview");
+    assert.deepEqual([both[0].key, both[added].stage], ["reading", "reading"]);
+    assert.ok(added > both.findIndex((one) => one.key === "publish"), "排在发布之后");
     rmSync(interview);
     rmSync(modeling);
     assert.throws(() => readDefinitions(skill), /没有算作「modeling」这个阶段的活动/);

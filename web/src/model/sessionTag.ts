@@ -17,7 +17,8 @@ export function sessionTag(session: SessionListEntry): string | null {
   if (session.work_item === undefined) return null;
   const work = session.work_item;
   if (!work) return FREE_TAG;
-  return work.kind === "flow" ? `${work.name} · ${STAGE_NAMES[work.activity]}` : work.name;
+  // 站名：后端给的活动名（取自任务类型的声明），早先的后端不给时是阶段的名字，再没有就是活动标识符本身。
+  return work.kind === "flow" ? `${work.name} · ${work.activity_name ?? (STAGE_NAMES as Record<string, string>)[work.activity] ?? work.activity}` : work.name;
 }
 
 /** 列不列归档的会话：开着时，未归档的在前（照原来的次序），归档的接在后面；关着时只有未归档的。 */

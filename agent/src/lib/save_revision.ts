@@ -85,8 +85,12 @@ import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
 import { OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
-import { type Position, itemRefusal, pageRefusal, positionName } from "./stage.ts";
-import { allowedAt, stageOf } from "./stage_read.ts";
+import { IDLE, type Position, QUESTION_KIND_FIELD, QUESTION_KIND_MISSING, QUESTION_RELATED_FIELD, itemRefusal, pageRefusal, positionName } from "./stage.ts";
+import { activityTemplateFor, allowedForActivity, gateViewedPageFor, sourcesFromRolesFor, whereActivity } from "./stage_read.ts";
+import { materialRoles } from "./material_db.ts";
+import { materialOfLocator, materialRoleOf } from "./source_roles.ts";
+import { type OutlineTitles, examplesRequiredFor, outlineTitlesFor, tableHeaderFor } from "./outline_read.ts";
+import { INSTANCE_HEAD, firstTableHeader, hasInstance, ungroundedSentences } from "./cited_sentences.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
 import { codeOf, fillText, refusalText, textPrefix } from "./texts.ts";
 import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
@@ -262,11 +266,15 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * 助手写页（OVERALL_COLLECTION 的条目）时的两条守卫，按这次传入的字段（given）判，不以合并后的页为据；before 是修改前这一页的内容，新增时为 null。
  * 一、导语页（OVERALL_FIELDS.intro 有值的页）只在编写文档里写：别的位置（空闲也算）新增导语页、把一页改成导语页、改既有导语页的字段，
  *     都拒绝；只把既有导语页停用（OVERALL_FIELDS.status 改为 STATUS_DEPRECATED），放行。
- * 二、核读材料时立的页 OVERALL_FIELDS.tags 至少一项、OVERALL_FIELDS.examples 至少一项（反例、例外也算）：只查新增的页与这次传入的
- *     这两个字段，不追溯旧页；停用的页不查。
+ * 二、核读材料时（当前活动用核读模板，readingTemplate；逆向解析用自己的模板，不查）立的页 OVERALL_FIELDS.tags 至少一项、OVERALL_FIELDS.examples 至少一项（反例、例外也算）：只查新增的页与这次传入的
+ *     这两个字段，不追溯旧页；停用的页不查。任务类型有分析提纲时（outline 不为 null）不查 OVERALL_FIELDS.examples：
+ *     要求举例的维度的页（outline_read.ts 的 examplesRequiredFor）改查正文 OVERALL_FIELDS.what 里至少一句以 INSTANCE_HEAD 起头。
+ * 三、核读材料时（同上，看 readingTemplate）写进 OVERALL_FIELDS.what 的正文逐句要有着落（lib/cited_sentences.ts）：只在任务类型有分析提纲（outline 不为 null）时查，
+ *     只查这次传入了这个字段的页；分析提纲里的维度页与元数据登记的几页固定页的正文是综合，不查；停用的页不查。
+ *     分析提纲给某个提纲条目写了表头（outline_parse.ts 的 tableHeaderFor）时，这个条目的页正文第一张表的表头要正好是那几列。
  * 任务定义里没有这几个字段（早先的任务）时，相应的那条不查。可以时返回 null。
  */
-function pageGuard(stage: Position, collection: CollectionDef, given: Fields, before: Fields | null) {
+function pageGuard(stage: Position, collection: CollectionDef, given: Fields, before: Fields | null, outline: OutlineTitles | null = null, readingTemplate = stage === "reading") {
   const has = (name: string) => collection.fields.some((field) => field.name === name);
   const { intro, status, tags, examples } = OVERALL_FIELDS;
   const words = { stage: positionName(stage), intro_field: intro, status_field: status, deprecated: STATUS_DEPRECATED };
@@ -281,10 +289,34 @@ function pageGuard(stage: Position, collection: CollectionDef, given: Fields, be
       return refusalText("save_revision.intro_page_not_now", words);
     }
   }
-  if (stage === "reading" && has(tags) && has(examples) && given[status] !== STATUS_DEPRECATED && !(before !== null && isDeprecated(before) && !(status in given))) {
-    const missing = [tags, examples].filter((name) => (before === null || name in given) && isEmptyValue(given[name]));
+  if (readingTemplate && has(tags) && has(examples) && given[status] !== STATUS_DEPRECATED && !(before !== null && isDeprecated(before) && !(status in given))) {
+    const missing = [tags, ...(outline !== null ? [] : [examples])].filter((name) => (before === null || name in given) && isEmptyValue(given[name]));
     if (missing.length > 0) {
       return refusalText("save_revision.page_needs_tag_and_example", { stage: words.stage, tags, examples, missing: missing.map((name) => `「${name}」`).join("、") });
+    }
+    const named = typeof given[OVERALL_FIELDS.title] === "string" ? given[OVERALL_FIELDS.title] : before?.[OVERALL_FIELDS.title];
+    const { what } = OVERALL_FIELDS;
+    if (outline !== null && typeof named === "string" && examplesRequiredFor(outline, named.trim()) && (before === null || what in given)
+      && !hasInstance(typeof given[what] === "string" ? given[what] as string : "")) {
+      return refusalText("save_revision.page_needs_instance", { stage: words.stage, what, head: INSTANCE_HEAD });
+    }
+  }
+  const { what, title } = OVERALL_FIELDS;
+  if (readingTemplate && outline !== null && has(what) && typeof given[what] === "string" && given[status] !== STATUS_DEPRECATED) {
+    const named = typeof given[title] === "string" ? given[title] : before?.[title];
+    const synthesis = typeof named === "string" && (outline.dimensions.includes(named.trim()) || outline.synthesisPages.includes(named.trim()));
+    const loose = synthesis ? [] : ungroundedSentences(given[what] as string);
+    if (loose.length > 0) {
+      return refusalText("save_revision.page_sentence_ungrounded", {
+        stage: words.stage, what, count: loose.length, sentences: loose.slice(0, 3).map((one) => `「${[...one].length > 40 ? `${[...one].slice(0, 40).join("")}…` : one}」`).join("、"),
+      });
+    }
+    // 提纲里给这个条目写了表头（table）：这一页正文的第一张表要正好是这几列，次序也一样。
+    const header = typeof named === "string" ? tableHeaderFor(outline, named) : null;
+    const got = header === null ? null : firstTableHeader(given[what] as string);
+    if (header !== null && (got === null || got.join("|") !== header.join("|"))) {
+      const row = `| ${header.join(" | ")} |`;
+      return refusalText("save_revision.page_table_header", { stage: words.stage, what, row, got: got === null ? fillText("part.no_table") : `| ${got.join(" | ")} |` });
     }
   }
   return null;
@@ -445,19 +477,51 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
 
   // 最低门（任务定义里有业务说明集合时才设）：助手往业务说明与问题集合之外的集合里新增条目之前，任务里要已经有一页
   // 在用的主题贴了标签、有例子、用户又看过。只看这次保存之前库里已有的页：同一批里才新增的页用户还没有看过。
-  const gate = call.actor !== ACTOR_USER && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
-  // 工作的阶段（任务有业务说明集合时才有，lib/stage.ts）：助手这一刻能写什么看这次调用所在的会话的阶段，取的是这条会话正在做的工作项（会话空闲时按澄清的规矩拦）。
+  // 工作的阶段（任务有业务说明集合时才有，lib/stage.ts）：助手这一刻能写什么看这次调用所在的会话正在做的工作项的当前活动
+  // （会话空闲时按空闲的规矩拦）；位置（它算作的阶段）只用于拒绝的文字与按阶段的那几条检查。
   // 用户在界面上的操作不看阶段。早先建的任务没有阶段，stage 是 null，下面几处都不拦。
-  const stage: Position | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition, call.sessionId) : null;
-  // 这个位置获准的写入种类取任务类型的活动声明（获准能力表）。
-  const allowed = stage === null ? null : allowedAt(call.workspaceDir, definition, stage);
+  const where = call.actor !== ACTOR_USER ? whereActivity(db, call.workspaceDir, taskId, definition, call.sessionId) : null;
+  const stage: Position | null = where?.position ?? null;
+  // 这项活动获准的写入种类取它的活动声明（lib/activity_def_read.ts 的 allowedFor）。
+  const allowed = where === null ? null : allowedForActivity(call.workspaceDir, definition, where.activity);
+  // 最低门只在当前活动的声明要它时生效（「gate_viewed_page」，逆向解析写 no）；会话空闲、读不到活动声明时照旧要。
+  const gated = where === null || where.activity === IDLE || gateViewedPageFor(call.workspaceDir, definition, where.activity);
+  const gate = call.actor !== ACTOR_USER && gated && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
+  // 核读时逐句核对正文要用分析提纲里的维度名与固定页的名字；任务类型没有分析提纲时为 null，不查。
+  // 核读模板那套做法的两条配套检查（pageGuard 的二、三）只在当前活动用核读模板时查：逆向解析算作核读阶段，
+  // 但用自己的 parse_spec 模板，照原文立页，这两条不查它。早先的记录活动标识符就是 reading，模板也是 reading，照旧查。
+  const readingTemplate = where !== null && where.activity !== IDLE && activityTemplateFor(call.workspaceDir, definition, where.activity) === "reading";
+  // 当前活动的声明限定了材料的role（「sources_from_roles」，逆向解析写既有规格说明）时，新给的「文档原文」来源所指的材料 role要在里面
+  // （lib/source_roles.ts）。知识库里的文档不是材料，不归这一条管；沿用下来的来源不重新核对。
+  const sourceRoles = where !== null && where.activity !== IDLE ? sourcesFromRolesFor(call.workspaceDir, definition, where.activity) : [];
+  const rolesOfMaterials = sourceRoles.length > 0 ? materialRoles(db) : null;
+  const checkSourceRoles = (sources: readonly Source[] | null, errors: string[]): void => {
+    if (!sources || rolesOfMaterials === null) return;
+    sources.forEach((one, index) => {
+      if (one.kind !== SOURCE_DOCUMENT || isKnowledgeLocator(one.locator)) return;
+      const material = materialOfLocator(one.locator, definition.materialsDir);
+      const role = materialRoleOf(rolesOfMaterials, material);
+      if (sourceRoles.includes(role)) return;
+      errors.push(problem(refusalText("source.material_role", {
+        where: fillText("part.source_no", { no: index + 1 }), material, role, roles: sourceRoles.map((name) => `「${name}」`).join("、"),
+      })));
+    });
+  };
+  // 字段写了「原文未给」的条目（助手写的，问题集合之外）：这一批全部核对通过之后，看它们各有没有种类为缺失、关联它的问题条目。
+  const unstated: { label: string; itemId: string; fields: string[] }[] = [];
+  const noteUnstated = (label: string, itemId: string | undefined, collection: CollectionDef, fields: Fields): void => {
+    if (call.actor === ACTOR_USER || itemId === undefined || keepPendingField(collection) !== null) return;
+    const hit = Object.keys(fields).filter((name) => isUnstated(fields[name]));
+    if (hit.length > 0) unstated.push({ label, itemId, fields: hit });
+  };
+  const outline = readingTemplate ? outlineTitlesFor(call.workspaceDir, definition.skillPath) : null;
   /**
    * 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改业务说明的页时改动了的字段名；
    * given 是这次传入的字段，before 是修改前这一页的内容（新增时为 null）：页的两条守卫（pageGuard）按它们判。
    */
   const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = [], given: unknown = undefined, before: Fields | null = null) => {
     if (stage === null || allowed === null) return null;
-    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before) : null);
+    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before, outline, readingTemplate) : null);
     return keepPendingField(collection) === null ? itemRefusal(stage, allowed, kind, collection.name) : null;
   };
 
@@ -547,6 +611,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
         relocatedNote(number, notes));
       const fields = isObject(raw.fields) ? dropEmpty(raw.fields) : {};
       if (sources) checkSupports(collection, fields, sources, false, errors);
+      checkSourceRoles(sources, errors);
       if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER) {
         for (const one of pageProblems(fields, sources)) errors.push(problemText(one));
       }
@@ -560,6 +625,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       planned.push({ op: "add", collection, fields, sources: sources!, notes });
       const newId = [...addedAt].find(([, at]) => at === number)?.[0];
       if (newId) written.set(newId, { collection: collection.name, fields });
+      noteUnstated(label, newId, collection, fields);
       return;
     }
 
@@ -672,6 +738,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       if (removed.length) notes.push(fillText("result.save_revision.sources_relabelled", { item: itemId, count: removed.length, removed: removed.map(quoteLabel).join("、") }));
     }
     if (sources) checkSupports(collection, merged, sources, inherited, errors);
+    if (op !== "restore") checkSourceRoles(given, errors);
     if (sources && collection.name === OVERALL_COLLECTION && call.actor !== ACTOR_USER && op !== "restore") {
       for (const one of pageProblems(merged, sources)) errors.push(problemText(one));
     }
@@ -696,11 +763,62 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       notes,
     });
     written.set(itemId, { collection: row.collection, fields: merged });
+    if (op !== "restore") noteUnstated(label, itemId, collection, merged);
   });
+
+  // 「原文未给」与缺失问题配对（平台的通用规则）：写了「原文未给」的条目，这一批里或任务里要有一条种类为缺失、「关联条目」写它的问题条目。
+  // 只在别的都通过时查，免得这一批本来就要重写时多报一条。反过来（有缺失问题而条目里没有「原文未给」）不查。
+  // 问题集合里没有能填「缺失」的「种类」一栏（早先的任务定义）时无从配对，不查。
+  if (problems.length === 0 && unstated.length > 0 && canRecordMissing(definition)) {
+    const covered = missingProblemTargets(definition, items, refs, deletedHere, written);
+    for (const one of unstated) {
+      if (covered.has(one.itemId)) continue;
+      problems.push(reasonOf(one.label, one.itemId, one.fields.map((field) => problem(refusalText("save_revision.unstated_without_missing", { item: one.itemId, field })))));
+    }
+  }
 
   if (problems.length > 0) throw new SaveRejected(problems);
 
   return write(db, call, taskId, definition, planned, params);
+}
+
+/** 平台约定的占位值：材料里没有给出的字段写它（逆向解析），并要同批记一条缺失问题。 */
+export const UNSTATED_VALUE = "原文未给";
+
+/** 一个字段的值是不是「原文未给」：文字恰好是它，或者列表里有一项恰好是它。 */
+function isUnstated(value: unknown): boolean {
+  if (typeof value === "string") return value.trim() === UNSTATED_VALUE;
+  return Array.isArray(value) && value.some((one) => typeof one === "string" && one.trim() === UNSTATED_VALUE);
+}
+
+/** 任务定义的问题集合能不能记一条种类为缺失的问题：有「种类」一栏，取值里有「缺失」。 */
+function canRecordMissing(definition: TaskDefinition): boolean {
+  return definition.collections.some((one) => keepPendingField(one) !== null
+    && one.fields.some((field) => field.name === QUESTION_KIND_FIELD && (field.values ?? []).includes(QUESTION_KIND_MISSING)));
+}
+
+/**
+ * 种类为缺失的问题条目关联着的条目编号：库里没删、这一批也没删的取它现在的内容，这一批写过的取写过之后的。
+ */
+function missingProblemTargets(
+  definition: TaskDefinition, items: ReadonlyMap<string, ItemRow>, refs: RefLookups, deletedHere: ReadonlySet<string>,
+  written: ReadonlyMap<string, { collection: string; fields: Record<string, unknown> }>,
+): Set<string> {
+  const problemNames = new Set(definition.collections.filter((one) => keepPendingField(one) !== null).map((one) => one.name));
+  const ids = new Set<string>([...items.keys(), ...written.keys()]);
+  const targets = new Set<string>();
+  for (const id of ids) {
+    if (deletedHere.has(id)) continue;
+    const row = items.get(id);
+    const collection = written.get(id)?.collection ?? row?.collection;
+    if (!collection || !problemNames.has(collection)) continue;
+    if (!written.has(id) && row && row.deleted_in_revision !== null) continue;
+    const fields = refs.fieldsOf(id);
+    if (!fields || fields[QUESTION_KIND_FIELD] !== QUESTION_KIND_MISSING) continue;
+    const related = fields[QUESTION_RELATED_FIELD];
+    for (const one of Array.isArray(related) ? related : [related]) if (typeof one === "string") targets.add(one);
+  }
+  return targets;
 }
 
 /** 任务里全部条目（含已删除的），按条目编号查。 */

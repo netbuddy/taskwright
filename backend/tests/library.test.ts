@@ -83,6 +83,16 @@ test("任务定义视图带上各集合要不要评审与生效的规则清单",
   assert.deepEqual([tbd.needs_review, tbd.review_rules], [false, null]);
 });
 
+test("任务定义视图带上分析提纲的原文：任务目录里 skill 有 outline.md 就是它的全文，没有、或者没有任务目录时为 null", () => {
+  const parsed: any = { 集合: [], 完成条件: {}, 执行方法: ".pi/skills/demo/SKILL.md" };
+  const dir = join(tmp, "ws-outline");
+  mkdirSync(join(dir, ".pi", "skills", "demo", "activities"), { recursive: true });
+  assert.equal(library.definitionView(parsed, null, dir).outline, null);
+  writeFileSync(join(dir, ".pi", "skills", "demo", "outline.md"), "---\noutline: demo\n---\n\n## 背景与目标\n", "utf-8");
+  assert.equal(library.definitionView(parsed, null, dir).outline, "---\noutline: demo\n---\n\n## 背景与目标\n");
+  assert.equal(library.definitionView(parsed, null, null).outline, null);
+});
+
 test("规则指纹与 agent 同一个算法；全部规则带开关状态", () => {
   const text = JSON.stringify([{ 编号: "D-R1", 级别: "必选", 条文: "甲", 反例: "乙", 正例: "丙" }]);
   const script = `import('${join(ROOT, "agent", "src", "lib", "review_state.ts")}').then((m) => process.stdout.write(m.rulesHashText(process.argv[1], { off: ["D-R2"], promote: ["D-R3"] })))`;

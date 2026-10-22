@@ -7,7 +7,7 @@
 
 import type { KnowledgeLibrary, SessionListEntry, StageKey, StageView, Task } from "../api/types";
 import { pendingWork } from "./pendingWork";
-import { STAGES, STAGE_NAMES, reportOnlyStation, stageMarks, type StageMark } from "./stage";
+import { flowStations, reportOnlyStation, stageMarks, type StageMark } from "./stage";
 
 const STORAGE_KEY = "taskwright.leftNav";
 
@@ -61,15 +61,20 @@ export function flowProgress(stage: StageView | null | undefined, sessions: read
   const flowItem = (sessions ?? []).find((one) => !one.archived && one.work_item?.kind === "flow")?.work_item ?? null;
   const at = stage?.flow_node ?? flowItem?.activity ?? null;
   const name = (stage?.flow_node ? stage.work_item?.name : null) ?? flowItem?.name ?? null;
-  if (!stage || !at || !(at in STAGE_NAMES)) return null;
-  const index = STAGES.indexOf(at);
-  const next = STAGES[index + 1] ?? null;
-  const missing = (stage.lamps?.[at] ?? []).filter((one) => one.ok === false).length;
-  const tail = reportOnlyStation(stage.lamps?.[at]) ? [...(!next ? ["已在最后一站"] : []), "只报数，由你判断"]
+  if (!stage || !at) return null;
+  // 第几站、站名与下一站取自活动目录里这条流程的各站（跳过只能由用户发起的那一站）；灯与进度格按这一站算作的阶段（逆向解析算作核读）。
+  const stations = flowStations(stage.catalog, (stage.flow_node ? stage.work_item?.flow : null) ?? flowItem?.flow ?? null);
+  const index = stations.findIndex((one) => one.key === at);
+  const here = stations[index];
+  if (!here || !here.stage) return null;
+  const position = here.stage;
+  const next = stations[index + 1] ?? null;
+  const missing = (stage.lamps?.[position] ?? []).filter((one) => one.ok === false).length;
+  const tail = reportOnlyStation(stage.lamps?.[position]) ? [...(!next ? ["已在最后一站"] : []), "只报数，由你判断"]
     : !next ? ["已在最后一站", ...(missing > 0 ? [`还差 ${missing} 件`] : [])]
-      : [missing > 0 ? `还差 ${missing} 件才能进${STAGE_NAMES[next]}` : "这一站的几项都齐了"];
-  const line = [`第 ${index + 1} 站`, STAGE_NAMES[at], ...tail].join(" · ");
-  return { name: name || "工作流程", ordinal: index + 1, stage: at, marks: stageMarks(at), line };
+      : [missing > 0 ? `还差 ${missing} 件才能进${next.name}` : "这一站的几项都齐了"];
+  const line = [`第 ${index + 1} 站`, here.name, ...tail].join(" · ");
+  return { name: name || "工作流程", ordinal: index + 1, stage: position, marks: stageMarks(position), line };
 }
 
 /** 左栏会话列表至多先列几条，多的折成「还有 N 条」。 */

@@ -19,7 +19,9 @@ import * as exportDocx from "./export_docx.ts";
 import * as exportDocument from "./export_document_docx.ts";
 import * as versionArchive from "./version_archive.ts";
 import { DIAGRAM_KINDS, validateDiagram } from "./diagram_validate.ts";
-import { SCOPE_MAX_LENGTH, STAGE_NAMES, stageByName } from "../../agent/src/lib/stage.ts";
+import { FLOW_ANALYSIS, SCOPE_MAX_LENGTH, stageByName } from "../../agent/src/lib/stage.ts";
+import { activityNameOf } from "../../agent/src/lib/activity_def_read.ts";
+import { CATALOG_LATER } from "../../agent/src/lib/activity_catalog.ts";
 import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
@@ -208,8 +210,10 @@ function needsNewSession(body: Record<string, any>): boolean {
   const fields = body.fields;
   if (!isObject(fields)) return false;
   if (body.kind === "start_activity") {
-    const scope = fields.scope;
-    return fields.session === undefined && stageByName(fields.activity) !== null && typeof fields.in_flow === "boolean"
+    const scope = fields.scope, flow = fields.flow;
+    // flow 只在启动工作流时写（一段文字，不写按需求分析）；启动单项活动不写。activity 是哪一项由新建会话之前的核对去认。
+    const flowOk = flow === undefined || flow === null || (fields.in_flow === true && typeof flow === "string" && flow.trim() !== "");
+    return fields.session === undefined && typeof fields.activity === "string" && fields.activity.trim() !== "" && typeof fields.in_flow === "boolean" && flowOk
       && (scope === undefined || scope === null || (typeof scope === "string" && scope.trim().length <= SCOPE_MAX_LENGTH));
   }
   if (body.kind === "continue_activity") return Number.isInteger(fields.activity_record_id) && fields.activity_record_id >= 1;
@@ -217,8 +221,10 @@ function needsNewSession(body: Record<string, any>): boolean {
 }
 
 /**
- * 新建会话之前核对，不行就拒绝、不建会话。启动单项活动：这项活动现在能不能启动（任务状况里活动目录的那一项），不能就答 rejected 并写明原因。
- * 启动流程不查前提，与助手一侧相同；但任务里已有流程的工作项时答 rejected，写明现有的那一个（一个任务同一时刻至多一个流程工作项）。
+ * 新建会话之前核对，不行就拒绝、不建会话。启动：活动目录里要有这项活动（按键或名字认，早先的阶段名也认），没有答 bad_request；
+ * 只能由用户发起的那项（发布）答 rejected；声明为不能单独启动的活动（逆向解析）单项启动也答 rejected。启动单项活动：这项活动现在能不能启动（任务状况里活动目录的那一项），不能就答 rejected 并写明原因。
+ * 启动流程不查前提，与助手一侧相同；目录里要有 flow 写的那条流程（不写按需求分析）、这项活动要是它的一站，不然答 bad_request；
+ * 任务里已有流程的工作项时答 rejected，写明现有的那一个（一个任务同一时刻至多一个流程工作项）。
  * 接着做一个工作项：要有这个工作项。任务没有阶段、活动目录出不来时不在这里拒绝，交给助手一侧。
  */
 function refuseBeforeNewSession(taskDir: string, body: Record<string, any>): void {
@@ -228,16 +234,38 @@ function refuseBeforeNewSession(taskDir: string, body: Record<string, any>): voi
     if (!item) throw new ApiError("not_found", `没有记录号是 ${fields.activity_record_id} 的工作项（可能已经删除）。`);
     return;
   }
-  if (fields.in_flow !== false) {
-    const flowItem = library.workItemRows(taskDir).find((one) => one.kind === "flow");
-    if (!flowItem) return;
-    const existing = { record_id: flowItem.record_id, name: flowItem.name, node: flowItem.activity };
-    const fact = `任务里已有流程工作项「${flowItem.name}」（记录号 ${flowItem.record_id}，位于「${STAGE_NAMES[flowItem.activity]}」），` +
-      "一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着";
-    throw new ApiError("rejected", `${fact}。`, { reasons: [fact], existing });
+  const catalog = taskStatus(taskDir)?.catalog ?? null;
+  const text = String(fields.activity).trim();
+  const entry = catalog?.activities.find((one) => one.key === text || one.name === text) ?? catalog?.activities.find((one) => one.key === stageByName(text));
+  if (catalog !== null && !entry) throw new ApiError("bad_request", `任务类型里没有叫「${text}」的活动。`);
+  if (entry && entry.mode === "user_only") {
+    const fact = `「${entry.name}」${CATALOG_LATER}`;
+    throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
   }
-  const key = stageByName(fields.activity);
-  const entry = taskStatus(taskDir)?.catalog?.activities.find((one) => one.key === key);
+  // 声明为不能单独启动的活动（逆向解析）只在工作流里做：单项启动拒绝，不建会话。
+  if (fields.in_flow === false && entry && entry.alone === false) {
+    const fact = `「${entry.name}」只在工作流里做，不能单独启动`;
+    throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
+  }
+  if (fields.in_flow !== false) {
+    const flowKey = typeof fields.flow === "string" ? fields.flow.trim() : FLOW_ANALYSIS;
+    const flow = catalog?.flows.find((one) => one.key === flowKey);
+    if (catalog !== null && !flow) throw new ApiError("bad_request", `任务类型里没有叫「${flowKey}」的工作流。`);
+    if (flow && entry && !flow.nodes.some((one) => one.key === entry.key)) throw new ApiError("bad_request", `「${entry.name}」不是工作流「${flow.name}」的一站。`);
+    const flowItem = library.workItemRows(taskDir).find((one) => one.kind === "flow");
+    if (flowItem) {
+      const existing = { record_id: flowItem.record_id, name: flowItem.name, node: flowItem.activity };
+      const fact = `任务里已有流程工作项「${flowItem.name}」（记录号 ${flowItem.record_id}，位于「${activityNameOf(library.taskDefinitions(taskDir), flowItem.activity)}」），` +
+        "一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着";
+      throw new ApiError("rejected", `${fact}。`, { reasons: [fact], existing });
+    }
+    // 必填的材料槽位还空着：不能启动这条流程，不建会话。
+    if (flow?.missing_slot) {
+      const fact = `还没有上传「${flow.missing_slot}」，不能启动「${flow.name}」`;
+      throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
+    }
+    return;
+  }
   if (!entry || entry.enabled) return;
   const fact = `现在还不能启动「${entry.name}」：${entry.state}`;
   throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
@@ -674,9 +702,11 @@ const handlers: Record<string, Handler> = {
   },
   upload: async (service, req) => {
     const t = service.task(req.params.task);
-    const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
-    // PDF 材料要另起一次运行生成派生文件，等它做完才回答；别的类型当场就有结果。
-    return json(200, await service.upload(t, name, data, sessionParam(req)));
+    const form = parseMultipartForm(String(req.headers["content-type"] ?? ""), req.body);
+    if (!form.file) throw new ApiError("bad_request", "请求里没有文件。");
+    const [name, data] = form.file;
+    // 可选的文字字段 slot：放进哪个槽位（流程声明里收材料的槽位键）。PDF 材料要另起一次运行生成派生文件，等它做完才回答；别的类型当场就有结果。
+    return json(200, await service.upload(t, name, data, sessionParam(req), null, form.fields.slot ?? null));
   },
   delete_material: (service, req) => {
     const t = service.task(req.params.task);

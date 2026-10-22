@@ -166,6 +166,8 @@ export interface TaskDefinition {
   collections: CollectionDef[];
   /** 六类资产给人看的名字，由任务定义给（后端 library.ts 的 definitionView）；键是 materials、description、models、items、review、versions。 */
   asset_names?: Record<string, string>;
+  /** 任务类型的分析提纲（任务目录里 skill 的 outline.md）的原文；有它时业务说明的目录按提纲画（model/outlineTree.ts）。没有时为 null。 */
+  outline?: string | null;
 }
 
 /** 一条评审发现：依据的规则编号与级别（必选的叫问题，可选的叫建议）、字段、列表型字段的第几项（从 0 起）、问题、改法。 */
@@ -387,12 +389,16 @@ export interface StageProposal {
 
 /** 任务现在在哪个阶段、最近一次是谁在什么时候为什么移的（一次都没有移过时三项为 null），六个阶段各自的灯，以及开着的提议（没有时为 null）。 */
 export interface StageView {
-  /** 任务现在在哪个阶段；空闲时是 idle。 */
+  /** 这条会话正在做的那项活动算作哪个阶段（逆向解析算作核读）；空闲时是 idle。阶段条与进退方向按它画。 */
   current: PositionKey;
-  /** 现在这项活动在需求分析流程里的节点：在流程里时与 current 相同；用户单独开展的活动、空闲时为 null。早先的后端不给。 */
-  node?: StageKey | null;
-  /** 需求分析走到的节点；没有走过是 null。 */
-  flow_node?: StageKey | null;
+  /** 这条会话正在做的那项活动的活动标识符（例如 parse_spec）；会话空闲时为 null。取名与数站用它。早先的后端不给，按 current 算。 */
+  activity?: string | null;
+  /** 流程的工作项现在在哪一站（活动标识符）；单项活动的工作项、空闲时为 null。早先的后端不给。 */
+  node?: string | null;
+  /** 与 node 相同。 */
+  flow_node?: string | null;
+  /** 活动目录（与任务状况里的同名一项相同）；定义读不出来时为 null。早先的后端不给。 */
+  catalog?: ActivityCatalog | null;
   /** 「开展一项活动」一节现在的内容。 */
   launch?: LaunchView | null;
   moved_by: "executor" | "user" | null;
@@ -416,6 +422,10 @@ export interface Material {
   derived_from?: string | null;
   /** PDF 材料才有：页数、读出了多少块文字、没有读出文字的是哪几页（页码，多半是扫描件；都读出了时是空的）。 */
   pdf?: { pages: number; units: number; no_text_pages: number[] } | null;
+  /** 放进哪个槽位（流程声明里的槽位键）；不经槽位上传的、升级前就有的为 null。早先的后端不给。 */
+  slot?: string | null;
+  /** 角色：槽位的 role；不经槽位上传的、升级前就有的是「证据」。派生文件取它所由生成的那份材料的。早先的后端不给。 */
+  role?: string;
   /** 现在能不能删除（只有任务详情里给）：任务进行中、不是派生文件、还没有进入对话（上传之后没有任何会话有过活动）。能不能替换也看它。 */
   deletable?: boolean;
 }
@@ -441,7 +451,7 @@ export interface SessionListEntry extends SessionInfo {
   /** 这条会话产生了几次修订；旧后端没有这一项。 */
   revision_count?: number;
   /** 这条会话属于的工作项；自由讨论的会话、归档的会话为 null。早先的后端不给。 */
-  work_item?: { record_id: number; kind: "flow" | "activity"; name: string; activity: StageKey; flow: string | null } | null;
+  work_item?: { record_id: number; kind: "flow" | "activity"; name: string; activity: string; activity_name?: string; flow: string | null } | null;
   /** 带 archived=1 取清单时才有：是不是归档的会话（它的工作项被删除了）、归档的时刻、它曾属于的那个已经删除的工作项的记录号。 */
   archived?: boolean;
   archived_at?: string | null;
@@ -455,8 +465,10 @@ export interface WorkItemBrief {
   kind: "flow" | "activity";
   /** 工作项的名字：流程的名字或者活动的名字。 */
   name: string;
-  /** 现在做的是哪一项活动。 */
-  activity: StageKey;
+  /** 现在做的是哪一项活动：任务类型声明里的活动标识符（例如 parse_spec）；早先的工作项是六个阶段键之一。 */
+  activity: string;
+  /** 那项活动的名字（取自任务类型的声明）。早先的后端不给。 */
+  activity_name?: string;
   flow: string | null;
   scope: string | null;
   started_at: string | null;
@@ -465,8 +477,8 @@ export interface WorkItemBrief {
 /** 任务状况里的一个工作项（work_items 的每一项）。 */
 export interface WorkItemView extends WorkItemBrief {
   activity_name: string;
-  /** 流程的工作项现在在哪一站，与那一站是第几站；单项活动的为 null。 */
-  node: StageKey | null;
+  /** 流程的工作项现在在哪一站（活动标识符），与那一站在所属流程各站里是第几站；单项活动的为 null。 */
+  node: string | null;
   ordinal: number | null;
   /** 属于它的会话（按挂上的先后）与条数。 */
   session_ids: string[];
@@ -498,7 +510,12 @@ export interface Act {
   kind: ActKind;
   text: string;
   items?: ActItemRef[];
-  options?: { key: string; text: string }[];
+  /** 请选择的选项；reason 是这一项的出处或理由，写了的卡片画成问答卡片（components/work/QuestionCard.tsx）。 */
+  options?: { key: string; text: string; reason?: string }[];
+  /** 请选择可以多选。 */
+  multiple?: boolean;
+  /** 请选择问的是哪件事，问答卡片写在顶上「提问 · 」之后。 */
+  topic?: string;
   value?: string;
   basis?: Source[];
   preview?: { effect: "remove" | "add" | "change"; text: string }[];
@@ -598,8 +615,8 @@ export interface WorkSummary {
   at?: string;
   seconds: number | null;
   step_count: number;
-  /** reasons：保存修订被拒的那一步的全部原因，一个操作一条；多于一条时这一行可以点开逐条看。 */
-  stages?: { text: string; count?: number; reasons?: string[] }[];
+  /** reasons：保存修订被拒的那一步的全部原因，一个操作一条；多于一条时这一行可以点开逐条看。note 与实时步骤行的同义。 */
+  stages?: { text: string; count?: number; reasons?: string[]; note?: StepNote }[];
   /** 「理解为：……」：执行者对触发这次工作的那句话的理解；还没有合格的理解时是一句说明：事实核对不过时「助手的理解里有对不上的地方，正在重写」，
    *  只写了没匹配上格式的片段时「助手的理解正在重写」，一轮结束仍没有时「助手这一轮没有写下理解」；
    *  界面点击替用户发的那句话没有这一行，为空。 */
@@ -630,7 +647,11 @@ export interface Step {
   text: string;
   in_progress: boolean;
   failed: boolean;
+  /** 这一行里有 pi 的参数校验失败（模型写的参数不合格式，不是被拒）：args_invalid 画淡色；连续多次时 args_invalid_repeated，画醒目。 */
+  note?: StepNote;
 }
+
+export type StepNote = "args_invalid" | "args_invalid_repeated";
 
 export interface CurrentWork {
   work_id: string;
@@ -970,6 +991,20 @@ export interface MaterialRemoved {
   path: string;
   /** 这份材料是被替换掉的：换上来的那份材料的路径，紧接着有一条它的 material_added。 */
   replaced_by?: string;
+}
+
+/** 运行状态帧（SSE 的 run_status，后端 run_watch.ts）：现在在哪一段、这次运行多少秒、这一轮收到多少字、是否可能卡住了、看门狗是否中止了。 */
+export interface RunStatus {
+  session_id?: string | null;
+  phase: "idle" | "waiting" | "thinking" | "text" | "tool_args" | "tool";
+  tool: string | null;
+  run_seconds: number | null;
+  received_chars: number;
+  tool_args_chars: number;
+  idle_seconds: number | null;
+  stalled: boolean;
+  /** 看门狗中止了上一次运行时的原因（给人看的一句）；没有中止为 null。 */
+  aborted: string | null;
 }
 
 export interface Problem {
@@ -1497,6 +1532,10 @@ export interface NamedKey {
 export interface CatalogActivity {
   key: string;
   name: string;
+  /** 这项活动算作哪个阶段（声明的 stage 一栏）；只能由用户发起的（发布）为 null。早先的后端不给。 */
+  stage?: StageKey | null;
+  /** 能不能单独启动（声明的「alone」一栏）：为假的只在工作流里做，页面不画它的单项卡。早先的后端不给，按能算。 */
+  alone?: boolean;
   mode: "batch" | "dialogue" | "user_only";
   mode_name: string;
   purpose: string;
@@ -1512,6 +1551,16 @@ export interface CatalogActivity {
   active_count?: number;
 }
 
+/** 流程声明里的一个槽位：输入页上一个有名字、有角色的上传位或填写位。 */
+export interface FlowSlot {
+  key: string;
+  name: string;
+  accepts: "materials" | "text";
+  required: boolean;
+  /** 放进这个槽位的材料的角色；收文字的槽位为 null。 */
+  role: string | null;
+}
+
 /** 活动目录里的一条工作流程。 */
 export interface CatalogFlow {
   key: string;
@@ -1520,6 +1569,16 @@ export interface CatalogFlow {
   applies: string;
   nodes: NamedKey[];
   inputs: string;
+  /** 输入页的槽位，照流程声明原样给；没有声明槽位的流程是空的。早先的后端不给。 */
+  slots?: FlowSlot[];
+  /** 卡上「输入」一行：有槽位时由槽位生成（必填的注「（必填）」），没有时等于 inputs。早先的后端不给。 */
+  inputs_text?: string;
+  /** 第一个还空着的必填材料槽位的名称；都有了、或者没有必填的材料槽位时为 null。有它时这条流程不能启动。早先的后端不给。 */
+  missing_slot?: string | null;
+  /** 能不能进这条流程的输入页：任务里没有流程工作项、它又不是「此版本尚未提供」时为真，与能不能启动（enabled）无关。早先的后端不给，按 enabled 算。 */
+  enterable?: boolean;
+  /** 用户可能所处的几种处境（流程声明的「cases」一栏，按写的先后）：起点页「工作流程」标题下的处境标签；没有写的是空的。 */
+  cases: string[];
   prerequisite_text: string;
   example: string;
   enabled: boolean;
@@ -1529,8 +1588,8 @@ export interface CatalogFlow {
   active_count?: number;
   /** 恒为 null：早先是流程走到的站，现在流程的位置记在工作项上。 */
   at: string | null;
-  /** 现在启动应当从哪一站开始；这条流程现在还不能启动时为 null。 */
-  start: StageKey | null;
+  /** 现在启动应当从哪一站开始（活动标识符：各步里第一个前提都满足的那一站）；这条流程现在还不能启动时为 null。 */
+  start: string | null;
   /**
    * 任务里已有的流程工作项（一个任务至多一个，不论哪条流程）：记录号、名字、所在的一站；没有为 null。有它时流程都不能启动，
    * 页面把流程卡改成「打开它的会话」。早先的后端不给。
@@ -1546,9 +1605,6 @@ export interface ActivityCatalog {
 /** 任务起点页与活动输入页上的几段文字。 */
 export interface StartPageTexts {
   lead: string;
-  guide_note: string;
-  /** 三种常见起点；focus 是点了它进输入页时先看哪一块（早先的后端不给）。 */
-  cases: { title: string; text: string; focus?: "materials" | "description" }[];
   /** 从头编制时输入页上的几段；早先的后端不给。 */
   intake?: {
     lead: string;

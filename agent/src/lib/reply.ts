@@ -33,6 +33,8 @@ import { ToolRejection, codesOf, withCodes } from "./tool_rejection.ts";
 import { GUIDANCE_PREFIX, problem, problemText, splitGuide } from "./save_revision.ts";
 import { codeOf, fillText, refusalText } from "./texts.ts";
 import type { Refusal } from "./stage.ts";
+import { stageOf } from "./stage_read.ts";
+import { outlineTextFor } from "./outline_read.ts";
 import { EXECUTOR_SOURCE_KINDS, SOURCE_SUPPLEMENT } from "./schema.ts";
 
 // 「说话」类工具的公共骨架在 speak.ts；这里再导出一次，原来从本文件引用它们的代码不用改。
@@ -57,7 +59,7 @@ const ALLOWED_EXTRA: Record<ActKind, string[]> = {
   ask: ["scope", "resends"],
   confirm: [],
   suggest: ["value", "basis", "scope"],
-  choose: ["options", "resends"],
+  choose: ["options", "multiple", "topic", "resends"],
   propose: ["preview", "scope"],
 };
 
@@ -66,6 +68,29 @@ const ITEMS_REQUIRED: ActKind[] = ["ask", "confirm", "suggest", "propose"];
 
 /** scope 唯一允许的取值：这一问、这条建议或提议与任何条目都无关。 */
 export const SCOPE_GENERAL = "general";
+
+/** 写了 topic 的请选择（问一个问题带候选答案）的问题句必须以它开头：先说为了写清哪一处。 */
+export const TOPIC_CARD_OPENING = "为了写清";
+
+/**
+ * 候选答案里的归并说法与「换个说法」的兜底项：用户另有想法走卡片上的自由回答，候选只写具体说法。
+ * 「以上」「组合」只认归并的用法，免得误中「5000 元以上」一类；「另一种」「另外」「别的」只认后面紧跟方式、划分一类的用法，
+ * 「自行」「重新」只认说明、填写、说、想一类的用法，免得误中「各部门自行采购」「另外收取运维费」「重新设计表单」这类具体说法；
+ * 「不是」「否」只认句首「不是，请……」的用法，「不是这一期要做的」照收。
+ */
+const CATCH_ALL_OPTION =
+  /其他|其它|并存|以上(?:都|皆|几|均|各项|全部)|组合以上|(?:几|多)种.{0,4}组合|^(?:不是|否)[，,]\s*请|(?:另一种|另外的?|别的)(?:方式|划分|分法|拆分|办法|做法|想法|说法|方案|安排)|由你(?![方们])|由我来说|自行(?:说明|填写|补充|描述)|请重新|重新(?:说|想|考虑|来)/;
+
+/**
+ * 用户叫停的说法：停下、停在这里、暂停、先到这里、到此为止、别再继续之类，只认整句的开头（卡片上点「先停在这里」合成的
+ * 「我选：先停在这里」也算），免得候选答案里「系统停止服务时转人工」这类内容被当成叫停。
+ */
+const STOP_WORDS = /^(?:我选：)?\s*(?:那|就|先|今天|我们)?\s*(?:先|就)?(?:停|暂停|到此为止|到这|不要再?继续|别再?继续|不用再?继续)/;
+
+/** 最后一条用户消息是不是叫停：是的话，有分析提纲的核读里这一轮可以只回话、不发卡片。 */
+export function userAskedToStop(text: string | null | undefined): boolean {
+  return typeof text === "string" && STOP_WORDS.test(text);
+}
 
 /** 连续被拒到第几次起，拒绝理由改为只要成文正文。 */
 export const PLAIN_TEXT_FROM = 3;
@@ -92,7 +117,12 @@ export interface ReplyAct {
   kind: ActKind;
   text: string;
   items?: ItemRef[];
-  options?: { key: string; text: string }[];
+  /** 请选择的选项；reason 是这一项的出处或理由，写了的话界面在选项下面另起一行显示。 */
+  options?: { key: string; text: string; reason?: string }[];
+  /** 请选择可以选几项：写 true 是可以多选，不写是只选一项。 */
+  multiple?: boolean;
+  /** 请选择问的是哪件事：几个字，界面写在卡片顶上「提问 · 」之后。 */
+  topic?: string;
   value?: string;
   basis?: { kind: string; locator: string; excerpt: string }[];
   preview?: { effect: string; text: string }[];
@@ -132,6 +162,13 @@ export interface ReplyFacts {
   toolCallId: string;
   /** 这一轮助手消息里的全部工具调用，由工具的执行函数从会话当前分支读出。 */
   callsThisTurn: TurnCall[];
+  /**
+   * 这条会话这一刻在核读材料，并且任务类型有分析提纲（outlineReadingOf）：这时提问一律用带候选的请选择，
+   * 提问（ask）与写了 topic 却不给候选的请选择都拒绝。不给按否算。
+   */
+  outlineReading?: boolean;
+  /** 这条会话分支上最后一条用户消息的文字（卡片上的选择也是一条用户消息）；判断用户是不是叫停了（userAskedToStop）。不给按没有叫停算。 */
+  lastUserText?: string | null;
   /** 查某个条目在某次修订下在库里的情况。 */
   revisionFact: (itemId: string, revisionNo: number) => RevisionFact;
   /** 查某个条目当前所在的修订号，拒绝理由里用；不给就不写它现在是哪次修订。 */
@@ -214,6 +251,9 @@ export function checkReply(params: unknown, facts: ReplyFacts): Reply {
     errors.push(problem(refusalText("reply.act_missing")));
   } else if (params.act !== null) {
     act = checkAct(params.act, facts, errors);
+  } else if (facts.outlineReading && done !== true && !userAskedToStop(facts.lastUserText)) {
+    // 有分析提纲的任务在核读材料时，每一轮都以一张卡片收尾：问答卡片，或者进入下一步的卡片；用户叫停时、汇报单项活动做完时除外。
+    errors.push(problem(refusalText("reply.outline_reply_needs_card")));
   }
   if (act && errors.length === 0 && echoedAct(act.text, informs)) errors.push(problem(refusalText("reply.act_echoes_inform")));
 
@@ -329,6 +369,7 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
     }
   }
   if (isBlank(raw.text)) errors.push(problem(refusalText("reply.act_text_empty", { name })));
+  if (k === "ask" && facts.outlineReading) errors.push(problem(refusalText("reply.outline_card_needs_options", { what: KIND_NAME.ask })));
   // 提问只给开放问题：写成了是非题或者征求同意的话就拒绝（字面规则，见 closedQuestion）。
   if (k === "ask" && typeof raw.text === "string" && closedQuestion(raw.text)) {
     const said = raw.text.trim();
@@ -368,7 +409,13 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
 
   if (k === "choose") {
     const options = raw.options;
-    if (!Array.isArray(options) || options.length < 2) {
+    // 写了 topic 的请选择是一个问题加候选答案：候选可以一个也不给（开放问，只留自由回答），给了就至少两个。
+    // 有分析提纲的任务在核读材料时不收开放问：候选必须给。
+    const open = typeof raw.topic === "string" && !isBlank(raw.topic) && (options === undefined || (Array.isArray(options) && options.length === 0));
+    if (open) {
+      // 不给候选：卡片上只有自由回答与「先跳过」。
+      if (facts.outlineReading) errors.push(problem(refusalText("reply.outline_card_needs_options", { what: fillText("part.kind_choose_open") })));
+    } else if (!Array.isArray(options) || options.length < 2) {
       errors.push(problem(refusalText("reply.options_too_few")));
     } else {
       const seen = new Set<string>();
@@ -379,8 +426,23 @@ function checkAct(raw: unknown, facts: ReplyFacts, errors: string[]): ReplyAct |
         }
         if (seen.has(one.key as string)) errors.push(problem(refusalText("reply.option_key_duplicate", { key: String(one.key) })));
         seen.add(one.key as string);
+        if ("reason" in one && (typeof one.reason !== "string" || isBlank(one.reason))) {
+          errors.push(problem(refusalText("reply.option_reason_invalid", { no: index + 1 })));
+        }
       });
     }
+    if ("multiple" in raw && typeof raw.multiple !== "boolean") errors.push(problem(refusalText("reply.multiple_invalid")));
+    if (typeof raw.topic === "string" && !isBlank(raw.topic)) {
+      if (typeof raw.text === "string" && !raw.text.trim().startsWith(TOPIC_CARD_OPENING)) {
+        errors.push(problem(refusalText("reply.topic_card_opening", { opening: TOPIC_CARD_OPENING })));
+      }
+      (Array.isArray(options) ? options : []).forEach((one, index) => {
+        if (isObject(one) && typeof one.text === "string" && CATCH_ALL_OPTION.test(one.text)) {
+          errors.push(problem(refusalText("reply.option_catch_all", { no: index + 1, text: one.text })));
+        }
+      });
+    }
+    if ("topic" in raw && (typeof raw.topic !== "string" || isBlank(raw.topic))) errors.push(problem(refusalText("reply.topic_invalid")));
   }
 
   // 给建议值的依据：交给 checkBasis 按保存修订的来源同一套规则逐字核对（文档原文、用户的话、条目等），核对后的依据替换模型写的
@@ -579,6 +641,24 @@ function textOfContent(content: unknown): string {
  * 按库里的事实回答「某个条目在某次修订下有没有内容、是不是它当前所在的修订」。库以只读方式打开，查完就关。
  * 返回一个查询函数，同一次核对里的几次查询共用一个连接。
  */
+/**
+ * 这条会话这一刻是不是在核读材料、且任务类型有分析提纲（ReplyFacts.outlineReading）。还没有库、没有任务、早先建的任务（没有阶段）都算否。
+ * 位置与保存修订同一个取法（lib/stage_read.ts 的 stageOf），提纲与逐句核对同一个找法（lib/outline_read.ts）。
+ */
+export function outlineReadingOf(workspaceDir: string, sessionId: string): boolean {
+  const path = databasePath(workspaceDir);
+  if (!existsSync(path)) return false;
+  const db = new DatabaseSync(path, { readOnly: true, timeout: 5000 });
+  try {
+    const task = db.prepare("SELECT task_id, definition_text FROM task LIMIT 1").get() as { task_id: string; definition_text: string } | undefined;
+    if (!task) return false;
+    const definition = validateDefinition(JSON.parse(task.definition_text));
+    return stageOf(db, workspaceDir, task.task_id, definition, sessionId) === "reading" && outlineTextFor(workspaceDir, definition.skillPath) !== null;
+  } finally {
+    db.close();
+  }
+}
+
 export function openRevisionLookup(workspaceDir: string): {
   revisionFact: ReplyFacts["revisionFact"];
   currentRevisionOf: (itemId: string) => number | null;

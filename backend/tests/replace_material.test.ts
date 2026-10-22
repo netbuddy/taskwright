@@ -104,7 +104,7 @@ function writeSession(t: TaskOf, id: string, start: Date, messages: Date[] = [])
 const at = (text: string) => new Date(text);
 const leftover = (t: { dir: string }) => existsSync(join(t.dir, REPLACING_DIR));
 
-test("用同名的另一份文件替换：内容是新的，先发 material_removed（带 replaced_by）再发 material_added（带 replaces），暂放目录不留", () => withTask(async (service, t) => {
+test("用同名的另一份文件替换：内容是新的，先发 material_removed（带 replaced_by）再发 material_added（带 replaces 与沿用的槽位、角色），暂放目录不留", () => withTask(async (service, t) => {
   service.upload(t, "需求.md", Buffer.from("买家可以申请退货。"));
   service.upload(t, "补充.md", Buffer.from("补充说明。"));
   const [sub] = t.hub.subscribe(null, null);
@@ -115,7 +115,7 @@ test("用同名的另一份文件替换：内容是新的，先发 material_remo
   const st = statSync(join(t.dir, "inputs", "需求.md"), { bigint: true });
   assert.deepEqual(await materialEvents(sub), [
     ["material_removed", { session_id: "S1", path: "inputs/需求.md", replaced_by: "inputs/需求.md" }],
-    ["material_added", { session_id: "S1", path: "inputs/需求.md", bytes: Number(st.size), modified_at: service.taskPage(t).materials.find((m: any) => m.path === "inputs/需求.md")!.modified_at, replaces: "inputs/需求.md" }],
+    ["material_added", { session_id: "S1", path: "inputs/需求.md", bytes: Number(st.size), modified_at: service.taskPage(t).materials.find((m: any) => m.path === "inputs/需求.md")!.modified_at, slot: null, role: "证据", replaces: "inputs/需求.md" }],
   ]);
   assert.equal(leftover(t), false);
 }));

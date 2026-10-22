@@ -1,6 +1,6 @@
 # 来源核对的拒绝语
 
-保存修订、保存图与回复的建议值依据共用的来源核对（`agent/src/lib/save_revision.ts` 的 checkSources、checkDocxSource、checkPdfSource 等）被拒时的文字。
+保存修订、保存图与回复的建议值依据共用的来源核对（`agent/src/lib/save_revision.ts` 的 checkSources、checkDocxSource、checkPdfSource 等）被拒时的文字。末尾两条是自带的 read 与 grep 按材料的 role 被拦时交给助手的话（`agent/src/hooks/source_roles.ts`）。
 键的写法见 `rejections_shared.md` 的开头。where 是说到第几条来源的那几个字（`part.source_no`；回复的依据另有写法）。
 
 ## `part.source_no`
@@ -776,3 +776,27 @@ PDF {{noun}}的出处要写页与块，例如 {{path}}#p3-2；{{pointer}}
 用途：回复的依据要核对，而任务目录还没有任务记录。
 
 这个任务目录还没有任务记录，依据无从核对
+
+## `source.material_role`
+
+用途：当前活动的声明限定了材料的 role（「sources_from_roles」），这一条「文档原文」来源所指的材料的 role 不在里面（lib/source_roles.ts）。material 是材料的路径，role 是它的 role。
+
+{{where}}引用的「{{material}}」是「{{role}}」一类的材料
+
+## `source.material_role.guide`
+
+用途：上一条的指引。roles 是这项活动认的 role，各带书名号，用「、」隔开。
+
+这一步只能引用{{roles}}一类的材料
+
+## `source.read_refused`
+
+用途：当前活动的声明限定了材料的 role，自带的 read 要读的材料的 role 不在里面，这次调用不执行，这句作为工具结果交给助手（hooks/source_roles.ts）。material 是材料的路径，role 是它的 role，roles 是这项活动认的 role。
+
+这一步只读{{roles}}一类的材料：「{{material}}」是「{{role}}」一类的，这次没有读它。
+
+## `source.grep_refused`
+
+用途：同上，自带的 grep 的 path 指向 role 不在里面的材料，或者指向含有这种材料的目录（不写 path 时是任务目录）。kinds 是这项活动认的 role，不带书名号，用「或」隔开。
+
+这一步只读{{roles}}一类的材料：这次要搜的地方有「{{material}}」，它是「{{role}}」一类的，这次没有搜。请把 path 写成那份{{kinds}}。

@@ -10,10 +10,17 @@
  * （发布）没有模板也没有阶段，两栏都写空。
  * 流程的声明：flow 之外是 name、purpose、applies、steps（各步的活动标识符，按先后，用逗号隔开）、inputs、requires、example，
  * 另可以写 note.<活动标识符>：这一步的一句提示。同一项活动在一条流程里只能出现一次。
+ * 另可以写 slot.<槽位键>：输入页上一个有名字、带 role 的上传位或填写位，一行一个，值写成
+ * 「name=<名称>; accepts=materials|text; required=true|false; role=<名称>」，四项顺序固定；只有 accepts=text 的槽位 role 空着或省略。
  *
  * 需求资产分六类（ASSETS）。活动声明写它读哪几类、写哪几类：能不能启动只看要读的几类里有没有东西，
  * 与之前做没做过哪一项活动无关。「读」一栏另认两个写法：knowledge（知识库）与 all（全部资产）。
  * 前置条件（requires）是数据条件的键（CONDITIONS），一个都没有就是无前置条件。
+ *
+ * 活动的正文可以分段（声明里写 segments）：正文里一行「<!-- segment: 时机 -->」起一段，到下一个这样的行或者正文末尾止；
+ * 第一个标记之前的是常驻段，进系统提示。时机只认 SEGMENT_TIMINGS：after_save 附在这条会话第一次保存修订做成的结果后面，
+ * after_reply 附在第一次回复做成的结果后面（lib/activity_segments.ts）。声明里写的时机与正文里的标记要一一对上。
+ * 没有写 segments 的活动正文整段常驻，与以前一样。
  */
 
 import { ASSETS, type AssetKey } from "./assets.ts";
@@ -74,6 +81,44 @@ export function prerequisiteText(requires: readonly Condition[]): string {
   return requires.length === 0 ? NO_PREREQUISITE_TEXT : `前置条件：${requires.map((one) => CONDITION_TEXTS[one]).join("，")}。`;
 }
 
+/** 活动正文的分段时机：附在第一次保存修订做成的结果后面、附在第一次回复做成的结果后面。常驻段不写时机。 */
+export const SEGMENT_TIMINGS = ["after_save", "after_reply"] as const;
+export type SegmentTiming = (typeof SEGMENT_TIMINGS)[number];
+/** 正文里起一段的那一行。 */
+const SEGMENT_MARK = /^<!-- segment: ([a-z_]+) -->$/;
+
+/** 活动正文按分段标记切开：always 是第一个标记之前的常驻段，别的按时机。没有标记时整段都是常驻段。不核对时机写得对不对（见 checkSegments）。 */
+export function splitSegments(body: string): { always: string; segments: Partial<Record<string, string>>; marks: string[] } {
+  const segments: Record<string, string[]> = {};
+  const marks: string[] = [];
+  const always: string[] = [];
+  let into = always;
+  for (const line of body.split("\n")) {
+    const hit = SEGMENT_MARK.exec(line.trim());
+    if (!hit) {
+      into.push(line);
+      continue;
+    }
+    marks.push(hit[1]);
+    into = segments[hit[1]] ??= [];
+  }
+  const tidy = (lines: string[]) => lines.join("\n").replace(/^\n+/, "").replace(/\s+$/, "");
+  return { always: tidy(always), segments: Object.fromEntries(Object.entries(segments).map(([key, lines]) => [key, tidy(lines)])), marks };
+}
+
+/** 声明里的 segments 与正文里的分段标记对不对得上：每个时机恰好一个标记、不多不少，每段不是空的。 */
+function checkSegments(timings: SegmentTiming[], body: string, file: string): void {
+  const { segments, marks } = splitSegments(body);
+  const unknown = marks.find((one) => !(timings as string[]).includes(one));
+  if (unknown) throw new DefinitionHeadError(`${file} 的正文里有分段标记「${unknown}」，声明的「segments」里没有它。`);
+  const twice = marks.find((one, i) => marks.indexOf(one) !== i);
+  if (twice) throw new DefinitionHeadError(`${file} 的正文里分段标记「${twice}」出现了两次。`);
+  const missing = timings.find((one) => !marks.includes(one));
+  if (missing) throw new DefinitionHeadError(`${file} 的声明里「segments」写了「${missing}」，正文里没有这一段的标记。`);
+  const empty = timings.find((one) => !segments[one]);
+  if (empty) throw new DefinitionHeadError(`${file} 的正文里「${empty}」这一段是空的。`);
+}
+
 /** 一项活动的声明。 */
 export interface ActivityDef {
   /** 标识符，取自文件名。六个阶段与发布的那几项与它们的键相同。 */
@@ -85,8 +130,8 @@ export interface ActivityDef {
   reads: ReadKey[];
   writes: AssetKey[];
   /**
-   * 获准能力：做这项活动时助手能做哪几类写入（page、problem、diagram、item、review、publish）。六个阶段的获准能力表
-   * 取各阶段代表活动的这一栏（lib/activity_def_read.ts），不能超出它所用模板头里的那一栏。只能由用户发起的活动为空。
+   * 获准能力：做这项活动时助手能做哪几类写入（page、problem、diagram、item、review、publish）。工作项在做这项活动时，系统提示、
+   * 定义视图与工具调用时的守卫都取这一栏（lib/activity_def_read.ts 的 allowedFor），不能超出它所用模板头里的那一栏。只能由用户发起的活动为空。
    */
   writesAllowed: WriteKind[];
   requires: Condition[];
@@ -96,6 +141,37 @@ export interface ActivityDef {
   template: string | null;
   /** 算作哪个阶段（过渡期的兼容栏）；只能由用户发起的活动为 null。 */
   stage: Stage | null;
+  /** 正文分了哪几段（不含常驻段）；没有分段时是空的。 */
+  segments: SegmentTiming[];
+  /**
+   * 能不能单独启动（「alone」一栏，yes 或 no，不写或者空着是 yes）：不能的只在工作流里做，目录不给它单项卡，单项启动被拒。
+   * 只看声明本身：只能由用户发起的活动（发布）能不能启动另由 mode 管（startActivity 的 not_startable 先拦）。
+   */
+  alone: boolean;
+  /**
+   * 新增别的集合的条目之前要不要过最低门（「gate_viewed_page」一栏，yes 或 no，不写或者空着是 yes；最低门见 lib/overall_analysis.ts 的
+   * gateFact）。逆向解析写 no：它照原文立页立条目，那时用户还没看过任何页。
+   */
+  gateViewedPage: boolean;
+  /**
+   * 这项活动只认哪几种role的材料（「sources_from_roles」一栏，逗号隔开的材料 role名，不写是空的）：不空时，保存的「文档原文」来源
+   * 所指的材料、以及自带的 read、grep 读的材料，role都要在这里面（lib/source_roles.ts）。逆向解析写「既有规格说明」。空的不限。
+   */
+  sourcesFromRoles: string[];
+}
+
+/** 槽位收什么：材料文件，或者一段文字。 */
+export const SLOT_ACCEPTS = ["materials", "text"] as const;
+export type SlotAccepts = (typeof SLOT_ACCEPTS)[number];
+
+/** 工作流的声明里的一个槽位（slot.<键> 一行）。 */
+export interface FlowSlot {
+  key: string;
+  name: string;
+  accepts: SlotAccepts;
+  required: boolean;
+  /** 放进这个槽位的材料的 role；收文字的槽位是 null。 */
+  role: string | null;
 }
 
 /** 一条流程的声明。 */
@@ -111,6 +187,10 @@ export interface FlowDef {
   notes: Record<string, string>;
   /** 需要什么输入，一句。 */
   inputs: string;
+  /** 输入页的槽位，按头里出现的先后；没有写的是空的。 */
+  slots: FlowSlot[];
+  /** 用户可能所处的几种处境（「cases」一栏，分号隔开的短句），任务起点页把它们画成一行可点的小签；没有写的是空的。 */
+  cases: string[];
   requires: Condition[];
   /** 一段经过示例。 */
   example: string;
@@ -172,7 +252,7 @@ function headOf(text: string, file: string): Record<string, string> {
 export function parseActivityDef(text: string, key: string, file: string): ActivityDef {
   if (!IDENTIFIER_PATTERN.test(key)) throw new DefinitionHeadError(`${file} 的文件名「${key}」不能当活动的标识符：只能是小写字母开头的小写字母、数字、短横线与下划线。`);
   const head = headOf(text, file);
-  const known = new Set(["name", "mode", "purpose", "reads", "writes", "writes_allowed", "requires", "example", "template", "stage"]);
+  const known = new Set(["name", "mode", "purpose", "reads", "writes", "writes_allowed", "requires", "example", "template", "stage", "segments", "alone", "gate_viewed_page", "sources_from_roles"]);
   const extra = Object.keys(head).filter((field) => !known.has(field));
   if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
   const mode = oneOf(head, "mode", MODES, file);
@@ -189,6 +269,16 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
   }
   const writesAllowed = listOf(head, "writes_allowed", WRITE_KINDS, file, mode !== "user_only");
   if (mode === "user_only" && writesAllowed.length > 0) throw new DefinitionHeadError(`${file} 的声明里「writes_allowed」：只能由用户发起的活动不经助手，这一栏空着。`);
+  const segments = head.segments === undefined ? [] : listOf(head, "segments", SEGMENT_TIMINGS, file, true);
+  if (segments.length > 0 && mode === "user_only") throw new DefinitionHeadError(`${file} 的声明里「segments」：只能由用户发起的活动不进系统提示，不分段。`);
+  checkSegments(segments, splitHead(text).body, file);
+  const sourcesFromRoles = (head.sources_from_roles ?? "").split(/[,，]/).map((one) => one.trim()).filter(Boolean);
+  if (sourcesFromRoles.length > 0 && mode === "user_only") throw new DefinitionHeadError(`${file} 的声明里「sources_from_roles」：只能由用户发起的活动不经助手，不写这一栏。`);
+  const yesNo = (field: string): boolean => {
+    const text = (head[field] ?? "").trim();
+    if (text !== "" && text !== "yes" && text !== "no") throw new DefinitionHeadError(`${file} 的声明里「${field}」写的是「${text}」，只能是 yes、no 之一，或者不写。`);
+    return text !== "no";
+  };
   return {
     key,
     name: need(head, "name", file),
@@ -201,10 +291,46 @@ export function parseActivityDef(text: string, key: string, file: string): Activ
     example: need(head, "example", file),
     template,
     stage: stageText as Stage | null,
+    segments,
+    alone: yesNo("alone"),
+    gateViewedPage: yesNo("gate_viewed_page"),
+    sourcesFromRoles,
   };
 }
 
+/** 读一行槽位：「name=…; accepts=…; required=…; role=…」，四项顺序固定，收文字的槽位 role 可以省略。 */
+function parseSlot(key: string, value: string, file: string): FlowSlot {
+  const field = `slot.${key}`;
+  const bad = (why: string) => new DefinitionHeadError(`${file} 的声明里「${field}」${why}`);
+  if (!IDENTIFIER_PATTERN.test(key)) throw bad(`的键「${key}」不能当槽位的键：只能是小写字母开头的小写字母、数字、短横线与下划线。`);
+  const parts = value.split(/[;；]/).map((one) => one.trim());
+  if (parts.at(-1) === "") parts.pop();
+  const names = ["name", "accepts", "required", "role"];
+  const got: Record<string, string> = {};
+  parts.forEach((part, i) => {
+    const at = part.indexOf("=");
+    const name = at > 0 ? part.slice(0, at).trim() : "";
+    if (name !== names[i]) throw bad(`第 ${i + 1} 项应当是「${names[i]}=…」，写的是「${part}」：四项依次是 name、accepts、required、role。`);
+    got[name] = part.slice(at + 1).trim();
+  });
+  if (!got.name) throw bad("缺名称（name）。");
+  if (!(SLOT_ACCEPTS as readonly string[]).includes(got.accepts ?? "")) throw bad(`的 accepts 写的是「${got.accepts ?? ""}」，只能是 ${SLOT_ACCEPTS.join("、")} 之一。`);
+  if (got.required !== "true" && got.required !== "false") throw bad(`的 required 写的是「${got.required ?? ""}」，只能是 true 或 false。`);
+  const accepts = got.accepts as SlotAccepts, role = got.role ?? "";
+  if (accepts === "materials" && role === "") throw bad("收材料，要写 role。");
+  if (accepts === "text" && role !== "") throw bad(`收文字，role 要空着，写的是「${role}」。`);
+  return { key, name: got.name, accepts, required: got.required === "true", role: accepts === "materials" ? role : null };
+}
+
 /** 读一条流程的声明并校验。activities 是这个任务类型的全部活动的标识符：各步只能写它们里的，同一项不能写两次。 */
+/** 「cases」一栏：按中文或英文分号拆成短句，各去首尾空白；没有这一栏是空的，拆出空句抛错。 */
+function casesOf(value: string | undefined, file: string): string[] {
+  if (value === undefined || value.trim() === "") return [];
+  const cases = value.split(/[;；]/).map((one) => one.trim());
+  if (cases.some((one) => one === "")) throw new DefinitionHeadError(`${file} 的声明里「cases」有空句：用分号隔开的每一句都要写内容。`);
+  return cases;
+}
+
 export function parseFlowDef(text: string, key: string, file: string, activities: readonly string[]): FlowDef {
   const head = headOf(text, file);
   const flow = need(head, "flow", file);
@@ -219,8 +345,14 @@ export function parseFlowDef(text: string, key: string, file: string, activities
     if (!steps.includes(step)) throw new DefinitionHeadError(`${file} 的声明里「${field}」说的「${step}」不在「steps」里。`);
     if (value) notes[step] = value;
   }
-  const known = new Set(["flow", "name", "purpose", "applies", "steps", "inputs", "requires", "example"]);
-  const extra = Object.keys(head).filter((field) => !known.has(field) && !field.startsWith("note."));
+  // 拆头时同名的栏后一行盖掉前一行，所以槽位写没写两次要回到原文数。
+  const headText = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? "";
+  const slotLines = headText.split("\n").map((line) => /^slot\.([^:]*):/.exec(line)?.[1]?.trim()).filter((one) => one !== undefined);
+  const twiceSlot = slotLines.find((one, i) => slotLines.indexOf(one) !== i);
+  if (twiceSlot !== undefined) throw new DefinitionHeadError(`${file} 的声明里「slot.${twiceSlot}」写了两次：一个槽位只能写一行。`);
+  const slots = Object.entries(head).filter(([field]) => field.startsWith("slot.")).map(([field, value]) => parseSlot(field.slice("slot.".length), value, file));
+  const known = new Set(["flow", "name", "purpose", "applies", "steps", "inputs", "cases", "requires", "example"]);
+  const extra = Object.keys(head).filter((field) => !known.has(field) && !field.startsWith("note.") && !field.startsWith("slot."));
   if (extra.length > 0) throw new DefinitionHeadError(`${file} 的声明里有不认的栏：${extra.join("、")}。`);
   return {
     key,
@@ -230,6 +362,8 @@ export function parseFlowDef(text: string, key: string, file: string, activities
     steps,
     notes,
     inputs: need(head, "inputs", file),
+    slots,
+    cases: casesOf(head.cases, file),
     requires: listOf(head, "requires", CONDITIONS, file, false),
     example: need(head, "example", file),
   };

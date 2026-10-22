@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
 import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
@@ -20,6 +20,8 @@ const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE
   "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT"];
 
 export const MATERIAL = "读者凭借书证在自助机上借书。";
+/** 页的正文：材料那句话加句末括注。核读时页的正文每句要有着落（agent/src/lib/cited_sentences.ts）。 */
+export const MATERIAL_CITED = "读者凭借书证在自助机上借书（材料 第 1 段）。";
 
 /**
  * 立一页主题的那次工具调用：贴了标签、有例子、全部照抄材料。新建的任务里要先有这样一页、用户看过它、任务又移到了写条目阶段，
@@ -28,7 +30,7 @@ export const MATERIAL = "读者凭借书证在自助机上借书。";
  */
 export const TOPIC_CALL = { id: "call-topic", name: "save_revision", arguments: { operations: [{ op: "add", collection: "业务说明",
   sources: [{ kind: "文档原文", locator: "inputs/材料.md", excerpt: MATERIAL }],
-  fields: { 标题: "自助借书", 它是什么: MATERIAL, 例子: [MATERIAL], 标签: ["流程"], 状态: "在用" } }] } };
+  fields: { 标题: "自助借书", 它是什么: MATERIAL_CITED, 例子: [MATERIAL], 标签: ["流程"], 状态: "在用" } }] } };
 
 /** 把一个刚建好、材料已经放好的任务备到可以写条目的样子（见 TOPIC_CALL 的说明）。测试里另建的任务要自己调它。 */
 export function seedWriting(taskDir: string): void {
@@ -69,9 +71,11 @@ export type Stack = {
  * seed 为真（缺省）时在开会话之前把任务备到可以写条目的样子（见 TOPIC_CALL 的说明）；为假时任务没有写过东西。
  * launch 为真（seed 为假时的缺省）时在开会话之前由用户启动需求分析、停在核读材料（launchFlow）；为假时任务是刚建好的样子：空闲。
  * args 是另加给后端的命令行参数（例如 --debug），env 是另加给后端的环境变量。
+ * outline 为假时建好任务就删掉任务目录里 skill 的分析提纲（outline.md），任务按没有提纲的做法走：核读不逐句核对、不要求每轮发卡片。
+ * 测平台机制、与分析提纲无关的测试用它，免得脚本里每一轮都要照提纲的规矩写。
  */
 export async function withStack(tmp: string, name: string, script: Dict, body: (s: Stack) => Promise<void>,
-  { autoIntent = true, seed = true, launch = !seed, args = [] as string[], env: extraEnv = {} as Record<string, string> } = {}): Promise<void> {
+  { autoIntent = true, seed = true, launch = !seed, outline = true, args = [] as string[], env: extraEnv = {} as Record<string, string> } = {}): Promise<void> {
   const dir = join(tmp, name);
   mkdirSync(dir, { recursive: true });
   const fake = await new FakeModel(script, join(dir, "fake.jsonl"), { autoIntent }).start();
@@ -94,6 +98,7 @@ export async function withStack(tmp: string, name: string, script: Dict, body: (
     });
     const taskId: string = (await call("POST", "/api/v1/tasks", { task_type: "requirements-engineering", task_name: name })).body.task_id;
     writeFileSync(join(dir, "tasks", taskId, "inputs", "材料.md"), `${MATERIAL}\n`, "utf-8");
+    if (!outline) rmSync(join(dir, "tasks", taskId, ".pi", "skills", "requirements-engineering", "outline.md"));
     if (seed) seedWriting(join(dir, "tasks", taskId));
     else if (launch) launchFlow(join(dir, "tasks", taskId));
     // 夹具已经启动了需求分析时（seed、launch），这条会话接着做那个工作项：助手能写什么看的是它所在的会话属于的工作项。

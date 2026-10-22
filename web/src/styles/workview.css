@@ -57,6 +57,8 @@
 .app .proc .pline{font-size:0.857rem;color:var(--text3);letter-spacing:.01em;display:flex;align-items:baseline;gap:.35rem}
 .app .proc .pline .ptime{font-size:0.857rem;color:var(--faint);flex:none;font-variant-numeric:tabular-nums}
 .app .proc .pline.doing{color:var(--text2);font-weight:500}
+.app .proc .pline.faint{color:var(--faint)}
+.app .proc .pline.warn{color:var(--amber);font-weight:500}
 .app .proc .pline.doing .ptxt::after{content:"";display:inline-block;width:.32rem;height:.32rem;border-radius:50%;
   background:var(--mut);margin-left:.35rem;vertical-align:middle;animation:breathe 1.5s ease-in-out infinite}
 @keyframes breathe{0%,100%{opacity:.25}50%{opacity:1}}

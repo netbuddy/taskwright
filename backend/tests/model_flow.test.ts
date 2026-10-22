@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import { captureConsole, tempDir } from "./helpers.ts";
-import { type Dict, MATERIAL, NO_PI, reply, withStack } from "./consent_stack.ts";
+import { type Dict, MATERIAL, MATERIAL_CITED, NO_PI, reply, withStack } from "./consent_stack.ts";
 
 captureConsole();
 process.env.PI_OFFLINE = "1";
@@ -23,10 +23,10 @@ const FROM_MATERIAL = { kind: "文档原文", locator: "inputs/材料.md", excer
 const page = (fields: Dict, sources: unknown[] = [FROM_MATERIAL]) => ({ op: "add", collection: "业务说明", fields: { 状态: "在用", ...fields }, sources });
 /** 四页主题：一页流程、一页角色、两页概念（借阅记录说到了状态；借书证有一条已经定下的规则）。 */
 const PAGES = [
-  page({ 标题: "自助借书", 它是什么: MATERIAL, 例子: [MATERIAL], 标签: ["流程"] }),
-  page({ 标题: "读者", 它是什么: "办了借书证、来馆里借书的人。", 例子: [MATERIAL], 标签: ["角色"] }),
-  page({ 标题: "借阅记录", 它是什么: "读者借一本书留下的记录，有在借与已还两种状态。", 例子: [MATERIAL], 标签: ["概念"] }),
-  page({ 标题: "借书证", 它是什么: "读者在馆里的身份凭证。", 例子: [MATERIAL], 标签: ["概念"], 已经定下的: ["一人一证。"] },
+  page({ 标题: "自助借书", 它是什么: MATERIAL_CITED, 例子: [MATERIAL], 标签: ["流程"] }),
+  page({ 标题: "读者", 它是什么: "办了借书证、来馆里借书的人（材料 第 1 段）。", 例子: [MATERIAL], 标签: ["角色"] }),
+  page({ 标题: "借阅记录", 它是什么: "读者借一本书留下的记录，有在借与已还两种状态（材料 第 1 段）。", 例子: [MATERIAL], 标签: ["概念"] }),
+  page({ 标题: "借书证", 它是什么: "读者在馆里的身份凭证（材料 第 1 段）。", 例子: [MATERIAL], 标签: ["概念"], 已经定下的: ["一人一证。"] },
     [{ ...FROM_MATERIAL, supports: [{ field: "它是什么" }, { field: "例子" }] }, { kind: "助手补充", excerpt: "图书馆通常这样规定，我补了「一人一证。」", supports: [{ field: "已经定下的", index: 0, inserted: ["一人一证。"] }] }]),
 ];
 const from = (...ids: string[]) => ids.map((id) => ({ kind: "条目", locator: id }));
@@ -55,8 +55,9 @@ const card = (text: string, enter: [string, string], stay: [string, string]) =>
 const SCRIPT = {
   rules: [],
   sequence: [
-    // 第一句话（核读材料）：立四页主题，发「进入澄清」的卡片。
-    { tool_calls: [{ id: "call-pages", name: "save_revision", arguments: { operations: PAGES } }] },
+    // 第一句话（核读材料）：立四页主题（一次保存最多两个操作，分两次存，各成一次修订），发「进入澄清」的卡片。
+    { tool_calls: [{ id: "call-pages", name: "save_revision", arguments: { operations: PAGES.slice(0, 2) } }] },
+    { tool_calls: [{ id: "call-pages-2", name: "save_revision", arguments: { operations: PAGES.slice(2) } }] },
     reply("材料读完了，我立了四页主题。现在进入澄清吗？", "call-clarify", card("现在进入澄清吗？", ["enter_clarify", "进入澄清"], ["continue_reading", "继续本阶段"])),
     // 用户点了「进入澄清」：发「进入整理建模」的卡片。
     reply("要问的都问到了。现在进入整理建模吗？", "call-model", card("现在进入整理建模吗？", ["enter_consolidate", "进入整理建模"], ["continue_clarify", "继续本阶段"])),
@@ -161,5 +162,5 @@ test("整理建模画出五种图、七盏灯都通过；写条目依据两张�
     assert.equal((await lamps("writing")).basis_diagrams_viewed, false);
     assert.deepEqual(await basisOf(), { item_id: "D-004", reason: "unviewed", see: null });
     const detail = (await call("GET", `/api/v1/tasks/${taskId}/diagrams/D-004`)).body.diagram as Dict;
-    assert.deepEqual([detail.revision_no, detail.viewed, detail.depended_by], [2, false, [{ element_kind: "条目", id: "UC-001", revision_no: 2 }]]);
+    assert.deepEqual([detail.revision_no, detail.viewed, detail.depended_by], [2, false, [{ element_kind: "条目", id: "UC-001", revision_no: 3 }]]);
   }, { seed: false }));

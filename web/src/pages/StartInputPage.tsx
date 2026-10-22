@@ -7,15 +7,14 @@
 // 点主按钮：先发启动的请求（后端新建一个工作项与一条属于它的会话，回应里带新会话的编号），成了再替用户发第一句话
 // （写了目标系统描述就是那段描述，没有写是这项活动的那句固定的话），然后进那条会话的工作台。没有启动成（例如助手正在工作）在页上报后端的原话，不跳转。
 // 这一页不选会话：一条会话在建立时就属于一个工作项，启动一律新建。任务里已有流程工作项时流程不能再启动，主按钮旁给「打开它的会话」。
-// 地址带 ?case=序号 时是从三种常见起点里的某一种进来的：那种起点要先看的那一块描黑边并滚到眼前，块里写着那种起点的做法。
 // 澄清的输入页在范围说明之上另有「待澄清问题」勾选块：还没了结的待澄清问题（阻断下游的在前）与待决定事项（model/pendingWork.ts 的 pickRows）。
 // 勾选的编号写进范围说明（「只澄清这几项：…。」在前，用户自己写的接在后面）；地址带 ?pick=编号,编号 时（从起点页「待处理事项」进来）那几项预先勾好。
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Input, Spin } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import { api, ApiError, clientId } from "../api/client";
-import type { KnowledgeLibrary, TaskDetail, TaskStatusView } from "../api/types";
+import type { KnowledgeLibrary, Material, TaskDetail, TaskStatusView } from "../api/types";
 import { TaskFrame } from "../components/TaskFrame";
 import { useToast } from "../components/Toasts";
 import { useService } from "../components/ServiceControls";
@@ -24,18 +23,16 @@ import { MaterialsCard } from "../components/task/MaterialsCard";
 import { useMaterialViewer } from "../components/task/MaterialViewer";
 import { ownMaterials } from "../model/docx";
 import {
-  SCOPE_MAX_LENGTH, blockedLine, existingFlowItem, firstMessage, inputBlocks, missingInput, prerequisiteBody, startButton, startFields, startSubtitle, startTarget, targetName,
+  SCOPE_MAX_LENGTH, blockedLine, existingFlowItem, firstMessage, inputBlocks, inputSlots, missingInput, prerequisiteBody, startActivityOf, startButton, startFields, startSubtitle, startTarget, targetName,
 } from "../model/startInput";
 import { composeScope, pickRows, pickedScope, showsPendingWork } from "../model/pendingWork";
 import { go, href } from "../router";
 import "../styles/task-page.css";
 
-export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
+export function StartInputPage({ taskId, startKey, pick = [] }: {
   taskId: string;
   /** 地址里的键：一条工作流程或一项单项活动的键。 */
   startKey: string;
-  /** 从三种常见起点里的第几种进来的；不是从那里进来的是 null。 */
-  startCase: number | null;
   /** 预先勾好的问题与待决定事项的编号（从起点页「待处理事项」进澄清的输入页时）；没有是空的。 */
   pick?: string[];
 }) {
@@ -63,19 +60,6 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
   };
   useEffect(() => { void load(); }, [taskId]);
 
-  // 从三种常见起点进来：要先看的那一块滚到眼前；目标系统描述那一块另把光标放进文本框。只在这一块第一次画出来时做一次。
-  const focusCase = startCase === null ? null : status?.start_page?.cases[startCase] ?? null;
-  const materialsBlock = useRef<HTMLDivElement>(null);
-  const descriptionBlock = useRef<HTMLDivElement>(null);
-  const focused = useRef(false);
-  const ready = !!task && statusRead;
-  useEffect(() => {
-    if (!ready || focused.current || !focusCase?.focus) return;
-    focused.current = true;
-    const block = focusCase.focus === "materials" ? materialsBlock.current : descriptionBlock.current;
-    block?.scrollIntoView?.({ block: "center" });
-    if (focusCase.focus === "description") block?.querySelector("textarea")?.focus();
-  }, [ready, focusCase]);
 
   const back = <div className="tp-back"><a href={href.task(taskId)} data-testid="back-to-start">‹ 返回任务起点</a></div>;
   const frame = (name: string | undefined, where: string, body: React.ReactNode) => (
@@ -96,14 +80,22 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
   const intake = status?.start_page?.intake;
   const fields = startFields(target);
   const blocked = blockedLine(target);
-  const missing = missingInput(target, blocks, status?.assets, description);
+  const missing = inputSlots(target).length > 0 ? null : missingInput(target, blocks, status?.assets, description);
   const selected = task.knowledge_libraries ?? [];
   const materials = ownMaterials(task.materials);
+  // 声明了槽位的流程（需求再工程）按槽位分块画输入；别的流程与单项活动照旧。
+  const slots = inputSlots(target);
+  const slotted = slots.length > 0;
+  // 每个收材料的槽位列哪些材料：放进了槽位的列在那个槽位；没有放进槽位的（起点页上传的、升级前就有的，角色是「证据」）
+  // 按角色并入第一个角色相同的槽位（需求再工程里是「补充证据」）。
+  const materialSlots = slots.filter((one) => one.accepts === "materials");
+  const homeOf = (one: Material): string | null => one.slot ?? materialSlots.find((slot) => slot.role === (one.role ?? "证据"))?.key ?? null;
   // 已有流程工作项时「打开它的会话」进它最近有动静的那条会话（任务状况的工作项清单里有）。
   const flowItem = existingFlowItem(target);
   const flowSession = flowItem === null ? null : status?.work_items?.find((one) => one.record_id === flowItem)?.latest_session?.session_id ?? null;
   // 从头编制：启动工作流程、业务说明还空着。这时「启动后」写有材料与没有材料两种情形，三块输入上面有一段话。
-  const first = target.kind === "flow" && blocks.description;
+  // 按槽位分块的流程不是从头编制：没有那一段话，「启动后」写从哪一站开始。
+  const first = target.kind === "flow" && blocks.description && inputSlots(target).length === 0;
   const startNode = target.kind === "flow" ? target.flow.nodes.find((one) => one.key === target.flow.start) : null;
   // 「待澄清问题」勾选块：只在澄清的输入页、任务里有可勾的问题或待决定事项时有。勾着的编号里只算现在还在清单上的。
   const picks = target.kind === "activity" && target.activity.key === "clarifying" ? pickRows(task) : [];
@@ -135,15 +127,12 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
       return;
     }
     try {
-      await api.sendMessage(taskId, sessionId, { text: firstMessage(fields.activity, blocks.description ? description : ""), client_id: clientId(), attachments: [] });
+      await api.sendMessage(taskId, sessionId, { text: firstMessage(startActivityOf(target)!, slotted || blocks.description ? description : ""), client_id: clientId(), attachments: [] });
     } catch (e) {
       toast.error(`已经启动「${name}」，但第一句话没有发出去：${e instanceof ApiError ? e.message : String(e)} 请在对话区再说一遍。`);
     }
     go(href.work(taskId, sessionId));
   };
-
-  const caseNote = (focus: "materials" | "description") =>
-    focusCase?.focus === focus && <p className="tp-in-case" data-testid="start-case-note"><b>{focusCase.title}</b>{focusCase.text}</p>;
 
   return frame(task.task_name, `任务起点 › ${name}`, (
     <>
@@ -170,22 +159,42 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
       </dl>
       {first && intake && <p className="tp-lead" data-testid="start-lead">{intake.lead}</p>}
 
-      {blocks.materials && blocks.knowledge && (
+      {!slotted && blocks.materials && blocks.knowledge && (
         <p className="tp-in-split" data-testid="start-split">
           <b>材料与知识库的分工</b>材料是本任务的几份一手证据，助手逐句引用；规范、接口说明、法规、旧文档等参考资料放进知识库，可供多个任务选用。
         </p>
       )}
-      {(blocks.materials || blocks.knowledge) && (
+      {slotted && (
+        <div className="tp-in-slots" data-testid="slot-blocks">
+          {slots.map((slot) => (slot.accepts === "materials" ? (
+            <div key={slot.key} className="tp-in-block">
+              <MaterialsCard taskId={taskId} materials={materials.filter((one) => homeOf(one) === slot.key)} info={service.info} onView={view} onChanged={() => void load()}
+                title={slot.name} aside={slot.required ? "必填" : "可选"} slot={slot.key} testId={`slot-${slot.key}`} emptyText="还没有放进这一块的材料。"
+                replace={(one) => !!one.slot} />
+            </div>
+          ) : (
+            <section key={slot.key} className="tp-pane tp-in-block" aria-label={slot.name} data-testid={`slot-${slot.key}`}>
+              <div className="tp-sec-h">
+                <h2><EditOutlined className="tp-hic" />{slot.name}</h2>
+                <span className="aside">{slot.required ? "必填" : "可选"} · 作为会话的第一条消息发给助手</span>
+              </div>
+              <Input.TextArea value={description} onChange={(e) => setDescription(e.target.value)} autoSize={{ minRows: 4, maxRows: 12 }}
+                placeholder={intake?.describe_placeholder} data-testid="describe-input" />
+            </section>
+          )))}
+          {blocks.knowledge && <div className="tp-in-block"><KnowledgeChoice libraries={libraries} selected={selected} onChange={(ids) => void changeKnowledge(ids)} /></div>}
+        </div>
+      )}
+      {!slotted && (blocks.materials || blocks.knowledge) && (
         <div className={`tp-pair${blocks.materials && blocks.knowledge ? "" : " single"}`}>
           {blocks.materials && (
-            <div ref={materialsBlock} className="tp-in-wrap">
+            <div className="tp-in-wrap">
               <MaterialsCard taskId={taskId} materials={materials} info={service.info} onView={view} onChanged={() => void load()}
-                title="项目材料" aside={target.kind === "flow" ? "可选 · 推荐" : undefined} marked={focusCase?.focus === "materials"}
+                title="项目材料" aside={target.kind === "flow" ? "可选 · 推荐" : undefined}
                 intro={(
                   <>
                     <p className="tp-in-p">属于本项目的文件。助手核读后逐句引用，作为需求的证据。</p>
                     {intake && <ul className="tp-in-kinds">{intake.material_kinds.map((one) => <li key={one}>{one}</li>)}</ul>}
-                    {caseNote("materials")}
                   </>
                 )} />
             </div>
@@ -194,15 +203,14 @@ export function StartInputPage({ taskId, startKey, startCase, pick = [] }: {
         </div>
       )}
 
-      {blocks.description && (
-        <div ref={descriptionBlock}>
-          <section className={`tp-pane tp-in-block${focusCase?.focus === "description" ? " marked" : ""}`} aria-label="目标系统描述" data-testid="describe-block">
+      {!slotted && blocks.description && (
+        <div>
+          <section className="tp-pane tp-in-block" aria-label="目标系统描述" data-testid="describe-block">
             <div className="tp-sec-h">
               <h2><EditOutlined className="tp-hic" />目标系统描述</h2>
               <span className="aside">{target.kind === "flow" ? "无材料时必填" : "可选"} · 作为会话的第一条消息发给助手</span>
             </div>
             {intake && <p className="tp-in-p">{intake.describe_note}</p>}
-            {caseNote("description")}
             <Input.TextArea value={description} onChange={(e) => setDescription(e.target.value)} autoSize={{ minRows: 4, maxRows: 12 }}
               placeholder={intake?.describe_placeholder} data-testid="describe-input" />
             {intake && intake.describe_examples.length > 0 && (
