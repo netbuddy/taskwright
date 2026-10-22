@@ -465,17 +465,28 @@ export function itemRefusal(stage: Position, allowed: readonly WriteKind[], op: 
   return refusalText("gate.stage_item_write", { ...words, stage: STAGE_NAMES[stage], reach_writing: howToReachWriting() });
 }
 
+/** 页的写入不获准时拒绝语里要写的：当前活动、页所在集合、它获准的各项写入、立页的那一步。 */
+export interface PageWriter {
+  activity: string;
+  collection: string;
+  allowed: string;
+  reading: string;
+}
+
 /**
- * 助手新增、修改或删除业务说明的一页：前四个阶段与空闲时都可以；评审确认阶段只能改「状态」与「改看」两个字段，
- * 不能新立页、不能删页。changed 是修改时这次改动了的字段名。可以写时返回 null。
+ * 助手新增、修改或删除业务说明的一页：先看当前活动获准的写入（allowed），里面没有 page 就拦（例如逆向解析），
+ * 拒绝语写当前活动的名字、页所在集合的名字、它获准的各项写入与立页那一步的名字（writer，由调用处按活动声明与任务定义给出）。获准时再按阶段：前四个阶段与空闲时都可以；
+ * 评审确认阶段只能改「状态」与「改看」两个字段，不能新立页、不能删页。changed 是修改时这次改动了的字段名。可以写时返回 null。
  */
-export function pageRefusal(stage: Position, op: string, changed: readonly string[] = []): Refusal | null {
+export function pageRefusal(stage: Position, allowed: readonly WriteKind[], writer: PageWriter, op: string,
+  changed: readonly string[] = []): Refusal | null {
+  if (!canWrite(allowed, "page")) return refusalText("gate.activity_page_write", { op: OP_WORDS[op] ?? "写", ...writer });
   if (stage !== "reviewing") return null;
   const common = { stage: STAGE_NAMES[stage], back_card: backCardGuidance("clarifying") };
   if (op === "add") return refusalText("gate.stage_page_write.add", common);
   if (op === "delete") return refusalText("gate.stage_page_write.delete", common);
-  const allowed: string[] = [OVERALL_FIELDS.status, OVERALL_FIELDS.seeAlso];
-  const others = changed.filter((name) => !allowed.includes(name));
+  const editable: string[] = [OVERALL_FIELDS.status, OVERALL_FIELDS.seeAlso];
+  const others = changed.filter((name) => !editable.includes(name));
   if (others.length === 0) return null;
   return refusalText("gate.stage_page_write.fields", {
     ...common, status: OVERALL_FIELDS.status, see_also: OVERALL_FIELDS.seeAlso, fields: others.map((name) => `「${name}」`).join("、"),

@@ -28,10 +28,10 @@ export const INPUT_EXCERPT_LIMIT = 2000;
 export type ReasonKind = "input" | "gate";
 
 /**
- * 守门类的原因码：缺了前置步骤，不是输入写错了。共用的守门（gate.*）十四种，加上发布版本的完成条件与用户同意四种。
+ * 守门类的原因码：缺了前置步骤，不是输入写错了。共用的守门（gate.*）十五种，加上发布版本的完成条件与用户同意四种。
  */
 export const GATE_CODES: ReadonlySet<string> = new Set([
-  "gate.understanding_missing", "gate.understanding_invalid", "gate.stage_item_write", "gate.stage_page_write", "gate.stage_diagram", "gate.stage_review",
+  "gate.understanding_missing", "gate.understanding_invalid", "gate.stage_item_write", "gate.stage_page_write", "gate.activity_page_write", "gate.stage_diagram", "gate.stage_review",
   "gate.stage_publish", "gate.overall_no_viewed_topic", "gate.problem_new_status_direct", "gate.problem_consent_missing", "gate.problem_consent_wrong_option",
   "gate.problem_consent_stale", "gate.problem_consent_batch_conflict", "gate.activity_done_not_single_activity",
   "publish_version.completion_unmet", "publish_version.consent_none", "publish_version.consent_declined", "publish_version.consent_stale",

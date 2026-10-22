@@ -84,11 +84,12 @@ test("出处与派生文件：去掉段落号，只写文件名的接在材料�
 
 test("保存修订：逆向解析引用证据被拒并说明角色，引用既有规格说明放行；核读的工作项引用证据照旧放行", () => {
   const dir = workspace();
-  const text = refusal(dir, PARSE, [page("借书", [EVIDENCE])])!;
+  // 逆向解析只写条目与问题（不立页），所以拿一条用例来试。
+  const text = refusal(dir, PARSE, [{ ...useCase("借书", ["选书"]), sources: [EVIDENCE] }])!;
   assert.ok(text.includes("第 1 条来源引用的「inputs/证据.md」是「证据」一类的材料"), text);
   assert.ok(text.includes("这一步只能引用「既有规格说明」一类的材料"), text);
   assert.equal(count(dir, "item"), 0);
-  assert.equal(refusal(dir, PARSE, [page("借书")]), null);
+  assert.equal(refusal(dir, PARSE, [useCase("借书", ["选书"])]), null);
   // 核读（没有声明这一栏）：同样的来源不受限。
   assert.equal(refusal(dir, CALL_SESSION, [{ ...page("还书", [EVIDENCE]), fields: { 标题: "还书", 它是什么: "还书是馆里的一件事。", 状态: "在用", 标签: ["流程"], 例子: ["小王周二还书。"] } }]), null);
 });

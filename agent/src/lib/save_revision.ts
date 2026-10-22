@@ -85,8 +85,9 @@ import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
 import { OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
-import { IDLE, type Position, QUESTION_KIND_FIELD, QUESTION_KIND_MISSING, QUESTION_RELATED_FIELD, itemRefusal, pageRefusal, positionName } from "./stage.ts";
+import { IDLE, type PageWriter, type Position, QUESTION_KIND_FIELD, QUESTION_KIND_MISSING, QUESTION_RELATED_FIELD, itemRefusal, pageRefusal, positionName } from "./stage.ts";
 import { activityTemplateFor, allowedForActivity, gateViewedPageFor, sourcesFromRolesFor, whereActivity } from "./stage_read.ts";
+import { activityNameOf, definitionsFor } from "./activity_def_read.ts";
 import { materialRoles } from "./material_db.ts";
 import { materialOfLocator, materialRoleOf } from "./source_roles.ts";
 import { type OutlineTitles, examplesRequiredFor, outlineTitlesFor, tableHeaderFor } from "./outline_read.ts";
@@ -484,6 +485,13 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
   const stage: Position | null = where?.position ?? null;
   // 这项活动获准的写入种类取它的活动声明（lib/activity_def_read.ts 的 allowedFor）。
   const allowed = where === null ? null : allowedForActivity(call.workspaceDir, definition, where.activity);
+  // 页的写入不获准时拒绝语里写的：当前活动的名字、页所在集合的名字、它获准的各项写入（说法同系统提示的位置说明）、立页那一步的名字。
+  const pageWriter: PageWriter = where === null || allowed === null || allowed.includes("page") ? { activity: "", collection: "", allowed: "", reading: "" } : {
+    activity: activityNameOf(definitionsFor(call.workspaceDir, definition.skillPath), where.activity),
+    collection: OVERALL_COLLECTION,
+    allowed: allowed.map((kind) => fillText(`stage_prompt.can_${kind}`)).join("、"),
+    reading: activityNameOf(definitionsFor(call.workspaceDir, definition.skillPath), "reading"),
+  };
   // 最低门只在当前活动的声明要它时生效（「gate_viewed_page」，逆向解析写 no）；会话空闲、读不到活动声明时照旧要。
   const gated = where === null || where.activity === IDLE || gateViewedPageFor(call.workspaceDir, definition, where.activity);
   const gate = call.actor !== ACTOR_USER && gated && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
@@ -521,7 +529,7 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
    */
   const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = [], given: unknown = undefined, before: Fields | null = null) => {
     if (stage === null || allowed === null) return null;
-    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before, outline, readingTemplate) : null);
+    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, allowed, pageWriter, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before, outline, readingTemplate) : null);
     return keepPendingField(collection) === null ? itemRefusal(stage, allowed, kind, collection.name) : null;
   };
 

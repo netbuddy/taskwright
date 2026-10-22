@@ -72,6 +72,18 @@
 
 「{{collection}}」的条目要到写条目阶段才能写。{{reach_writing}}
 
+## `gate.activity_page_write`
+
+用途：当前活动的声明里获准的写入不含页（例如逆向解析）时，助手要新立、修改或删除一页。op 是新增、修改或删除；activity 是当前活动的名字；collection 是页所在集合的名字；allowed 是它获准的各项写入，说法同系统提示位置说明里的那几项。
+
+当前活动「{{activity}}」不能{{op}}{{collection}}的页，它获准的写入是：{{allowed}}
+
+## `gate.activity_page_write.guide`
+
+用途：当前活动不获准写页时的指引。collection 同上；reading 是立页的那一步（核读材料阶段的代表活动）的名字。
+
+{{collection}}页由{{reading}}一步立；这一步只做上面获准的写入
+
 ## `gate.stage_page_write.add`
 
 用途：评审确认阶段助手要新立主题页。

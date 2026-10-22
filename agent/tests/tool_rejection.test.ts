@@ -174,7 +174,7 @@ test("原因码写进库：reason_code 是第一个，reason_codes 是全部（J
     ["c-3", null, null, "input"],
   ]);
   // 守门类十八种：共用的守门十四种，加发布版本的完成条件与用户同意四种；每一种都有拒绝语模板。
-  assert.equal(GATE_CODES.size, 18);
+  assert.equal(GATE_CODES.size, 19);
   for (const code of GATE_CODES) assert.ok([...templates().keys()].some((key) => key === code || key.startsWith(`${code}.`)), code);
   assert.deepEqual([reasonKindOf(["publish_version.consent_none", "x.y"]), reasonKindOf(["x.y", "gate.stage_review"]), reasonKindOf([])], ["gate", "input", "input"]);
 });
