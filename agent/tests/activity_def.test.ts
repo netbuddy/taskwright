@@ -35,7 +35,7 @@ test("需求工程的八项活动：方式、读、写、前置条件、模板�
     reviewing: ["评审确认", "dialogue", "items", "review items", "has_items", "reviewing", "reviewing"],
     document: ["编写文档", "batch", "all", "description versions", "has_confirmed_items", "document", "document"],
     publish: ["发布", "user_only", "all", "versions", "no_open_findings confirmations_clear", null, null],
-    parse_spec: ["逆向解析", "batch", "materials", "description items", "has_materials", "parse_spec", "reading"],
+    parse_spec: ["逆向解析", "batch", "materials", "items", "has_materials", "parse_spec", "reading"],
   });
   for (const one of activities) assert.ok(one.purpose.endsWith("。") && one.example.endsWith("。"), one.key);
 });
@@ -44,7 +44,7 @@ test("获准能力由活动声明给出：六个阶段的活动各取自己的 w
   const { activities, allowedFor } = readDefinitions(SRS_SKILL_DIR);
   assert.deepEqual(Object.fromEntries(activities.map((one) => [one.key, one.writesAllowed.join(" ")])), {
     reading: "page problem", clarifying: "page problem", modeling: "page problem diagram", writing: "page problem diagram item review",
-    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "", parse_spec: "page problem item",
+    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "", parse_spec: "problem item",
   });
   assert.deepEqual(Object.fromEntries([...STAGES, IDLE].map((key) => [key, allowedFor(key)])), {
     reading: ["page", "problem"], clarifying: ["page", "problem"], modeling: ["page", "problem", "diagram"],
@@ -109,9 +109,9 @@ test("逆向解析算作核读材料阶段、用自己的 parse_spec 模板，�
   assert.deepEqual(allowedFor("reading"), ["page", "problem"]);
 });
 
-test("获准写入按当前活动取（allowedFor）：逆向解析是页、问题、条目；核读是页、问题；空闲取空闲模板；认不出的阶段键取那个阶段的代表活动，别的键报错", () => {
+test("获准写入按当前活动取（allowedFor）：逆向解析是问题、条目；核读是页、问题；空闲取空闲模板；认不出的阶段键取那个阶段的代表活动，别的键报错", () => {
   const defs = readDefinitions(SRS_SKILL_DIR);
-  assert.deepEqual([defs.allowedFor("parse_spec"), defs.allowedFor("reading"), defs.allowedFor(IDLE)], [["page", "problem", "item"], ["page", "problem"], ["page", "problem"]]);
+  assert.deepEqual([defs.allowedFor("parse_spec"), defs.allowedFor("reading"), defs.allowedFor(IDLE)], [["problem", "item"], ["page", "problem"], ["page", "problem"]]);
   // 既不是声明里的活动、也不是阶段键：报错。
   assert.throws(() => defs.allowedFor("nothing"), (error: Error) => error instanceof DefinitionHeadError && error.message === "活动记录里的「nothing」在任务类型的活动声明里找不到。");
   // 阶段键而声明里没有同名的活动（早先的记录写的是阶段键，任务类型里那个阶段的活动另起了名字）：取算作这个阶段的代表活动。
@@ -133,7 +133,7 @@ test("逆向解析的 writes_allowed 不超出 parse_spec 模板头：写了 dia
   try {
     cpSync(SRS_SKILL_DIR, dir, { recursive: true });
     const file = join(dir, "activities", "parse_spec.md");
-    writeFileSync(file, readFileSync(file, "utf-8").replace("writes_allowed: page, problem, item", "writes_allowed: page, problem, item, diagram"));
+    writeFileSync(file, readFileSync(file, "utf-8").replace("writes_allowed: problem, item", "writes_allowed: problem, item, diagram"));
     assert.throws(() => readDefinitions(dir), (error: Error) => error instanceof DefinitionHeadError
       && error.message === "activities/parse_spec.md 的声明里「writes_allowed」写了 diagram，超出了它所用的模板 parse_spec.md 头里写的（page、problem、item）。");
   } finally {
