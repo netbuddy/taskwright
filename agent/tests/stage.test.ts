@@ -13,6 +13,9 @@ import { SRS_SKILL_DIR as SKILL_DIR_FOR_ALLOWED } from "./helpers.ts";
 /** 做某项活动时的获准能力：取真实任务类型的活动声明（六个阶段的活动标识符就是阶段键）。 */
 const DEFS_FOR_ALLOWED = readDefinitions(SKILL_DIR_FOR_ALLOWED);
 const ALLOWED_FOR = (key: string) => DEFS_FOR_ALLOWED.allowedFor(key);
+/** 业务说明的页按阶段的那几条：获准写入取这个阶段的代表活动（都含页），所以拒绝语里活动名与获准的写入用不到。 */
+const pageAt = (stage: Stage | typeof IDLE, op: string, changed?: readonly string[]) => pageRefusal(stage, ALLOWED_FOR(stage), NO_WRITER, op, changed);
+const NO_WRITER = { activity: "", collection: "", allowed: "", reading: "" };
 
 /** 拒绝的两层文字，照「[事实, 指引]」比；原因码另比。 */
 const pair = (r: { fact: string; guidance: string } | null | undefined) => (r ? [r.fact, r.guidance] : r);
@@ -83,7 +86,7 @@ test("每个阶段助手能写什么：页与问题一直可以，图从整理�
   assert.deepEqual(pair(diagramRefusal("document", ALLOWED_FOR("document"))), ["任务现在在编写文档阶段，这个阶段不能画图、改图或删图", leave("modeling")]);
   assert.deepEqual(pair(reviewRefusal("document", ALLOWED_FOR("document"))), ["任务现在在编写文档阶段，这个阶段不能请求评审", leave("reviewing")]);
   assert.equal(leave("reviewing"), "编写文档阶段只补写主题页的文字。要做这件事，得先回到评审确认：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 goto:reviewing「回到：评审确认」、stay「继续本步」，由用户在卡片上点");
-  assert.deepEqual([publishRefusal("document", ALLOWED_FOR("document")), publishRefusal("reviewing", ALLOWED_FOR("reviewing")), pageRefusal("document", "add"), pageRefusal("document", "update", ["它是什么"])], [null, null, null, null]);
+  assert.deepEqual([publishRefusal("document", ALLOWED_FOR("document")), publishRefusal("reviewing", ALLOWED_FOR("reviewing")), pageAt("document", "add"), pageAt("document", "update", ["它是什么"])], [null, null, null, null]);
 });
 
 test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么；怎么办写这一步要先做什么、谁能移动", () => {
@@ -119,12 +122,12 @@ test("被拦时的原话：事实写现在在哪个阶段、拦下的是什么�
 
 test("业务说明的页：前四个阶段随便写；评审确认阶段只能改状态与改看，不能新立、不能删", () => {
   for (const stage of ["reading", "clarifying", "modeling", "writing"] as const) {
-    assert.deepEqual([pageRefusal(stage, "add"), pageRefusal(stage, "update", ["它是什么"]), pageRefusal(stage, "delete")], [null, null, null]);
+    assert.deepEqual([pageAt(stage, "add"), pageAt(stage, "update", ["它是什么"]), pageAt(stage, "delete")], [null, null, null]);
   }
-  assert.deepEqual(pair(pageRefusal("reviewing", "add")), ["任务现在在评审确认阶段，这个阶段不能新立主题页", "要动主题页的内容，得先回到澄清或整理建模：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 goto:clarifying「回到：澄清」、stay「继续本步」，由用户在卡片上点"]);
-  assert.equal(pageRefusal("reviewing", "delete")!.fact, "任务现在在评审确认阶段，这个阶段不能删除主题页");
-  assert.deepEqual([pageRefusal("reviewing", "update", ["状态"]), pageRefusal("reviewing", "update", ["状态", "改看"]), pageRefusal("reviewing", "update", [])], [null, null, null]);
-  assert.equal(pageRefusal("reviewing", "update", ["状态", "它是什么", "例子"])!.fact,
+  assert.deepEqual(pair(pageAt("reviewing", "add")), ["任务现在在评审确认阶段，这个阶段不能新立主题页", "要动主题页的内容，得先回到澄清或整理建模：请用请选择卡片提议，在问句里写明为什么要退回，两个选项的键与文字是 goto:clarifying「回到：澄清」、stay「继续本步」，由用户在卡片上点"]);
+  assert.equal(pageAt("reviewing", "delete")!.fact, "任务现在在评审确认阶段，这个阶段不能删除主题页");
+  assert.deepEqual([pageAt("reviewing", "update", ["状态"]), pageAt("reviewing", "update", ["状态", "改看"]), pageAt("reviewing", "update", [])], [null, null, null]);
+  assert.equal(pageAt("reviewing", "update", ["状态", "它是什么", "例子"])!.fact,
     "任务现在在评审确认阶段，这个阶段主题页只能改「状态」与「改看」，这次还改了「它是什么」、「例子」");
 });
 
@@ -149,7 +152,7 @@ test("空闲时助手能写什么：与澄清相同，只有页与问题；被�
   assert.deepEqual(pair(reviewRefusal(IDLE, ALLOWED_FOR(IDLE))), ["本会话不属于任何工作项，这时不能请求评审", how("评审要在写条目或评审确认这项活动里请求")]);
   assert.deepEqual(pair(publishRefusal(IDLE, ALLOWED_FOR(IDLE))), ["本会话不属于任何工作项，这时不能发布版本", how("发布版本要在评审确认或编写文档这项活动里做")]);
   // 页：空闲时新立、修改、删除都可以。
-  assert.deepEqual([pageRefusal(IDLE, "add"), pageRefusal(IDLE, "update", ["它是什么"]), pageRefusal(IDLE, "delete")], [null, null, null]);
+  assert.deepEqual([pageAt(IDLE, "add"), pageAt(IDLE, "update", ["它是什么"]), pageAt(IDLE, "delete")], [null, null, null]);
   // 空闲时的拒绝里不说「阶段」，也不让助手发进入某一段的卡片：启动哪一项活动由用户在任务起点页上定。
   for (const refusal of [itemRefusal(IDLE, ALLOWED_FOR(IDLE), "add", "功能用例"), diagramRefusal(IDLE, ALLOWED_FOR(IDLE)), reviewRefusal(IDLE, ALLOWED_FOR(IDLE)), publishRefusal(IDLE, ALLOWED_FOR(IDLE))]) {
     assert.doesNotMatch(refusal!.fact + refusal!.guidance, /阶段|请选择卡片|enter_|start_items|开展|任务状况卡/);
@@ -219,7 +222,11 @@ test("开展一项活动的三组选项：正在进行的只是一行；需求�
 test("阶段拒绝带原因码：同一种拒绝不论在哪个阶段、会话空闲与否，原因码相同（键的第三段只是情形）", () => {
   assert.deepEqual([itemRefusal(IDLE, ALLOWED_FOR(IDLE), "add", "功能用例")!.code, itemRefusal("document", ALLOWED_FOR("document"), "add", "功能用例")!.code, itemRefusal("clarifying", ALLOWED_FOR("clarifying"), "add", "功能用例")!.code],
     ["gate.stage_item_write", "gate.stage_item_write", "gate.stage_item_write"]);
-  assert.deepEqual([pageRefusal("reviewing", "add")!.code, pageRefusal("reviewing", "update", ["标题"])!.code], ["gate.stage_page_write", "gate.stage_page_write"]);
+  assert.deepEqual([pageAt("reviewing", "add")!.code, pageAt("reviewing", "update", ["标题"])!.code], ["gate.stage_page_write", "gate.stage_page_write"]);
+  // 当前活动的获准写入不含页（逆向解析）：不论哪个阶段、哪种操作，原因码都是 gate.activity_page_write。
+  const parse = (op: string) => pageRefusal("reading", ALLOWED_FOR("parse_spec"), { activity: "逆向解析", collection: "业务说明", allowed: "记问题条目、写条目、改条目", reading: "核读材料" }, op);
+  assert.deepEqual(["add", "update", "delete"].map((op) => parse(op)!.code), ["gate.activity_page_write", "gate.activity_page_write", "gate.activity_page_write"]);
+  assert.equal(parse("delete")!.fact, "当前活动「逆向解析」不能删除业务说明的页，它获准的写入是：记问题条目、写条目、改条目");
   assert.deepEqual([diagramRefusal(IDLE, ALLOWED_FOR(IDLE))!.code, diagramRefusal("reading", ALLOWED_FOR("reading"))!.code, reviewRefusal("reading", ALLOWED_FOR("reading"))!.code, publishRefusal("writing", ALLOWED_FOR("writing"))!.code, activityDoneRefusal(IDLE).code],
     ["gate.stage_diagram", "gate.stage_diagram", "gate.stage_review", "gate.stage_publish", "gate.activity_done_not_single_activity"]);
 });

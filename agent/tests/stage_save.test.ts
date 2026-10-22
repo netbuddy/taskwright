@@ -164,25 +164,52 @@ test("早先建的任务没有阶段：有材料也不拦，助手照旧直接�
   assert.deepEqual([...STAGES].length, 6);
 });
 
-test("逆向解析的工作项：获准写入按当前活动取，能新增条目，用户还没看过任何页也不被最低门拦，页不受核读模板的两条检查；同一任务里核读的工作项照旧拦，文字不变", () => {
+test("逆向解析的工作项：获准写入按当前活动取，能新增条目，用户还没看过任何页也不被最低门拦；同一任务里核读的工作项照旧拦，文字不变", () => {
   const dir = workspace();
   // 核读（需求分析的第一站）：新增条目被拦，文字照旧写现在在核读材料阶段。
   enterStage(dir, "reading");
   assert.ok(refusal(dir, [useCase("还书")])!.includes("任务现在在核读材料阶段，这个阶段不能新增「用例」的条目"));
-  // 另一条会话做逆向解析（在需求再工程里）：条目能写，最低门不拦（这时一页都还没有被用户看过）。逆向解析的声明不再列页，
-  // 但页的写入只按阶段拦（pageRefusal），不看获准写入，所以这里立页照旧放行。
-  // 逆向解析只认既有规格说明上传位里的材料：把任务里那份材料记进这个上传位。
-  insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
-  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
-    const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
-    launchWorkItem(db, { taskId: task.task_id, sessionId: "sess-parse", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "reengineering", reason: "" });
-  });
-  // 页的两条核读检查（要标签与例子）只在当前活动用核读模板时查：逆向解析照原文立页，一页没有标签与例子也放行。
-  saveRevision(callIn(dir, "sess-parse"), { operations: [page("借书"), useCase("借书")] });
-  assert.equal(count(dir, "item"), 2);
+  // 另一条会话做逆向解析（在需求再工程里）：条目能写，最低门不拦（这时一页都还没有被用户看过）。
+  parseSpecSession(dir);
+  saveRevision(callIn(dir, "sess-parse"), { operations: [useCase("借书")] });
+  assert.equal(count(dir, "item"), 1);
   // 同样的页在核读的工作项里仍被拒：要贴标签、写例子。
   assert.match(refusal(dir, [page("还书")])!, /核读材料时立的页至少要贴一个「标签」、写一项「例子」/);
   // 写条目这一站仍要过最低门：这时还没有一页用户看过，新增条目被最低门拦下。
   enterStage(dir, "writing");
   assert.match(refusal(dir, [useCase("还书")])!, /还没有用户看过的主题/);
+});
+
+/** 另起一条会话 sess-parse 做逆向解析（需求再工程的第一站）；任务里那份材料记进既有规格说明上传位。 */
+function parseSpecSession(dir: string): void {
+  insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
+    const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
+    launchWorkItem(db, { taskId: task.task_id, sessionId: "sess-parse", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "reengineering", reason: "" });
+  });
+}
+
+test("页的写入看获准写入：逆向解析的声明不含页，新立一页被拒，原因码 gate.activity_page_write，拒绝语写活动名与它获准的写入，整批不写", () => {
+  const dir = workspace();
+  parseSpecSession(dir);
+  let rejected: SaveRejected | null = null;
+  try {
+    saveRevision(callIn(dir, "sess-parse"), { operations: [useCase("借书"), page("借书")] });
+  } catch (error) {
+    assert.ok(error instanceof SaveRejected, String(error));
+    rejected = error;
+  }
+  assert.ok(rejected);
+  assert.deepEqual(rejected.codes, ["gate.activity_page_write"]);
+  assert.ok(rejected.fact.includes("当前活动「逆向解析」不能新增业务说明的页，它获准的写入是：记问题条目、写条目、改条目"), rejected.fact);
+  assert.ok(rejected.guidance.includes("业务说明页由核读材料一步立"), rejected.guidance);
+  assert.equal(count(dir, "item"), 0);
+});
+
+test("页的写入看获准写入：核读材料的声明含页，同一任务里核读的工作项照旧能立页", () => {
+  const dir = workspace();
+  parseSpecSession(dir);
+  enterStage(dir, "reading");
+  saveRevision(callIn(dir), { operations: [READY_PAGE] });
+  assert.equal(count(dir, "item"), 1);
 });
