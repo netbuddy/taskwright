@@ -85,8 +85,8 @@ import { libraryNames, selectedLibraryIds } from "./knowledge.ts";
 import { isKnowledgeLocator, parseKnowledgeLocator } from "./knowledge_locator.ts";
 import { OVERALL_COLLECTION, OVERALL_FIELDS, STATUS_DEPRECATED, gateFact, hasOverall, isDeprecated, pageProblems, seeAlsoOf } from "./overall_analysis.ts";
 import { overallState } from "./overall_read.ts";
-import { type Position, itemRefusal, pageRefusal, positionName } from "./stage.ts";
-import { allowedAt, stageOf } from "./stage_read.ts";
+import { IDLE, type Position, itemRefusal, pageRefusal, positionName } from "./stage.ts";
+import { activityTemplateFor, allowedForActivity, gateViewedPageFor, whereActivity } from "./stage_read.ts";
 import { type OutlineTitles, examplesRequiredFor, outlineTitlesFor, tableHeaderFor } from "./outline_read.ts";
 import { INSTANCE_HEAD, firstTableHeader, hasInstance, ungroundedSentences } from "./cited_sentences.ts";
 import { CONSENT_OPTION, type ProblemFacts, RESOLVED_STATUS, judgeProblemStatus, newProblemStatus } from "./problem_consent.ts";
@@ -264,15 +264,15 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * 助手写页（OVERALL_COLLECTION 的条目）时的两条守卫，按这次传入的字段（given）判，不以合并后的页为据；before 是修改前这一页的内容，新增时为 null。
  * 一、导语页（OVERALL_FIELDS.intro 有值的页）只在编写文档里写：别的位置（空闲也算）新增导语页、把一页改成导语页、改既有导语页的字段，
  *     都拒绝；只把既有导语页停用（OVERALL_FIELDS.status 改为 STATUS_DEPRECATED），放行。
- * 二、核读材料时立的页 OVERALL_FIELDS.tags 至少一项、OVERALL_FIELDS.examples 至少一项（反例、例外也算）：只查新增的页与这次传入的
+ * 二、核读材料时（当前活动用核读模板，readingTemplate；逆向解析用自己的模板，不查）立的页 OVERALL_FIELDS.tags 至少一项、OVERALL_FIELDS.examples 至少一项（反例、例外也算）：只查新增的页与这次传入的
  *     这两个字段，不追溯旧页；停用的页不查。任务类型有分析提纲时（outline 不为 null）不查 OVERALL_FIELDS.examples：
  *     要求举例的维度的页（outline_read.ts 的 examplesRequiredFor）改查正文 OVERALL_FIELDS.what 里至少一句以 INSTANCE_HEAD 起头。
- * 三、核读材料时写进 OVERALL_FIELDS.what 的正文逐句要有着落（lib/cited_sentences.ts）：只在任务类型有分析提纲（outline 不为 null）时查，
+ * 三、核读材料时（同上，看 readingTemplate）写进 OVERALL_FIELDS.what 的正文逐句要有着落（lib/cited_sentences.ts）：只在任务类型有分析提纲（outline 不为 null）时查，
  *     只查这次传入了这个字段的页；分析提纲里的维度页与元数据登记的几页固定页的正文是综合，不查；停用的页不查。
  *     分析提纲给某个提纲条目写了表头（outline_parse.ts 的 tableHeaderFor）时，这个条目的页正文第一张表的表头要正好是那几列。
  * 任务定义里没有这几个字段（早先的任务）时，相应的那条不查。可以时返回 null。
  */
-function pageGuard(stage: Position, collection: CollectionDef, given: Fields, before: Fields | null, outline: OutlineTitles | null = null) {
+function pageGuard(stage: Position, collection: CollectionDef, given: Fields, before: Fields | null, outline: OutlineTitles | null = null, readingTemplate = stage === "reading") {
   const has = (name: string) => collection.fields.some((field) => field.name === name);
   const { intro, status, tags, examples } = OVERALL_FIELDS;
   const words = { stage: positionName(stage), intro_field: intro, status_field: status, deprecated: STATUS_DEPRECATED };
@@ -287,7 +287,7 @@ function pageGuard(stage: Position, collection: CollectionDef, given: Fields, be
       return refusalText("save_revision.intro_page_not_now", words);
     }
   }
-  if (stage === "reading" && has(tags) && has(examples) && given[status] !== STATUS_DEPRECATED && !(before !== null && isDeprecated(before) && !(status in given))) {
+  if (readingTemplate && has(tags) && has(examples) && given[status] !== STATUS_DEPRECATED && !(before !== null && isDeprecated(before) && !(status in given))) {
     const missing = [tags, ...(outline !== null ? [] : [examples])].filter((name) => (before === null || name in given) && isEmptyValue(given[name]));
     if (missing.length > 0) {
       return refusalText("save_revision.page_needs_tag_and_example", { stage: words.stage, tags, examples, missing: missing.map((name) => `「${name}」`).join("、") });
@@ -300,7 +300,7 @@ function pageGuard(stage: Position, collection: CollectionDef, given: Fields, be
     }
   }
   const { what, title } = OVERALL_FIELDS;
-  if (stage === "reading" && outline !== null && has(what) && typeof given[what] === "string" && given[status] !== STATUS_DEPRECATED) {
+  if (readingTemplate && outline !== null && has(what) && typeof given[what] === "string" && given[status] !== STATUS_DEPRECATED) {
     const named = typeof given[title] === "string" ? given[title] : before?.[title];
     const synthesis = typeof named === "string" && (outline.dimensions.includes(named.trim()) || outline.synthesisPages.includes(named.trim()));
     const loose = synthesis ? [] : ungroundedSentences(given[what] as string);
@@ -475,21 +475,28 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
 
   // 最低门（任务定义里有业务说明集合时才设）：助手往业务说明与问题集合之外的集合里新增条目之前，任务里要已经有一页
   // 在用的主题贴了标签、有例子、用户又看过。只看这次保存之前库里已有的页：同一批里才新增的页用户还没有看过。
-  const gate = call.actor !== ACTOR_USER && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
-  // 工作的阶段（任务有业务说明集合时才有，lib/stage.ts）：助手这一刻能写什么看这次调用所在的会话的阶段，取的是这条会话正在做的工作项（会话空闲时按澄清的规矩拦）。
+  // 工作的阶段（任务有业务说明集合时才有，lib/stage.ts）：助手这一刻能写什么看这次调用所在的会话正在做的工作项的当前活动
+  // （会话空闲时按空闲的规矩拦）；位置（它算作的阶段）只用于拒绝的文字与按阶段的那几条检查。
   // 用户在界面上的操作不看阶段。早先建的任务没有阶段，stage 是 null，下面几处都不拦。
-  const stage: Position | null = call.actor !== ACTOR_USER ? stageOf(db, call.workspaceDir, taskId, definition, call.sessionId) : null;
-  // 这个位置获准的写入种类取任务类型的活动声明（获准能力表）。
-  const allowed = stage === null ? null : allowedAt(call.workspaceDir, definition, stage);
+  const where = call.actor !== ACTOR_USER ? whereActivity(db, call.workspaceDir, taskId, definition, call.sessionId) : null;
+  const stage: Position | null = where?.position ?? null;
+  // 这项活动获准的写入种类取它的活动声明（lib/activity_def_read.ts 的 allowedFor）。
+  const allowed = where === null ? null : allowedForActivity(call.workspaceDir, definition, where.activity);
+  // 最低门只在当前活动的声明要它时生效（「gate_viewed_page」，逆向解析写 no）；会话空闲、读不到活动声明时照旧要。
+  const gated = where === null || where.activity === IDLE || gateViewedPageFor(call.workspaceDir, definition, where.activity);
+  const gate = call.actor !== ACTOR_USER && gated && hasOverall(definition.collections) ? gateFact(overallState(db, taskId, definition).pages) : null;
   // 核读时逐句核对正文要用分析提纲里的维度名与固定页的名字；任务类型没有分析提纲时为 null，不查。
-  const outline = stage === "reading" ? outlineTitlesFor(call.workspaceDir, definition.skillPath) : null;
+  // 核读模板那套做法的两条配套检查（pageGuard 的二、三）只在当前活动用核读模板时查：逆向解析算作核读阶段，
+  // 但用自己的 parse_spec 模板，照原文立页，这两条不查它。早先的记录活动标识符就是 reading，模板也是 reading，照旧查。
+  const readingTemplate = where !== null && where.activity !== IDLE && activityTemplateFor(call.workspaceDir, definition, where.activity) === "reading";
+  const outline = readingTemplate ? outlineTitlesFor(call.workspaceDir, definition.skillPath) : null;
   /**
    * 这个阶段助手能不能对这个集合的条目做这种操作；不能时返回两层拒绝文字。changed 是修改业务说明的页时改动了的字段名；
    * given 是这次传入的字段，before 是修改前这一页的内容（新增时为 null）：页的两条守卫（pageGuard）按它们判。
    */
   const stageRefusal = (collection: CollectionDef, kind: "add" | "update" | "delete", changed: readonly string[] = [], given: unknown = undefined, before: Fields | null = null) => {
     if (stage === null || allowed === null) return null;
-    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before, outline) : null);
+    if (collection.name === OVERALL_COLLECTION) return pageRefusal(stage, kind, changed) ?? (isObject(given) ? pageGuard(stage, collection, given, before, outline, readingTemplate) : null);
     return keepPendingField(collection) === null ? itemRefusal(stage, allowed, kind, collection.name) : null;
   };
 

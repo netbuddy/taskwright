@@ -182,10 +182,40 @@ export function stageOf(db: DatabaseSync, workspaceDir: string, taskId: string, 
   return open ? positionOf(workspaceDir, definition, open.activity) : IDLE;
 }
 
-/** 在这个位置助手能做哪几类写入：取这个任务的活动声明生成的获准能力表（lib/activity_def_read.ts）。声明读不出来时抛错。 */
-export function allowedAt(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, stage: Position): readonly WriteKind[] {
-  return definitionsFor(workspaceDir, definition.skillPath).allowed[stage];
+/**
+ * 这条会话现在在哪里：position 是它算作的阶段（或者空闲），activity 是工作项记录里的活动标识符（空闲时是 IDLE）。
+ * 早先建的任务没有阶段，返回 null（判法与 stageOf 相同）。
+ */
+export function whereActivity(db: DatabaseSync, workspaceDir: string, taskId: string, definition: Pick<TaskDefinition, "collections" | "materialsDir" | "skillPath">,
+  sessionId: string | null | undefined): { position: Position; activity: string } | null {
+  if (!hasOverall(definition.collections)) return null;
+  const open = openActivityRecord(db, taskId, sessionId);
+  return open ? { position: positionOf(workspaceDir, definition, open.activity), activity: open.activity } : { position: IDLE, activity: IDLE };
 }
+
+/**
+ * 做这项活动时助手能做哪几类写入（lib/activity_def_read.ts 的 allowedFor）：key 是活动标识符或者 IDLE。系统提示里说的、
+ * 定义视图里标的与工具调用时核的都取这里，三处说的是同一回事。声明读不出来时抛错。
+ */
+export function allowedForActivity(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): readonly WriteKind[] {
+  return definitionsFor(workspaceDir, definition.skillPath).allowedFor(key);
+}
+
+/**
+ * 这项活动用平台的哪一份活动模板（活动声明的 template）：声明里找不到这项活动时，阶段键按同名的模板算（早先的记录），别的是 null。
+ */
+export function activityTemplateFor(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): string | null {
+  const found = definitionsOrError(workspaceDir, definition).defs?.activities.find((one) => one.key === key);
+  return found ? found.template : isStage(key) ? key : null;
+}
+
+/**
+ * 做这项活动时新增别的集合的条目要不要过最低门（活动声明的「gate_viewed_page」）：声明里找不到这项活动、或者声明读不出来时要。
+ */
+export function gateViewedPageFor(workspaceDir: string, definition: Pick<TaskDefinition, "skillPath">, key: string): boolean {
+  return definitionsOrError(workspaceDir, definition).defs?.activities.find((one) => one.key === key)?.gateViewedPage ?? true;
+}
+
 
 /**
  * 一个工作项是哪一种、叫什么：工作流的工作项叫工作流的名字，单项活动的叫活动的名字。给了声明（defs）时名字取自声明，

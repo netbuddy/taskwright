@@ -8,6 +8,8 @@ import { test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { type SaveDiagramParams, saveDiagram } from "../src/lib/save_diagram.ts";
 import { STAGE_NAMES } from "../src/lib/stage.ts";
+import { withTaskDatabase } from "../src/lib/schema.ts";
+import { launchWorkItem } from "../src/lib/stage_read.ts";
 import { rejectionOf } from "../src/lib/tool_rejection.ts";
 import { DIAGRAM_OP_KIND, editDiagram } from "../src/lib/user_diagram.ts";
 import { DEFINITION_PATH, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
@@ -88,4 +90,16 @@ test("早先建的任务没有阶段：有材料也不拦，助手照旧直接�
   const dir = workspace(demoDefinition());
   assert.equal(await refusal(dir, fresh()), null);
   assert.equal(count(dir, "activity_record"), 0);
+});
+
+test("逆向解析的工作项：获准写入按当前活动取，逆向解析不能画图（它的获准写入是页、问题、条目），原话按它算作的阶段写核读材料", async () => {
+  const dir = makeWorkspace(overallDefinition(), { material: true });
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
+    const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
+    launchWorkItem(db, { taskId: task.task_id, sessionId: "session-test", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "rewrite", reason: "" });
+  });
+  const got = await refusal(dir, fresh());
+  assert.ok(got && got.fact.includes(`任务现在在${STAGE_NAMES.reading}阶段`), JSON.stringify(got));
+  assert.equal(count(dir, "diagram"), 0);
 });

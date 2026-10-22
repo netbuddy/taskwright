@@ -80,7 +80,7 @@ test("10 两个不同活动的会话读任务定义各得其视图：核读只�
   const defs = readDefinitions(join(SRS_TYPE, ".pi", "skills", "requirements-engineering"));
   const viewAt = (stage: Stage) => {
     const activity = defs.activities.find((one) => one.key === stage)!;
-    return definitionView(raw, { stage, reads: activity.reads, allowed: defs.allowed[stage] }) as { 交付物: { 条目集合: { 名称: string; 可写: boolean; 字段: { 名: string }[] }[] } };
+    return definitionView(raw, { stage, reads: activity.reads, allowed: defs.allowedFor(stage) }) as { 交付物: { 条目集合: { 名称: string; 可写: boolean; 字段: { 名: string }[] }[] } };
   };
   const reading = viewAt("reading").交付物.条目集合, document = viewAt("document").交付物.条目集合;
   assert.deepEqual(reading.map((one) => [one.名称, one.可写]), [["问题", true], ["业务说明", true]]);

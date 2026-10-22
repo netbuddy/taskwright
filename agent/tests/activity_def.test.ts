@@ -13,7 +13,7 @@ import {
   parseActivityDef, parseFlowDef, prerequisiteText, splitHead,
 } from "../src/lib/activity_def.ts";
 import { definitionsFor, readDefinitions, templateWritesAllowed } from "../src/lib/activity_def_read.ts";
-import { STAGES } from "../src/lib/stage.ts";
+import { IDLE, STAGES } from "../src/lib/stage.ts";
 import { composeContext } from "../src/lib/context_assemble.ts";
 import { SRS_SKILL_DIR } from "./helpers.ts";
 
@@ -35,18 +35,18 @@ test("需求工程的八项活动：方式、读、写、前置条件、模板�
     reviewing: ["评审确认", "dialogue", "items", "review items", "has_items", "reviewing", "reviewing"],
     document: ["编写文档", "batch", "all", "description versions", "has_confirmed_items", "document", "document"],
     publish: ["发布", "user_only", "all", "versions", "no_open_findings confirmations_clear", null, null],
-    parse_spec: ["逆向解析", "batch", "materials", "description", "has_materials", "reading", "reading"],
+    parse_spec: ["逆向解析", "batch", "materials", "description items", "has_materials", "parse_spec", "reading"],
   });
   for (const one of activities) assert.ok(one.purpose.endsWith("。") && one.example.endsWith("。"), one.key);
 });
 
-test("获准能力表由活动声明生成：六个阶段取各自代表活动的 writes_allowed，空闲取空闲模板头；与原来手写的表相同", () => {
-  const { activities, allowed } = readDefinitions(SRS_SKILL_DIR);
+test("获准能力由活动声明给出：六个阶段的活动各取自己的 writes_allowed，空闲取空闲模板头；与原来手写的表相同", () => {
+  const { activities, allowedFor } = readDefinitions(SRS_SKILL_DIR);
   assert.deepEqual(Object.fromEntries(activities.map((one) => [one.key, one.writesAllowed.join(" ")])), {
     reading: "page problem", clarifying: "page problem", modeling: "page problem diagram", writing: "page problem diagram item review",
-    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "", parse_spec: "page problem",
+    reviewing: "page problem diagram item review publish", document: "page problem publish", publish: "", parse_spec: "page problem item",
   });
-  assert.deepEqual(allowed, {
+  assert.deepEqual(Object.fromEntries([...STAGES, IDLE].map((key) => [key, allowedFor(key)])), {
     reading: ["page", "problem"], clarifying: ["page", "problem"], modeling: ["page", "problem", "diagram"],
     writing: ["page", "problem", "diagram", "item", "review"], reviewing: ["page", "problem", "diagram", "item", "review", "publish"],
     document: ["page", "problem", "publish"], idle: ["page", "problem"],
@@ -100,12 +100,55 @@ test("能不能单独启动：alone 一栏不写或者空着是能，写 yes、n
     ["writing", true], ["reviewing", true], ["document", true], ["publish", true], ["parse_spec", false]]);
 });
 
-test("逆向解析算作核读材料阶段、用核读模板，但核读材料阶段的代表仍是 reading：前六项仍是六个阶段的键", () => {
-  const { activities, allowed } = readDefinitions(SRS_SKILL_DIR);
+test("逆向解析算作核读材料阶段、用自己的 parse_spec 模板，但核读材料阶段的代表仍是 reading：前六项仍是六个阶段的键", () => {
+  const { activities, allowedFor } = readDefinitions(SRS_SKILL_DIR);
   const parse = activities.find((one) => one.key === "parse_spec")!;
-  assert.deepEqual([parse.name, parse.stage, parse.template, parse.requires], ["逆向解析", "reading", "reading", ["has_materials"]]);
+  assert.deepEqual([parse.name, parse.stage, parse.template, parse.requires], ["逆向解析", "reading", "parse_spec", ["has_materials"]]);
+  assert.deepEqual(templateWritesAllowed("parse_spec"), ["page", "problem", "item"]);
   assert.deepEqual(activities.slice(0, STAGES.length).map((one) => one.key), [...STAGES]);
-  assert.deepEqual(allowed.reading, ["page", "problem"]);
+  assert.deepEqual(allowedFor("reading"), ["page", "problem"]);
+});
+
+test("获准写入按当前活动取（allowedFor）：逆向解析是页、问题、条目；核读是页、问题；空闲取空闲模板；认不出的阶段键取那个阶段的代表活动，别的键报错", () => {
+  const defs = readDefinitions(SRS_SKILL_DIR);
+  assert.deepEqual([defs.allowedFor("parse_spec"), defs.allowedFor("reading"), defs.allowedFor(IDLE)], [["page", "problem", "item"], ["page", "problem"], ["page", "problem"]]);
+  // 既不是声明里的活动、也不是阶段键：报错。
+  assert.throws(() => defs.allowedFor("nothing"), (error: Error) => error instanceof DefinitionHeadError && error.message === "活动记录里的「nothing」在任务类型的活动声明里找不到。");
+  // 阶段键而声明里没有同名的活动（早先的记录写的是阶段键，任务类型里那个阶段的活动另起了名字）：取算作这个阶段的代表活动。
+  const dir = mkdtempSync(join(tmpdir(), "allowed-for-"));
+  try {
+    cpSync(SRS_SKILL_DIR, dir, { recursive: true });
+    cpSync(join(dir, "activities", "modeling.md"), join(dir, "activities", "modeling_v2.md"));
+    rmSync(join(dir, "activities", "modeling.md"));
+    rmSync(join(dir, "flows"), { recursive: true, force: true });  // 工作流的各步写的是 modeling，这里只看获准写入
+    const renamed = readDefinitions(dir);
+    assert.deepEqual([renamed.allowedFor("modeling"), renamed.allowedFor("modeling_v2")], [["page", "problem", "diagram"], ["page", "problem", "diagram"]]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("逆向解析的 writes_allowed 不超出 parse_spec 模板头：写了 diagram 读声明报错", () => {
+  const dir = mkdtempSync(join(tmpdir(), "parse-spec-"));
+  try {
+    cpSync(SRS_SKILL_DIR, dir, { recursive: true });
+    const file = join(dir, "activities", "parse_spec.md");
+    writeFileSync(file, readFileSync(file, "utf-8").replace("writes_allowed: page, problem, item", "writes_allowed: page, problem, item, diagram"));
+    assert.throws(() => readDefinitions(dir), (error: Error) => error instanceof DefinitionHeadError
+      && error.message === "activities/parse_spec.md 的声明里「writes_allowed」写了 diagram，超出了它所用的模板 parse_spec.md 头里写的（page、problem、item）。");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("要不要过最低门：gate_viewed_page 一栏不写或者空着是要，写 yes、no 各对，别的值报错；需求工程里只有逆向解析写 no", () => {
+  const head = ["name: 写条目", "mode: batch", "purpose: 目的。", "reads: description", "writes: items", "writes_allowed: page, problem, item", "requires:",
+    "example: 例子。", "template: writing", "stage: writing"];
+  const parse = (lines: string[]) => parseActivityDef(withHead(lines), "writing", "activities/writing.md");
+  assert.deepEqual([parse(head).gateViewedPage, parse([...head, "gate_viewed_page:"]).gateViewedPage, parse([...head, "gate_viewed_page: yes"]).gateViewedPage,
+    parse([...head, "gate_viewed_page: no"]).gateViewedPage], [true, true, true, false]);
+  assert.throws(() => parse([...head, "gate_viewed_page: 0"]), (error: Error) => error instanceof DefinitionHeadError && /「gate_viewed_page」写的是「0」/.test(error.message));
+  assert.deepEqual(readDefinitions(SRS_SKILL_DIR).activities.filter((one) => !one.gateViewedPage).map((one) => one.key), ["parse_spec"]);
 });
 
 test("六类资产的键是平台定的、名字由任务定义给；前置条件各有给人看的名字；几个前置条件合成一句", () => {

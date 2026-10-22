@@ -45,7 +45,7 @@ import { listMaterials } from "./task_status.ts";
 import { envKnowledgeRoot, knowledgeFilePath } from "./knowledge.ts";
 import { isKnowledgeLocator } from "./knowledge_locator.ts";
 import { reviewRefusal } from "./stage.ts";
-import { allowedAt, stageOf } from "./stage_read.ts";
+import { allowedForActivity, whereActivity } from "./stage_read.ts";
 import { fillText } from "./texts.ts";
 import { ToolRejection, notInputProblem } from "./tool_rejection.ts";
 
@@ -166,8 +166,8 @@ export function prepareReviews(workspaceDir: string, requested: RequestedItem[] 
     const definition = validateDefinition(JSON.parse(task.definition_text));
     // 工作的阶段（lib/stage.ts）：助手要到写条目阶段才能请求评审，看的是这条会话的工作项（sessionId）。用户在页面上发起的评审不看阶段；早先建的任务没有阶段。
     if (by === "executor") {
-      const stage = stageOf(db, workspaceDir, task.task_id, definition, sessionId);
-      const refusal = stage ? reviewRefusal(stage, allowedAt(workspaceDir, definition, stage)) : null;
+      const where = whereActivity(db, workspaceDir, task.task_id, definition, sessionId);
+      const refusal = where ? reviewRefusal(where.position, allowedForActivity(workspaceDir, definition, where.activity)) : null;
       if (refusal) throw new ToolRejection(fillText("part.review_refused", { fact: refusal.fact, guidance: refusal.guidance }), refusal.fact, refusal.guidance, [refusal.code]);
     }
     const reviewed = new Set(Object.entries(definition.completion).filter(([, list]) => list.includes(REVIEW_CONDITION)).map(([name]) => name));

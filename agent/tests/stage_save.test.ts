@@ -10,6 +10,8 @@ import { createTask } from "../src/lib/create_task.ts";
 import { SaveRejected, saveRevision } from "../src/lib/save_revision.ts";
 import { STAGES, STAGE_NAMES, type Stage } from "../src/lib/stage.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
+import { withTaskDatabase } from "../src/lib/schema.ts";
+import { launchWorkItem } from "../src/lib/stage_read.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, enterStage, makeWorkspace, overallDefinition, query } from "./helpers.ts";
 
 const page = (title: string, fields: Record<string, unknown> = {}) =>
@@ -159,4 +161,24 @@ test("早先建的任务没有阶段：有材料也不拦，助手照旧直接�
   assert.equal(refusal(dir, [{ op: "delete", item: "UC-001", base_revision: 2 }]), null);
   assert.equal(count(dir, "activity_record"), 0);
   assert.deepEqual([...STAGES].length, 6);
+});
+
+test("逆向解析的工作项：获准写入按当前活动取，能新增条目，用户还没看过任何页也不被最低门拦，页不受核读模板的两条检查；同一任务里核读的工作项照旧拦，文字不变", () => {
+  const dir = workspace();
+  // 核读（需求分析的第一站）：新增条目被拦，文字照旧写现在在核读材料阶段。
+  enterStage(dir, "reading");
+  assert.ok(refusal(dir, [useCase("还书")])!.includes("任务现在在核读材料阶段，这个阶段不能新增「用例」的条目"));
+  // 另一条会话做逆向解析（在需求再工程里）：页与条目都能写，最低门不拦（这时一页都还没有被用户看过）。
+  withTaskDatabase(dir, { createIfMissing: false }, (db) => {
+    const task = db.prepare("SELECT task_id FROM task LIMIT 1").get() as { task_id: string };
+    launchWorkItem(db, { taskId: task.task_id, sessionId: "sess-parse", runId: null, callId: "ui-op-parse", actor: "user", to: "parse_spec", flow: "rewrite", reason: "" });
+  });
+  // 页的两条核读检查（要标签与例子）只在当前活动用核读模板时查：逆向解析照原文立页，一页没有标签与例子也放行。
+  saveRevision(callIn(dir, "sess-parse"), { operations: [page("借书"), useCase("借书")] });
+  assert.equal(count(dir, "item"), 2);
+  // 同样的页在核读的工作项里仍被拒：要贴标签、写例子。
+  assert.match(refusal(dir, [page("还书")])!, /核读材料时立的页至少要贴一个「标签」、写一项「例子」/);
+  // 写条目这一站仍要过最低门：这时还没有一页用户看过，新增条目被最低门拦下。
+  enterStage(dir, "writing");
+  assert.match(refusal(dir, [useCase("还书")])!, /还没有用户看过的主题/);
 });

@@ -336,6 +336,11 @@
           "路径": "modeling.md"
          },
          {
+          "字节数": 1374,
+          "摘要值": "15f24a59cf485ab5",
+          "路径": "parse_spec.md"
+         },
+         {
           "字节数": 4557,
           "摘要值": "2b85633ad900e3d1",
           "路径": "reading.md"
@@ -440,8 +445,8 @@
          "路径": ".pi/skills/requirements-engineering/activities/modeling.md"
         },
         {
-         "字节数": 602,
-         "摘要值": "b680c38fe603291e",
+         "字节数": 639,
+         "摘要值": "7c94b003ba42bafa",
          "路径": ".pi/skills/requirements-engineering/activities/parse_spec.md"
         },
         {

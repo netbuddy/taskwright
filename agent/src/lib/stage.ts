@@ -63,7 +63,7 @@ export function stageByName(name: unknown): Stage | null {
  * 空闲：一条会话现在没有在做的工作项——它是自由讨论的会话（不属于任何工作项），或者它已经归档（它的工作项被删除了）。它不是一个阶段，
  * 不排在 STAGES 的次序里，也没有自己的灯；写法 idle 与六个阶段的写法并列，出现在「这条会话现在在哪里」的那几处。它与 null 不是一回事：
  * null 是早先建的任务（任务定义里没有「业务说明」集合），那种任务没有阶段，什么都不拦；空闲的会话照下面的规矩拦。
- * 空闲时助手能写什么取空闲模板头里的「writes_allowed」（见 AllowedTable）。启动哪一项活动由用户在任务起点页上定。
+ * 空闲时助手能写什么取空闲模板头里的「writes_allowed」（lib/activity_def_read.ts 的 allowedFor）。启动哪一项活动由用户在任务起点页上定。
  */
 export const IDLE = "idle";
 export const IDLE_NAME = "空闲";
@@ -423,12 +423,6 @@ export type WriteKind = "page" | "problem" | "diagram" | "item" | "review" | "pu
 /** 全部写入种类，按这个次序。 */
 export const WRITE_KINDS: readonly WriteKind[] = ["page", "problem", "diagram", "item", "review", "publish"];
 
-/**
- * 获准能力表：每个位置助手能做哪几类写入。表的内容不在这里写：六个阶段取各自代表活动的声明里的「writes_allowed」，
- * 空闲取空闲模板头里的那一栏（lib/activity_def_read.ts 读声明时生成，随声明一起记着）。这里只是消费它。
- * 页与问题的限制另见 pageRefusal（评审确认阶段对页另有限制）。
- */
-export type AllowedTable = Readonly<Record<Position, readonly WriteKind[]>>;
 
 /** 给定这个位置获准的写入种类，能不能做这一类写入。 */
 export function canWrite(allowed: readonly WriteKind[], kind: WriteKind): boolean {

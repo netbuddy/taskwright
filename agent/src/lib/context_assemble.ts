@@ -1,7 +1,7 @@
 /**
  * 有阶段的任务的系统提示怎样拼：按会话的三样输入选段、按固定的次序接起来。不碰 pi，挂到事件上的那一半在 hooks/stage_prompt.ts。
  *
- * 三样输入：活动的头（方式、读哪几类、写哪几类，lib/activity_def.ts）、获准能力表（这个位置助手能做哪几类写入，由任务类型的活动声明生成，lib/activity_def_read.ts）、
+ * 三样输入：活动的头（方式、读哪几类、写哪几类，lib/activity_def.ts）、获准能力（做这项活动时助手能做哪几类写入，取活动声明，lib/activity_def_read.ts 的 allowedFor）、
  * 会话的位置（工作流的工作项、单项活动的工作项、空闲）。拼出来的次序是：
  *   1 系统提示（agent/prompts/system.md）
  *   2 一段由程序生成的位置说明：本次会话在哪里、主要做什么、获准做什么（模板 stage_prompt.position）
@@ -35,7 +35,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -318,7 +318,8 @@ function activityOf(input: ComposeInput): ActivityDef {
 /** 这次会话的三样输入合成的 Situation。 */
 export function situationOf(input: ComposeInput, activity: ActivityDef = activityOf(input)): Situation {
   if (activity.mode === "user_only") throw new PromptAssemblyError(`「${activity.name}」只能由用户发起，不是工作阶段，没有系统提示。`);
-  return { mode: activity.mode, reads: activity.reads, writes: activity.writes, allowed: definitionsOf(input).allowed[input.stage], session: sessionKind(input) };
+  // 获准写入按当前活动取（活动标识符；空闲时是 IDLE），与工具调用时的守卫、定义视图同一个来源（lib/activity_def_read.ts 的 allowedFor）。
+  return { mode: activity.mode, reads: activity.reads, writes: activity.writes, allowed: definitionsOf(input).allowedFor(input.activity ?? input.stage), session: sessionKind(input) };
 }
 
 /** 位置说明的「在哪里」那半句。 */
@@ -709,10 +710,20 @@ export function stageInWorkspace(workspaceDir: string, sessionId: string | null)
 
 // ───────────── 调试模式的提示词目录 ─────────────
 
+/** 一个模板目录里的 .md 文件名，按名字排；目录不在时是空的。 */
+function templateFiles(dir: string): string[] {
+  try {
+    return readdirSync(dir).filter((name) => name.endsWith(".md") && name !== "README.md").sort();
+  } catch {
+    return [];
+  }
+}
+
 /** 调试模式的提示词目录里认的全部文件名：产品自带的系统提示、每个模块、每份活动模板与工作流的定义，加上任务类型一级的几份。 */
 export function promptDirNames(platformDir: string = PROMPTS_DIR): string[] {
   const modules = loadModules(join(platformDir, CAPABILITIES_SUBDIR)).map((one) => `${CAPABILITIES_SUBDIR}/${one.file}`);
-  const templates = [...STAGES, IDLE_TEMPLATE].map((key) => `${TEMPLATES_SUBDIR}/${key}.md`);
+  // 模板清单读模板目录（模板名不必与阶段名相同：逆向解析用自己的 parse_spec 模板）。
+  const templates = templateFiles(join(platformDir, TEMPLATES_SUBDIR)).map((name) => `${TEMPLATES_SUBDIR}/${name}`);
   return [SYSTEM_FILE, ...modules, ...templates,
     `${PROMPT_DIR_TASK_SUBDIR}/${PROMPT_DIR_TASK_COMMON}`, ...STAGES.map((one) => `${PROMPT_DIR_TASK_SUBDIR}/${one}.md`)];
 }

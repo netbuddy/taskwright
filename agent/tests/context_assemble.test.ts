@@ -405,11 +405,12 @@ test("事件处理：早先的任务什么都不返回、什么都不报；读�
 
 // ───────────── 调试模式的提示词目录 ─────────────
 
-test("提示词目录认的文件名：系统提示、每个模块、七份活动模板、流程的定义，加任务类型一级的七份", () => {
+test("提示词目录认的文件名：系统提示、每个模块、模板目录里的全部活动模板（含逆向解析的 parse_spec）、加任务类型一级的七份", () => {
   const names = promptDirNames();
   assert.equal(names[0], "system.md");
   assert.equal(names.filter((one) => one.startsWith("capabilities/")).length, REQUIRED_MODULES.length);
-  assert.deepEqual(names.filter((one) => one.startsWith("templates/")), [...STAGES, "idle"].map((one) => `templates/${one}.md`));
+  // 模板清单读模板目录，按文件名排：模板名不必与阶段名相同。
+  assert.deepEqual(names.filter((one) => one.startsWith("templates/")), [...STAGES, "idle", "parse_spec"].sort().map((one) => `templates/${one}.md`));
   assert.deepEqual(names.slice(-7), ["task-type/common.md", ...STAGES.map((one) => `task-type/${one}.md`)]);
 });
 
@@ -707,4 +708,8 @@ test("逆向解析的工作项：会话在哪里读出活动标识符 parse_spec
   const prompt = run.result!.systemPrompt;
   assert.ok(prompt.includes("「需求再工程」") && prompt.includes("「逆向解析」"), "位置说明写的是这条工作流与这一站");
   assert.ok(prompt.includes("## 这类任务在逆向解析阶段"), "活动补充取的是逆向解析的声明");
+  // 所用模板是逆向解析自己的 parse_spec.md；获准写入按当前活动取，含条目（与工具调用时的守卫同一个来源）。
+  assert.equal(run.reports[0][1].parts!.find((one) => one.part === "template")!.file, "agent/prompts/templates/parse_spec.md");
+  assert.ok(prompt.includes("# 现在这个阶段：逆向解析"), "模板正文是逆向解析的");
+  assert.ok(prompt.includes("写条目、改条目"), "获准写入里有条目");
 });

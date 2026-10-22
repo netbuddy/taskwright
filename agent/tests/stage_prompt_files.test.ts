@@ -25,7 +25,8 @@ import { readDefinitions } from "../src/lib/activity_def_read.ts";
 import { SRS_SKILL_DIR as SKILL_DIR_FOR_ALLOWED } from "./helpers.ts";
 
 /** 获准能力表：取真实任务类型的活动声明生成的那一份。 */
-const ALLOWED = readDefinitions(SKILL_DIR_FOR_ALLOWED).allowed;
+const DEFS_FOR_ALLOWED = readDefinitions(SKILL_DIR_FOR_ALLOWED);
+const ALLOWED_FOR = (key: string) => DEFS_FOR_ALLOWED.allowedFor(key);
 
 /** 一个什么都没有的任务的算灯事实：只用来数每个阶段有几盏灯。 */
 const EMPTY_LAMP_INPUT: LampInput = {
@@ -136,6 +137,22 @@ test("活动模板只有做什么、不做什么、做到什么算够；工作�
   assert.equal(skillBody(flow).trim(), "", "流程文件只有声明");
 });
 
+test("模板目录里的全部活动模板：头里的 template 与文件名相同；逆向解析有自己的 parse_spec 模板，上限是页、问题、条目，结构与六个阶段的相同，不写第几个阶段", () => {
+  const names = readdirSync(TEMPLATES_DIR).filter((name) => name.endsWith(".md")).sort();
+  assert.deepEqual(names, [...STAGES, "idle", "parse_spec"].sort().map((one) => `${one}.md`));
+  for (const name of names) {
+    const head = /^---\ntemplate: ([a-z_]+)\n/.exec(readFileSync(join(TEMPLATES_DIR, name), "utf-8"));
+    assert.ok(head && `${head[1]}.md` === name, name);
+  }
+  const raw = readFileSync(join(TEMPLATES_DIR, "parse_spec.md"), "utf-8");
+  assert.ok(raw.startsWith("---\ntemplate: parse_spec\nwrites_allowed: page, problem, item\n---\n"));
+  const template = skillBody(raw);
+  assert.ok(template.startsWith("# 现在这个阶段：逆向解析\n"));
+  assert.ok(template.includes("任务现在在逆向解析这一步，算作核读材料阶段。"));
+  assert.deepEqual([...sections(template).keys()], STAGE_HEADINGS);
+  assert.doesNotMatch(template, /六个阶段里的第/);
+});
+
 test("工作流里的转移只写一次，在 planning/flow_transitions：卡片的键是 next_step、goto:<活动标识符>、stay；你不能自己移动；用户的话按落在哪一步分；各步与分工表由程序填", () => {
   const moves = moduleText("flow_transitions");
   for (const said of ["{{flow}}", "{{steps}}", "{{here}}", "{{prev}}", "{{next}}", "{{division}}", "你不能自己把任务移到别的一步", "用户在对话里打字说可以了不算",
@@ -202,7 +219,7 @@ test("每一段的「不做什么」与工具守的一致：这一段不能写�
   for (const stage of STAGES) {
     const not = sections(read(`${stage}.md`)).get("这一段不做什么")!;
     for (const [kind, word] of Object.entries(WORDS) as [WriteKind, string][]) {
-      assert.equal(not.includes(word), !canWrite(ALLOWED[stage], kind), `${stage}：${word}`);
+      assert.equal(not.includes(word), !canWrite(ALLOWED_FOR(stage), kind), `${stage}：${word}`);
     }
   }
   // 评审确认阶段主题页只能改两处。

@@ -66,7 +66,8 @@ export function definitionReadView(workspaceDir: string, sessionId: string | nul
     const activity = defs.activities.find((one) => one.key === where.activity) ?? defs.activities.find((one) => one.key === where.stage);
     const reads: readonly ReadKey[] = where.stage === IDLE ? [READ_ALL] : activity?.reads ?? [];
     const raw: unknown = JSON.parse(readFileSync(target, "utf-8"));
-    const view = definitionView(raw, { stage: where.stage, reads, allowed: defs.allowed[where.stage] });
+    // 哪几个集合可写按当前活动取（与系统提示、工具调用时的守卫同一个来源：allowedFor）；空闲时是 IDLE。
+    const view = definitionView(raw, { stage: where.stage, reads, allowed: defs.allowedFor(where.activity ?? where.stage) });
     return { text: JSON.stringify(view, null, 2), stage: where.stage };
   } catch {
     return null;

@@ -20,7 +20,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { ACTOR_EXECUTOR, ACTOR_USER } from "./db.ts";
 import { publishRefusal } from "./stage.ts";
-import { allowedAt, stageOf } from "./stage_read.ts";
+import { allowedForActivity, whereActivity } from "./stage_read.ts";
 import { CONFIRM_CONDITION, checkCompletion, type ConditionResult, unreadItems, unreadList } from "./conditions.ts";
 import { NoDatabaseYet, withTaskDatabase } from "./schema.ts";
 import { validateDefinition } from "./definition.ts";
@@ -92,8 +92,8 @@ function check(db: DatabaseSync, call: PublishCall): PublishCheck {
   const versionNo = nextVersionNo(db, task.task_id);
   // 工作的阶段（lib/stage.ts）：助手只有在评审确认与编写文档阶段才能发布，先于完成条件核对。用户在页面上发布不看阶段；早先建的任务没有阶段。
   if ((call.actor ?? ACTOR_EXECUTOR) !== ACTOR_USER) {
-    const stage = stageOf(db, call.workspaceDir, task.task_id, definition, call.sessionId);
-    const refusal = stage ? publishRefusal(stage, allowedAt(call.workspaceDir, definition, stage)) : null;
+    const where = whereActivity(db, call.workspaceDir, task.task_id, definition, call.sessionId);
+    const refusal = where ? publishRefusal(where.position, allowedForActivity(call.workspaceDir, definition, where.activity)) : null;
     if (refusal) {
       const fact = fillText("part.publish_not_published", { version: versionNo, fact: refusal.fact });
       throw new ToolRejection(`${fact}\n${refusal.guidance}。`, fact, `${refusal.guidance}。`, [refusal.code]);

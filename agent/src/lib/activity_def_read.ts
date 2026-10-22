@@ -8,7 +8,7 @@
  * 校验：每份文件的声明合规；六个阶段各至少有一项活动算作它（stage 一栏），另有恰好一项只能由用户发起的「发布」（键 publish）；
  * 流程的各步只能写这个任务类型里的活动；每项活动声明的获准能力（writes_allowed）不能超出它所用的平台模板头里的那一栏。
  * 任何一处不对都抛错（DefinitionHeadError），调用方据此不出活动目录、拼不成系统提示。
- * 获准能力表（每个位置助手能做哪几类写入）由这里生成：六个阶段取各自代表活动的声明，空闲取空闲模板头。
+ * 获准能力（做一项活动时助手能做哪几类写入）由这里按活动给出（allowedFor）：取那项活动的声明，空闲取空闲模板头。
  * 进程里按目录记着上一次读的结果与各份文件的修改时刻和大小，文件没变就不重读。
  */
 
@@ -16,7 +16,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ActivityDef, DefinitionHeadError, type FlowDef, PUBLISH, parseActivityDef, parseFlowDef, splitHead } from "./activity_def.ts";
-import { type AllowedTable, FLOW_NAMES, IDLE, STAGES, STAGE_NAMES, type Stage, WRITE_KINDS, type WriteKind, isStage } from "./stage.ts";
+import { FLOW_NAMES, IDLE, STAGES, STAGE_NAMES, type Stage, WRITE_KINDS, type WriteKind, isStage } from "./stage.ts";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 /** 产品自带的任务类型所在的目录（与后端 backend/src/paths.ts 的 TASK_TYPES_DIR 是同一个）。 */
@@ -34,8 +34,11 @@ export interface Definitions {
   activities: ActivityDef[];
   /** 按标识符。 */
   flows: FlowDef[];
-  /** 获准能力表：六个阶段取各自代表活动的 writes_allowed，空闲取空闲模板头。 */
-  allowed: AllowedTable;
+  /**
+   * 这项活动的获准能力（助手能做哪几类写入）：key 是活动标识符时取它声明的 writes_allowed；是空闲（IDLE）时取空闲模板头；
+   * 声明里没有、而它是阶段的键时（早先的记录）取算作这个阶段的代表活动的；别的键抛 DefinitionHeadError。
+   */
+  allowedFor: (key: string) => readonly WriteKind[];
   /** 读的是哪个 skill 目录（绝对路径），与它是不是回退到产品自带的那一份。 */
   dir: string;
   fallback: boolean;
@@ -103,12 +106,17 @@ export function readDefinitions(dir: string, fallback = false): Definitions {
   const keys = ordered.map((one) => one.key);
   const flows = mdFiles(join(dir, FLOWS_SUBDIR)).map((name) => parseFlowDef(read(join(dir, FLOWS_SUBDIR, name)), name.slice(0, -3), `${FLOWS_SUBDIR}/${name}`, keys));
   for (const one of ordered) checkWithinTemplate(one);
-  // 六个阶段的代表排在最前（见上），所以 ordered[i] 就是 STAGES[i] 的代表。
-  const allowed = Object.fromEntries([
-    ...STAGES.map((stage, i) => [stage, ordered[i].writesAllowed] as const),
-    [IDLE, templateWritesAllowed(IDLE_TEMPLATE)] as const,
-  ]) as AllowedTable;
-  return { activities: ordered, flows, allowed, dir, fallback };
+  const idleAllowed = templateWritesAllowed(IDLE_TEMPLATE);
+  const allowedFor = (key: string): readonly WriteKind[] => {
+    if (key === IDLE) return idleAllowed;
+    const found = ordered.find((one) => one.key === key);
+    if (found) return found.writesAllowed;
+    // 声明里没有这个标识符、而它是阶段的键（早先的记录，任务类型里那个阶段的活动另起了名字）：取算作这个阶段的代表活动。
+    // 六个阶段的代表排在最前（见上），所以 ordered[i] 就是 STAGES[i] 的代表。
+    if (isStage(key)) return ordered[STAGES.indexOf(key)].writesAllowed;
+    throw new DefinitionHeadError(`活动记录里的「${key}」在任务类型的活动声明里找不到。`);
+  };
+  return { activities: ordered, flows, allowedFor, dir, fallback };
 }
 
 /**
