@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, WorkItemView } from "../../api/types";
-import { START_ARROW, flowInProgress, flowPositionLine, flowTag, producedLine, workItemMeta, workItemPosition, workItemSessionsLine } from "../../model/startPage";
+import { INPUT_ARROW, START_ARROW, flowInProgress, flowPositionLine, flowTag, producedLine, workItemMeta, workItemPosition, workItemSessionsLine } from "../../model/startPage";
 import { href } from "../../router";
 
 /** 「工作流程」标题右边的一行：三步怎样开始。 */
@@ -64,9 +64,10 @@ export function WorkItemCards({ items, busy, onOpen, onContinue, onDelete }: {
 
 /**
  * 工作流程：上面一行处境标签，按流程的先后、每条流程声明的 cases 的先后生成；点一个标签把对应的流程卡滚到眼前并高亮一会儿，
- * 不启动、不跳页（流程不能启动时也照样可点，卡上写着原因）。下面每条一张卡，第一行是「适用」。能启动的整张卡可点，进这条流程的输入页。任务里已有这条流程的工作项时（一个任务同一时刻至多一个流程工作项），
- * 卡片不能再启动：标「已在进行」，底部写在第几站，另有「打开它的会话」。现在不能启动的变淡、不可点，卡片底部写前置条件；
- * 因为另一条流程正在进行而不能启动的，底部写那一句原因。
+ * 不启动、不跳页（流程不能启动时也照样可点，卡上写着原因）。下面每条一张卡，第一行是「适用」。能进输入页的（enterable）整张卡可点，
+ * 进这条流程的输入页：能启动的右下写「启动 →」；还不能启动的（例如缺必填的材料）卡底写原因、右下写「去提供输入 →」，进去补上。
+ * 任务里已有这条流程的工作项时（一个任务同一时刻至多一个流程工作项），卡片标「已在进行」，底部写在第几站，另有「打开它的会话」。
+ * 进不去的只有两种：任务里已有流程工作项（底部写那一句原因）、此版本尚未提供；它们变淡、不可点。
  */
 export function FlowCards({ taskId, flows, onOpenWorkItem }: {
   taskId: string;
@@ -99,7 +100,9 @@ export function FlowCards({ taskId, flows, onOpenWorkItem }: {
       {flows.map((flow) => {
         const tag = flowTag(flow);
         const running = flowInProgress(flow);
-        const to = flow.enabled ? href.start(taskId, flow.key) : null;
+        // 能进输入页就给链接（缺必填材料时也能进，进去补上传）；能不能启动由输入页把关。
+        const enterable = flow.enterable ?? flow.enabled;
+        const to = enterable ? href.start(taskId, flow.key) : null;
         const body = (
           <>
             <div className="t"><b>{flow.name}</b>{tag && <span className={`chip${tag.kind === "rec" ? " dark" : tag.kind === "now" ? " okc" : ""}`}>{tag.text}</span>}</div>
@@ -119,11 +122,11 @@ export function FlowCards({ taskId, flows, onOpenWorkItem }: {
               )}
               {/* 不能启动的原因一律照后端给的那一句（已有流程工作项、缺的前提、还没有上传必填的材料、此版本尚未提供），不在页面里另写。 */}
               {!running && !flow.enabled && <span className="tp-need">{`${flow.state}。`}</span>}
-              {flow.enabled && <span className="tp-arrow">{START_ARROW}</span>}
+              {enterable && <span className="tp-arrow">{flow.enabled ? START_ARROW : INPUT_ARROW}</span>}
             </div>
           </>
         );
-        const cls = `tp-flow${tag?.kind === "rec" ? " rec" : ""}${running ? " now" : !flow.enabled ? " off" : ""}${to ? " go" : ""}${hit === flow.key ? " hit" : ""}`;
+        const cls = `tp-flow${tag?.kind === "rec" ? " rec" : ""}${running ? " now" : !enterable ? " off" : ""}${to ? " go" : ""}${hit === flow.key ? " hit" : ""}`;
         const ref = (el: HTMLElement | null) => { cards.current[flow.key] = el; };
         return to
           ? <a key={flow.key} ref={ref} className={cls} href={to} data-testid={`flow-${flow.key}`}>{body}</a>

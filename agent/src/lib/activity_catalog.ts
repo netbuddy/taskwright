@@ -192,6 +192,11 @@ export interface CatalogFlow {
   inputs_text: string;
   /** 第一个还空着的必填材料槽位的名称（见 missingSlot）；都有了、或者没有必填的材料槽位时为 null。有它时这条工作流不能启动。 */
   missing_slot: string | null;
+  /**
+   * 能不能进这条工作流的输入页：任务里没有工作流的工作项、它又不在还没有提供的名单里就能进，与能不能启动（enabled）无关。
+   * 缺必填材料时也能进（进去在槽位里补上传），按不按得动启动由输入页与启动接口把关。
+   */
+  enterable: boolean;
   /** 输入页的槽位，照工作流的声明原样给；没有声明槽位的是空的。页面现在还不读它。 */
   slots: FlowSlot[];
   /** 用户可能所处的几种处境（工作流声明的「cases」一栏原样），任务起点页画成一行可点的小签；没有写的是空的。 */
@@ -281,6 +286,7 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
       // 能启动：前提满足、必填的材料槽位有着落、不在尚未提供的名单里、有一站可以开始，而且任务里没有流程工作项。
       enabled: start !== null && flowItem === null,
+      enterable: flowItem === null && !later,
       state,
       // 推荐：没有发布过版本时推荐需求分析，发布过之后推荐需求变更；需求再工程不推荐（从资产数量看不出有没有一份既有规格说明）。
       recommended: one.key === FLOW_ANALYSIS ? facts.versions === 0 : one.key === FLOW_CHANGE ? facts.versions > 0 : false,

@@ -106,6 +106,8 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
     ["analysis", "需求分析", false, "已有流程工作项「需求分析」，位于「写条目」", true, null, "reading", 1],
     ["change", "需求变更", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, null, 0],
     ["rewrite", "需求再工程", false, "已有流程工作项「需求分析」，位于「写条目」", false, null, null, 0]]);
+  // 已有需求分析的工作项：三条流程的输入页都进不去。
+  assert.deepEqual(status.catalog!.flows.map((one) => one.enterable), [false, false, false]);
   // 能不能单独启动：只有逆向解析不能（页面不给它单项卡）。
   assert.deepEqual(status.catalog!.activities.filter((one) => !one.alone).map((one) => one.key), ["parse_spec"]);
   assert.deepEqual(status.catalog!.flows.map((one) => one.work_item), [{ record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }]);

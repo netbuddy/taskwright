@@ -249,6 +249,19 @@ describe("起点页：空任务", () => {
     expect([change.tagName, change.classList.contains("go"), change.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
   });
 
+  it("能进不能启动的流程卡（例如缺必填的材料）：不变淡、整张卡可点进输入页，底部照写原因，右下写「去提供输入 →」；进不去的仍是灰的、不可点", async () => {
+    const base = statusOf();
+    const rewrite = flowOf("rewrite", "需求再工程", { enabled: false, enterable: true, state: "还没有上传「既有规格说明」", missing_slot: "既有规格说明", start: null });
+    page(detail(), info, statusOf({ catalog: { ...base.catalog!, flows: [...base.catalog!.flows.map((one) => (one.key === "change" ? { ...one, enterable: false } : one)), rewrite] } }));
+    await ready();
+    const card = await screen.findByTestId("flow-rewrite");
+    expect([card.tagName, card.getAttribute("href"), card.classList.contains("off"), card.classList.contains("go")]).toEqual(["A", "#/tasks/TASK-P/start/rewrite", false, true]);
+    expect([text(card.querySelector(".tp-need")), text(card.querySelector(".tp-arrow"))]).toEqual(["还没有上传「既有规格说明」。", "去提供输入 →"]);
+    const change = screen.getByTestId("flow-change");
+    expect([change.tagName, change.classList.contains("off"), change.querySelector(".tp-arrow")]).toEqual(["DIV", true, null]);
+    expect(text(screen.getByTestId("flow-analysis").querySelector(".tp-arrow"))).toBe("启动 →");
+  });
+
   it("有了发布版本之后：需求变更的前提满足了，但这一版还没有提供，标签写「此版本尚未提供」，不写「前置条件未满足」", async () => {
     const base = statusOf();
     const flows = base.catalog!.flows.map((one) => (one.key === "change" ? { ...one, state: "此版本尚未提供" } : one));

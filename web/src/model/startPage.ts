@@ -60,6 +60,8 @@ export function flowPositionLine(flow: CatalogFlow): string {
 
 /** 卡片右下角提示的字。 */
 export const START_ARROW = "启动 →";
+/** 能进输入页、但还不能启动的流程卡右下角的字（例如需求再工程缺必填的材料：进去补上传）。 */
+export const INPUT_ARROW = "去提供输入 →";
 
 /** 工作项卡标题下的一句：哪一种、哪天启动的（月-日）；流程的工作项另注明它是本任务唯一的流程工作项。 */
 export function workItemMeta(item: WorkItemView): string {
