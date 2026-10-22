@@ -147,7 +147,8 @@ export function FlowCards({ taskId, flows, onOpenWorkItem }: {
               {running && onOpenWorkItem && (
                 <button className="btn sm" onClick={() => onOpenWorkItem(flow.work_item!.record_id)} data-testid="flow-open-work-item">打开它的会话</button>
               )}
-              {!running && !flow.enabled && <span className="tp-need">{flow.work_item && flow.state.startsWith("已有流程工作项") ? `${flow.state}。` : flow.prerequisite_text}</span>}
+              {/* 不能启动的原因一律照后端给的那一句（已有流程工作项、缺的前提、还没有上传必填的材料、此版本尚未提供），不在页面里另写。 */}
+              {!running && !flow.enabled && <span className="tp-need">{`${flow.state}。`}</span>}
               {flow.enabled && <span className="tp-arrow">{START_ARROW}</span>}
             </div>
           </>

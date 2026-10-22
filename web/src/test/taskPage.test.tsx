@@ -229,7 +229,7 @@ describe("起点页：空任务", () => {
     expect(cells.every((one) => one.querySelector(".v")!.classList.contains("zero") && one.querySelector(".s") === null)).toBe(true);
   });
 
-  it("工作流程两张卡：推荐的那条带「推荐」，整张卡可点、进它的输入页，右下角写「启动 →」；不能启动的那条变淡、不可点，写「前置条件未满足」与它的前置条件", async () => {
+  it("工作流程两张卡：推荐的那条带「推荐」，整张卡可点、进它的输入页，右下角写「启动 →」；不能启动的那条变淡、不可点，写「前置条件未满足」与后端给的不能启动的原因", async () => {
     page(detail(), info, statusOf());
     await ready();
     const analysis = await screen.findByTestId("flow-analysis");
@@ -243,7 +243,7 @@ describe("起点页：空任务", () => {
     const change = screen.getByTestId("flow-change");
     expect(change).toHaveClass("off");
     expect(text(change.querySelector(".t"))).toBe("需求变更前置条件未满足");
-    expect(text(change.querySelector(".tp-need"))).toBe("前置条件：存在已发布的版本。");
+    expect(text(change.querySelector(".tp-need"))).toBe("还没有已发布的版本。");
     expect([change.tagName, change.classList.contains("go"), change.querySelector(".tp-arrow")]).toEqual(["DIV", false, null]);
   });
 
