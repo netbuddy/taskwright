@@ -1571,6 +1571,10 @@ export interface CatalogFlow {
   inputs: string;
   /** 输入页的槽位，照流程声明原样给；没有声明槽位的流程是空的。早先的后端不给。 */
   slots?: FlowSlot[];
+  /** 卡上「输入」一行：有槽位时由槽位生成（必填的注「（必填）」），没有时等于 inputs。早先的后端不给。 */
+  inputs_text?: string;
+  /** 第一个还空着的必填材料槽位的名称；都有了、或者没有必填的材料槽位时为 null。有它时这条流程不能启动。早先的后端不给。 */
+  missing_slot?: string | null;
   /** 用户可能所处的几种处境（流程声明的「cases」一栏，按写的先后）：起点页「工作流程」标题下的处境标签；没有写的是空的。 */
   cases: string[];
   prerequisite_text: string;

@@ -13,9 +13,11 @@ import { validateDefinition } from "../src/lib/definition.ts";
 import { TASK_DB_VERSION, withTaskDatabase } from "../src/lib/schema.ts";
 import {
   EVENT_ACTIVITY_STARTED, EVENT_NODE_ENTERED, EVENT_STAGE_MOVED, EVENT_WORK_ITEM_DELETED, activityRecords, archivedSessions, attachSession, currentStage, deleteWorkItem, enterNode,
-  launchWorkItem, moveStage, nextStepStage, sessionWorkItem, stageOf, taskHasMaterials, workItemSessions,
+  lampInput, launchWorkItem, moveStage, nextStepStage, sessionWorkItem, stageOf, taskHasMaterials, workItemSessions,
 } from "../src/lib/stage_read.ts";
 import { DEFINITION_PATH, callIn, demoDefinition, makeWorkspace, overallDefinition, query } from "./helpers.ts";
+import { assetFacts } from "../src/lib/activity_catalog.ts";
+import { insertMaterial, retireMaterial } from "../src/lib/material_db.ts";
 
 function workspace(definition: unknown = overallDefinition(), material = true): { dir: string; taskId: string } {
   const dir = makeWorkspace(definition, { material });
@@ -119,4 +121,19 @@ test("活动记录认声明里的活动：逆向解析的行读得出来，位�
   assert.deepEqual(entered.map((one) => [one.flow, one.from, one.node, one.direction]), [["rewrite", "parse_spec", "reading", "forward"]]);
   // 再进核读才是原地不动。
   assert.equal(write(dir, (db) => moveStage(db, dir, { ...who, callId: "ui-op-r3" }, "reading", "")).why, "same");
+});
+
+test("资产现状按槽位数材料：记在材料表里还在的那一行的槽位；由 Word 生成的文字版、已经删除的那一行、不经槽位上传的都不算", () => {
+  const { dir, taskId } = workspace();
+  const definition = validateDefinition(overallDefinition());
+  writeFileSync(join(dir, "inputs/旧版.docx"), "PK", "utf-8");
+  writeFileSync(join(dir, "inputs/旧版.docx.md"), "# 旧版", "utf-8");
+  writeFileSync(join(dir, "inputs/纪要.md"), "评审纪要。", "utf-8");
+  insertMaterial(dir, "inputs/旧版.docx", { slot: "spec", role: "既有规格说明" });
+  insertMaterial(dir, "inputs/纪要.md", { slot: "evidence", role: "证据" });
+  const facts = () => write(dir, (db) => assetFacts(lampInput(db, dir, taskId, definition)));
+  // 材料.md 是直接放进来的（没有材料表的行），旧版.docx.md 是生成的文字版：都不计入任何槽位。
+  assert.deepEqual([facts().materials, facts().materialsBySlot], [3, { spec: 1, evidence: 1 }]);
+  retireMaterial(dir, "inputs/纪要.md");
+  assert.deepEqual(facts().materialsBySlot, { spec: 1 });
 });

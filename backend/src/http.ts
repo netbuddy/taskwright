@@ -253,11 +253,18 @@ function refuseBeforeNewSession(taskDir: string, body: Record<string, any>): voi
     if (catalog !== null && !flow) throw new ApiError("bad_request", `任务类型里没有叫「${flowKey}」的工作流。`);
     if (flow && entry && !flow.nodes.some((one) => one.key === entry.key)) throw new ApiError("bad_request", `「${entry.name}」不是工作流「${flow.name}」的一站。`);
     const flowItem = library.workItemRows(taskDir).find((one) => one.kind === "flow");
-    if (!flowItem) return;
-    const existing = { record_id: flowItem.record_id, name: flowItem.name, node: flowItem.activity };
-    const fact = `任务里已有流程工作项「${flowItem.name}」（记录号 ${flowItem.record_id}，位于「${activityNameOf(library.taskDefinitions(taskDir), flowItem.activity)}」），` +
-      "一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着";
-    throw new ApiError("rejected", `${fact}。`, { reasons: [fact], existing });
+    if (flowItem) {
+      const existing = { record_id: flowItem.record_id, name: flowItem.name, node: flowItem.activity };
+      const fact = `任务里已有流程工作项「${flowItem.name}」（记录号 ${flowItem.record_id}，位于「${activityNameOf(library.taskDefinitions(taskDir), flowItem.activity)}」），` +
+        "一个任务同一时刻只能有一个流程工作项；要接着做，请打开它的会话，或者换一条干净的会话接着";
+      throw new ApiError("rejected", `${fact}。`, { reasons: [fact], existing });
+    }
+    // 必填的材料槽位还空着：不能启动这条流程，不建会话。
+    if (flow?.missing_slot) {
+      const fact = `还没有上传「${flow.missing_slot}」，不能启动「${flow.name}」`;
+      throw new ApiError("rejected", `${fact}。`, { reasons: [fact] });
+    }
+    return;
   }
   if (!entry || entry.enabled) return;
   const fact = `现在还不能启动「${entry.name}」：${entry.state}`;

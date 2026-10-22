@@ -76,7 +76,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
     assert.deepEqual([fresh.activity.kind, fresh.activity.key, fresh.activity.name, fresh.activity.ordinal, fresh.missing, fresh.work_items, "recent_done" in fresh],
       ["idle", "idle", "空闲", null, [], [], false]);
     assert.deepEqual(fresh.catalog.flows.map((one: Dict) => [one.key, one.enabled, one.state, one.start, one.active_count]),
-      [["analysis", true, "可以启动", "reading", 0], ["change", false, "还没有已发布的版本", null, 0], ["rewrite", true, "可以启动", "parse_spec", 0]]);
+      [["analysis", true, "可以启动", "reading", 0], ["change", false, "还没有已发布的版本", null, 0], ["rewrite", false, "还没有上传「既有规格说明」", null, 0]]);
     assert.deepEqual(fresh.catalog.activities.map((one: Dict) => [one.name, one.enabled, one.state]), [
       ["核读材料", true, "可以启动"], ["澄清", true, "可以启动"], ["整理建模", false, "业务说明还没有内容"], ["写条目", false, "业务说明还没有内容"],
       ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"], ["发布", false, "还没有评审过"], ["逆向解析", true, "可以启动"]]);
@@ -233,7 +233,7 @@ test("自由讨论的会话按空闲办；启动需求分析与单项活动各�
   }, { seed: false, launch: false, outline: false }));
 
 test("经直接操作启动需求再工程、从逆向解析开始：任务状况里工作项的名字、活动名与第几站取自声明；这条会话在逆向解析；再启动需求分析被拒并写明现有的那一个，不建会话", { skip: NO_PI, timeout: 240000 }, () =>
-  withStack(tmp, "rewrite", { sequence: [] }, async ({ call, taskId, db }) => {
+  withStack(tmp, "rewrite", { sequence: [] }, async ({ call, taskId, db, port }) => {
     const status = async (of: string | null) => (await call("GET", `/api/v1/tasks/${taskId}/status${of ? `?session=${of}` : ""}`)).body.status as Dict;
     const sessions = async () => (await call("GET", `/api/v1/tasks/${taskId}/sessions`)).body.sessions as Dict[];
     const act = (body: Dict) => call("POST", `/api/v1/tasks/${taskId}/actions`, { client_id: `a-${body.kind}-${Math.random()}`, task_id: taskId, targets: [], notify_executor: false, ...body });
@@ -243,6 +243,16 @@ test("经直接操作启动需求再工程、从逆向解析开始：任务状�
     const alone = await act({ kind: "start_activity", fields: { activity: "parse_spec", in_flow: false } });
     assert.deepEqual([alone.status >= 400, alone.body.error.code, alone.body.error.message], [true, "rejected", "「逆向解析」只在工作流里做，不能单独启动。"]);
     assert.deepEqual([(await sessions()).length, db("SELECT COUNT(*) AS n FROM activity_record")], [sessionsBefore, [{ n: 0 }]]);
+    // 任务里那份材料没有放进槽位：需求再工程的必填槽位「既有规格说明」还空着，启动被拒，不建会话。
+    const empty = await act({ kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "rewrite" } });
+    assert.deepEqual([empty.body.error.code, empty.body.error.message], ["rejected", "还没有上传「既有规格说明」，不能启动「需求再工程」。"]);
+    assert.equal((await sessions()).length, sessionsBefore);
+    // 往「既有规格说明」槽位上传一份（multipart 带 slot），之后可以启动。
+    const form = new FormData();
+    form.append("file", new Blob(["# 旧版规格说明\n\n## 3.2 用户登录\n"]), "旧版规格说明.md");
+    form.append("slot", "spec");
+    const uploaded = await fetch(`http://127.0.0.1:${port}/api/v1/tasks/${taskId}/materials`, { method: "POST", body: form });
+    assert.equal(uploaded.status, 200, await uploaded.clone().text());
     const launched = await act({ kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "rewrite" } });
     const own = launched.body.session_id as string;
     assert.ok(launched.status === 200 && typeof own === "string" && own !== "", JSON.stringify(launched.body));

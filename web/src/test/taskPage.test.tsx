@@ -331,6 +331,21 @@ describe("起点页：空任务", () => {
   });
 });
 
+describe("起点页：材料的角色与流程卡的输入一行", () => {
+  it("材料行写角色（放进槽位的写槽位的角色，别的写「证据」，早先的后端不给时不写）；流程卡的「输入」一行有 inputs_text 时用它", async () => {
+    const row = (path: string, over: Record<string, unknown>) => ({ path, bytes: 5, modified_at: "2026-09-28T17:50:00", derived_from: null, deletable: true, ...over });
+    const base = statusOf();
+    const flows = base.catalog!.flows.map((one) => (one.key === "analysis" ? { ...one, inputs_text: "既有规格说明（必填）、补充证据" } : one));
+    page(detail({ materials: [row("inputs/旧版.md", { slot: "spec", role: "既有规格说明" }), row("inputs/纪要.md", { slot: null, role: "证据" }), row("inputs/早先.md", {})] } as unknown as Partial<TaskDetail>),
+      info, statusOf({ catalog: { ...base.catalog!, flows } }));
+    await ready();
+    const rows = await screen.findAllByTestId("material-row");
+    expect(rows.map((one) => [text(one.querySelector(".nm")), one.querySelector("[data-testid=material-role]")?.textContent ?? null])).toEqual([
+      ["旧版.md既有规格说明", "既有规格说明"], ["纪要.md证据", "证据"], ["早先.md", null]]);
+    expect(text(screen.getByTestId("flow-analysis").querySelectorAll(".tp-kv dd")[2])).toBe("既有规格说明（必填）、补充证据");
+  });
+});
+
 describe("起点页：有内容的任务", () => {
   const sessions = [session("S1", "第一句", "2026-09-28T18:02:00"), session("S2", "第二句", "2026-09-29T10:02:00")];
 

@@ -25,7 +25,8 @@ export interface MaterialOps {
   elements: ReactNode;
 }
 
-export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChanged: () => void): MaterialOps {
+/** slot 是上传时放进的槽位（活动输入页按槽位分块时给）；不给是不经槽位上传。 */
+export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChanged: () => void, slot?: string): MaterialOps {
   const toast = useToast();
   const [deleting, setDeleting] = useState<string | null>(null);
   // 删除请求发出去、还没有回来：确认框的「删除」转圈、「取消」不可点，再点不会发第二次。
@@ -111,7 +112,7 @@ export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChang
     const same = waiting ? { key: `upload:${(file as File).name}` } : undefined;
     if (waiting && same) toast.running(same.key, waiting);
     try {
-      const r = await api.uploadMaterial(taskId, file as File);
+      const r = await api.uploadMaterial(taskId, file as File, undefined, slot);
       toast.success(`已上传：${r.path}`, same);
       onSuccess?.({});
       onChanged();

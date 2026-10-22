@@ -222,6 +222,48 @@ describe("活动输入页：需求分析", () => {
     expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请开始逆向解析。" });
   });
 
+  it("需求再工程按槽位分块：既有规格说明（必填）、补充证据（可选）、目标系统描述；没放进槽位的材料单列、只能看与删；必填槽位空着时主按钮点不动；在槽位里上传带 slot；放进去之后能启动", async () => {
+    const SLOTS = [{ key: "spec", name: "既有规格说明", accepts: "materials" as const, required: true, role: "既有规格说明" },
+      { key: "evidence", name: "补充证据", accepts: "materials" as const, required: false, role: "证据" },
+      { key: "goal", name: "目标系统描述", accepts: "text" as const, required: false, role: null }];
+    const rewrite = (over: Partial<CatalogFlow> = {}) => flowOf({ key: "rewrite", name: "需求再工程", nodes: [kind("parse_spec", "逆向解析"), kind("reading", "核读材料"), kind("publish", "发布")],
+      start: null, enabled: false, state: "还没有上传「既有规格说明」", missing_slot: "既有规格说明", recommended: false, slots: SLOTS, ...over });
+    const loose = { ...material("inputs/立项申请书.md"), slot: null, role: "证据" } as Material;
+    const spec = { ...material("inputs/旧版规格说明.md"), slot: "spec", role: "既有规格说明" } as Material;
+    const statusWith = (flow: CatalogFlow) => statusOf({ assets: assets({ materials: 1 }), catalog: { flows: [flowOf({ start: "reading" }), flow], activities: [READING] } });
+    const sent = vi.spyOn(api, "uploadMaterial").mockResolvedValue({ path: "inputs/旧版规格说明.md" });
+    page("rewrite", detail({ materials: [loose] }), statusWith(rewrite()));
+    expect(await submit()).toBeDisabled();
+    expect(screen.getByTestId("start-blocked")).toHaveTextContent("现在还不能启动：还没有上传「既有规格说明」。");
+    // 三块按声明的先后；没有原来的「项目材料」与「目标系统描述」两块，也没有那一段话。
+    expect([...screen.getByTestId("slot-blocks").querySelectorAll("[data-testid^=slot-]")].map((one) => one.getAttribute("data-testid"))).toEqual(["slot-spec", "slot-evidence", "slot-goal"]);
+    expect([text(screen.getByTestId("slot-spec").querySelector(".aside")), text(screen.getByTestId("slot-evidence").querySelector(".aside")), text(screen.getByTestId("slot-goal").querySelector(".aside"))])
+      .toEqual(["必填", "可选", "可选 · 作为会话的第一条消息发给助手"]);
+    expect([screen.queryByTestId("materials-card"), screen.queryByTestId("describe-block"), screen.queryByTestId("start-lead")]).toEqual([null, null, null]);
+    expect(within(screen.getByTestId("slot-spec")).queryAllByTestId("material-row")).toHaveLength(0);
+    expect(screen.getByTestId("slot-spec")).toHaveTextContent("还没有放进这一块的材料。");
+    // 没放进槽位的材料：单列一块，写角色「证据」，只能看与删，没有替换与上传区。
+    const unslotted = screen.getByTestId("unslotted-materials");
+    expect(within(unslotted).getByTestId("material-row")).toHaveTextContent("立项申请书.md");
+    expect(within(unslotted).getByTestId("material-role")).toHaveTextContent("证据");
+    expect([within(unslotted).queryByTestId("material-replace"), within(unslotted).queryByTestId("upload-hint")]).toEqual([null, null]);
+    expect(within(unslotted).getByTestId("material-delete")).toBeInTheDocument();
+    expect(unslotted).toHaveTextContent("要作为某个槽位的输入，请删除后在该槽位重新上传。");
+    // 在「既有规格说明」块里上传：请求带 slot=spec。
+    const file = new File(["# 旧版"], "旧版规格说明.md", { type: "text/markdown" });
+    fireEvent.change(screen.getByTestId("slot-spec").querySelector("input[type=file]") as HTMLInputElement, { target: { files: [file] } });
+    await waitFor(() => expect(sent).toHaveBeenCalledWith("TASK-P", file, undefined, "spec"));
+    cleanup(); vi.restoreAllMocks();
+    // 放进去之后：这一块列着它（角色「既有规格说明」），主按钮能点；写了目标系统描述就作为第一句话发出，启动时带 flow。
+    const calls = page("rewrite", detail({ materials: [loose, spec] }), statusWith(rewrite({ enabled: true, state: "可以启动", missing_slot: null, start: "parse_spec" })));
+    expect(await submit()).toBeEnabled();
+    expect(within(screen.getByTestId("slot-spec")).getByTestId("material-role")).toHaveTextContent("既有规格说明");
+    type("describe-input", "借阅系统改版。");
+    fireEvent.click(await submit());
+    await waitFor(() => expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "parse_spec", in_flow: true, flow: "rewrite" }));
+    await waitFor(() => expect(calls.say.mock.calls[0]?.[2]).toMatchObject({ text: "借阅系统改版。" }));
+  });
+
   it("业务说明已有内容：没有目标系统描述与那一段话；「启动后」写从哪一站开始", async () => {
     page("analysis", detail(), statusOf({ assets: assets({ materials: 1, description: 4 }), catalog: { flows: [flowOf({ start: "reading" })], activities: [] } }));
     expect(await submit()).toHaveTextContent("启动需求分析");

@@ -193,6 +193,8 @@
 .tp-mtable td { padding: 0.571rem 0.5rem 0.571rem 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .tp-mtable td.nm { white-space: normal; word-break: break-all; width: 100%; }
 .tp-mtable td.num { color: var(--text2); font-variant-numeric: tabular-nums; }
+/* 材料名后面的角色小签：既有规格说明、证据 */
+.tp-mrole { margin-left: 0.5rem; padding: 0 0.429rem; border: 1px solid var(--line2); border-radius: 71rem; font-size: 0.786rem; color: var(--text2); white-space: nowrap; }
 .tp-mtable th:last-child, .tp-mtable td:last-child { text-align: right; padding-right: 0; }
 .tp-mtable td .tp-lnk + .tp-lnk { margin-left: 0.857rem; }
 /* 文件图标按类型分形状，颜色一律灰 */

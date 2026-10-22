@@ -291,9 +291,11 @@ export const api = {
   sendMessage: (taskId: string, sessionId: string, body: MessageRequest) =>
     request<{ ok: true; client_id: string; queued: boolean }>(
       "POST", `${task(taskId)}/messages?session=${encodeURIComponent(sessionId)}`, body),
-  uploadMaterial: (taskId: string, file: File, sessionId?: string) => {
+  /** 上传一份材料；slot 是放进哪个槽位（流程声明里收材料的槽位键），不给是不经槽位上传、角色是「证据」。 */
+  uploadMaterial: (taskId: string, file: File, sessionId?: string, slot?: string) => {
     const form = new FormData();
     form.append("file", file, file.name);
+    if (slot) form.append("slot", slot);
     const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
     return request<{ path: string }>("POST", `${task(taskId)}/materials${query}`, form);
   },

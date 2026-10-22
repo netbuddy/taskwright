@@ -24,7 +24,7 @@ const input = (more: Partial<LampInput> = {}): LampInput => ({
 });
 const EMPTY: AssetFacts = {
   materials: 0, materialsUnread: 0, sections: 0, sectionsPending: 0, openQuestions: 0, diagrams: 0, diagramsUnviewed: 0,
-  items: 0, itemsUnread: 0, itemsPending: 0, itemsConfirmed: 0, reviewRounds: 0, openFindings: 0, versions: 0,
+  items: 0, itemsUnread: 0, itemsPending: 0, itemsConfirmed: 0, reviewRounds: 0, openFindings: 0, versions: 0, materialsBySlot: {},
 };
 const DEFS = readDefinitions(SRS_SKILL_DIR);
 /** 产品自带的需求工程任务定义里的资产显示名。 */
@@ -121,10 +121,15 @@ test("活动目录：空任务只有澄清与需求分析能启动；需求分�
   assert.deepEqual(got.flows[2].nodes.map((one) => one.name), ["逆向解析", "核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档", "发布"]);
   assert.deepEqual(got.flows[0].nodes.map((one) => one.name), ["核读材料", "澄清", "整理建模", "写条目", "评审确认", "编写文档", "发布"]);
   assert.equal(got.flows[1].prerequisite_text, "前置条件：存在已发布的版本。");
-  // 有材料：需求分析从核读材料开始；需求再工程可以启动，从逆向解析开始（必填的材料槽位现在按有没有材料算）；需求变更仍未提供。
+  // 有一份没放进槽位的材料：需求分析从核读材料开始；需求再工程仍不能启动（必填的「既有规格说明」槽位里没有材料）；需求变更仍未提供。
   const stocked = catalog(DEFS, NAMES, { ...EMPTY, materials: 1 }).flows;
-  assert.deepEqual(stocked.map((one) => [one.key, one.enabled, one.state, one.start]), [
-    ["analysis", true, "可以启动", "reading"], ["change", false, "还没有已发布的版本", null], ["rewrite", true, "可以启动", "parse_spec"]]);
+  assert.deepEqual(stocked.map((one) => [one.key, one.enabled, one.state, one.start, one.missing_slot]), [
+    ["analysis", true, "可以启动", "reading", null], ["change", false, "还没有已发布的版本", null, null], ["rewrite", false, "还没有上传「既有规格说明」", null, "既有规格说明"]]);
+  // 「既有规格说明」槽位里有一份：需求再工程可以启动，从逆向解析开始。
+  const filled = catalog(DEFS, NAMES, { ...EMPTY, materials: 1, materialsBySlot: { spec: 1 } }).flows[2];
+  assert.deepEqual([filled.enabled, filled.state, filled.start, filled.missing_slot], [true, "可以启动", "parse_spec", null]);
+  // 卡上「输入」一行：有槽位时由槽位生成，没有槽位时是声明的 inputs。
+  assert.deepEqual(got.flows.map((one) => one.inputs_text), ["项目材料（可选）、目标系统描述", "新材料或变更说明", "既有规格说明（必填）、补充证据、目标系统描述"]);
   // 每项活动带它算作的阶段：逆向解析算作核读，发布不算作任何阶段。
   assert.deepEqual(got.activities.map((one) => [one.key, one.stage]), [["reading", "reading"], ["clarifying", "clarifying"], ["modeling", "modeling"], ["writing", "writing"],
     ["reviewing", "reviewing"], ["document", "document"], ["publish", null], ["parse_spec", "reading"]]);
@@ -133,7 +138,7 @@ test("活动目录：空任务只有澄清与需求分析能启动；需求分�
 });
 
 test("活动目录：单项活动能不能启动只看数据，已经有工作项也不拦；每一项带工作项个数；已有流程工作项时流程都不能启动", () => {
-  const facts: AssetFacts = { ...EMPTY, materials: 1, sections: 2, items: 3, itemsConfirmed: 3, reviewRounds: 1 };
+  const facts: AssetFacts = { ...EMPTY, materials: 1, sections: 2, items: 3, itemsConfirmed: 3, reviewRounds: 1, materialsBySlot: { spec: 1 } };
   const none = catalog(DEFS, NAMES, facts);
   assert.deepEqual(none.activities.map((one) => [one.enabled, one.state, one.active_count]), [[true, "可以启动", 0], [true, "可以启动", 0], [true, "可以启动", 0], [true, "可以启动", 0],
     [true, "可以启动", 0], [true, "可以启动", 0], [false, CATALOG_LATER, 0], [true, "可以启动", 0]]);

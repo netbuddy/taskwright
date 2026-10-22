@@ -20,6 +20,7 @@ import {
   workItemSessionName, workItemSessions,
 } from "../src/lib/stage_read.ts";
 import { ToolRejection } from "../src/lib/tool_rejection.ts";
+import { insertMaterial } from "../src/lib/material_db.ts";
 import { NOT_IN_FLOW_TEXT, START_SESSION_RETIRED, UserOpError, runUserOperation } from "../src/lib/user_ops.ts";
 import { DEFINITION_PATH, READY_PAGE, SOURCE, callIn, count, demoDefinition, makeWorkspace, nodeMoves, overallDefinition, query } from "./helpers.ts";
 import { assetNamesOf } from "../src/lib/asset_names.ts";
@@ -397,6 +398,13 @@ test("启动认声明里的活动与工作流：逆向解析不能单独启动�
   let before = count(dir, "event");
 
   // 在需求再工程里从逆向解析启动：记录的所属工作流是 rewrite、所在一站是 parse_spec；按名字写活动也认。
+  // 任务里那份材料没有放进槽位：需求再工程的必填槽位「既有规格说明」还空着，启动被拒（missing_slot），什么都不记。
+  assert.deepEqual(refusedOp(() => start(dir, "s-rewrite-0", "逆向解析", true, { flow: "rewrite" })), ["rejected", "还没有上传「既有规格说明」，不能启动「需求再工程」。"]);
+  const empty = inDb(dir, (db) => startActivity(db, dir, { taskId, sessionId: "s-rewrite-1", runId: null, callId: "ui-op-y", actor: "user" }, "parse_spec", "rewrite", ""));
+  assert.deepEqual([empty.moved, empty.why, empty.slot_name], [false, "missing_slot", "既有规格说明"]);
+  assert.equal(count(dir, "activity_record"), 0);
+  // 放进「既有规格说明」槽位之后可以启动。
+  insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
   const flow = start(dir, "s-rewrite", "逆向解析", true, { flow: "rewrite" });
   assert.equal(flow.note, "界面操作（不是用户打的字）：用户启动工作流程「需求再工程」，从「逆向解析」开始。");
   assert.deepEqual(events(dir, before), [["ACTIVITY_STARTED", { record_id: 1, activity: "parse_spec", node: "parse_spec", flow: "rewrite", from: null, actor: "user", reason: "", run_id: null }]]);

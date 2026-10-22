@@ -2,7 +2,7 @@
 // 标题旁的一句、现在能不能启动、还缺什么输入、启动时发的字段与替用户发的第一句话。只算，不画。
 
 import { ACTIVITY_START_TEXTS, SCOPE_MAX_LENGTH } from "../../../agent/src/lib/stage";
-import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, StageKey } from "../api/types";
+import type { ActivityCatalog, AssetCell, CatalogActivity, CatalogFlow, FlowSlot, StageKey } from "../api/types";
 
 export { SCOPE_MAX_LENGTH };
 
@@ -87,8 +87,15 @@ export function existingFlowItem(target: StartTarget): number | null {
 
 /** 现在不能启动时写在主按钮旁的一句（缺什么前提，或者已有流程工作项）；能启动是 null。 */
 export function blockedLine(target: StartTarget): string | null {
+  // 必填的材料槽位还空着：这一句优先于别的原因（上传到那个槽位就能启动）。
+  if (target.kind === "flow" && target.flow.missing_slot) return `现在还不能启动：还没有上传「${target.flow.missing_slot}」。`;
   const one = target.kind === "flow" ? target.flow : target.activity;
   return one.enabled ? null : `现在还不能启动：${one.state}。`;
+}
+
+/** 输入页按槽位分块画的那几个槽位：目标是声明了槽位的流程时是它的槽位，别的情形（没有槽位的流程、单项活动）是空的。 */
+export function inputSlots(target: StartTarget): FlowSlot[] {
+  return target.kind === "flow" ? target.flow.slots ?? [] : [];
 }
 
 /**

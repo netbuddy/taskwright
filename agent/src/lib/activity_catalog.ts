@@ -18,6 +18,8 @@ export interface AssetFacts {
   /** 材料的份数（由 Word、PDF 生成的文字版不另算），与其中还没有被任何一节或问题引用的份数。 */
   materials: number;
   materialsUnread: number;
+  /** 材料按放进的槽位（工作流声明里的槽位键）各几份：由 Word、PDF 生成的文字版不算，不经槽位上传的不计入任何键。 */
+  materialsBySlot: Record<string, number>;
   /** 业务说明的节数：在用的主题页，按章归好的与未归类的都算，章的导语页不算。 */
   sections: number;
   /** 在用的主题页里待核实的页数（有助手补充而用户没有确认的内容）。 */
@@ -52,6 +54,7 @@ export function assetFacts(input: LampInput): AssetFacts {
   return {
     materials: input.materials.length,
     materialsUnread: input.materials.filter((one) => !cited.has(one)).length,
+    materialsBySlot: { ...(input.materialsBySlot ?? {}) },
     sections,
     sectionsPending: input.pages.filter((one) => !one.deprecated && one.pending).length,
     openQuestions: input.questions.filter((one) => one.open).length,
@@ -185,6 +188,10 @@ export interface CatalogFlow {
   /** 各站，按先后。 */
   nodes: Named[];
   inputs: string;
+  /** 卡上「输入」一行：工作流声明了槽位时由槽位生成（各槽位的名称，必填的注「（必填）」），没有槽位时就是 inputs。 */
+  inputs_text: string;
+  /** 第一个还空着的必填材料槽位的名称（见 missingSlot）；都有了、或者没有必填的材料槽位时为 null。有它时这条工作流不能启动。 */
+  missing_slot: string | null;
   /** 输入页的槽位，照工作流的声明原样给；没有声明槽位的是空的。页面现在还不读它。 */
   slots: FlowSlot[];
   /** 用户可能所处的几种处境（工作流声明的「cases」一栏原样），任务起点页画成一行可点的小签；没有写的是空的。 */
@@ -218,6 +225,16 @@ export interface Catalog {
   activities: CatalogActivity[];
 }
 
+/** 工作流里第一个还空着的必填材料槽位：这个槽位里一份材料都没有（按 facts.materialsBySlot 数）；都有了是 undefined。 */
+export function missingSlot(slots: readonly FlowSlot[], facts: Pick<AssetFacts, "materialsBySlot">): FlowSlot | undefined {
+  return slots.find((it) => it.required && it.accepts === "materials" && (facts.materialsBySlot[it.key] ?? 0) === 0);
+}
+
+/** 由槽位生成「输入」一行：各槽位的名称按先后，必填的后面注「（必填）」；没有槽位时是 null。 */
+export function slotsText(slots: readonly FlowSlot[]): string | null {
+  return slots.length === 0 ? null : slots.map((it) => (it.required ? `${it.name}（必填）` : it.name)).join("、");
+}
+
 /** 还不能启动的活动（发布）的状态。 */
 export const CATALOG_LATER = "此版本尚未提供";
 /** 需求变更这条工作流的键。 */
@@ -248,8 +265,7 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
   });
   const flows: CatalogFlow[] = defs.flows.map((one) => {
     const blocked = blockedText(one.requires, facts);
-    // 必填的收材料的槽位：现在按任务里有没有材料算（材料的 role 还没有进资产现状）。
-    const slot = one.slots.find((it) => it.required && it.accepts === "materials" && facts.materials === 0);
+    const slot = missingSlot(one.slots, facts);
     const later = FLOWS_NOT_YET.includes(one.key);
     const open = blocked === null && slot === undefined && !later;
     // 起始站：各步里第一个前提都满足、不是只能由用户发起的那一站。
@@ -261,7 +277,7 @@ export function catalog(defs: { activities: readonly ActivityDef[]; flows: reado
       : blocked ?? (slot ? `还没有上传「${slot.name}」` : null) ?? (later ? CATALOG_LATER : null) ?? unstartable ?? LAUNCH_READY;
     return {
       key: one.key, name: one.name, purpose: one.purpose, applies: one.applies,
-      nodes: one.steps.map((key) => ({ key, name: stepOf(key)?.name ?? key })), inputs: one.inputs, slots: one.slots, cases: one.cases,
+      nodes: one.steps.map((key) => ({ key, name: stepOf(key)?.name ?? key })), inputs: one.inputs, inputs_text: slotsText(one.slots) ?? one.inputs, missing_slot: slot?.name ?? null, slots: one.slots, cases: one.cases,
       prerequisite_text: prerequisiteText(one.requires), example: one.example,
       // 能启动：前提满足、必填的材料槽位有着落、不在尚未提供的名单里、有一站可以开始，而且任务里没有流程工作项。
       enabled: start !== null && flowItem === null,

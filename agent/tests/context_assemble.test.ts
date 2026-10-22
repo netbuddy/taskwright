@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { createTask } from "../src/lib/create_task.ts";
 import { runUserOperation } from "../src/lib/user_ops.ts";
+import { insertMaterial } from "../src/lib/material_db.ts";
 import { IDLE, STAGES, STAGE_NAMES, type Stage } from "../src/lib/stage.ts";
 import {
   ContextCache, ENV_DEBUG_SETTINGS, EXIT_HEADING, HOW_NAMES, NODE_IO, ORIGIN_NAMES, PART_NAMES, PROMPTS_DIR, PROMPT_DIR_MAX_BYTES, PromptAssemblyError, type PromptIo, REQUIRED_MODULES,
@@ -697,6 +698,8 @@ test("工作流里的转移由程序从声明推出来：各步、上一步与�
 test("逆向解析的工作项：会话在哪里读出活动标识符 parse_spec 与它算作的阶段核读；位置说明写需求再工程，选的是逆向解析的声明", () => {
   const dir = makeWorkspace(overallDefinition(), { material: true });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  // 需求再工程要「既有规格说明」槽位里有材料：把任务里那份材料记进这个槽位。
+  insertMaterial(dir, "inputs/材料.md", { slot: "spec", role: "既有规格说明" });
   runUserOperation({ workspaceDir: dir, sessionId: CALL_SESSION }, { op_id: "ui-op-rewrite-1", kind: "start_activity", fields: { activity: "parse_spec", in_flow: true, flow: "rewrite" } });
   assert.deepEqual(whereInWorkspace(dir, CALL_SESSION), { stage: "reading", inFlow: true, flow: "rewrite", scope: null, activity: "parse_spec", assetNames: NAMES });
   const run = start(dir, new ContextCache(), new WeakMap<object, any>());

@@ -109,7 +109,7 @@ export function FlowCards({ taskId, flows, onOpenWorkItem }: {
             <p>{flow.purpose}</p>
             <dl className="tp-kv">
               <dt>各站</dt><dd className="tp-nodes">{flow.nodes.map((one) => one.name).join(" › ")}</dd>
-              <dt>输入</dt><dd>{flow.inputs}</dd>
+              <dt>输入</dt><dd>{flow.inputs_text ?? flow.inputs}</dd>
             </dl>
             <div className="eg"><b>示例</b>{flow.example}</div>
             <div className="tp-go">

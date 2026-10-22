@@ -13,7 +13,7 @@
 
 import { assetNamesOf } from "./asset_names.ts";
 import type { DatabaseSync } from "node:sqlite";
-import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, blockedText, catalog } from "./activity_catalog.ts";
+import { type AssetCell, type AssetFacts, type Catalog, assetCells, assetFacts, blockedByStage, blockedText, catalog, missingSlot } from "./activity_catalog.ts";
 import { DefinitionHeadError } from "./activity_def.ts";
 import { type Definitions, activityNameOf, activityStage, definitionsFor, flowNameOf } from "./activity_def_read.ts";
 import { type Entry, chooseActOf } from "./completion_consent.ts";
@@ -37,6 +37,7 @@ import {
 } from "./stage.ts";
 import { refusalText } from "./texts.ts";
 import { listMaterials } from "./task_status.ts";
+import { materialRoles, roleOf } from "./material_db.ts";
 import { envSegmentParams, materialFacts } from "./segments.ts";
 import { versionCount } from "./versions.ts";
 
@@ -330,7 +331,7 @@ export function activityDoneOf(workspaceDir: string, sessionId: string): { activ
  * not_in_flow 这条会话不在做流程的工作项（自由讨论的会话、归档的会话、单项活动的工作项），卡片上的进入与退回不算数，
  * session_bound 这条会话已经属于一个工作项，不能再在它上面启动另一个，flow_exists 任务里已有流程的工作项（existing 里写是哪一个），
  * 不能再以流程方式启动；只在启动时出现的几种：unknown_activity 声明里没有这项活动，not_startable 这项活动只能由用户发起（发布），
- * not_alone 这项活动声明为不能单独启动、却要单项启动（逆向解析只在工作流里做），
+ * not_alone 这项活动声明为不能单独启动、却要单项启动（逆向解析只在工作流里做），missing_slot 工作流的必填材料槽位还空着（slot_name 写是哪一个），
  * unknown_flow 声明里没有这条工作流，not_a_step 这项活动不是这条工作流的一步，no_definitions 活动的声明读不出来（message 里写原因）。
  * from 是这条会话当时在哪里（一个阶段或者空闲），任务没有阶段时为 null。记下了的另带 how（lib/stage.ts 的 StartHow）、in_flow 与工作项的记录号。
  */
@@ -341,7 +342,7 @@ export interface StageMoveOutcome {
   moved: boolean;
   /** 没有做成的原因；not_next 与 not_back 只出现在卡片点击上：点的那个阶段不是紧挨着的下一段、不在现在这个阶段之前。 */
   why: "same" | "user_only" | "no_stages" | "not_next" | "not_back" | "not_ready" | "not_in_flow" | "session_bound" | "flow_exists"
-    | "unknown_activity" | "not_startable" | "not_alone" | "unknown_flow" | "not_a_step" | "no_definitions" | null;
+    | "unknown_activity" | "not_startable" | "not_alone" | "unknown_flow" | "not_a_step" | "missing_slot" | "no_definitions" | null;
   event_seq: number | null;
   how?: StartHow;
   in_flow?: boolean;
@@ -352,6 +353,8 @@ export interface StageMoveOutcome {
   existing?: FlowItemRef;
   /** why 为 no_definitions 时：声明为什么读不出来。 */
   message?: string;
+  /** why 为 missing_slot 时：还空着的那个必填材料槽位的名称。 */
+  slot_name?: string;
 }
 
 /** 这条会话现在的位置与它正在做的工作项（没有是 null）。任务没有阶段（或者库里没有这个任务）时为 null。 */
@@ -395,6 +398,9 @@ export function startActivity(db: DatabaseSync, workspaceDir: string, who: Who, 
     if (!declared.steps.includes(to)) return { ...none, why: "not_a_step" };
     const existing = flowWorkItem(db, who.taskId, found.defs);
     if (existing !== null) return { ...none, why: "flow_exists", existing };
+    // 必填的收材料的槽位要有材料（按放进的槽位数，lib/activity_catalog.ts 的 missingSlot）；没有槽位的工作流不查。
+    const slot = declared.slots.length > 0 ? missingSlot(declared.slots, assetFacts(lampInput(db, workspaceDir, who.taskId, where.definition))) : undefined;
+    if (slot !== undefined) return { ...none, why: "missing_slot", slot_name: slot.name };
   } else {
     const blocked = blockedText(activity.requires, assetFacts(lampInput(db, workspaceDir, who.taskId, where.definition)));
     if (blocked !== null) return { ...none, why: "not_ready", blocked };
@@ -761,9 +767,17 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
   const completion = checkCompletion(db, taskId, definition.completion, { workspaceDir });
   const listed = listMaterials(workspaceDir, definition.materialsDir).files.map((one) => one.path);
   const materials = sourceMaterials(listed);
+  // 按槽位数材料：材料表里还在的那一行记着槽位（lib/material_db.ts）；生成的文字版不在 materials 里，所以不算。
+  const roles = materialRoles(db);
+  const materialsBySlot: Record<string, number> = {};
+  for (const path of materials) {
+    const slot = roleOf(roles, path).slot;
+    if (slot !== null) materialsBySlot[slot] = (materialsBySlot[slot] ?? 0) + 1;
+  }
   return {
     ...facts,
     materials,
+    materialsBySlot,
     coverage: materialCoverage(db, workspaceDir, taskId, listed, materials),
     review: {
       failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined,
