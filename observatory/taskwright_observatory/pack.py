@@ -137,7 +137,23 @@ def open_pack(source: Path, env: dict | None = None) -> OpenedPack:
 
 
 PURPOSE_NAMES = {"full": "完整", "redacted": "脱敏"}
-GRANULARITY_NAMES = {"task": "一个任务实例"}
+GRANULARITY_NAMES = {"task": "一个任务实例", "session": "一条会话"}
+
+
+def session_of(pack: OpenedPack) -> str:
+    """按会话的诊断包里那条会话的编号；别的包是空的。"""
+    diagnostic = pack.manifest.get("diagnostic")
+    if isinstance(diagnostic, dict) and diagnostic.get("granularity") == "session" and diagnostic.get("session_id"):
+        return str(diagnostic["session_id"])
+    return ""
+
+
+def omitted_groups(pack: OpenedPack) -> list[dict]:
+    """按会话的诊断包里判不出归属、没有带的归档组：每项是组名与原因。"""
+    diagnostic = pack.manifest.get("diagnostic")
+    found = diagnostic.get("omitted_groups") if isinstance(diagnostic, dict) else None
+    return [{"组": str(one.get("group") or ""), "原因": str(one.get("reason") or "")}
+            for one in found or [] if isinstance(one, dict)]
 
 
 def model_text(model) -> str:
@@ -169,6 +185,7 @@ def header(pack: OpenedPack) -> dict:
                 if diagnostic else str(manifest.get("scope") or ""),
         "任务编号": "、".join(tasks),
         "会话编号": str((diagnostic or {}).get("session_id") or ""),
+        "没有带的归档组": omitted_groups(pack),
         "导出时刻": str(manifest.get("exported_at") or ""),
         "产品版本": str(manifest.get("product_version") or ""),
         "包格式": manifest.get("pack_format"),

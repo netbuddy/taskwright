@@ -51,6 +51,7 @@ Every line has `"记录"` (the record kind) and `"时刻"` (local time, `YYYY-MM
 | `系统提示` | each `taskwright-stage-prompt` report: once per run of a task that has stages, when the extension replaces the system prompt with the shared parts and the section of the current stage | `内容` (the parsed JSON: `replaced`, `stage`, `how` (`recomposed`, `reused` or `kept_after_error`), `error` if any, and `digest`, `bytes`, `lines`, `parts` of the instruction text without the working directory pi appends; each part has `part`, `from`, `file`, `bytes`, `lines`, `digest`), or `内容` null and `原文` when the report could not be parsed. In debug mode the report also has `debug`, `prompt_dir` and `notes`; the text of the prompt that the report carries in debug mode is not archived |
 | `扩展写入的消息` | a custom message written by an extension (for example the task-status message) | `类型`, `文字`, optionally `会话条目编号`, `会话编号` |
 | `标准错误` | each line pi wrote to standard error | `文字` |
+| `会话起点` | after the backend has confirmed which session pi is in: once when a started process takes its first session (a new one or a resumed one), once after each switch to another session, once after each new session in a running process | `会话编号` (the session id), `本组文件名` (the raw stream's file name of this group), `起始行号` (how many lines the raw stream had when this record was written; the session's events start on the next line), `进入方式` (`start`: the process just started; `switch`: switched to an existing session; `new`: a new session in a running process). Archives written before this record existed do not have it; there the session of each part of the stream can be read from the `sessionId` in the `get_state` responses |
 | `续接没有接上` | after resuming or switching a session, pi is not in the session that was asked for (for example the session file is gone and pi silently opened a new one), or the switch failed; the backend stops this pi and does not take the session id pi reported | `请求的会话`, `pi报告的会话` (null when pi reported none), `经过` (what was being done), `处置` |
 | `停止通知没有写成` | after the user stopped a run, the note left in the session for the page and the assistant (`/tw-user` with `stop_run`) could not be written; the run is stopped anyway | `操作编号`, and `结果` (the rejected result) or `原因` |
 | `任务服务拼事件出错` | when the task service fails to turn one pi event into interface events (the event is skipped, the service keeps going) | `事件类型`, `原因` |
@@ -62,7 +63,7 @@ Line N describes line N of the raw stream: `{"行号": N, "收到时刻": <secon
 
 ## 4 Compatibility rules
 
-- Never rename or remove a field or a record kind; add new ones instead. Readers ignore what they do not know.
+- Never rename or remove a field or a record kind; add new ones instead. Readers ignore what they do not know. (`会话起点` was added this way: readers that do not know it still read the group as before.)
 - Write the raw stream unchanged, even lines that are not valid JSON.
 - Keep line N of the times file aligned with line N of the raw stream.
 - Never write secrets into any of the three files. Keys reach pi only through environment variables, which are not archived.

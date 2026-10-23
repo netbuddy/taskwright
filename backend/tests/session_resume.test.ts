@@ -240,6 +240,17 @@ test("新建第二条会话之后读第一条会话的快照：执行者接回�
       const listed = (await stack.sessions(taskId)).map((s) => s.session_id);
       assert.ok(listed.includes(first));
       assert.deepEqual(listed.filter((id) => id !== first && id !== second), []);
+      // 后端补记的「会话起点」：启动接上第一条、新建第二条、切回第一条，各一条，都在这一组归档里，起始行号逐条变大。
+      const eventsDir = join(stack.dir, "runs", taskId, "pi-events");
+      const notesFile = readdirSync(eventsDir).filter((name) => name.endsWith(".backend.jsonl"));
+      assert.equal(notesFile.length, 1);
+      const starts = readFileSync(join(eventsDir, notesFile[0]), "utf-8").split("\n").filter(Boolean).map((line) => JSON.parse(line))
+        .filter((note) => note.记录 === "会话起点");
+      assert.deepEqual(starts.map((note) => [note.会话编号, note.进入方式]), [[first, "start"], [second, "new"], [first, "switch"]]);
+      assert.ok(starts.every((note) => note.本组文件名 === notesFile[0].replace(".backend.jsonl", ".jsonl")));
+      assert.ok(starts[0].起始行号 > 0 && starts[0].起始行号 < starts[1].起始行号 && starts[1].起始行号 < starts[2].起始行号);
+      const rawLines = readFileSync(join(eventsDir, starts[0].本组文件名), "utf-8").split("\n").filter(Boolean).length;
+      assert.ok(starts[2].起始行号 <= rawLines);
     } finally {
       await stack.stop();
     }

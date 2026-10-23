@@ -262,7 +262,7 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
           </section>
         )}
 
-        <SessionList taskId={taskId} sessions={task.sessions} />
+        <SessionList taskId={taskId} taskName={task.task_name} sessions={task.sessions} />
 
         <div className={`tp-pair${hasKnowledge ? "" : " single"}`}>
           <MaterialsCard taskId={taskId} materials={ownMaterials(task.materials)} info={service.info} onView={view} onChanged={() => void load()} />

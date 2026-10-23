@@ -1,14 +1,21 @@
 // 任务起点页的会话清单：每条会话一行，写会话名、它属于哪个工作项的标签（model/sessionTag.ts）、最近活动的时刻与它产生了几次修订，
-// 右边「打开」进入工作视图。最近活动的排在前面；助手正接着的那条会话行前有一个绿色小圆点（与左侧栏的做法相同）。
+// 右边「打开」进入工作视图，再右边一个「…」菜单，里面是「导出这条会话的诊断包」（确认框见 DiagnosticExportModal）。最近活动的排在前面；助手正接着的那条会话行前有一个绿色小圆点（与左侧栏的做法相同）。
 // 底部一个开关「显示已归档的会话」：默认关着；打开时另取一次带归档的会话清单，归档的会话（工作项被删除了）接在后面、标「已归档」。
 
 import { useEffect, useState } from "react";
-import { MessageOutlined, RightOutlined } from "@ant-design/icons";
+import { EllipsisOutlined, MessageOutlined, RightOutlined } from "@ant-design/icons";
+import { Button, Dropdown } from "antd";
 import { api } from "../../api/client";
 import type { SessionListEntry } from "../../api/types";
 import { formatTimeShort } from "../../model/format";
 import { SHOW_ARCHIVED, SHOW_ARCHIVED_NOTE, sessionTag, withArchived } from "../../model/sessionTag";
 import { go, href } from "../../router";
+import { DiagnosticExportModal } from "./DiagnosticExportModal";
+
+/** 会话行菜单里的那一项。 */
+export const SESSION_DIAGNOSTIC_ITEM = "导出这条会话的诊断包";
+/** 确认框里没有名字的会话写成这样。 */
+export const UNNAMED_SESSION = "未命名会话";
 
 /** 最近活动的在前；刚新建、还没有活动时刻的会话排最前（它是最新的）。 */
 export function byRecentActivity(sessions: SessionListEntry[]): SessionListEntry[] {
@@ -23,8 +30,9 @@ function revisionText(s: SessionListEntry): string {
   return s.revision_count > 0 ? `这条会话产生了 ${s.revision_count} 次修订。` : "这条会话还没有产生修订。";
 }
 
-export function SessionList({ taskId, sessions }: { taskId: string; sessions: SessionListEntry[] }) {
+export function SessionList({ taskId, taskName, sessions }: { taskId: string; taskName: string; sessions: SessionListEntry[] }) {
   const [showArchived, setShowArchived] = useState(false);
+  const [diagnosing, setDiagnosing] = useState<SessionListEntry | null>(null);
   const [archived, setArchived] = useState<SessionListEntry[] | null>(null);
   useEffect(() => {
     if (!showArchived) return;
@@ -55,6 +63,11 @@ export function SessionList({ taskId, sessions }: { taskId: string; sessions: Se
               </div>
             </div>
             <a className="tp-lnk" href={href.work(taskId, s.session_id)} onClick={(e) => e.stopPropagation()}>打开<RightOutlined /></a>
+            <span onClick={(e) => e.stopPropagation()}>
+              <Dropdown trigger={["click"]} menu={{ items: [{ key: "diagnostic", label: SESSION_DIAGNOSTIC_ITEM }], onClick: () => setDiagnosing(s) }}>
+                <Button size="small" type="text" icon={<EllipsisOutlined />} aria-label="更多操作" title="更多操作" data-testid={`session-menu-${s.session_id}`} />
+              </Dropdown>
+            </span>
           </div>
         ))}
       </div>
@@ -62,6 +75,8 @@ export function SessionList({ taskId, sessions }: { taskId: string; sessions: Se
         <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
         <span>{SHOW_ARCHIVED}<small>{SHOW_ARCHIVED_NOTE}</small></span>
       </label>
+      <DiagnosticExportModal taskId={diagnosing ? taskId : null} taskName={taskName}
+        session={diagnosing ? { id: diagnosing.session_id, name: diagnosing.name || UNNAMED_SESSION } : null} onClose={() => setDiagnosing(null)} />
     </section>
   );
 }

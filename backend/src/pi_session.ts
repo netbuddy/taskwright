@@ -449,6 +449,14 @@ export class PiSession {
     return sessionFile;
   }
 
+  /**
+   * 记一条「会话起点」：pi 这时接着的是哪条会话。启动后接上第一条会话、切换会话、新建会话之后各记一条，诊断包按会话导出时
+   * 据此判断这组归档里有没有这条会话。起始行号是记这一条时原始事件流已有的行数，这条会话的事件从下一行开始。
+   */
+  noteSessionStart(sessionId: string, how: "start" | "switch" | "new"): void {
+    this.note("会话起点", { 会话编号: sessionId, 本组文件名: this.archivePath ? basename(this.archivePath) : "", 起始行号: this.archivedLines, 进入方式: how });
+  }
+
   /** 往后端补记文件里写一行。写不进去也不能把会话带倒，所以这里把出错咽掉。 */
   note(kind: string, fields: Record<string, unknown> = {}): void {
     if (this.notes === null) return;

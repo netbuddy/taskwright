@@ -40,7 +40,7 @@ class Index:
 
     def __init__(self, archive_dir: Path | list[Path], workspaces_dir: Path | list[Path],
                  langfuse_base: str = "", langfuse_project: str = "",
-                 links: LangfuseLinks | None = None):
+                 links: LangfuseLinks | None = None, only_session: str = ""):
         # 归档目录可以给一个，也可以给好几个（例如同一台机器上几次试跑的归档一起看），会话按开始时刻合在一起排。
         dirs = archive_dir if isinstance(archive_dir, (list, tuple)) else [archive_dir]
         self.archive_dirs = [Path(d) for d in dirs]
@@ -53,7 +53,8 @@ class Index:
         self.links = links or LangfuseLinks(langfuse_base, langfuse_project)
         self.tool_names = load_tool_names()
 
-        self.sessions = sorted((s for d in self.archive_dirs for s in runs.build_sessions(d)),
+        # only_session：打开按会话的诊断包时只列这条会话（见 runs.py 的 build_sessions）。
+        self.sessions = sorted((s for d in self.archive_dirs for s in runs.build_sessions(d, only_session)),
                                key=lambda s: (s["开始时刻"] or 0.0))
         self.workspaces = [w for d in self.workspaces_dirs for w in workspaces_module.scan_workspaces(d)]
         self.workspace_names = {w["任务目录"] for w in self.workspaces}

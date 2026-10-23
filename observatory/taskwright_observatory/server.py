@@ -74,11 +74,12 @@ class IndexCache:
     """读一次留着用，文件变了、或者展开出来的归档目录变了（新建了任务）再读。"""
 
     def __init__(self, given_dirs: list[Path], workspaces_dir: Path | None,
-                 langfuse_base: str, langfuse_project: str, sim_root: Path | None = None):
+                 langfuse_base: str, langfuse_project: str, sim_root: Path | None = None, only_session: str = ""):
         # 命令行给的目录，不是展开后的归档目录：每次读取前重新展开。
         self.given_dirs = [Path(d) for d in given_dirs]
         self.workspaces_dir = Path(workspaces_dir) if workspaces_dir is not None else None
         self.sim_root = Path(sim_root) if sim_root is not None else None
+        self.only_session = only_session
         # 链接对象只建一次：它内存里那份 Langfuse 读取结果的缓存，不该随数据重读而丢。
         self.links = LangfuseLinks(langfuse_base, langfuse_project)
         self._lock = threading.Lock()
@@ -96,7 +97,7 @@ class IndexCache:
                      directory_signature(*archive_dirs, *workspace_dirs))
         with self._lock:
             if self._index is None or signature != self._signature:
-                self._index = Index(archive_dirs, workspace_dirs, links=self.links)
+                self._index = Index(archive_dirs, workspace_dirs, links=self.links, only_session=self.only_session)
                 self._signature = signature
             return self._index
 
@@ -246,7 +247,8 @@ def serve(given_dirs: list[Path], workspaces_dir: Path | None, port: int, host: 
           pack: "packs.OpenedPack | None" = None) -> None:
     """given_dirs 是命令行给的目录（归档目录，或者它们的上一级目录），每次读取前重新展开。sim_root 是模拟器的演练根目录，可以不给。
     pack 是 --pack 打开的数据包（见 pack.py），给了时首页显示包头，并多出读包里日志与设置摘录的接口。"""
-    cache = IndexCache(given_dirs, workspaces_dir, langfuse_base, langfuse_project, sim_root)
+    cache = IndexCache(given_dirs, workspaces_dir, langfuse_base, langfuse_project, sim_root,
+                       only_session=packs.session_of(pack) if pack is not None else "")
     cache.get()                                   # 先读一遍，启动时就能暴露路径写错之类的问题
     httpd = ThreadingHTTPServer((host, port), make_handler(cache, pack))
     print(f"观测台已经起来了，用浏览器打开 http://127.0.0.1:{port}/ 就能看。")

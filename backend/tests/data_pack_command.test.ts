@@ -211,7 +211,7 @@ test("导出：缺省不带材料，加 --with-materials 才带；用法里写�
   assert.equal(full.status, 0, full.err);
   assert.deepEqual([readPack(join(dir, "bare.zip")).manifest.with_materials, readPack(join(dir, "bare.zip")).names.includes(`tasks/${a}/inputs/材料.md`)], [false, false]);
   assert.deepEqual([readPack(join(dir, "full.zip")).manifest.with_materials, readPack(join(dir, "full.zip")).names.includes(`tasks/${a}/inputs/材料.md`)], [true, true]);
-  assert.match(run(["data", "export"]).err, /\[--with-events\] \[--with-materials\] \[--diagnostic \[--redact\]\] --to <数据包>/);
+  assert.match(run(["data", "export"]).err, /\[--with-events\] \[--with-materials\] \[--diagnostic \[--redact\] \[--session <会话编号>\]\] --to <数据包>/);
 });
 
 test("导出诊断包：--diagnostic 只能与 --task 一起写；导出的是诊断包，带事件归档，设置摘录取数据目录下的设置文件", async () => {
@@ -225,6 +225,12 @@ test("导出诊断包：--diagnostic 只能与 --task 一起写；导出的是�
   assert.equal(redacted.status, 0, redacted.err);
   assert.match(redacted.out, /^脱敏诊断包已经写好：/);
   assert.equal(readPack(join(dir, "redacted.zip")).manifest.diagnostic?.purpose, "redacted");
+  const sessionAlone = run(["data", "export", "--data", where.dataDir, "--task", a, "--session", "x", "--to", join(dir, "s.zip")]);
+  assert.deepEqual([sessionAlone.status, /--session 要与 --diagnostic 一起写/.test(sessionAlone.err)], [2, true]);
+  const bySession = run(["data", "export", "--data", where.dataDir, "--task", a, "--diagnostic", "--session", "01a11a9d-031c-7481-91dc-06673e05c0b1", "--to", join(dir, "session.zip")]);
+  assert.equal(bySession.status, 0, bySession.err);
+  assert.match(bySession.out, /按会话导出：只带会话 01a11a9d-031c-7481-91dc-06673e05c0b1 的对话记录/);
+  assert.equal(readPack(join(dir, "session.zip")).manifest.diagnostic?.granularity, "session");
   const alone = run(["data", "export", "--data", where.dataDir, "--diagnostic", "--to", join(dir, "all.zip")]);
   assert.equal(alone.status, 2);
   assert.match(alone.err, /--diagnostic 要与 --task 一起写：诊断包只能按一个任务导出。/);
