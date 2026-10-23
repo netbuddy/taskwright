@@ -7,6 +7,7 @@
 
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,11 +15,13 @@ import { after, afterEach, before, beforeEach, test } from "node:test";
 import { BACKUP_KEEP, LOCK_WAIT_MS, lockPath, updateJsonFile } from "../src/config_files.ts";
 import { dispatch, serviceInfo } from "../src/http.ts";
 import { resolveModel } from "../src/launch.ts";
-import { embeddingTarget, migrateProviderPurposes } from "../src/model_config.ts";
+import { CERTIFICATE_TEXT, embeddingTarget, migrateProviderPurposes } from "../src/model_config.ts";
+import { isCertificateError, resetTrustForTests, trustSystemCertificates } from "../src/system_ca.ts";
 import { adoptPiConfig } from "../src/desktop_dirs.ts";
 import { needsPurposeMigration, readPiDirSettings } from "../src/product_settings.ts";
 import { Service } from "../src/service.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
+import { NO_OPENSSL, selfSignedPair } from "./self_signed.ts";
 
 captureConsole();
 
@@ -244,6 +247,40 @@ test("连不上或者密钥被拒时不保存，422 指明是地址还是密钥"
   assert.equal(noUrl.body.error.data.field, "base_url");
   assert.equal(existsSync(modelsJson()), false, "失败时模型登记文件一字不动");
   assert.equal(existsSync(settings), false, "失败时产品设置也不写");
+});
+
+// ───────────── 自签证书 ─────────────
+
+test("模型服务用自签证书：根证书不在信任库时，连通检查报证书没有通过校验（不是连不上）；把它算进操作系统信任库之后连得上", { skip: NO_OPENSSL }, async () => {
+  const pair = selfSignedPair(join(tmp, "tls"));
+  const server = createHttpsServer({ key: pair.key, cert: pair.cert }, (req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ object: "list", data: [{ id: "m-tls", max_model_len: 8192 }] }));
+  });
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  const url = `https://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+  try {
+    const refused = await go("POST", "/api/v1/model-config/providers", { purpose: "language", kind: "vllm", base_url: url });
+    assert.equal(refused.status, 422);
+    assert.deepEqual([refused.body.error.data.field, refused.body.error.message], ["base_url", CERTIFICATE_TEXT]);
+    assert.equal(CERTIFICATE_TEXT, "这个地址的证书没有通过校验。请把签发它的根证书装进这台电脑的操作系统信任库，再重试。");
+    // 「操作系统信任库」由测试代替：重做一次信任，系统根证书换成这张测试现生成的根证书。
+    resetTrustForTests();
+    trustSystemCertificates(() => [pair.ca]);
+    const added = await go("POST", "/api/v1/model-config/providers", { purpose: "language", kind: "vllm", base_url: url });
+    assert.equal(added.status, 200, JSON.stringify(added.body));
+  } finally {
+    await new Promise<void>((ok) => server.close(() => ok()));
+  }
+});
+
+test("哪些错误算证书没有通过校验：看错误与它的 cause 上的代号", () => {
+  for (const code of ["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "SELF_SIGNED_CERT_IN_CHAIN", "DEPTH_ZERO_SELF_SIGNED_CERT", "CERT_HAS_EXPIRED", "ERR_TLS_CERT_ALTNAME_INVALID"]) {
+    assert.equal(isCertificateError(Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error(code), { code }) })), true, code);
+  }
+  for (const code of ["ECONNREFUSED", "ENOTFOUND", "ECONNRESET", undefined]) {
+    assert.equal(isCertificateError(Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error(String(code)), { code }) })), false, String(code));
+  }
 });
 
 test("密钥写进凭据文件（0600），接口只给「已设置」与末四位；改名、换密钥、删除", async () => {

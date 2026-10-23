@@ -17,6 +17,7 @@
 
 import { type Context, embeddingTarget } from "./model_config.ts";
 import type { Kind } from "./product_settings.ts";
+import { isCertificateError, trustSystemCertificates } from "./system_ca.ts";
 
 export type Purpose = "query" | "document";
 
@@ -32,6 +33,8 @@ const DETAIL_LIMIT = 200;
 export const NOT_SELECTED_TEXT = "还没有选嵌入模型。";
 export const NOT_OFFERED_TEXT = "这个模型服务没有嵌入模型。";
 export const UNREACHABLE_TEXT = "连不上这个模型服务。请确认它已经启动，地址与端口没有写错。";
+/** 连得上、但对方的证书没有通过校验；种类仍算 unreachable。 */
+export const CERTIFICATE_TEXT = "这个模型服务的证书没有通过校验。请把签发它的根证书装进这台电脑的操作系统信任库，再重试。";
 export const KEY_REJECTED_TEXT = "模型服务拒绝了这个密钥。";
 export const CANCELLED_TEXT = "这一次向量化中途取消了。";
 
@@ -116,6 +119,8 @@ export async function embed(ctx: Context, texts: string[], purpose: Purpose, opt
   if (target.key) headers.Authorization = `Bearer ${target.key}`;
   let status: number;
   let text: string;
+  // 连之前先让本进程认操作系统信任库里的根证书（system_ca.ts，只做一次）。
+  trustSystemCertificates();
   try {
     const res = await fetch(target.url, {
       method: "POST", headers, body: JSON.stringify(kind === "ollama" ? { ...request, truncate: false } : request), signal: options.signal ? AbortSignal.any([AbortSignal.timeout(timeoutMs), options.signal]) : AbortSignal.timeout(timeoutMs), redirect: "follow",
@@ -125,7 +130,7 @@ export async function embed(ctx: Context, texts: string[], purpose: Purpose, opt
   } catch (error) {
     if (options.signal?.aborted) throw new EmbeddingError("cancelled", CANCELLED_TEXT);
     if ((error as Error)?.name === "TimeoutError") throw new EmbeddingError("timeout", `${Math.round(timeoutMs / 1000)} 秒内没有算完。`);
-    throw new EmbeddingError("unreachable", UNREACHABLE_TEXT);
+    throw new EmbeddingError("unreachable", isCertificateError(error) ? CERTIFICATE_TEXT : UNREACHABLE_TEXT);
   }
   let body: any = null;
   try {

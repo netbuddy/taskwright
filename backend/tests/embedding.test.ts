@@ -7,14 +7,16 @@
 
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, beforeEach, test } from "node:test";
-import { BATCH_LIMIT, CANCELLED_TEXT, EmbeddingError, embed } from "../src/embedding.ts";
+import { BATCH_LIMIT, CANCELLED_TEXT, CERTIFICATE_TEXT, EmbeddingError, embed } from "../src/embedding.ts";
 import type { Context } from "../src/model_config.ts";
 import { type Kind, type StoredProvider, updatePiDirSettings } from "../src/product_settings.ts";
 import { captureConsole, tempDir } from "./helpers.ts";
+import { NO_OPENSSL, selfSignedPair } from "./self_signed.ts";
 
 captureConsole();
 
@@ -191,6 +193,19 @@ test("段数超过这一种模型服务一次能收的上限时不发请求：�
   assert.deepEqual(await failure(texts(33)), ["too_many", "一次最多向量化 32 段文字，这一次送来了 33 段。"]);
   assert.equal((await embed(ctx(), texts(32), "document")).vectors.length, 32);
   await assert.rejects(embed(ctx(), [], "document"), TypeError);
+});
+
+test("模型服务的证书没有通过校验（自签证书，根证书不在信任库里）：种类仍是 unreachable，说明换成指向证书的那句", { skip: NO_OPENSSL }, async () => {
+  const pair = selfSignedPair(join(tmp, "tls"));
+  const server = createHttpsServer({ key: pair.key, cert: pair.cert }, (req, res) => res.end("{}"));
+  await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+  try {
+    await choose("vllm", { base: `https://127.0.0.1:${(server.address() as AddressInfo).port}/v1` });
+    assert.deepEqual(await failure(), ["unreachable", CERTIFICATE_TEXT]);
+    assert.equal(CERTIFICATE_TEXT, "这个模型服务的证书没有通过校验。请把签发它的根证书装进这台电脑的操作系统信任库，再重试。");
+  } finally {
+    await new Promise<void>((ok) => server.close(() => ok()));
+  }
 });
 
 test("连不上模型服务；到时间没有回答", async () => {
