@@ -20,7 +20,7 @@ import { Service } from "../src/service.ts";
 import { DATA_FORMAT, ServiceDb } from "../src/service_db.ts";
 import { startService } from "../src/start.ts";
 import { ROOT, captureConsole, keepGeneral, tempDir } from "./helpers.ts";
-import { dataWith, facts, locations, put, putArchive, repack, sha256, tree } from "./pack_stack.ts";
+import { dataWith, facts, locations, put, putArchive, readPack, repack, sha256, tree } from "./pack_stack.ts";
 
 const logged = captureConsole();
 
@@ -397,7 +397,7 @@ test("暂存目录不被当成任务；留了一小时以上的遗留暂存目�
   }
 });
 
-test("导入不带材料的包：任务导入了，材料目录在而且是空的，材料表的行原样在；任务库的内容与别的文件与原来相同", async () => {
+test("导入不带材料的包：任务导入了，材料目录里只有导出时指纹 .expected.json，材料表的行原样在；任务库的内容与别的文件与原来相同", async () => {
   const where = await dataWith(fresh("data"), ["甲"]);
   const [a] = where.ids;
   const task = join(where.tasksDir, a);
@@ -409,7 +409,20 @@ test("导入不带材料的包：任务导入了，材料目录在而且是空�
   const report = await importPack(target, { file });
   assert.deepEqual(report.tasks.map((t) => [t.task_id, t.outcome]), [[a, "imported"]]);
   const imported = join(target.tasksDir, a);
-  assert.deepEqual([existsSync(join(imported, "inputs")), readdirSync(join(imported, "inputs"))], [true, []]);
+  // 材料目录里只有导入时写下的导出时指纹（.expected.json），内容是包里这个任务的材料清单与规则版本。
+  assert.deepEqual([existsSync(join(imported, "inputs")), readdirSync(join(imported, "inputs"))], [true, [".expected.json"]]);
+  const expected = JSON.parse(readFileSync(join(imported, "inputs", ".expected.json"), "utf-8"));
+  const packed = readPack(file).manifest;
+  assert.deepEqual(expected, { version: 1, exported_at: packed.exported_at, product_version: packed.product_version, projection: packed.projection, materials: packed.tasks[0].materials });
+  assert.equal(expected.materials[0].sha256, sha256("会上定了三件事。\n"));
+  // 再从这边导出：.expected.json 是本机状态，带不带材料都不进包；还没补齐的材料，清单里的指纹照它抄。
+  for (const withMaterials of [false, true]) {
+    const again = packFile(`again-${withMaterials}`);
+    await exportPack(target, { scope: "task", taskId: a, to: again, withMaterials });
+    const { names, manifest } = readPack(again);
+    assert.equal(names.some((name) => name.endsWith(".expected.json")), false);
+    assert.equal(manifest.tasks[0].materials![0].sha256, sha256("会上定了三件事。\n"));
+  }
   assert.deepEqual(materialRecordRows(imported).map((row) => [row.path, row.slot, row.role]), [["inputs/纪要.md", "evidence", "证据"]]);
   // 任务库是备份出来的副本，按内容比；别的文件逐个相同（材料目录除外）。
   assert.deepEqual(facts(imported), facts(task));

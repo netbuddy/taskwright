@@ -34,6 +34,11 @@ import { UPLOADING_DIR, UPLOAD_TYPES, resolvePath, sameMaterialName, unsupported
 
 // 编号、种类与任务目录里记选用的文件名，助手一侧也要用，定义在 agent/src/lib 下，这里原样交出去。
 export { GENERAL, KINDS, KIND_NAMES, SELECTION_FILE, type Kind };
+/** 补齐文档时文件已经在。 */
+export const DOC_PRESENT_TEXT = "这份文档的文件在，不用补齐。";
+/** 补齐文档时上传的不是导出时那份。 */
+export const DOC_NOT_SAME_TEXT = "不是导出时那份文件（校验值与导出时不同）。要换成别的文件，请先删掉这份文档再上传。";
+
 /** 通用知识库的名字。0.4.1 之前叫「通用库」，已有的清单里存着旧名，服务启动时改成新名（ensure）。 */
 export const GENERAL_NAME = "通用知识库";
 export const LEGACY_GENERAL_NAME = "通用库";
@@ -339,6 +344,79 @@ export class KnowledgeStore {
       rmSync(staging, { recursive: true, force: true });
       try {
         rmdirSync(holding); // 没有别的上传还在用它时才删得掉
+      } catch {
+        // 还有别的上传在用，或者已经不在了
+      }
+    }
+  }
+
+  /** 清单里有而文件不在的文档（从不带文档的数据包导入、还没补齐）。 */
+  isMissing(id: string, name: string): boolean {
+    return !isFile(join(this.filesDir(id), name));
+  }
+
+  /**
+   * 补齐一份缺失的文档：清单里有这个名字而文件不在时，收下上传的文件，SHA-256 与清单记的相同才放进文档目录（连同照上传规矩生成的
+   * 投影、分段清单、位置表），清单原样不改；不同就拒绝，什么都不写。知识库文档没有「接受差异」：没有条目依据它，要换就先删再传。
+   * 换算数字串由调用方照上传之后的做法排队（service.ts）。返回清单里的那一行。
+   */
+  replenish(id: string, name: unknown, data: Buffer, segments?: SegmentParams, pdf?: PdfRunLimits): DocumentRow | Promise<DocumentRow> {
+    this.library(id);
+    const row = typeof name === "string" ? this.documents(id).find((one) => one.name === name) : undefined;
+    if (!row) throw new ApiError("not_found", `这个知识库里没有《${String(name)}》。`);
+    if (!this.isMissing(id, row.name)) throw new ApiError("rejected", DOC_PRESENT_TEXT, { name: row.name });
+    if (sha256(data) !== row.sha256) throw new ApiError("rejected", DOC_NOT_SAME_TEXT, { name: row.name });
+    const folder = this.filesDir(id);
+    mkdirSync(folder, { recursive: true });
+    const target = join(folder, row.name);
+    if (row.name.toLowerCase().endsWith(".pdf")) return this.replenishPdf(id, row, data, segments, pdf);
+    writeFileSync(target, data, { flag: "wx" });
+    removeEmbeddings(target);
+    if (row.name.toLowerCase().endsWith(".docx")) {
+      try {
+        writeProjection(target, knowledgeLocator(id, row.name), segments);
+      } catch (error) {
+        rmSync(target, { force: true });
+        removeProjection(target);
+        if (!(error instanceof ProjectionError)) throw error;
+        throw new ApiError("unsupported_type", `${error.message}，请用 Word 另存为 .docx 后再上传。`);
+      }
+    }
+    return row;
+  }
+
+  /** 补齐一份 PDF 文档：照上传 PDF 文档的做法在临时目录里生成派生文件，做成了再把四个文件一起移进文档目录。 */
+  private async replenishPdf(id: string, row: DocumentRow, data: Buffer, segments?: SegmentParams, limits?: PdfRunLimits): Promise<DocumentRow> {
+    const folder = this.filesDir(id);
+    const holding = join(this.libraryDir(id), UPLOADING_DIR);
+    const staging = join(holding, randomUUID());
+    mkdirSync(staging, { recursive: true });
+    try {
+      writeFileSync(join(staging, row.name), data);
+      try {
+        await runPdfProjection(join(staging, row.name), knowledgeLocator(id, row.name), segments ?? SEGMENT_DEFAULTS, limits);
+      } catch (error) {
+        if (!(error instanceof PdfUploadError)) throw error;
+        throw new ApiError("unsupported_type", error.message);
+      }
+      const names = [...PDF_DERIVED_SUFFIXES.map((suffix) => row.name + suffix), row.name];
+      if (!this.isMissing(id, row.name)) throw new ApiError("rejected", DOC_PRESENT_TEXT, { name: row.name });
+      removeEmbeddings(join(folder, row.name));
+      const moved: string[] = [];
+      try {
+        for (const one of names) {
+          renameSync(join(staging, one), join(folder, one));
+          moved.push(one);
+        }
+      } catch (error) {
+        for (const one of moved) rmSync(join(folder, one), { force: true });
+        throw error;
+      }
+      return row;
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+      try {
+        rmdirSync(holding);
       } catch {
         // 还有别的上传在用，或者已经不在了
       }

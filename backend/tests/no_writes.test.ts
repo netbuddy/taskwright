@@ -23,6 +23,7 @@ const ALLOWED: Record<string, string[]> = {
   "task_read.ts": ["DEFAULT_MATERIALS_DIR", "ParsedDefinition", "Row", "SourceRow", "itemKey", "jsonOrText", "materialsDir",
     "openReadonly", "parseDefinition", "readSources", "splitUserWordsLocator"],
   "conditions.ts": ["checkCompletion", "completionBrief", "completionHints"],
+  "source_roles.ts": ["materialOfLocator"],
   "db.ts": ["DB_NAME", "ACTOR_USER", "ACTOR_EXECUTOR"],
   // 五个阶段给人看的名字（常量）。
   // 另有问题条目的几个字段名与取值（常量）。

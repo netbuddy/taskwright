@@ -45,6 +45,8 @@ const SUPPLEMENT_KIND = "助手补充";
 const ITEM_KIND = "条目";
 /** 依据任务里一张图的来源的种类。 */
 const FIGURE_KIND = "图";
+/** 引自材料或知识库文档原文的来源的种类（与 lib/schema.ts 的 SOURCE_DOCUMENT 相同）。 */
+const DOCUMENT_KIND = "文档原文";
 
 type Fields = Record<string, unknown>;
 
@@ -150,7 +152,8 @@ export interface CitedFigure {
  */
 export interface BasisPending {
   item_id: string;
-  reason: "pending" | "deprecated" | "unviewed";
+  /** material_changed：依据的材料补齐后与导出时不同、用户还没有接受（item_id 是那份材料的路径）。 */
+  reason: "pending" | "deprecated" | "unviewed" | "material_changed";
   see: string | null;
 }
 
@@ -160,15 +163,22 @@ export interface BasisPending {
  * 一页同时有几样时报最重的一样：已废弃先于待核实，待核实先于没看过。
  * 只看一层：被指的那一页、那张图自己依据了谁不往下追。page 按编号给出那一页现在的样子，不存在或已经删除时给 null；
  * figure 按编号给出那张图现在的样子，不存在或已经删除时给 null（已经删除的图不算待核实，来源上另标「已经删除」）。
- * 不给 figure 的调用方不看图。
+ * 不给 figure 的调用方不看图。changedMaterial 按「文档原文」来源的出处说它指的材料是不是补齐后与导出时不同、用户还没有接受，
+ * 是的话给出那份材料的路径；不给的调用方不看材料。
  */
 export function basisPending(
   sources: readonly { kind: unknown; locator: unknown }[],
   page: (itemId: string) => CitedPage | null,
   figure?: (diagramId: string) => CitedFigure | null,
+  changedMaterial?: (locator: string) => string | null,
 ): BasisPending | null {
   for (const one of sources) {
     if (typeof one.locator !== "string") continue;
+    if (one.kind === DOCUMENT_KIND) {
+      const changed = changedMaterial?.(one.locator);
+      if (changed) return { item_id: changed, reason: "material_changed", see: null };
+      continue;
+    }
     if (one.kind === FIGURE_KIND) {
       const cited = figure?.(one.locator.trim());
       if (cited && !cited.viewed) return { item_id: one.locator.trim(), reason: "unviewed", see: null };

@@ -31,7 +31,9 @@ import {
   DEFAULT_MATERIALS_DIR, type ParsedDefinition, type Row, type SourceRow,
   itemKey, jsonOrText, openReadonly, parseDefinition, readSources,
 } from "../../agent/src/lib/task_read.ts";
+import { materialOfLocator } from "../../agent/src/lib/source_roles.ts";
 import * as clock from "./clock.ts";
+import { mismatchedMaterials } from "./replenish.ts";
 import { ApiError } from "./errors.ts";
 import { readTextFile } from "./files.ts";
 import { functionNames } from "./work_summary.ts";
@@ -1018,6 +1020,13 @@ export class Library {
     // 条目依据的图用户看没看过（还在的图；已经删除的不算待核实）。
     const figureViewed = new Map(liveDiagrams(this.data.diagrams || []).map((record) => [record.diagram_id, diagramViewed(record, this.data.diagram_views ?? new Set())]));
     const citedFigure = (id: string) => (figureViewed.has(id) ? { viewed: figureViewed.get(id)! } : null);
+    // 导入后补齐、与导出时不同而用户还没有接受的材料（replenish.ts）：引自它们的条目因依据而待核实。
+    const materialsDir = or(this.definition["材料目录"], DEFAULT_MATERIALS_DIR) as string;
+    const changed = this.data.task_dir ? mismatchedMaterials(this.data.task_dir, materialsDir) : new Set<string>();
+    const changedMaterial = (locator: string) => {
+      const path = materialOfLocator(locator, materialsDir);
+      return changed.has(path) ? path : null;
+    };
     for (const i of sorted) {
       if (i.deleted_in_revision !== null) continue;
       const no = this.currentRevision(i.item_id);
@@ -1050,7 +1059,7 @@ export class Library {
         ...pendingOf.get(i.item_id)!,
         // 因依据而待核实：它依据的业务说明的一页待核实（reason 是 pending）、已废弃（deprecated，see 是那一页写的改看）或者用户还没有看过（unviewed）；没有是 null。
         // 依据的是一张图、而用户还没有看过它现在的内容时同样给出，item_id 是图的编号，reason 是 unviewed。
-        basis_pending: basisPending(this.sourcesOf(i.item_id, no), citedPage, citedFigure),
+        basis_pending: basisPending(this.sourcesOf(i.item_id, no), citedPage, citedFigure, changedMaterial),
         // 业务说明的页：别的页与别的条目的文字里提到它的地方；一处都没有是空列表。别的集合的条目与没有业务说明集合的任务不带这一项。
         ...(withOverall && i.collection === OVERALL_COLLECTION ? { mentioned_by: mentions.get(i.item_id) ?? [] } : {}),
       });
@@ -1483,6 +1492,8 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
   }
   const files: [string, ReturnType<typeof statSync>][] = [];
   for (const name of names.sort(byCodePoint)) {
+    // 以点开头的不是材料（导入时写下的导出时指纹 .expected.json 之类，见 replenish.ts）。
+    if (name.startsWith(".")) continue;
     try {
       const st = statSync(join(folder, name), { bigint: true });
       if (st.isFile()) files.push([name, st as any]);

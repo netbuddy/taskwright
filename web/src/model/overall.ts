@@ -337,6 +337,11 @@ export function basisNote(task: Task, item: Item): { text: string; title: string
   const basis = item.basis_pending;
   if (!basis) return null;
   const name = (id: string) => { const page = task.items.find((i) => i.item_id === id); return page ? `${id}「${titleOf(page)}」` : id; };
+  // 依据的材料导入后补齐了，与导出时不同，用户还没有接受（item_id 是材料的路径）。
+  if (basis.reason === "material_changed") {
+    const name = basis.item_id.split("/").pop() ?? basis.item_id;
+    return { text: "依据的材料与导出时不同", title: `依据的材料补齐后与导出时不同，待用户接受：《${name}》。到材料页接受，或者换回原件，这里就消掉。` };
+  }
   // 依据的是一张图（编号在图的清单里）：图现在的内容用户还没有看过。
   const figure = (task.diagrams ?? []).find((one) => one.diagram_id === basis.item_id);
   if (figure) return { text: "依据的图还没有看过", title: `它依据的图「${figure.name}」现在的内容你还没有看过；到业务说明里把这张图看一遍，这里就消掉。` };

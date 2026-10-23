@@ -15,7 +15,8 @@ import { pdfUploadingText } from "../model/upload";
 import { chapterOfPage, headingOfPage } from "../model/pdfView";
 import { resetPdfStore } from "../state/pdfStore";
 import { ItemsPanel } from "../components/work/ItemsPanel";
-import type { Item, Material, Task } from "../api/types";
+import type { Item, Material, ReplenishCheck, Task } from "../api/types";
+import { replenishMessage } from "../model/replenish";
 
 type PaperProps = { path: string; locate: LocateRequest | null; jump?: { page: number; nonce: number } | null;
   paperRef?: RefObject<HTMLDivElement | null>; onMouseUp?: () => void;
@@ -286,5 +287,64 @@ describe("来源标签与任务页材料卡", () => {
     expect(keptRow.querySelector("[data-testid=material-missing]")).toBeNull();
     expect(keptRow.querySelector("[data-testid=material-view]")).toBeTruthy();
     expect(keptRow.querySelector("[data-testid=material-delete]")).toBeTruthy();
+  });
+});
+
+describe("材料卡：导入后补齐材料", () => {
+  const check = (over: Partial<ReplenishCheck>): ReplenishCheck => ({ at: "", original: "same", derived: [], verdict: "restored", accepted: false, reasons: [], ...over });
+  const MISSING = material("inputs/规格.docx", { bytes: 0, missing: true, deletable: false });
+  const card = (materials: Material[]) => {
+    const onChanged = vi.fn();
+    render(<Wrap><ToastProvider><MaterialsCard taskId="TASK-1" materials={materials} info={null} onView={() => {}} onChanged={onChanged} /></ToastProvider></Wrap>);
+    return onChanged;
+  };
+  const choose = (name = "规格.docx") => {
+    const file = new File(["x"], name);
+    fireEvent.change(screen.getByTestId("material-replenish-input"), { target: { files: [file] } });
+    return file;
+  };
+
+  it("缺失行有「补齐」：选好文件直接上传；三种结论各一种提示，之后重读任务", async () => {
+    const cases: [ReplenishCheck, string][] = [
+      [check({}), "《规格.docx》已恢复到导出时的状态。"],
+      [check({ verdict: "unverified", original: null }), "《规格.docx》已补齐（没有导出时的校验值可比）。"],
+      [check({ verdict: "mismatch", original: "different", reasons: ["上传的不是导出时那份文件（校验值不同）"] }),
+        "《规格.docx》已补齐，但原件与导出时不同：上传的不是导出时那份文件（校验值不同）。依据它的条目标了待核实；可以在材料行上接受，或者换回原件。"],
+    ];
+    for (const [result, text] of cases) {
+      const onChanged = card([MISSING]);
+      const call = vi.spyOn(api, "replenishMaterial").mockResolvedValue({ ok: true, path: MISSING.path, check: result });
+      fireEvent.click(screen.getByTestId("material-replenish"));
+      const file = choose();
+      await waitFor(() => expect(call).toHaveBeenCalledWith("TASK-1", "inputs/规格.docx", file));
+      expect(await screen.findByText(text)).toBeInTheDocument();
+      await waitFor(() => expect(onChanged).toHaveBeenCalled());
+      cleanup();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("派生文件不同时提示列出是哪几样", () => {
+    const said = replenishMessage("规格.docx", check({ verdict: "mismatch", derived: [{ name: "inputs/规格.docx.segments.json", result: "different" }, { name: "inputs/规格.docx.md", result: "same" }],
+      reasons: ["本机的解析规则或参数与导出时不同（…）"] }));
+    expect(said).toEqual({ tone: "warn", text: "《规格.docx》已补齐，但分段清单与导出时不同：本机的解析规则或参数与导出时不同（…）。依据它的条目标了待核实；可以在材料行上接受，或者换回原件。" });
+  });
+
+  it("补齐后与导出时不同、还没有接受：名字后面标「与导出时不同」，有「接受」与「换回原件」；接受了就没有这些", async () => {
+    const differing = material("inputs/规格.docx", { deletable: false, missing: false, replenish: check({ verdict: "mismatch", original: "different", reasons: ["上传的不是导出时那份文件（校验值不同）"] }) });
+    card([differing]);
+    expect(screen.getByTestId("material-mismatch")).toHaveTextContent("与导出时不同");
+    const accept = vi.spyOn(api, "acceptReplenished").mockResolvedValue({ ok: true, path: differing.path, check: { ...differing.replenish!, accepted: true } });
+    fireEvent.click(screen.getByTestId("material-accept"));
+    await waitFor(() => expect(accept).toHaveBeenCalledWith("TASK-1", "inputs/规格.docx"));
+    expect(await screen.findByText("已接受《规格.docx》与导出时的不同。")).toBeInTheDocument();
+    // 换回原件就是再补一次。
+    const again = vi.spyOn(api, "replenishMaterial").mockResolvedValue({ ok: true, path: differing.path, check: check({}) });
+    fireEvent.click(screen.getByTestId("material-restore"));
+    choose();
+    await waitFor(() => expect(again).toHaveBeenCalled());
+    cleanup();
+    card([{ ...differing, replenish: { ...differing.replenish!, accepted: true } }]);
+    for (const id of ["material-mismatch", "material-accept", "material-restore"]) expect(screen.queryByTestId(id)).toBeNull();
   });
 });

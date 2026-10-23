@@ -321,3 +321,35 @@ describe("知识库页面", () => {
     await waitFor(() => expect(screen.queryByTestId("kb-search-result")).toBeNull());
   });
 });
+
+describe("补齐缺失的文档", () => {
+  const missingOverview = (): KnowledgeOverview => {
+    const one = overviewOf([["退款规范.md", state()]]);
+    one.libraries[0].documents[0] = { ...one.libraries[0].documents[0], missing: true };
+    return one;
+  };
+
+  it("清单里有而文件不在的文档：大小一栏写「文件缺失，请补齐」，「查看」灰掉；点「补齐」选文件上传，相同时提示已恢复", async () => {
+    const calls = page("general", [missingOverview(), overviewOf([["退款规范.md", state()]])]);
+    expect(await screen.findByTestId("kb-doc-missing-退款规范.md")).toHaveTextContent("文件缺失，请补齐");
+    expect(screen.getByTestId("kb-doc-view-off-退款规范.md")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByTestId("kb-doc-view-退款规范.md")).toBeNull();
+    const replenish = vi.spyOn(api, "replenishDocument").mockResolvedValue({ ok: true, name: "退款规范.md" });
+    fireEvent.click(screen.getByTestId("kb-doc-replenish-退款规范.md"));
+    const file = new File(["退款规范全文"], "退款规范.md");
+    fireEvent.change(screen.getByTestId("kb-replenish-input"), { target: { files: [file] } });
+    await waitFor(() => expect(replenish).toHaveBeenCalledWith("general", "退款规范.md", file));
+    expect(await screen.findByText("《退款规范.md》已恢复到导出时的状态。")).toBeInTheDocument();
+    await waitFor(() => expect(calls.overview.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("校验值不同：照后端的原话提示，文档仍标缺失", async () => {
+    page("general", missingOverview());
+    await screen.findByTestId("kb-doc-missing-退款规范.md");
+    vi.spyOn(api, "replenishDocument").mockRejectedValue(new ApiError("rejected", "不是导出时那份文件（校验值与导出时不同）。要换成别的文件，请先删掉这份文档再上传。", 422));
+    fireEvent.click(screen.getByTestId("kb-doc-replenish-退款规范.md"));
+    fireEvent.change(screen.getByTestId("kb-replenish-input"), { target: { files: [new File(["别的"], "退款规范.md")] } });
+    expect(await screen.findByText("不是导出时那份文件（校验值与导出时不同）。要换成别的文件，请先删掉这份文档再上传。")).toBeInTheDocument();
+    expect(screen.getByTestId("kb-doc-missing-退款规范.md")).toBeInTheDocument();
+  });
+});

@@ -1,4 +1,4 @@
-// 材料的三样操作：上传、替换、删除。任务起点页与活动输入页的材料卡（MaterialsCard.tsx）、工作台「材料与证据」页签
+// 材料的三样操作：上传、替换、删除；另有导入后补齐材料的两样：补齐（也用来把补齐后与导出时不同的换回原件）与接受不同。任务起点页与活动输入页的材料卡（MaterialsCard.tsx）、工作台「材料与证据」页签
 // （components/work/MaterialsPane.tsx）共用。替换要先选文件、再弹确认框；删除先弹确认框。两个确认框与替换用的文件选择框
 // 由调用方放进页面（elements）。材料一旦进入了对话就不能替换、不能删除，后端在任务详情里给每份材料标了 deletable，调用方只按它决定按钮。
 
@@ -10,6 +10,7 @@ import type { ServiceInfo } from "../../api/types";
 import { pdfUploadingText, tooLargeText, unsupportedTypeText, uploadAccept } from "../../model/upload";
 import { forgetDocx } from "../../state/docxStore";
 import { forgetPdf } from "../../state/pdfStore";
+import { replenishMessage } from "../../model/replenish";
 import { useToast } from "../Toasts";
 
 export const fileName = (path: string) => path.split("/").pop() ?? path;
@@ -21,6 +22,12 @@ export interface MaterialOps {
   replace: (path: string) => void;
   /** 点「删除」：弹确认框。 */
   remove: (path: string) => void;
+  /** 点「补齐」或「换回原件」：打开文件选择框，选好了直接上传核对，结果用提示说（model/replenish.ts）。 */
+  replenish: (path: string) => void;
+  /** 点「接受」：接受补齐后与导出时的不同。 */
+  accept: (path: string) => void;
+  /** 正在补齐（或接受）的那份材料的路径；没有时是 null。这期间它那一行的按钮不可点。 */
+  busy: string | null;
   /** 替换用的文件选择框与两个确认框。 */
   elements: ReactNode;
 }
@@ -98,6 +105,54 @@ export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChang
   };
 
 
+  // 补齐：选好文件就发，不弹确认框（补的是同一份材料，不丢东西）；结果按核对的结论用成功或警示提示。
+  const filler = useRef<HTMLInputElement>(null);
+  const fillFor = useRef<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const replenish = (path: string) => {
+    fillFor.current = path;
+    if (filler.current) {
+      filler.current.value = "";
+      filler.current.click();
+    }
+  };
+  const filled = async (file: File | undefined) => {
+    const path = fillFor.current;
+    fillFor.current = null;
+    if (!file || !path) return;
+    const refused = tooLargeText(info, file);
+    if (refused) {
+      toast.error(refused);
+      return;
+    }
+    setBusy(path);
+    try {
+      const r = await api.replenishMaterial(taskId, path, file);
+      forgetDocx(taskId, path);
+      forgetPdf(taskId, path);
+      const said = replenishMessage(fileName(path), r.check);
+      if (said.tone === "ok") toast.success(said.text);
+      else toast.warning(said.text);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "补齐没有成功。");
+    } finally {
+      setBusy(null);
+      onChanged();
+    }
+  };
+  const accept = async (path: string) => {
+    setBusy(path);
+    try {
+      await api.acceptReplenished(taskId, path);
+      toast.success(`已接受《${fileName(path)}》与导出时的不同。`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "没有接受成。");
+    } finally {
+      setBusy(null);
+      onChanged();
+    }
+  };
+
   const upload: UploadProps["customRequest"] = async ({ file, onSuccess, onError }) => {
     // 类型不符或超过上限的文件不发请求，直接报后端给的那句话（先查类型，与后端的先后相同）。
     // 拖进来的文件与在选择框里选了「所有文件」时选中的文件都不经过滤，所以类型也要在这里查。
@@ -126,6 +181,8 @@ export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChang
     <>
       {/* 替换用的文件选择框：看不见，由「替换」打开。 */}
       <input ref={picker} type="file" accept={uploadAccept(info)} hidden onChange={(e) => picked(e.target.files?.[0])} data-testid="material-replace-input" />
+      {/* 补齐用的文件选择框：看不见，由「补齐」「换回原件」打开。 */}
+      <input ref={filler} type="file" accept={uploadAccept(info)} hidden onChange={(e) => void filled(e.target.files?.[0])} data-testid="material-replenish-input" />
       <Modal title={replacing ? `用《${replacing.file.name}》替换材料《${fileName(replacing.path)}》？` : ""} open={!!replacing}
         onCancel={() => { if (!swapping) setReplacing(null); }} onOk={() => void doReplace()} okText="替换" cancelText="取消" confirmLoading={swapping}
         cancelButtonProps={{ disabled: swapping }} closable={!swapping} maskClosable={!swapping} keyboard={!swapping} destroyOnHidden>
@@ -138,5 +195,5 @@ export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChang
       </Modal>
     </>
   );
-  return { upload, replace: pick, remove: setDeleting, elements };
+  return { upload, replace: pick, remove: setDeleting, replenish, accept: (path) => void accept(path), busy, elements };
 }

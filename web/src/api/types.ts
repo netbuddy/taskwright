@@ -274,7 +274,7 @@ export interface Item {
   /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
   pending_places?: { field: string | null; index: number | null }[];
   /** 因依据而待核实：它依据的业务说明的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
-  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see: string | null } | null;
+  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | "unviewed" | "material_changed" | string; see: string | null } | null;
   /** 只有业务说明的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */
   mentioned_by?: Mention[];
 }
@@ -430,6 +430,22 @@ export interface Material {
   deletable?: boolean;
   /** 材料表里有这份材料而文件不在（从不带材料的数据包导入、还没补齐）：这时 bytes 是 0，modified_at 是放进来的时刻。早先的后端不给。 */
   missing?: boolean;
+  /** 导入后补齐过：与导出时比的结果（只有任务详情里给）；没有补齐过是 null。 */
+  replenish?: ReplenishCheck | null;
+}
+
+/**
+ * 补齐一份材料之后与导出时比的结果（POST …/materials/replenish 的 check）。original：原件同不同（没有可比的时是 null）；
+ * derived：三样派生文件各自的结果（absent_before 是导出时没有这一样）；verdict：restored 已恢复、mismatch 与导出时不同、
+ * unverified 没有导出时的校验值可比；accepted：用户接受了不同；reasons：程序能说的原因。
+ */
+export interface ReplenishCheck {
+  at: string;
+  original: "same" | "different" | null;
+  derived: { name: string; result: "same" | "different" | "absent_before" }[];
+  verdict: "restored" | "mismatch" | "unverified";
+  accepted: boolean;
+  reasons: string[];
 }
 
 export type ExecutorStateName = "not_started" | "starting" | "idle" | "working" | "exited" | "failed_to_start";
@@ -1067,6 +1083,8 @@ export interface KnowledgeDocument {
   kind: KnowledgeKind;
   bytes: number;
   uploaded_at: string;
+  /** 清单里有而文件不在（从不带文档的数据包导入、还没补齐）。早先的后端不给。 */
+  missing?: boolean;
 }
 
 /** 知识库里的一个库（GET /api/v1/knowledge 的一项）。used_by_tasks 是本服务接手的进行中任务里选用了它的个数。 */

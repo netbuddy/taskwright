@@ -3,7 +3,7 @@
 // 连不上后端、超时、返回的不是 JSON 时，也折成同一种形状，code 用前端自己的几个值（network、timeout、bad_response）。
 
 import { dispositionFileName } from "../model/download";
-import type { TaskStatusView } from "./types";
+import type { ReplenishCheck, TaskStatusView } from "./types";
 import type {
   ActionRequest,
   VersionView,
@@ -312,6 +312,15 @@ export const api = {
     form.append("file", file, file.name);
     return request<{ ok: true; path: string; replaced: string }>("POST", `${task(taskId)}/materials/replace?path=${encodeURIComponent(path)}`, form);
   },
+  /** 补齐一份缺失的材料（或者把补齐后与导出时不同的换回原件）：上传 file，与导出时的指纹核对，返回核对结果。 */
+  replenishMaterial: (taskId: string, path: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<{ ok: true; path: string; check: ReplenishCheck }>("POST", `${task(taskId)}/materials/replenish?path=${encodeURIComponent(path)}`, form);
+  },
+  /** 接受一份补齐后与导出时不同的材料。 */
+  acceptReplenished: (taskId: string, path: string) =>
+    request<{ ok: true; path: string; check: ReplenishCheck }>("POST", `${task(taskId)}/materials/replenish/accept?path=${encodeURIComponent(path)}`),
   control: (taskId: string, sessionId: string, action: "stop") =>
     request<{ ok: true; cleared?: string[] }>("POST", `${task(taskId)}/control?session=${encodeURIComponent(sessionId)}`, { action }),
 
@@ -342,6 +351,12 @@ export const api = {
   documentRaw: (id: string, name: string) => rawBytes(`/knowledge/libraries/${encodeURIComponent(id)}/documents/raw?name=${encodeURIComponent(name)}`),
   /** 知识库文档原始字节的地址（给 <iframe> 这类要一个真实地址的地方用；取字节用 documentRaw）。 */
   documentRawUrl: (id: string, name: string) => `${BASE}/knowledge/libraries/${encodeURIComponent(id)}/documents/raw?name=${encodeURIComponent(name)}`,
+  /** 补齐一份缺失的知识库文档：校验值与导出时相同才收。 */
+  replenishDocument: (id: string, name: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<{ ok: true; name: string }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}/documents/replenish?name=${encodeURIComponent(name)}`, form);
+  },
   deleteDocument: (id: string, name: string) => request<{ ok: true }>("POST", `/knowledge/libraries/${encodeURIComponent(id)}/documents/delete`, { name }),
   setTaskKnowledge: (taskId: string, libraries: string[]) =>
     request<{ libraries: string[] }>("POST", `${task(taskId)}/knowledge`, { libraries }).then((r) => r.libraries),

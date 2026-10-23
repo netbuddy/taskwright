@@ -724,6 +724,14 @@ const handlers: Record<string, Handler> = {
     return json(200, service.deleteMaterial(t, body.path, sessionParam(req, body)));
   },
   // 替换一份材料：被替换的那份的路径在查询参数 path 里，新文件照上传的格式放在请求体里。
+  // 补齐一份缺失的材料（multipart 一份文件，查询参数 path 是材料的路径），与导出时的指纹核对；返回 {ok, path, check}。
+  replenish_material: async (service, req) => {
+    const t = service.task(req.params.task);
+    const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
+    return json(200, await service.replenishMaterial(t, req.query.path ?? "", name, data));
+  },
+  // 接受一份补齐后与导出时不同的材料（查询参数 path）。
+  accept_replenished: (service, req) => json(200, service.acceptReplenished(service.task(req.params.task), req.query.path ?? "")),
   replace_material: async (service, req) => {
     const t = service.task(req.params.task);
     const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
@@ -735,6 +743,13 @@ const handlers: Record<string, Handler> = {
   create_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().create(bodyJson(req).name) }),
   rename_library: (service, req) => json(200, { ok: true, library: service.requireKnowledge().rename(req.params.lib, bodyJson(req).name) }),
   delete_library: (service, req) => json(200, service.removeLibrary(req.params.lib)),
+  // 补齐一份缺失的知识库文档（multipart 一份文件，查询参数 name 是文档名）：校验值与导出时相同才收。
+  replenish_document: async (service, req) => {
+    service.requireKnowledge();
+    const form = parseMultipartForm(String(req.headers["content-type"] ?? ""), req.body);
+    if (!form.file) throw new ApiError("bad_request", "请求里没有文件。");
+    return json(200, await service.replenishDocument(req.params.lib, req.query.name ?? "", form.file[1]));
+  },
   upload_document: async (service, req) => {
     service.requireKnowledge();
     const form = parseMultipartForm(String(req.headers["content-type"] ?? ""), req.body);
@@ -852,6 +867,8 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", `/api/v1/tasks/${T}/materials`, "upload"],
   ["POST", `/api/v1/tasks/${T}/materials/delete`, "delete_material"],
   ["POST", `/api/v1/tasks/${T}/materials/replace`, "replace_material"],
+  ["POST", `/api/v1/tasks/${T}/materials/replenish`, "replenish_material"],
+  ["POST", `/api/v1/tasks/${T}/materials/replenish/accept`, "accept_replenished"],
   ["GET", `/api/v1/tasks/${T}/knowledge`, "task_knowledge"],
   ["POST", `/api/v1/tasks/${T}/knowledge`, "set_task_knowledge"],
   ["GET", "/api/v1/knowledge", "knowledge"],
@@ -863,6 +880,7 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["GET", `/api/v1/knowledge/libraries/${L}/export`, "export_library"],
   ["POST", `/api/v1/knowledge/libraries/${L}/documents`, "upload_document"],
   ["POST", `/api/v1/knowledge/libraries/${L}/documents/delete`, "delete_document"],
+  ["POST", `/api/v1/knowledge/libraries/${L}/documents/replenish`, "replenish_document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/content`, "document"],
   ["GET", `/api/v1/knowledge/libraries/${L}/documents/raw`, "document_raw"],
   ["GET", `/api/v1/tasks/${T}/status`, "task_status"],
