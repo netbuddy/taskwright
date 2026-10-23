@@ -1,6 +1,6 @@
 // 上传被拒绝时的页面：内容与已有材料相同（duplicate_content）、同名不同内容（name_taken）两种拒绝，都用现有的红色提示照写后端的原话，
 // 材料清单不变（任务页不重读任务、工作视图不添附件）。类型不符的文件在发送之前就拦下，显示服务信息里后端给的那句话；
-// 还没取到服务信息时不拦，照常发给后端。任务页上传框与对话区的「附一份材料」两处入口都这样。
+// 还没取到服务信息时不拦，照常发给后端。任务页上传框与对话区的「附一份输入资料」两处入口都这样。
 
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
@@ -21,8 +21,8 @@ vi.mock("../state/useWorkView", () => ({ useWorkView: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const TYPE_TEXT = "只接受 .md、.txt 与 Word 的 .docx 文件。";
-const DUPLICATE = "这份文件与已有的材料《需求.md》内容完全相同，没有重复保存。";
-const NAME_TAKEN = "这个任务里已经有一份叫《需求.md》的材料，内容与这份不同。请给文件换一个名字再上传。";
+const DUPLICATE = "这份文件与已有的输入资料《需求.md》内容完全相同，没有重复保存。";
+const NAME_TAKEN = "这个任务实例里已经有一份叫《需求.md》的输入资料，内容与这份不同。请给文件换一个名字再上传。";
 const info: ServiceInfo = {
   ok: true, app: "taskwright", version: "0.3.0", mode: "server", pid: 1, port: 8940, capabilities: { exit: false, model: true },
   upload: { max_bytes: 5 * 1024 * 1024, too_large_text: "单个文件不能超过 5 MB。", extensions: [".md", ".txt", ".docx"],
@@ -111,7 +111,7 @@ describe("任务页的上传框", () => {
   });
 });
 
-describe("对话区的「附一份材料」", () => {
+describe("对话区的「附一份输入资料」", () => {
   const task = {
     task_id: "TASK-D", task_name: "去重", task_type: "演示", domain_tag: null, started_at: "",
     definition: { collections: [] }, completion: null, items: [],

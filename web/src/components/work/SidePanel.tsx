@@ -109,7 +109,7 @@ function RevisionLogView({ log, messages, selected, onSelect, scrollNonce, onDif
   const alive = new Set(liveItems.map((i) => i.item_id));
   return (
     <div className="sw-revlog" data-testid="revision-log">
-      <div className="lead">这个任务的每一次修订，最新的在上面。点一张卡片，条目区会标出它碰到的条目。</div>
+      <div className="lead">这个任务实例的每一次修订，最新的在上面。点一张卡片，条目区会标出它碰到的条目。</div>
       {log.length === 0 && <div className="lead">还没有修订。</div>}
       {log.map((r) => {
         const blocked = undoBlocked(r, log, liveItems);
@@ -138,7 +138,7 @@ function RevisionLogView({ log, messages, selected, onSelect, scrollNonce, onDif
           })}
           <div className="rfoot">
             <button type="button" className="btn sm" disabled={writesOff || readOnly || blocked}
-              title={readOnly ? "任务已结束或助手不可用，不能撤销。" : writesOff ? BUSY_TEXT : blocked ? UNDO_BLOCKED_TEXT : undefined}
+              title={readOnly ? "任务实例已结束或助手不可用，不能撤销。" : writesOff ? BUSY_TEXT : blocked ? UNDO_BLOCKED_TEXT : undefined}
               onClick={() => onUndo(r.revision_no)} data-testid={`rev-${r.revision_no}-undo`}>撤销这次修订</button>
             <button type="button" className="btn sm" onClick={() => onGenerate(r.revision_no)} data-testid={`rev-${r.revision_no}-doc`}>按此修订生成文档</button>
           </div>

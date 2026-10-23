@@ -1,4 +1,4 @@
-// 任务列表：任务没有状态，按最近活动排，「进展」一栏写流程到了哪一站、几个工作项、几条阻断；
+// 任务实例列表：任务没有状态，按最近活动排，「进展」一栏写流程到了哪一站、几个工作项、几条阻断；
 // 正被别的服务占用的任务照样列出，灰显、打不开，进展一栏写明被哪个端口的服务占用。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -12,10 +12,10 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const base = { task_type: "需求工程", domain_tag: null, item_count: null, completion_met: null, completion_total: null,
   completion_unmet: null, version_count: null, latest_published_at: null, last_active_at: null, session_count: null } as unknown as TaskListEntry;
 
-describe("任务列表", () => {
+describe("任务实例列表", () => {
   it("被占用的任务写「正被端口 N 的服务占用」，没有打开按钮；旧格式照旧", async () => {
     vi.spyOn(api, "listTasks").mockResolvedValue([
-      { ...base, task_id: "TASK-A", task_name: "被占用的任务", unavailable: "占用中", supported: false, note: "这个任务正被端口 8790 的服务占用，这里不能打开。",
+      { ...base, task_id: "TASK-A", task_name: "被占用的任务", unavailable: "占用中", supported: false, note: "这个任务实例正被端口 8790 的服务占用，这里不能打开。",
         occupied: { port: 8790, pid: 123, host: "h" } },
       { ...base, task_id: "TASK-OLD", task_name: "TASK-OLD", unavailable: "旧格式", supported: false, note: "旧格式" },
     ]);
@@ -29,16 +29,16 @@ describe("任务列表", () => {
   it("数据格式与这个程序对不上的任务：进展一栏照后端给的字样写（需要升级、需要处理、需要更新的程序），原因写在完成条件一栏，打不开", async () => {
     const row = (id: string, unavailable: string, note: string) => ({ ...base, task_id: id, task_name: id, unavailable, supported: false, note });
     vi.spyOn(api, "listTasks").mockResolvedValue([
-      row("T1", "需要升级", "这个任务是上一版建的，数据还没有升级。重新启动程序后升级。"),
-      row("T2", "需要处理", "这个任务的数据升级没有做成：任务库读不出来"),
+      row("T1", "需要升级", "这个任务实例是上一版建的，数据还没有升级。重新启动程序后升级。"),
+      row("T2", "需要处理", "这个任务实例的数据升级没有做成：任务库读不出来"),
       row("T3", "需要更新的程序", "这份数据由 0.7.0 写入，请用 0.7.0 或更新的版本打开。"),
       { ...base, task_id: "TASK-OLD", task_name: "TASK-OLD", unavailable: "旧格式", supported: false, note: "旧格式" },
     ]);
     render(<ConfigProvider><AntApp><TaskListPage /></AntApp></ConfigProvider>);
     await screen.findByTestId("task-unsupported");
     expect(screen.getAllByTestId("task-format").map((el) => el.textContent)).toEqual(["需要升级", "需要处理", "需要更新的程序"]);
-    expect(screen.getByText("这个任务的数据升级没有做成：任务库读不出来")).toBeTruthy();
-    expect(screen.getByText(/一共 4 个任务，1 个是旧格式、现在的程序打不开，3 个的数据要先处理才能打开。/)).toBeTruthy();
+    expect(screen.getByText("这个任务实例的数据升级没有做成：任务库读不出来")).toBeTruthy();
+    expect(screen.getByText(/一共 4 个任务实例，1 个是旧格式、现在的程序打不开，3 个的数据要先处理才能打开。/)).toBeTruthy();
     expect(screen.queryAllByRole("button", { name: "打开" })).toHaveLength(0);
   });
 
@@ -62,11 +62,11 @@ describe("任务列表", () => {
     expect(headers).toContain("进展");
     expect(headers.filter((one) => one === "状态" || one === "版本")).toEqual([]);
     expect(document.body.textContent).not.toMatch(/已发布|未发布|进行中|已完成/);
-    expect(screen.getByText(/^一共 3 个任务。/)).toBeTruthy();
+    expect(screen.getByText(/^一共 3 个任务实例。/)).toBeTruthy();
   });
 });
 
-describe("删除任务", () => {
+describe("删除任务实例", () => {
   const row = { ...base, task_id: "T1", task_name: "一次性的任务", unavailable: null, supported: true, item_count: 2, completion_total: 1, completion_unmet: 0,
     session_count: 1, last_active_at: "2026-10-14T01:00:00-07:00", version_count: 1, latest_published_at: "2026-10-14T00:30:00-07:00" } as TaskListEntry;
   const detail = { task_id: "T1", task_name: "一次性的任务", items: [{ item_id: "UC-001" }, { item_id: "OA-001" }], versions: [{ version_no: 1 }],
@@ -77,17 +77,17 @@ describe("删除任务", () => {
     const get = vi.spyOn(api, "getTask").mockResolvedValue(detail);
     render(<ConfigProvider><AntApp><TaskListPage /></AntApp></ConfigProvider>);
     fireEvent.click(await screen.findByTestId("task-menu-T1"));
-    fireEvent.click(await screen.findByText("删除任务"));
-    expect(await screen.findByTestId("delete-task-text")).toHaveTextContent("这个任务有 2 份材料、2 个条目、1 版发布，删除后不能恢复。");
+    fireEvent.click(await screen.findByText("删除任务实例"));
+    expect(await screen.findByTestId("delete-task-text")).toHaveTextContent("这个任务实例有 2 份输入资料、2 个条目、1 版发布，删除后不能恢复。");
     return get;
   }
 
-  it("菜单里点「删除任务」：确认框写明材料（不算生成的文件）、条目、发布各几，「先导出存档」是这个任务的数据包下载，点「取消」什么都不删", async () => {
+  it("菜单里点「删除任务实例」：确认框写明材料（不算生成的文件）、条目、发布各几，「先导出存档」是这个任务实例的数据包下载，点「取消」什么都不删", async () => {
     const get = await openDialog();
     expect(get).toHaveBeenCalledWith("T1");
-    expect(screen.getByText("删除任务「一次性的任务」？")).toBeInTheDocument();
+    expect(screen.getByText("删除任务实例「一次性的任务」？")).toBeInTheDocument();
     expect(screen.getByTestId("delete-task-export")).toHaveAttribute("href", "/api/v1/tasks/T1/export");
-    expect(screen.getByTestId("delete-task-export-note")).toHaveTextContent("先导出存档：导出这个任务的需求资产与对话记录，不含材料与知识库的原件，也不含运行日志；含摘录、转述与对话全文。以后可以再导入，导入后重新上传材料即可补齐。不导出也可以直接删除。");
+    expect(screen.getByTestId("delete-task-export-note")).toHaveTextContent("先导出存档：导出这个任务实例的需求资产与对话记录，不含输入资料与知识库的原件，也不含运行日志；含摘录、转述与对话全文。以后可以再导入，导入后重新上传输入资料即可补齐。不导出也可以直接删除。");
     const remove = vi.spyOn(api, "deleteTask");
     fireEvent.click(screen.getByRole("button", { name: /^取\s?消$/ }));
     expect(remove).not.toHaveBeenCalled();
@@ -104,9 +104,9 @@ describe("删除任务", () => {
 
   it("被拒（助手正在工作）：照任务服务的原话写在确认框里，这一行留着", async () => {
     await openDialog();
-    vi.spyOn(api, "deleteTask").mockRejectedValue(new ApiError("session_busy", "助手正在工作，请先停止助手，再删除这个任务。", 409));
+    vi.spyOn(api, "deleteTask").mockRejectedValue(new ApiError("session_busy", "助手正在工作，请先停止助手，再删除这个任务实例。", 409));
     fireEvent.click(screen.getByTestId("delete-task-confirm"));
-    expect(await screen.findByTestId("delete-task-error")).toHaveTextContent("助手正在工作，请先停止助手，再删除这个任务。");
+    expect(await screen.findByTestId("delete-task-error")).toHaveTextContent("助手正在工作，请先停止助手，再删除这个任务实例。");
     expect(screen.getByTestId("task-progress-T1")).toBeInTheDocument();
   });
 });
@@ -115,21 +115,21 @@ describe("导出诊断包", () => {
   const row = { ...base, task_id: "T1", task_name: "出了问题的任务", unavailable: null, supported: true, item_count: 2, completion_total: 1, completion_unmet: 0,
     session_count: 1, last_active_at: "2026-10-14T01:00:00-07:00" } as TaskListEntry;
 
-  it("菜单里「导出诊断包」排在「删除任务」之上；点它弹确认框写明用途与保管，选完整或脱敏（默认完整），「导出」是加 diagnostic=1（脱敏再加 redact=1）的下载地址；不删任何东西", async () => {
+  it("菜单里「导出诊断包」排在「删除任务实例」之上；点它弹确认框写明用途与保管，选完整或脱敏（默认完整），「导出」是加 diagnostic=1（脱敏再加 redact=1）的下载地址；不删任何东西", async () => {
     vi.spyOn(api, "listTasks").mockResolvedValue([row]);
     const remove = vi.spyOn(api, "deleteTask");
     render(<ConfigProvider><AntApp><TaskListPage /></AntApp></ConfigProvider>);
     fireEvent.click(await screen.findByTestId("task-menu-T1"));
     const items = (await screen.findAllByRole("menuitem")).map((one) => one.textContent);
-    expect(items).toEqual(["导出诊断包", "删除任务"]);
+    expect(items).toEqual(["导出诊断包", "删除任务实例"]);
     fireEvent.click(screen.getByText("导出诊断包"));
     expect(await screen.findByText("导出诊断包", { selector: ".ant-modal-title" })).toBeInTheDocument();
-    expect(screen.getByTestId("diagnostic-task")).toHaveTextContent("任务「出了问题的任务」");
-    expect(screen.getByTestId("diagnostic-purpose")).toHaveTextContent("把这个任务的运行记录、对话与条目打成一个文件，供排查问题；不含材料原件与密钥。");
+    expect(screen.getByTestId("diagnostic-task")).toHaveTextContent("任务实例「出了问题的任务」");
+    expect(screen.getByTestId("diagnostic-purpose")).toHaveTextContent("把这个任务实例的运行记录、对话与条目打成一个文件，供排查问题；不含输入资料原件与密钥。");
     expect(screen.getByTestId("diagnostic-keep")).toHaveTextContent("包里含对话全文，请妥善保管。");
     // 两种形态各一句说明；默认是完整。
-    expect(screen.getByTestId("diagnostic-form-full").closest("label")).toHaveTextContent("完整不含材料原件，但含助手读到的材料文本、对话全文与条目，能查内容与流程问题。");
-    expect(screen.getByTestId("diagnostic-form-redacted").closest("label")).toHaveTextContent("脱敏读到的材料文本与来源摘录已替换，只能查流程问题，仍含业务说明与条目的转述。");
+    expect(screen.getByTestId("diagnostic-form-full").closest("label")).toHaveTextContent("完整不含输入资料原件，但含助手读到的输入资料文本、对话全文与条目，能查内容与流程问题。");
+    expect(screen.getByTestId("diagnostic-form-redacted").closest("label")).toHaveTextContent("脱敏读到的输入资料文本与来源摘录已替换，只能查流程问题，仍含业务说明与条目的转述。");
     const button = screen.getByTestId("diagnostic-export");
     expect(button).toHaveAttribute("href", "/api/v1/tasks/T1/export?diagnostic=1");
     // 选脱敏：链接加 redact=1；再选回完整就去掉。

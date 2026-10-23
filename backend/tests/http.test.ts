@@ -45,7 +45,7 @@ test("错误形状与状态码", () => {
 test("路由分派：没有的接口、没有的任务、pi 不在且没有给会话时的直接操作与停下、方法不对", async () => {
   assert.deepEqual((await go("GET", "/api/v1/nothing")).body.error.code, "not_found");
   assert.equal((await go("GET", "/api/v1/nothing")).body.error.message, "没有这个接口：GET /api/v1/nothing");
-  assert.deepEqual([(await go("GET", "/api/v1/tasks/TASK-NONE")).status, (await go("GET", "/api/v1/tasks/TASK-NONE")).body.error.message], [404, "没有任务 TASK-NONE。"]);
+  assert.deepEqual([(await go("GET", "/api/v1/tasks/TASK-NONE")).status, (await go("GET", "/api/v1/tasks/TASK-NONE")).body.error.message], [404, "没有任务实例 TASK-NONE。"]);
   const { task_id: taskId } = service.create({});
   const action = await go("POST", `/api/v1/tasks/${taskId}/actions`, JSON.stringify({ kind: "mark_viewed", targets: [] }));
   assert.deepEqual([action.status, action.body.error.code, action.body.error.message, action.body.error.data],
@@ -56,7 +56,7 @@ test("路由分派：没有的接口、没有的任务、pi 不在且没有给�
   const empty = await go("POST", `/api/v1/tasks/${taskId}/messages`, JSON.stringify({ text: "  " }));
   assert.deepEqual([empty.status, empty.body.error.message], [400, "text 不能是空的。"]);
   const outside = await go("POST", `/api/v1/tasks/${taskId}/messages`, JSON.stringify({ text: "看看", attachments: ["inputs/没有.md"] }));
-  assert.deepEqual([outside.status, outside.body.error.message], [400, "附件 inputs/没有.md 不在材料目录里。"]);
+  assert.deepEqual([outside.status, outside.body.error.message], [400, "附件 inputs/没有.md 不在输入资料目录里。"]);
   const noSession = await go("GET", `/api/v1/tasks/${taskId}/conversation`);
   assert.deepEqual([noSession.status, noSession.body.error.message], [400, "要带 session 参数。"]);
   const unknown = await go("GET", `/api/v1/tasks/${taskId}/snapshot`, "", { session: "没有这条会话" });

@@ -98,7 +98,7 @@ describe("阶段条", () => {
   it("点一盏没通过的灯：清单里第一个是任务里的条目就打开它，是材料的路径就去原文定位页签；清单是空的这盏灯点不了", () => {
     const onOpenItem = vi.fn(), onOpenMaterial = vi.fn();
     render(<StageBar stage={stage("reading", [
-      lamp("materials_cited", false, "有 1 份材料还没有被任何主题或问题引用：inputs/规则.md。", ["inputs/规则.md"]),
+      lamp("materials_cited", false, "有 1 份输入资料还没有被任何主题或问题引用：inputs/规则.md。", ["inputs/规则.md"]),
       lamp("pages", false, "有 2 页主题要看：OA-002、OA-004。", ["OA-002", "OA-004"]),
       lamp("bare", false, "还差一件说不出是哪一页的事。"),
     ])} items={[item("OA-002"), item("OA-004")]} onOpenItem={onOpenItem} onOpenMaterial={onOpenMaterial} />);
@@ -124,7 +124,7 @@ describe("阶段条", () => {
 
   it("读法的几个小函数：缩短句子、拆数字、分三类、点灯去哪里、六个早先的进入键", () => {
     expect(lampShort("有 3 条条目依据的主题用户还没有看过：UC-001、UC-002、UC-003。")).toBe("有 3 条条目依据的主题用户还没有看过。");
-    expect(lampShort("每份材料都被引用了。")).toBe("每份材料都被引用了。");
+    expect(lampShort("每份输入资料都被引用了。")).toBe("每份输入资料都被引用了。");
     expect(lampShort("每个标签为「流程」的主题都有一条以「例外：」开头的例子。")).toBe("每个标签为「流程」的主题都有一条以「例外：」开头的例子。");
     expect(lampShort("有 1 个标题或别名被两页以上的主题用了：「预约」（OA-001、OA-002）。")).toBe("有 1 个标题或别名被两页以上的主题用了。");
     expect(lampShort("有 1 页标签为「决定」的主题没有标签为「目标」的上级主题：OA-007。在「它是什么」里写了为什么的也算说清了。")).toBe("有 1 页标签为「决定」的主题没有标签为「目标」的上级主题。");
@@ -138,7 +138,7 @@ describe("阶段条", () => {
       .toEqual(["reading", "clarifying", "modeling", "writing", "reviewing", "document"]);
   });
 
-  it("点了说材料没有被引用的灯之后，状态里记下要在原文定位页签选中的那份材料", () => {
+  it("点了说材料没有被引用的灯之后，状态里记下要在原文定位页签选中的那份输入资料", () => {
     const next = workReducer(initialWorkState("s-1"), { type: "focus_material", path: "inputs/规则.md" });
     expect(next.focusMaterial).toBe("inputs/规则.md");
   });

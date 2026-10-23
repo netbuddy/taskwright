@@ -37,16 +37,16 @@ export interface LocateRequest {
 
 /** 第 7 节的三个框选模板。 */
 export const SELECTION_TEMPLATES = {
-  create: (path: string, quote: string) => `请根据材料 ${path} 里的这段原文新建条目：「${quote}」`,
-  attach: (path: string, itemId: string, quote: string) => `请把材料 ${path} 里的这段原文补到 ${itemId}：「${quote}」`,
-  ask: (path: string, quote: string, question: string) => `关于材料 ${path} 里的这段原文：「${quote}」，${question}`,
+  create: (path: string, quote: string) => `请根据输入资料 ${path} 里的这段原文新建条目：「${quote}」`,
+  attach: (path: string, itemId: string, quote: string) => `请把输入资料 ${path} 里的这段原文补到 ${itemId}：「${quote}」`,
+  ask: (path: string, quote: string, question: string) => `关于输入资料 ${path} 里的这段原文：「${quote}」，${question}`,
 };
 
 /** 出处去掉 Word 材料的段落号、PDF 材料的页与块，剩下的是文件路径。 */
 const locatorPath = (locator: string) => docxLocator(locator)?.path ?? parsePdfLocator(locator)?.path ?? locator;
 const isPdfPath = (path: string | null | undefined) => !!path && /\.pdf$/i.test(path);
 /** PDF 材料文件名下面的那句说明。 */
-export const PDF_HINT = "PDF 材料按原样分页显示。PDF 里的表格按行读取，不分格。";
+export const PDF_HINT = "PDF 输入资料按原样分页显示。PDF 里的表格按行读取，不分格。";
 const samePath = (a: string, b: string) => a === b || a.endsWith(b) || b.endsWith(a);
 
 export function MaterialPane({ taskId, materials: all, focusPath, items = [], locate, currentItem, disabled, onOpenItem, onSend }: {
@@ -126,7 +126,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
     return () => clearTimeout(t);
   }, [hit, text]);
 
-  const name = path?.split("/").pop() ?? "还没有材料";
+  const name = path?.split("/").pop() ?? "还没有输入资料";
   const openItem = currentItem ? { id: currentItem, title: items.find((i) => i.item_id === currentItem)?.title ?? "" } : null;
   const cites = useMemo(() => citationsOf(items, path), [items, path]);
   const segments = useMemo(() => (text == null ? [] : segment(text, cites, hit)), [text, cites, hit]);
@@ -177,7 +177,7 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
     <>
       <div className="sw-subh">
         {materials.length > 1 ? (
-          <select value={path ?? ""} onChange={(e) => setPath(e.target.value)} aria-label="选一份材料阅读" data-testid="material-select">
+          <select value={path ?? ""} onChange={(e) => setPath(e.target.value)} aria-label="选一份输入资料阅读" data-testid="material-select">
             {materials.map((m) => <option key={m.path} value={m.path}>{m.path.split("/").pop()}</option>)}
           </select>
         ) : <b data-testid="material-name">{name}</b>}
@@ -196,11 +196,11 @@ export function MaterialPane({ taskId, materials: all, focusPath, items = [], lo
       )}
       {isPdf && path && <SectionList taskId={taskId} path={path} items={items} onOpenItem={onOpenItem}
         onJump={(page) => setPdfJump({ page, nonce: (pdfJump?.nonce ?? 0) + 1 })} />}
-      {missed && <div className="busy-note locate-miss" data-testid="locate-miss">没有在材料里找到这段原文</div>}
+      {missed && <div className="busy-note locate-miss" data-testid="locate-miss">没有在输入资料里找到这段原文</div>}
       {(isDocx || isPdf) && docxNote && <div className="busy-note locate-miss" data-testid="locate-note">{docxNote}</div>}
       <div className="doc-wrap sel-host" ref={wrap}>
         <div className="doc-b" ref={view}>
-          {!materials.length && <div className="empty">这个任务还没有材料。可以在中栏「材料与证据」页签上传，或者在对话区「附一份材料」。</div>}
+          {!materials.length && <div className="empty">这个任务实例还没有输入资料。可以在中栏「输入资料」页签上传，或者在对话区「附一份输入资料」。</div>}
           {error && <div className="busy-note">{error}</div>}
           {path && isDocx && (
             <DocxPaper taskId={taskId} path={path} items={items} paperRef={paper} onOpenItem={onOpenItem} onMouseUp={onMouseUp}

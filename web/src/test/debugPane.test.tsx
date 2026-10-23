@@ -85,7 +85,8 @@ describe("右侧栏的调试页签", () => {
     const rows = [...section.querySelectorAll("tbody tr")].map((row) => [...row.querySelectorAll("td")].slice(1).map((td) => td.textContent));
     expect(rows).toEqual([["用户", "核读材料 → 澄清", "需求分析", "用户在卡片上选了「进入澄清」"], ["助手", "写条目 → 澄清", "（没有记）", "（没有写）"]]);
     // 认不出的流程照原样写。
-    expect([flowName("analysis"), flowName("initial"), flowName("change"), flowName(undefined), flowName(null)]).toEqual(["需求分析", "需求分析", "change", "（没有记）", "单项活动"]);
+    expect([flowName("analysis"), flowName("initial"), flowName("change"), flowName("reengineering"), flowName("later-flow"), flowName(undefined), flowName(null)])
+      .toEqual(["需求分析", "需求分析", "需求变更", "需求再工程", "later-flow", "（没有记）", "单项活动"]);
   });
 
   it("这一段的灯：通过、没通过、不适用三种都列出，写整句与键，列出的编号可以点开", async () => {
@@ -129,9 +130,9 @@ describe("右侧栏的调试页签", () => {
   });
 
   it("还没有运行过、没有移动过、没有被拒过：各写一句；取不到时写出原因", async () => {
-    pane(false, { available: false, note: "服务这次启动以来，这个任务还没有运行过，所以还没有可看的系统提示。对助手说一句话之后再来看。", parts: [], text: "" },
+    pane(false, { available: false, note: "服务这次启动以来，这个任务实例还没有运行过，所以还没有可看的系统提示。对助手说一句话之后再来看。", parts: [], text: "" },
       { records: [], rejections: [], latest_work_id: null });
-    expect(await screen.findByText(/这个任务还没有运行过/)).toBeInTheDocument();
+    expect(await screen.findByText(/这个任务实例还没有运行过/)).toBeInTheDocument();
     expect(screen.getByTestId("debug-records")).toHaveTextContent("还没有人移动过阶段。");
     expect(screen.getByTestId("debug-rejections")).toHaveTextContent("还没有被拒的调用。");
     expect(screen.queryByTestId("debug-all-rejections")).toBeNull();

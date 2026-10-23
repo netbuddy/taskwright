@@ -45,7 +45,7 @@ export function statusTitle(status: Pick<TaskStatusView, "generated_at">): strin
   return `${STATUS_TITLE} · ${shortMoment(status.generated_at)}`;
 }
 /** 标题后面的小字：这张卡是程序算的。 */
-export const STATUS_SUBTITLE = "程序据任务记录生成";
+export const STATUS_SUBTITLE = "程序据任务实例的记录生成";
 
 /** 「版本」一行：发布过写「已发布第 N 版」，没有写「未发布」；没有资产现状（早先的后端）时是 null，不画这一行。 */
 export function versionLine(assets: AssetCell[] | undefined): string | null {

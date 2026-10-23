@@ -33,7 +33,7 @@ export function KnowledgePickButton({ libraries, selected, onChange, placement =
   };
   const picker = (
     <div className="kbpick" data-testid="kb-picker">
-      <div className="ph">勾上的知识库这个任务会用到。改完之后，下一次会话开始时助手按新的选择查找。</div>
+      <div className="ph">勾上的知识库这个任务实例会用到。改完之后，下一次会话开始时助手按新的选择查找。</div>
       {libs.map((l) => (
         <div key={l.id} className="kbpick-row">
           <Checkbox checked={draft.includes(l.id)}
@@ -64,7 +64,7 @@ export function TaskKnowledgeCard({ libraries, selected, readOnly, onChange }: {
   return (
     <section className="tp-pane" aria-label="选用的知识库" data-testid="task-knowledge">
       <div className="tp-sec-h"><h2><BookOutlined className="tp-hic" />选用的知识库</h2><span className="cnt" data-testid="kb-count">{chosen.length} 个</span></div>
-      {chosen.length === 0 && <div className="tp-none" data-testid="kb-none">这个任务还没有选用知识库，助手查不到参考资料。</div>}
+      {chosen.length === 0 && <div className="tp-none" data-testid="kb-none">这个任务实例还没有选用知识库，助手查不到参考资料。</div>}
       {chosen.map((l) => (
         <div key={l.id} className="tp-kbrow" data-testid={`kb-row-${l.id}`}>
           <span className="nm"><BookOutlined className="kic" />{l.name}</span>

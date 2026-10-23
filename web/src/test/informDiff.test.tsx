@@ -34,7 +34,7 @@ describe("告知里的条目链接", () => {
   });
 
   it("点名的修订不是这条回复改出来的、或者没给比对入口：照旧打开条目", () => {
-    const first = show([{ text: "材料里写着。", items: [{ item_id: "OA-002", revision_no: 3 }] }]);
+    const first = show([{ text: "输入资料里写着。", items: [{ item_id: "OA-002", revision_no: 3 }] }]);
     fireEvent.click(screen.getByTestId("inform-item-OA-002"));
     expect(first.onOpenItem).toHaveBeenCalledWith("OA-002");
     expect(first.onOpenDiff).not.toHaveBeenCalled();

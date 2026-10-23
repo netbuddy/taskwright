@@ -258,7 +258,7 @@ export class PackError extends Error {
 }
 
 /** 超过包的上限时的那句话。 */
-export const PACK_TOO_LARGE_TEXT = "数据包不能超过 4 GB，里面的文件不能超过 65534 个，一个文件也不能超过 4 GB。请按任务、按知识库分开导出。";
+export const PACK_TOO_LARGE_TEXT = "数据包不能超过 4 GB，里面的文件不能超过 65534 个，一个文件也不能超过 4 GB。请按任务实例、按知识库分开导出。";
 
 /** 没有带进包的东西与原因（给人看的一句）。 */
 export interface Skipped {
@@ -716,8 +716,8 @@ export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_ver
     ...(tasks.length ? [
       "- 任务库：条目、修订、评审与确认、版本记录等，每个任务一份完整的副本（tasks/<任务编号>/task.sqlite）。",
       bare
-        ? "- 材料清单：每份材料的文件名、大小、校验值与它的文字版、分段清单、位置表的校验值（manifest.json 里）。"
-        : "- 材料：放进任务里的文件和由它们生成的文字版（tasks/<任务编号>/inputs）。",
+        ? "- 输入资料清单：每份输入资料的文件名、大小、校验值与它的文字版、分段清单、位置表的校验值（manifest.json 里）。"
+        : "- 输入资料：放进任务里的文件和由它们生成的文字版（tasks/<任务编号>/inputs）。",
       "- 发布过的各版的文档存档（tasks/<任务编号>/versions），发布过才有。",
       "- 对话记录：与助手的每一条会话（runs/<任务编号>/pi-sessions）。",
       "- 这个任务用的任务类型说明与规则的副本（tasks/<任务编号>/.pi 与 tasks/<任务编号>/docs）。",
@@ -730,7 +730,7 @@ export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_ver
     "",
     "包里没有什么",
     ...(tasks.length && !manifest.with_events ? ["- 运行日志与事件归档（助手每一步的原始记录）。要带上它们，导出时加 --with-events。"] : []),
-    ...(bare && tasks.length ? ["- 材料与知识库的原件和文字版。这个包含条目里的逐字摘录、业务说明的转述与对话记录，不是干净的；要连原件一起带，导出时加 --with-materials。"] : []),
+    ...(bare && tasks.length ? ["- 输入资料与知识库的原件和文字版。这个包含条目里的逐字摘录、业务说明的转述与对话记录，不是干净的；要连原件一起带，导出时加 --with-materials。"] : []),
     ...(bare && !tasks.length && libraries.length ? ["- 知识库文档的原件和文字版。要连原件一起带，导出时加 --with-materials。"] : []),
     "- 产品设置、模型配置与密钥。",
     "",
@@ -738,7 +738,7 @@ export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_ver
     "- 用命令行：taskwright data import --from <这个文件>（可以加 --data <数据目录> 指定导到哪里）。",
     "  编号已经有任务在用的任务缺省跳过；加 --renumber 就给它一个新编号导入。",
     "- 导入之前会核对整个包，有一处不对就整包不导入，原有的数据不动。导入不改这个文件。",
-    ...(bare && tasks.length ? ["- 导入后材料页会列出缺的文件，重新上传同一份文件即可补齐。"] : []),
+    ...(bare && tasks.length ? ["- 导入后输入资料页会列出缺的文件，重新上传同一份文件即可补齐。"] : []),
     "",
   ];
   return lines.join("\n");
@@ -764,11 +764,11 @@ function diagnosticReadme(manifest: Pick<Manifest, "exported_at" | "product_vers
       ? `- 后端日志：任务建立（${diagnostic.log_range.from}）以来写过的后端日志文件，整份（logs/）。`
       : "- 后端日志：这个数据目录里没有任务建立以来写过的后端日志文件，包里没有带。",
     "- 设置摘录：选中的模型与各模型服务的种类、名字、地址与模型清单（settings.redacted.json），不含密钥。",
-    "- 材料清单：每份材料的文件名、大小、校验值与它的文字版、分段清单、位置表的校验值（manifest.json 里）。",
+    "- 输入资料清单：每份输入资料的文件名、大小、校验值与它的文字版、分段清单、位置表的校验值（manifest.json 里）。",
     "- 清单文件 manifest.json：每个文件的大小与校验值，以及诊断包的用途、产品版本与模型（diagnostic 一节）。",
     "",
     "包里没有什么",
-    "- 材料与知识库的原件和文字版。",
+    "- 输入资料与知识库的原件和文字版。",
     "- 密钥：模型服务的接口密钥与登录凭据。",
     "",
     "包里含对话全文与条目摘录，请妥善保管。",
@@ -788,21 +788,21 @@ function redactedReadme(manifest: Pick<Manifest, "exported_at" | "product_versio
     "包里的任务：", ...tasks,
     "",
     "已替换",
-    "- 助手读到的材料文本：读材料目录与知识库里文件（连同文字版、分段清单、位置表）、在材料目录里搜索的结果，换成占位：路径、行范围、原文的字节数与校验值。",
+    "- 助手读到的输入资料文本：读输入资料目录与知识库里文件（连同文字版、分段清单、位置表）、在输入资料目录里搜索的结果，换成占位：路径、行范围、原文的字节数与校验值。",
     "- 知识库检索命中的片段：换成同样的占位，检索用的话保留。",
     "- 条目来源的逐字摘录：任务库与运行轨迹里都换成「[已脱敏] 摘要值 … 长度 …」。",
     "- 模型服务的地址：设置摘录里写「[已脱敏]」。",
     "",
-    "仍含（它们可能转述材料内容，这个包不是干净的）",
+    "仍含（它们可能转述输入资料内容，这个包不是干净的）",
     "- 业务说明、条目、问题、助手写的理解、卡片与拒绝的原文。",
     "- 对话里助手与用户说的话，助手的思考与回复里可能引用的原文。",
     diagnostic.log_range
       ? `- 后端日志：任务建立（${diagnostic.log_range.from}）以来写过的后端日志文件，整份（logs/）。`
       : "- 后端日志：这个数据目录里没有任务建立以来写过的后端日志文件，包里没有带。",
-    "- 材料清单：每份材料的文件名、大小与校验值（manifest.json 里）。",
+    "- 输入资料清单：每份输入资料的文件名、大小与校验值（manifest.json 里）。",
     "",
     "包里没有什么",
-    "- 材料与知识库的原件和文字版。",
+    "- 输入资料与知识库的原件和文字版。",
     "- 密钥：模型服务的接口密钥与登录凭据。",
     "",
     "能查什么",

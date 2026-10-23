@@ -36,7 +36,7 @@ describe("原文定位页签的引用计数", () => {
 
   it("摘录在原文里找不到的条目不算", async () => {
     vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: TEXT });
-    render(<MaterialPane taskId="TASK-001" materials={materials} items={[ITEMS[0], item("UC-009", "材料里没有的一句话。")]} />);
+    render(<MaterialPane taskId="TASK-001" materials={materials} items={[ITEMS[0], item("UC-009", "输入资料里没有的一句话。")]} />);
     expect(await screen.findByText("被 1 个条目引用过")).toBeInTheDocument();
   });
 });

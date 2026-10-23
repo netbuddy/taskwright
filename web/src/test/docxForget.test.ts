@@ -11,7 +11,7 @@ const PATH = "inputs/需求.docx";
 const notFound = (message: string) => new ApiError("not_found", message, 404);
 
 describe("forgetDocx", () => {
-  it("丢掉之后再取这份材料会重新读；别的材料的缓存不动", async () => {
+  it("丢掉之后再取这份输入资料会重新读；别的材料的缓存不动", async () => {
     const raw = vi.spyOn(api, "materialRaw").mockRejectedValue(notFound("读不到。"));
     vi.spyOn(api, "materialContent").mockResolvedValue({ path: PATH, text: "" });
     docxEntry("T1", PATH);

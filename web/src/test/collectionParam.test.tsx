@@ -58,7 +58,7 @@ describe("条目区集合页签的初值", () => {
       selected={selected} onSelect={noop} submit={vi.fn(async () => null)} onGenerateDoc={noop} /></AntApp></ConfigProvider>);
     const on = document.querySelector("[data-testid=item-tabs] .itab.on")?.firstChild?.textContent;
     cleanup();
-    // 条目区会记住这个任务停在哪个页签；这里每次都要当作第一次打开，所以把记住的清掉。
+    // 条目区会记住这个任务实例停在哪个页签；这里每次都要当作第一次打开，所以把记住的清掉。
     window.localStorage.clear();
     return on;
   };

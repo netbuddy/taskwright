@@ -1,4 +1,4 @@
-// 材料区 Word 与 PDF 材料的「分段去向」：每一节被哪些条目引用的算法（Word 按段落号、PDF 按页）、收起与展开、栏头的汇总、
+// 材料区 Word 与 PDF 输入资料的「分段去向」：每一节被哪些条目引用的算法（Word 按段落号、PDF 按页）、收起与展开、栏头的汇总、
 // 没有引用的一节标「未提取」并灰显、点编号打开条目、点一节跳到那一节的开头；分段清单读不到时整栏不显示。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -108,7 +108,7 @@ describe("分段去向", () => {
     expect(onJump).toHaveBeenCalledWith(4);
   });
   it("分段清单读不到或不是清单时整栏不显示", async () => {
-    const content = vi.spyOn(api, "materialContent").mockRejectedValue(new Error("没有这份材料"));
+    const content = vi.spyOn(api, "materialContent").mockRejectedValue(new Error("没有这份输入资料"));
     const { container } = render(<SectionList taskId="TASK-001" path={PATH} items={ITEMS} onJump={() => {}} />);
     // 读的过程中这一栏本来就是空的；只等「被调用」，断言在读失败之前就成立。等这次失败处理完再看。
     await settled(content);

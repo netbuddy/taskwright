@@ -288,7 +288,7 @@ export function ItemDetail({ task, item, def, readOnly, writesOff = false, pendi
       {!old && verdict.state === "passed" && current && <PassNote task={task} collection={item.collection} review={current} />}
       {supplements.length > 0 && !editing && (
         <div className="banner-line diff" data-testid="supplement-banner">
-          <span><b>助手补充：</b>{supplements.map((s) => s.excerpt).join("；")}　这部分材料里没有，看的时候留意。</span>
+          <span><b>助手补充：</b>{supplements.map((s) => s.excerpt).join("；")}　这部分输入资料里没有，看的时候留意。</span>
         </div>
       )}
 
@@ -542,7 +542,7 @@ export function SourceBox({ source, onLocate, onOpenItem, onOpenDiagram, titleOf
   // 知识库来源不去读材料（它不是材料），出处由知识库清单得出。
   const place = useSourcePlace(source, !!kb);
   const kinds: Record<string, [string, string]> = {
-    文档原文: ["src", "材料原文"], [SOURCE_SUPPLEMENT]: ["warn", SOURCE_SUPPLEMENT], 用户的话: ["teal", "用户的话"],
+    文档原文: ["src", "输入资料原文"], [SOURCE_SUPPLEMENT]: ["warn", SOURCE_SUPPLEMENT], 用户的话: ["teal", "用户的话"],
     [SOURCE_ITEM]: ["note", SOURCE_ITEM], [SOURCE_FIGURE]: ["fig", SOURCE_FIGURE],
   };
   const onElement = source.kind === SOURCE_ITEM || source.kind === SOURCE_FIGURE;

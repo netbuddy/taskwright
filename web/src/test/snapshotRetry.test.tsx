@@ -52,7 +52,7 @@ describe("整份数据读不到时自动再读", () => {
 
   it("别的错误（没有这条会话）：不自动再读，照旧报错", async () => {
     vi.useFakeTimers();
-    const read = vi.spyOn(api, "snapshot").mockRejectedValue(new ApiError("not_found", "这个任务里没有会话 S-1。", 404));
+    const read = vi.spyOn(api, "snapshot").mockRejectedValue(new ApiError("not_found", "这个任务实例里没有会话 S-1。", 404));
     const { result } = renderHook(() => useWorkView("TASK-1", "S-1"));
     await act(async () => handlers!.onStatus!("open"));
     await flush();

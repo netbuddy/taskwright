@@ -23,11 +23,11 @@ export function otherItemCount(status: TaskStatusView | null, own: StageView["wo
 export function panelSubtitle(stage: StageView | null | undefined, status: TaskStatusView | null): string {
   const own = stage?.work_item ?? null;
   const others = otherItemCount(status, own);
-  if (!own) return `本会话是自由讨论，不绑定活动 · ${others > 0 ? `本任务有 ${others} 个工作项` : "本任务还没有工作项"}`;
+  if (!own) return `本会话是自由讨论，不绑定活动 · ${others > 0 ? `本任务实例有 ${others} 个工作项` : "本任务实例还没有工作项"}`;
   const day = dayOf(own.started_at);
   const station = stage ? ownStation(stage, status) : null;
   const at = station ? ` · 位于第 ${station.ordinal} 站「${station.name}」` : "";
-  return `本会话属于工作项「${own.name}」${day ? `（${day}）` : ""}${at} · ${others > 0 ? `本任务另有 ${others} 个工作项` : "本任务没有别的工作项"}`;
+  return `本会话属于工作项「${own.name}」${day ? `（${day}）` : ""}${at} · ${others > 0 ? `本任务实例另有 ${others} 个工作项` : "本任务实例没有别的工作项"}`;
 }
 
 /**

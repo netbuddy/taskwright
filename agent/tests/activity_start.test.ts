@@ -233,7 +233,7 @@ test("启动单项活动的前提只看数据：核读材料要有材料，整�
   const { dir, taskId } = workspace(overallDefinition(), false);
   let n = 0;
   const refused = (activity: string) => refusedOp(() => start(dir, `s-try-${++n}`, activity, false));
-  assert.deepEqual(refused("核读材料"), ["rejected", "现在还不能启动「核读材料」：还没有项目材料。"]);
+  assert.deepEqual(refused("核读材料"), ["rejected", "现在还不能启动「核读材料」：还没有输入资料。"]);
   assert.deepEqual(refused("写条目"), ["rejected", "现在还不能启动「写条目」：业务说明还没有内容。"]);
   assert.deepEqual(refused("评审确认"), ["rejected", "现在还不能启动「评审确认」：还没有需求条目。"]);
   assert.deepEqual(refused("编写文档"), ["rejected", "现在还不能启动「编写文档」：还没有已确认的需求条目。"]);
@@ -244,7 +244,7 @@ test("启动单项活动的前提只看数据：核读材料要有材料，整�
   // 启动流程不查前提：没有页也能从写条目这一站启动。
   assert.equal(start(dir, "s-flow", "写条目", true).note, "界面操作（不是用户打的字）：用户启动工作流程「需求分析」，从「写条目」开始。");
   const states = () => inDb(dir, (db) => stageSummary(db, dir, taskId, DEFINITION, null))!.catalog!.activities.map((one) => one.state);
-  assert.deepEqual(states(), ["还没有项目材料", "可以启动", "业务说明还没有内容", "业务说明还没有内容", "还没有需求条目", "还没有已确认的需求条目", "还没有评审过", "还没有项目材料"]);
+  assert.deepEqual(states(), ["还没有输入资料", "可以启动", "业务说明还没有内容", "业务说明还没有内容", "还没有需求条目", "还没有已确认的需求条目", "还没有评审过", "还没有输入资料"]);
   // 另一个有材料的任务：立一页主题、写一条用例、用户看过这条用例之后，前提都够了（已废弃的页、问题条目不算数）。
   const full = workspace();
   const fullStates = () => inDb(full.dir, (db) => stageSummary(db, full.dir, full.taskId, DEFINITION, null))!.catalog!.activities.slice(0, 6).map((one) => one.state);

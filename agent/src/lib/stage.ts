@@ -36,7 +36,8 @@ export const STAGE_NAMES: Record<Stage, string> = {
  * 升级时活动记录里的键改写成 analysis，早先记下的事件里仍是 initial，读的时候用 flowKeyOf 当作同一条。
  */
 export const FLOW_ANALYSIS = "analysis";
-export const FLOW_NAMES: Record<string, string> = { [FLOW_ANALYSIS]: "需求分析" };
+/** 这几个键给人看的名字；读不到任务类型里写的名字时用它（change 另见 activity_catalog.ts 的 FLOW_CHANGE）。 */
+export const FLOW_NAMES: Record<string, string> = { [FLOW_ANALYSIS]: "需求分析", change: "需求变更", reengineering: "需求再工程" };
 /** 事件里记的流程键换成现在的写法：早先的 initial 是需求分析；空的、不是文字的给 null。 */
 export function flowKeyOf(value: unknown): string | null {
   if (typeof value !== "string" || value === "") return null;
@@ -208,7 +209,7 @@ export function backCardGuidance(to: Stage, from: Position | null = null): strin
  * 页面点了按钮先把任务移到那个阶段、再发这一句；它们不是用户自己打的字，整理用户说过的话时要认出来。
  */
 export const STAGE_START_TEXTS = {
-  reading: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。",
+  reading: "请通读输入资料，把输入资料里已经写明的概念、角色、流程与目标各立一页主题。",
   clarifying: "请逐项澄清：一次只问一件事，先给出候选再问。",
 } as const;
 

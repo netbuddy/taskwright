@@ -36,7 +36,7 @@ function show(messages: unknown[]) {
 
 describe("卡片答过没有", () => {
   it("底部输入框打的字不关卡片：助手回了别的话之后卡片仍然开着，按钮与文本框照常可用", () => {
-    const messages = [reply("r1", "先问一件事。", CHOOSE), said("u1", "材料里写了什么？"), reply("r2", "只写了一句话。")];
+    const messages = [reply("r1", "先问一件事。", CHOOSE), said("u1", "输入资料里写了什么？"), reply("r2", "只写了一句话。")];
     expect(answered(messages, 0)).toBeNull();
     show(messages);
     const card = screen.getByTestId("act-choose");
@@ -45,7 +45,7 @@ describe("卡片答过没有", () => {
     expect(within(card).getByTestId("card-input")).toBeEnabled();
     expect(card).not.toHaveTextContent("你直接写了回复");
     // 助手还没有回复时也一样：这句话是不是在回答卡片，要等助手的下一条回复。
-    expect(answered([reply("r1", "先问一件事。", ASK), said("u1", "材料里写了什么？")], 0)).toBeNull();
+    expect(answered([reply("r1", "先问一件事。", ASK), said("u1", "输入资料里写了什么？")], 0)).toBeNull();
   });
 
   it("在卡片的文本框里打的字带着它的标识：卡片收成「你在卡片里回复了」；带的是别的卡片的标识不算", () => {
@@ -110,10 +110,10 @@ describe("两个输入框发出的话", () => {
     fireEvent.change(screen.getByTestId("card-input"), { target: { value: "到服务台补办" } });
     fireEvent.click(screen.getByTestId("card-send"));
     expect(handlers.onMessage.mock.calls).toEqual([["到服务台补办", { reply_message_id: "r1", kind: "ask", choice: "typed" }]]);
-    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "材料里写了什么" } });
+    fireEvent.change(screen.getByTestId("chat-input"), { target: { value: "输入资料里写了什么" } });
     fireEvent.click(screen.getByTestId("send"));
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend.mock.calls[0][0]).toBe("材料里写了什么");
+    expect(onSend.mock.calls[0][0]).toBe("输入资料里写了什么");
     expect(handlers.onMessage).toHaveBeenCalledTimes(1);
   });
 });

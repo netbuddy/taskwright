@@ -79,7 +79,7 @@ test("带不存在的槽位键、或收文字的槽位键：拒绝，材料目�
   const [sub] = t.hub.subscribe(null, null);
   for (const slot of ["nothing", "goal"]) {
     const got = await upload(service, t.taskId, "规格说明.md", "旧版规格说明。", slot);
-    assert.deepEqual([got.status, got.body.error.code, got.body.error.message], [400, "bad_request", `没有叫「${slot}」的材料槽位。`]);
+    assert.deepEqual([got.status, got.body.error.code, got.body.error.message], [400, "bad_request", `没有叫「${slot}」的输入资料槽位。`]);
   }
   let names: string[] = [];
   try {

@@ -66,7 +66,7 @@ export const INPUT_ARROW = "去提供输入 →";
 /** 工作项卡标题下的一句：哪一种、哪天启动的（月-日）；流程的工作项另注明它是本任务唯一的流程工作项。 */
 export function workItemMeta(item: WorkItemView): string {
   const day = item.started_at ? formatTime(item.started_at).slice(5, 10) : "";
-  return `${day ? `${day} 启动` : "启动时刻不详"}${item.kind === "flow" ? " · 本任务唯一的流程工作项" : ""}`;
+  return `${day ? `${day} 启动` : "启动时刻不详"}${item.kind === "flow" ? " · 本任务实例唯一的流程工作项" : ""}`;
 }
 
 /** 流程的工作项现在在哪一站：「现在在第 N 站「X」」；单项活动的没有这一句（返回空文字）。 */

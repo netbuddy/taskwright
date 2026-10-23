@@ -157,7 +157,7 @@ test("另起的那一次运行：结果里有页数与块数；命令行入口�
 test("派生文件的名字是留用的；重内容、重名照别的材料一样拒绝；两个请求同时上传同一份只存下一份", () => withTask(async (service, t) => {
   for (const name of ["x.pdf.md", "x.PDF.segments.json", "x.pdf.locations.json"]) {
     const e = await rejected((async () => service.upload(t, name, Buffer.from("x")))());
-    assert.equal(e.message, name.endsWith(".md") ? reservedNameText("材料") : unsupportedTypeText(), name);
+    assert.equal(e.message, name.endsWith(".md") ? reservedNameText("输入资料") : unsupportedTypeText(), name);
   }
   const both = await Promise.allSettled([service.upload(t, "办法.pdf", sample("multipage.pdf")), service.upload(t, "办法（副本）.pdf", sample("multipage.pdf"))]);
   assert.deepEqual(both.map((one) => one.status).sort(), ["fulfilled", "rejected"]);
@@ -175,18 +175,18 @@ test("派生文件的名字是留用的；重内容、重名照别的材料一�
 test("删除 PDF 材料：投影、分段清单与位置表一起删；派生文件不能单独删", () => withTask(async (service, t) => {
   await service.upload(t, "表.pdf", sample("table.pdf"));
   const e = await rejected((async () => service.deleteMaterial(t, "inputs/表.pdf.md"))());
-  assert.deepEqual([e.code, e.message], ["bad_request", "这是由别的材料生成的文件，不能单独删除。"]);
+  assert.deepEqual([e.code, e.message], ["bad_request", "这是由别的输入资料生成的文件，不能单独删除。"]);
   assert.deepEqual(service.deleteMaterial(t, "inputs/表.pdf"), { ok: true, path: "inputs/表.pdf" });
   assert.deepEqual(files(t), []);
 }));
 
 test("用户附了 PDF 材料：给助手的那句话写明读哪份投影、出处怎么写", () => {
   assert.equal(withAttachments("看看这份", ["inputs/办法.pdf"]),
-    "看看这份\n（我上传了材料：inputs/办法.pdf；其中 PDF 文件请读同名加 .md 的文字版（inputs/办法.pdf.md），引用时出处写 PDF 文件加页与块，例如 inputs/办法.pdf#p3-2）");
+    "看看这份\n（我上传了输入资料：inputs/办法.pdf；其中 PDF 文件请读同名加 .md 的文字版（inputs/办法.pdf.md），引用时出处写 PDF 文件加页与块，例如 inputs/办法.pdf#p3-2）");
   assert.equal(withAttachments("看看", ["inputs/a.docx", "inputs/b.pdf", "inputs/c.md"]),
-    "看看\n（我上传了材料：inputs/a.docx、inputs/b.pdf、inputs/c.md；其中 Word 文件请读同名加 .md 的文字版（inputs/a.docx.md），引用时出处写 Word 文件加段落号；"
+    "看看\n（我上传了输入资料：inputs/a.docx、inputs/b.pdf、inputs/c.md；其中 Word 文件请读同名加 .md 的文字版（inputs/a.docx.md），引用时出处写 Word 文件加段落号；"
     + "PDF 文件请读同名加 .md 的文字版（inputs/b.pdf.md），引用时出处写 PDF 文件加页与块，例如 inputs/b.pdf#p3-2）");
-  assert.equal(withAttachments("看看", ["inputs/c.md"]), "看看\n（我上传了材料：inputs/c.md）");
+  assert.equal(withAttachments("看看", ["inputs/c.md"]), "看看\n（我上传了输入资料：inputs/c.md）");
 });
 
 test("知识库上传 PDF 文档：同样四个文件一起进文档目录、整份没有文字的拒绝、派生文件名留用、重内容拒绝、删除时一起删、读正文给投影", () => withTask(async (service) => {

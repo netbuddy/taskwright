@@ -155,11 +155,11 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
         <div className="page-title"><h1>知识库</h1></div>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setName(""); setDialog({ mode: "create" }); }} data-testid="kb-new-library">新建一个知识库</Button>
       </div>
-      <p className="lede">知识库里放的是整理材料时用来参考的资料。助手只在任务选用的知识库里查找。</p>
+      <p className="lede">知识库里放的是整理输入资料时用来参考的资料。助手只在任务实例选用的知识库里查找。</p>
       <div className="kbgrid">
         <div className="card kblibs" data-testid="kb-libraries">
           <div className="cap">一共 {libs.length} 个知识库</div>
-          {libs.length === 0 && <div className="lm" data-testid="kb-no-library">还没有知识库。点右上角「新建一个知识库」建一个，再往里上传参考资料，然后在任务页上选用它。</div>}
+          {libs.length === 0 && <div className="lm" data-testid="kb-no-library">还没有知识库。点右上角「新建一个知识库」建一个，再往里上传参考资料，然后在任务起点页上选用它。</div>}
           {libs.map((l) => (
             <div key={l.id} className={`kblib${l.id === current?.id ? " on" : ""}`} onClick={() => go(href.knowledge(l.id))} data-testid={`kb-lib-${l.id}`}>
               <div className="ln">{l.name}</div>
@@ -269,7 +269,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
             {current.documents.length > 0 && <KnowledgeSearchBox key={current.id} library={current} model={embedding.model} />}
             {/* 补齐用的文件选择框：看不见，由「补齐」打开。 */}
             <input ref={filler} type="file" hidden onChange={(e) => void replenish(e.target.files?.[0])} data-testid="kb-replenish-input" />
-            <div className="kbfoot">文档没有版本：一份文档改了，就当作一份新文件上传。助手在任务里看到的是所选用的知识库的文档清单（名称、种类、大小），需要时到文档里查找相关的片段。</div>
+            <div className="kbfoot">文档没有版本：一份文档改了，就当作一份新文件上传。助手在任务实例里看到的是所选用的知识库的文档清单（名称、种类、大小），需要时到文档里查找相关的片段。</div>
           </div>
         )}
       </div>
@@ -281,7 +281,7 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
       </Modal>
       <Modal title={removingLib ? `删除知识库「${removingLib.name}」？` : ""} open={!!removingLib} onCancel={() => setRemovingLib(null)}
         onOk={() => void removeLibrary()} okText="删除" cancelText="取消" destroyOnHidden>
-        <p>{removingLib ? `这个知识库里的 ${removingLib.documents.length} 份文档会一并删除。选用了这个知识库的任务会自动不再选用它。` : ""}</p>
+        <p>{removingLib ? `这个知识库里的 ${removingLib.documents.length} 份文档会一并删除。选用了这个知识库的任务实例会自动不再选用它。` : ""}</p>
       </Modal>
       <Modal title={removingDoc ? `删除文档《${removingDoc}》？` : ""} open={!!removingDoc} onCancel={() => setRemovingDoc(null)}
         onOk={() => void removeDocument()} okText="删除" cancelText="取消" destroyOnHidden>

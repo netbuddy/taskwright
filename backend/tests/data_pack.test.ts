@@ -366,7 +366,7 @@ test("诊断包：固定带事件归档、不带材料原件（不看 withEvents
   for (const name of names) assert.doesNotMatch(content(name).toString("latin1") + content(name).toString("utf-8"), /api_key|apiKey|Authorization|sk-secret-value/, name);
   const readme = content(README_NAME).toString("utf-8");
   assert.ok(readme.startsWith("这是诊断包，用来排查问题，不用来恢复任务。\n"), readme);
-  for (const part of ["运行轨迹", "对话记录", "任务库", "后端日志：这个数据目录里没有", "设置摘录", "材料清单", "材料与知识库的原件和文字版", "密钥", "包里含对话全文与条目摘录，请妥善保管。", "语言模型：deepseek-flash（deepseek，取自启动配置）"]) {
+  for (const part of ["运行轨迹", "对话记录", "任务库", "后端日志：这个数据目录里没有", "设置摘录", "输入资料清单", "输入资料与知识库的原件和文字版", "密钥", "包里含对话全文与条目摘录，请妥善保管。", "语言模型：deepseek-flash（deepseek，取自启动配置）"]) {
     assert.ok(readme.includes(part), part);
   }
   assert.deepEqual(result.diagnostic, { logs: 0, redacted: false });

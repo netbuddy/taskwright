@@ -1,5 +1,5 @@
 // 知识库页面里「试一试按意思查找」：在选中的这一个知识库里找与一句话意思最相近的几个片段，让用户不经助手也能看看查不查得到。
-// 助手在任务里用的是同一个接口，只是它查的是任务选用的全部知识库。这个知识库里的文档没有都向量化、或者还没有选嵌入模型时不能查，
+// 助手在任务里用的是同一个接口，只是它查的是任务实例选用的全部知识库。这个知识库里的文档没有都向量化、或者还没有选嵌入模型时不能查，
 // 输入框是灰的，下面写明原因。换一个知识库看时，页面给这个组件换一个 key，上一次的结果随之清掉。
 
 import { useState } from "react";
@@ -45,7 +45,7 @@ export function KnowledgeSearchBox({ library, model }: { library: EmbeddedLibrar
         <Button onClick={() => void search()} disabled={blocked !== null || !query.trim()} loading={busy} data-testid="kb-search-button">查找</Button>
       </div>
       <div className="hint" data-testid="kb-search-hint">
-        {blocked ?? "在这个知识库的文档里找意思最相近的几个片段，用词不同也找得到。助手在任务里用的是同一种办法，它查的是任务选用的全部知识库。"}
+        {blocked ?? "在这个知识库的文档里找意思最相近的几个片段，用词不同也找得到。助手在任务实例里用的是同一种办法，它查的是任务实例选用的全部知识库。"}
       </div>
       {result && !blocked && (
         <div className="hits" data-testid="kb-search-result">

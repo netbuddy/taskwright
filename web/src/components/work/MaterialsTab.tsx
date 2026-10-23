@@ -23,7 +23,7 @@ import { fileName, useMaterialOps } from "../task/materialOps";
 import { useToast } from "../Toasts";
 
 /** 页上的一句说明。 */
-export const MATERIALS_LEAD = "本项目的材料与选用的知识库。每份材料被哪些节引用由「核读材料」记录；点「查看」在右侧栏对照原文。上传后需启动「核读材料」才会进入业务说明。";
+export const MATERIALS_LEAD = "本任务实例的输入资料与选用的知识库。每份输入资料被哪些节引用由「核读材料」记录；点「查看」在右侧栏对照原文。上传后需启动「核读材料」才会进入业务说明。";
 
 export function MaterialsTab({ task, materials, info, libraries, readOnly, onView }: {
   task: Task;
@@ -62,21 +62,21 @@ export function MaterialsTab({ task, materials, info, libraries, readOnly, onVie
   return (
     <div className="oa-page ap-page" data-testid="materials-tab">
       <div className="ap-head">
-        <h2>材料与证据</h2>
+        <h2>输入资料</h2>
         {!readOnly && (
           <Upload accept={uploadAccept(info)} showUploadList={false} customRequest={ops.upload}>
-            <button type="button" className="btn sm" data-testid="materials-upload"><UploadOutlined /> 上传材料</button>
+            <button type="button" className="btn sm" data-testid="materials-upload"><UploadOutlined /> 上传输入资料</button>
           </Upload>
         )}
       </div>
       <p className="ap-lead">{MATERIALS_LEAD}</p>
 
       <section className="oa-blk">
-        <h3>项目材料<small data-testid="materials-count">{own.length} 份</small></h3>
-        {own.length === 0 ? <p className="oa-empty">这个任务还没有材料。点右上角「上传材料」。</p> : (
+        <h3>本任务实例的输入资料<small data-testid="materials-count">{own.length} 份</small></h3>
+        {own.length === 0 ? <p className="oa-empty">这个任务实例还没有输入资料。点右上角「上传输入资料」。</p> : (
           <div className="oa-tablebox">
             <table className="oa-table ap-table" data-testid="materials-table">
-              <thead><tr><th>材料</th><th>类型</th><th>大小</th><th>上传</th><th>被引用</th><th /></tr></thead>
+              <thead><tr><th>输入资料</th><th>类型</th><th>大小</th><th>上传</th><th>被引用</th><th /></tr></thead>
               <tbody>
                 {own.map((m) => (
                   <tr key={m.path} data-testid="materials-row">
@@ -113,7 +113,7 @@ export function MaterialsTab({ task, materials, info, libraries, readOnly, onVie
               <table className="oa-table ap-table" data-testid="knowledge-table">
                 <thead><tr><th>知识库</th><th>文档</th><th>本项目引用</th><th /></tr></thead>
                 <tbody>
-                  {chosen.length === 0 && <tr><td colSpan={4} className="mut" data-testid="knowledge-none">这个任务还没有选用知识库，助手查不到参考资料。</td></tr>}
+                  {chosen.length === 0 && <tr><td colSpan={4} className="mut" data-testid="knowledge-none">这个任务实例还没有选用知识库，助手查不到参考资料。</td></tr>}
                   {chosen.map((l) => {
                     const cited = libraryCitations(task, libraries, l.id);
                     return (

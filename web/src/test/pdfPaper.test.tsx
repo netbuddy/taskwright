@@ -1,4 +1,4 @@
-// 材料区里的 PDF 材料（components/work/PdfPaper.tsx）：只画看得见的页、点来源滚到那一页并框出那一块、摘录逐字标出、
+// 材料区里的 PDF 输入资料（components/work/PdfPaper.tsx）：只画看得见的页、点来源滚到那一页并框出那一块、摘录逐字标出、
 // 被引用的句子画底线、没有文字的页的提示、放大缩小、显示不出来时的说明。
 // pdf.js 换成假的（jsdom 里没有画布，也起不了工作线程）：每页给几个带坐标的文字条目，文字层就是每个条目一个元素。
 // 真的显示在浏览器里另行实测。
@@ -87,7 +87,7 @@ const item = (id: string, sources: ReturnType<typeof source>[]): Item => ({
 const ITEMS = [
   item("UC-001", [source(`${PATH}#p1-2`, "读者凭借书证借书，每本书可以续借一次。"), source("inputs/别的.pdf#p1-1", "不相干")]),
   item("UC-002", [source(`${PATH}#p1-2`, "读者凭借书证借书，每本书可以续借一次。"), source(`${PATH}#p5-1`, "图书保留 3 天")]),
-  item("UC-003", [source(`${PATH}#p5-1`, "这句话材料里没有")]),
+  item("UC-003", [source(`${PATH}#p5-1`, "这句话输入资料里没有")]),
 ];
 
 type Props = Partial<Parameters<typeof PdfPaper>[0]>;
@@ -283,7 +283,7 @@ describe("点来源：滚到那一页、框出那一块、摘录逐字标出", (
     const view = await opened({ onNote });
     view.rerender(<Host onNote={onNote} locate={locateAt(PATH, "逾期的每本每天罚款一角", 1)} />);
     await screen.findByTestId("pdf-blockbox-3-1");
-    view.rerender(<Host onNote={onNote} locate={locateAt(PATH, "材料里没有的话", 2)} />);
+    view.rerender(<Host onNote={onNote} locate={locateAt(PATH, "输入资料里没有的话", 2)} />);
     await waitFor(() => expect(onNote).toHaveBeenLastCalledWith("没有在这份 PDF 里找到这段原文。"));
   });
 
@@ -297,12 +297,12 @@ describe("点来源：滚到那一页、框出那一块、摘录逐字标出", (
 });
 
 describe("被引用的句子与没有文字的页", () => {
-  it("出处对得上这份材料的来源才算；每条给出页、块、摘录与条目", () => {
+  it("出处对得上这份输入资料的来源才算；每条给出页、块、摘录与条目", () => {
     expect(pdfCitations(ITEMS, PATH)).toEqual([
       { page: 1, block: 2, excerpt: "读者凭借书证借书，每本书可以续借一次。", itemId: "UC-001" },
       { page: 1, block: 2, excerpt: "读者凭借书证借书，每本书可以续借一次。", itemId: "UC-002" },
       { page: 5, block: 1, excerpt: "图书保留 3 天", itemId: "UC-002" },
-      { page: 5, block: 1, excerpt: "这句话材料里没有", itemId: "UC-003" },
+      { page: 5, block: 1, excerpt: "这句话输入资料里没有", itemId: "UC-003" },
     ]);
     expect(pdfCitations(ITEMS, "inputs/别的.pdf").map((cite) => cite.itemId)).toEqual(["UC-001"]);
   });
@@ -320,7 +320,7 @@ describe("被引用的句子与没有文字的页", () => {
     expect(page.querySelector(".textLayer span")!.querySelector(".cited")).toBeNull();
     fireEvent.click(cited[0]);
     expect(onOpenItem).toHaveBeenCalledWith("UC-001");
-    // UC-001、UC-002 的引用找得到，UC-003 的摘录材料里没有：两个。
+    // UC-001、UC-002 的引用找得到，UC-003 的摘录输入资料里没有：两个。
     expect(onCitedCount).toHaveBeenLastCalledWith(2);
     // 滚到第 5 页，那里的引用到这时才画上。
     await scrollTo(4 * (H + PAGE_GAP));

@@ -31,7 +31,7 @@ const missingMaterialPaths = (details: Dict): string[] => (list(dict(details.mat
 function startPoints(details: Dict): string[] {
   const points: string[] = [];
   const own = ownMaterialPaths(details);
-  if (own !== null) points.push(`${new Set([...own, ...missingMaterialPaths(details)]).size} 份材料`);
+  if (own !== null) points.push(`${new Set([...own, ...missingMaterialPaths(details)]).size} 份输入资料`);
   const libraries = list(details.knowledge);
   if (libraries !== null) {
     const documents = libraries.reduce<number>((sum, library) => sum + (list(dict(library)?.documents)?.length ?? 0), 0);
@@ -59,7 +59,7 @@ function resumePoints(details: Dict): string[] {
   // 新放进来的文件里也有由 Word、PDF 材料生成的文件：只数材料清单里标为用户放进来的；清单取不到时照原样数。
   const fresh = list(details.new_materials);
   const own = ownMaterialPaths(details);
-  if (fresh !== null) add(own === null ? fresh : fresh.filter((path) => own.includes(String(path))), (n) => `新材料 ${n} 份`);
+  if (fresh !== null) add(own === null ? fresh : fresh.filter((path) => own.includes(String(path))), (n) => `新输入资料 ${n} 份`);
   if (list(details.knowledge) !== null) points.push("选用的知识库有变化");
   return points;
 }

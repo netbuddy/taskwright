@@ -14,7 +14,7 @@ import { uploadAccept, uploadLimitText, uploadTypesText } from "../../model/uplo
 import { fileName, useMaterialOps } from "./materialOps";
 
 /** 已经进入对话的材料不能替换：灰色的「替换」上鼠标悬停时写的说明（与后端拒绝时的原话相同）。 */
-export const ENTERED_REPLACE_HINT = "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。";
+export const ENTERED_REPLACE_HINT = "这份输入资料已经进入了对话，不能替换；请上传一份新的，并告诉助手以新的为准。";
 
 /** 文件缺失的材料在大小一栏写的话。 */
 export const MISSING_FILE_TEXT = "文件缺失，请补齐";
@@ -30,7 +30,7 @@ export function pdfSummary(pdf: { pages: number; no_text_pages: number[] }): str
   return `${pdf.pages} 页${pdf.no_text_pages.length > 0 ? `，其中 ${pdf.no_text_pages.length} 页没有可读的文字` : ""}`;
 }
 
-export function MaterialsCard({ taskId, materials, info, onView, onChanged, title = "材料", aside, intro, marked = false, slot, upload = true, replace = true, testId = "materials-card", emptyText = "这个任务还没有材料。" }: {
+export function MaterialsCard({ taskId, materials, info, onView, onChanged, title = "输入资料", aside, intro, marked = false, slot, upload = true, replace = true, testId = "materials-card", emptyText = "这个任务实例还没有输入资料。" }: {
   taskId: string;
   /** 用户放进来的材料（不含由 Word 材料生成的文件）。 */
   materials: Material[];

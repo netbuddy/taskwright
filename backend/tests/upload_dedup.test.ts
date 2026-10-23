@@ -50,7 +50,7 @@ const files = (t: { dir: string }) => readdirSync(join(t.dir, "inputs")).sort();
 test("内容相同、文件名相同：拒绝，说明与附带信息指出已有的那一份", () => withTask((service, t) => {
   service.upload(t, "需求.md", Buffer.from("买家可以申请退货。"));
   const e = rejected(() => service.upload(t, "需求.md", Buffer.from("买家可以申请退货。")));
-  assert.deepEqual([e.code, e.status, e.message, e.data], ["duplicate_content", 409, "这份文件与已有的材料《需求.md》内容完全相同，没有重复保存。", { path: "inputs/需求.md" }]);
+  assert.deepEqual([e.code, e.status, e.message, e.data], ["duplicate_content", 409, "这份文件与已有的输入资料《需求.md》内容完全相同，没有重复保存。", { path: "inputs/需求.md" }]);
   assert.deepEqual(files(t), ["需求.md"]);
 }));
 
@@ -64,7 +64,7 @@ test("内容相同、文件名不同：拒绝，指出内容相同的那一份",
 test("文件名相同、内容不同：拒绝，要求换名；不再存成「原名-2」", () => withTask((service, t) => {
   service.upload(t, "需求.md", Buffer.from("甲"));
   const e = rejected(() => service.upload(t, "需求.md", Buffer.from("乙")));
-  assert.deepEqual([e.code, e.status, e.message, e.data], ["name_taken", 409, "这个任务里已经有一份叫《需求.md》的材料，内容与这份不同。请给文件换一个名字再上传。", { path: "inputs/需求.md" }]);
+  assert.deepEqual([e.code, e.status, e.message, e.data], ["name_taken", 409, "这个任务实例里已经有一份叫《需求.md》的输入资料，内容与这份不同。请给文件换一个名字再上传。", { path: "inputs/需求.md" }]);
   assert.equal(readFileSync(join(t.dir, "inputs", "需求.md"), "utf-8"), "甲", "已有的材料没有被覆盖");
   assert.deepEqual(files(t), ["需求.md"]);
 }));

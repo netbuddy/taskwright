@@ -30,9 +30,9 @@ export function SectionLinks({ host, item, onRaw }: {
   const trace = traceOf(task, contents, item);
   const segments: ReactNode[] = [];
   if (trace.materials.length > 0) {
-    segments.push(<span data-testid="trace-materials">材料 {trace.materials.map((one, i) => (
+    segments.push(<span data-testid="trace-materials">输入资料 {trace.materials.map((one, i) => (
       <Fragment key={one.name}>{i > 0 && "、"}
-        <span className={onLocate ? "see" : undefined} role={onLocate ? "button" : undefined} title={onLocate ? "在右边的材料里看第一处原文" : undefined}
+        <span className={onLocate ? "see" : undefined} role={onLocate ? "button" : undefined} title={onLocate ? "在右边的输入资料里看第一处原文" : undefined}
           onClick={onLocate ? () => onLocate(one.first.excerpt, one.first.locator) : undefined}>{one.name}</span>{one.count > 1 && `（${one.count} 处）`}
       </Fragment>
     ))}</span>);

@@ -81,7 +81,7 @@ test("下载某一版的存档：Markdown 与 Word 各给原样的文件和下�
   const gone = await json(`/api/v1/tasks/${taskId}/versions/3/document`, { format: "docx" });
   assert.deepEqual([gone.status, gone.body.error.message], [404, "第 3 版的 Word 存档不在任务目录里了。"]);
   const none = await json(`/api/v1/tasks/${taskId}/versions/9/document`);
-  assert.deepEqual([none.status, none.body.error.message], [404, "这个任务没有第 9 版。"]);
+  assert.deepEqual([none.status, none.body.error.message], [404, "这个任务实例没有第 9 版。"]);
   const bad = await json(`/api/v1/tasks/${taskId}/versions/2/document`, { format: "pdf" });
   assert.deepEqual([bad.status, bad.body.error.message], [400, "format 要写 md 或 docx，不写是 md。"]);
 });

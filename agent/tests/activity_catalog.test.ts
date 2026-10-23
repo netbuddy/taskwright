@@ -35,19 +35,19 @@ test("空任务：六类都是零，材料来自上传所以没有产出它的�
   assert.deepEqual(assetFacts(input()), EMPTY);
   const cells = assetCells(EMPTY, DEFS.activities, NAMES);
   assert.deepEqual(cells.map((one) => [one.key, one.name, one.count, one.unit, one.text, one.note]), [
-    ["materials", "材料与证据", 0, "份", "0 份", ""], ["description", "业务说明", 0, "节", "0 节", ""], ["models", "分析模型", 0, "张", "0 张", ""],
+    ["materials", "输入资料", 0, "份", "0 份", ""], ["description", "业务说明", 0, "节", "0 节", ""], ["models", "分析模型", 0, "张", "0 张", ""],
     ["items", "需求条目", 0, "条", "0 条", ""], ["review", "评审与确认", 0, "轮", "未评审", ""], ["versions", "文档与版本", 0, "版", "未发布", ""]]);
   assert.deepEqual(cells.map((one) => one.produced_by), [[], ["核读材料", "澄清", "整理建模", "编写文档"], ["整理建模"], ["写条目", "评审确认", "逆向解析"], ["评审确认"], ["编写文档", "发布"]]);
 });
 
-test("材料与证据：份数；没有被任何一节或问题引用的算未核读，引用里 # 后面的位置不看", () => {
+test("输入资料：份数；没有被任何一节或问题引用的算未核读，引用里 # 后面的位置不看", () => {
   const facts = assetFacts(input({ materials: ["inputs/甲.md", "inputs/乙.docx"], citedDocuments: ["inputs/甲.md#p3"] }));
   assert.deepEqual([facts.materials, facts.materialsUnread], [2, 1]);
   assert.deepEqual(cellsOf(facts).materials, ["2 份", "1 份未被引用"]);
   assert.deepEqual(cellsOf({ ...facts, materialsUnread: 0 }).materials, ["2 份", "均有引用"]);
 });
 
-test("材料与证据：文件缺失的材料（材料表里有而文件不在）算进份数与未被引用，前提「有材料」不算它们", () => {
+test("输入资料：文件缺失的材料（材料表里有而文件不在）算进份数与未被引用，前提「有材料」不算它们", () => {
   const facts = assetFacts(input({ materials: ["inputs/甲.md"], missingMaterials: ["inputs/乙.docx", "inputs/丙.pdf"], citedDocuments: ["inputs/甲.md#p3", "inputs/丙.pdf#p1-2"] }));
   assert.deepEqual([facts.materials, facts.materialsMissing, facts.materialsUnread], [1, 2, 1]);
   assert.deepEqual(cellsOf(facts).materials, ["3 份", "1 份未被引用"]);
@@ -103,20 +103,20 @@ test("前置条件只看数据：每一个各自什么时候满足，缺的时�
   assert.equal(blockedText(["confirmations_clear"], { ...full, itemsUnread: 1 }), "还有待确认的内容");
   assert.equal(blockedText([], EMPTY), null);
   assert.deepEqual(STAGES.map((one) => blockedByStage(DEFS.activities, EMPTY)[one]),
-    ["还没有项目材料", null, "业务说明还没有内容", "业务说明还没有内容", "还没有需求条目", "还没有已确认的需求条目"]);
+    ["还没有输入资料", null, "业务说明还没有内容", "业务说明还没有内容", "还没有需求条目", "还没有已确认的需求条目"]);
   assert.deepEqual(STAGES.map((one) => blockedByStage(DEFS.activities, full)[one]), [null, null, null, null, null, null]);
 });
 
 test("活动目录：空任务只有澄清与需求分析能启动；需求分析推荐，从澄清开始；发布、逆向解析与需求变更写缺什么，需求再工程写还没有上传既有规格说明", () => {
   const got = catalog(DEFS, NAMES, EMPTY);
   assert.deepEqual(got.activities.map((one) => [one.key, one.enabled, one.state]), [
-    ["reading", false, "还没有项目材料"], ["clarifying", true, "可以启动"], ["modeling", false, "业务说明还没有内容"], ["writing", false, "业务说明还没有内容"],
-    ["reviewing", false, "还没有需求条目"], ["document", false, "还没有已确认的需求条目"], ["publish", false, "还没有评审过"], ["parse_spec", false, "还没有项目材料"]]);
+    ["reading", false, "还没有输入资料"], ["clarifying", true, "可以启动"], ["modeling", false, "业务说明还没有内容"], ["writing", false, "业务说明还没有内容"],
+    ["reviewing", false, "还没有需求条目"], ["document", false, "还没有已确认的需求条目"], ["publish", false, "还没有评审过"], ["parse_spec", false, "还没有输入资料"]]);
   assert.ok(got.activities.every((one) => one.recommended === false));
   const writing = got.activities[3];
   assert.deepEqual([writing.name, writing.mode, writing.mode_name, writing.reads, writing.writes, writing.prerequisite_text], ["写条目", "batch", "批处理",
     [{ key: "description", name: "业务说明" }, { key: "models", name: "分析模型" }], [{ key: "items", name: "需求条目" }], "前置条件：业务说明至少一节，分析模型均已查看。"]);
-  assert.deepEqual(got.activities[0].reads, [{ key: "materials", name: "材料与证据" }, { key: "knowledge", name: "知识库" }]);
+  assert.deepEqual(got.activities[0].reads, [{ key: "materials", name: "输入资料" }, { key: "knowledge", name: "知识库" }]);
   assert.deepEqual(got.activities[5].reads, [{ key: "all", name: "全部资产" }]);
   assert.equal(got.activities[1].prerequisite_text, "无前置条件；可从空白开始。");
   assert.deepEqual(got.flows.map((one) => [one.key, one.name, one.enabled, one.state, one.recommended, one.at, one.start]), [

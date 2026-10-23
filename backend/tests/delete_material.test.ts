@@ -64,9 +64,9 @@ test("派生文件的路径、材料目录之外的路径、不存在的材料�
   service.upload(t, "需求.docx", readFileSync(SAMPLE));
   const before = files(t);
   const derived = rejected(() => service.deleteMaterial(t, "inputs/需求.docx.md"));
-  assert.deepEqual([derived.code, derived.message], ["bad_request", "这是由别的材料生成的文件，不能单独删除。"]);
+  assert.deepEqual([derived.code, derived.message], ["bad_request", "这是由别的输入资料生成的文件，不能单独删除。"]);
   const outside = rejected(() => service.deleteMaterial(t, "task.sqlite"));
-  assert.deepEqual([outside.code, outside.message], ["bad_request", "路径 task.sqlite 不在材料目录 inputs/ 里。"]);
+  assert.deepEqual([outside.code, outside.message], ["bad_request", "路径 task.sqlite 不在输入资料目录 inputs/ 里。"]);
   assert.equal(rejected(() => service.deleteMaterial(t, "inputs/../task.sqlite")).code, "bad_request");
   assert.equal(rejected(() => service.deleteMaterial(t, "inputs/没有.md")).code, "not_found");
   assert.deepEqual(files(t), before);
@@ -77,7 +77,7 @@ test("助手正在工作时拒绝删除，说明写明结束后再删", () => wi
   t.executor.state = "working";
   try {
     const busy = rejected(() => service.deleteMaterial(t, "inputs/需求.md"));
-    assert.deepEqual([busy.code, busy.status, busy.message, busy.data.reason], ["session_busy", 409, "助手正在工作，结束后才能删除材料。", "working"]);
+    assert.deepEqual([busy.code, busy.status, busy.message, busy.data.reason], ["session_busy", 409, "助手正在工作，结束后才能删除输入资料。", "working"]);
     assert.deepEqual(files(t), ["需求.md"]);
   } finally {
     t.executor.state = "not_started";
@@ -137,7 +137,7 @@ test("材料上传之后新开的会话有过活动：删除被拒绝并写明�
   writeSession(t, "S1", at("2026-09-30T10:05:00.000Z"), [at("2026-09-30T10:05:30.000Z")]);
   assert.deepEqual(deletableOf(service, t), { [path]: false });
   const refused = rejected(() => service.deleteMaterial(t, path));
-  assert.deepEqual([refused.code, refused.status, refused.message], ["rejected", 422, "这份材料已经进入了对话，不能删除。"]);
+  assert.deepEqual([refused.code, refused.status, refused.message], ["rejected", 422, "这份输入资料已经进入了对话，不能删除。"]);
   assert.equal(refused.message, ENTERED_CONVERSATION_TEXT);
   assert.deepEqual(refused.data, { path, reasons: [ENTERED_CONVERSATION_TEXT] });
   assert.deepEqual(files(t), ["需求.md"]);
@@ -204,7 +204,7 @@ test("经接口删除一份已经进入对话的材料：返回 422 与 rejected
     method: "POST", path: `/api/v1/tasks/${t.taskId}/materials/delete`, query: {}, headers: {}, body: Buffer.from(JSON.stringify({ path })),
   })) as any;
   const body = JSON.parse(reply.body.toString());
-  assert.deepEqual([reply.status, body.ok, body.error.code, body.error.message], [422, false, "rejected", "这份材料已经进入了对话，不能删除。"]);
+  assert.deepEqual([reply.status, body.ok, body.error.code, body.error.message], [422, false, "rejected", "这份输入资料已经进入了对话，不能删除。"]);
   assert.deepEqual(files(t), ["需求.md"]);
 }));
 

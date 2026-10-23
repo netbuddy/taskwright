@@ -26,12 +26,12 @@ describe("参数校验失败与被拒分开显示", () => {
   it("实时步骤行：参数校验失败淡色、不用被拒的颜色；连续多次醒目；被拒照旧是被拒的颜色", () => {
     show([], { work_id: "w-1", started_at: "", triggered_by: null, steps: [
       { work_id: "w-1", step_key: 1, text: "助手写的参数不合格式，已自行改正", in_progress: false, failed: false, note: "args_invalid" },
-      { work_id: "w-1", step_key: 2, text: "模型多次写错参数格式，建议换模型或缩短材料", in_progress: false, failed: false, note: "args_invalid_repeated" },
+      { work_id: "w-1", step_key: 2, text: "模型多次写错参数格式，建议换模型或缩短输入资料", in_progress: false, failed: false, note: "args_invalid_repeated" },
       { work_id: "w-1", step_key: 3, text: "保存修订被拒：摘录找不到。", in_progress: false, failed: true },
     ] });
     expect(line("助手写的参数不合格式，已自行改正")).toHaveClass("faint");
     expect(line("助手写的参数不合格式，已自行改正").getAttribute("style")).toBeNull();
-    expect(line("模型多次写错参数格式，建议换模型或缩短材料")).toHaveClass("warn");
+    expect(line("模型多次写错参数格式，建议换模型或缩短输入资料")).toHaveClass("warn");
     expect(line("保存修订被拒：摘录找不到。")).not.toHaveClass("faint");
     expect(line("保存修订被拒：摘录找不到。").getAttribute("style")).toContain("var(--gap)");
   });

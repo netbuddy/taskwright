@@ -90,7 +90,7 @@ export function DocumentModal({ task, log, open, revision: initial, onClose }: {
       </Button>,
       <Button key="d" type="primary" disabled={!picked.length || !revision} onClick={download} data-testid="doc-download">下载 Markdown</Button>,
     ]}>
-      {!log.length ? <Empty description="这个任务还没有修订，没有可以生成的内容" /> : (
+      {!log.length ? <Empty description="这个任务实例还没有修订，没有可以生成的内容" /> : (
         <>
           <p className="muted small">
             文档按你选的那次修订整体生成：每个条目写的是它在那次修订时的内容。没有评审通过或没有确认的条目也可以选，文档里会如实标注。

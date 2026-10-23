@@ -91,9 +91,9 @@ export function LeftNav({ here = null, taskId, taskName, stage, task, sessions, 
     <nav className={`lnav ${open ? "open" : "closed"}`} data-testid="left-nav">
       <div className="lnav-body">
         <div className="lnav-sec" data-testid="nav-tasks-group">
-          <div className="t">任务</div>
-          <a className={`lnav-it${here === "tasks" ? " on" : ""}`} href={href.tasks()} title="任务列表" data-testid="nav-tasks">
-            <span className="i"><UnorderedListOutlined /></span><span className="n">任务列表</span>
+          <div className="t">任务实例</div>
+          <a className={`lnav-it${here === "tasks" ? " on" : ""}`} href={href.tasks()} title="任务实例列表" data-testid="nav-tasks">
+            <span className="i"><UnorderedListOutlined /></span><span className="n">任务实例列表</span>
           </a>
           {withTask && (
             <a className={`lnav-it${here === "task" ? " on" : ""}`} href={href.task(withTask)} title={`任务起点：${taskName ?? ""}`} data-testid="nav-task">

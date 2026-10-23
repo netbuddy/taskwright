@@ -13,9 +13,9 @@ export const docCountText = (lib: KnowledgeLibrary) => `${lib.documents.length} 
  * 有几个任务在用这个库。thisTask 给了时按这个任务是否选用了它说：只有这个任务在用时写「只有这个任务在用」。
  */
 export function usageText(lib: KnowledgeLibrary, thisTask?: { selected: boolean }): string {
-  if (lib.used_by_tasks === 0) return "没有任务在用";
-  if (thisTask?.selected && lib.used_by_tasks === 1) return "只有这个任务在用";
-  return `${lib.used_by_tasks} 个任务在用`;
+  if (lib.used_by_tasks === 0) return "没有任务实例在用";
+  if (thisTask?.selected && lib.used_by_tasks === 1) return "只有这个任务实例在用";
+  return `${lib.used_by_tasks} 个任务实例在用`;
 }
 
 /** 有文档在等待换算或者换算中时，知识库页面隔多久再取一次清单。 */

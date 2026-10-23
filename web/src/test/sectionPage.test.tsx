@@ -42,10 +42,10 @@ describe("节的顶部", () => {
 
   it("一行小字：材料几处、澄清几条、你看过；后面是标签与几处待核实", () => {
     render(<Panel t={overallTask()} first="OA-002" />);
-    expect(text(screen.getByTestId("topic-lead"))).toBe("材料 2 处 · 澄清 2 条 · 你看过");
+    expect(text(screen.getByTestId("topic-lead"))).toBe("输入资料 2 处 · 澄清 2 条 · 你看过");
     fireEvent.click(screen.getByTestId("toc-OA-003"));
     // 这一页用户看过的是早先的修订，现在的内容还没有看过：不写「你看过」。
-    expect(text(screen.getByTestId("topic-lead"))).toBe("材料 1 处 · 澄清 2 条");
+    expect(text(screen.getByTestId("topic-lead"))).toBe("输入资料 1 处 · 澄清 2 条");
     const meta = screen.getByTestId("topic-meta");
     expect([...meta.querySelectorAll(".oa-tag:not(.add)")].map((one) => one.textContent)).toEqual(["概念", "流程"]);
     expect(screen.getByTestId("topic-add-label")).toHaveTextContent("＋ 标签");
@@ -122,7 +122,7 @@ describe("节的各块", () => {
   it("它是什么：助手补充写了 inserted 时只标 inserted 里的字，理由里用引号引的别的词不标", () => {
     const t = change(overallTask(), "OA-003", (item) => {
       const one = item.sources.find((s) => s.kind === "助手补充")!;
-      one.excerpt = "按高校图书馆常见做法补的；材料里只说「预留架」。";
+      one.excerpt = "按高校图书馆常见做法补的；输入资料里只说「预留架」。";
       one.supports = [{ field: "它是什么", index: null, inserted: ["保留期是 3 天"] }, ...(one.supports ?? []).slice(1)];
     });
     render(<Panel t={t} />);
@@ -131,12 +131,12 @@ describe("节的各块", () => {
     expect([...what.querySelectorAll(".oa-hl")].map((h) => h.textContent)).toEqual(["保留期是 3 天"]);
   });
 
-  it("说明：逐字出自材料的句子用底色标出，点它在右边的材料里看原文；支持整页的来源也列在来源那一行；正文里找不到的不标", () => {
+  it("说明：逐字出自材料的句子用底色标出，点它在右边的输入资料里看原文；支持整页的来源也列在来源那一行；正文里找不到的不标", () => {
     const locate = vi.fn();
     // OA-002 的「它是什么」里没有材料的原话（材料写的是「办理」，页里写的是「办」）：不标，来源照列。
     render(<Panel t={overallTask()} first="OA-002" spies={{ locate }} />);
     expect(screen.getByTestId("topic-what").querySelectorAll(".oa-qt").length).toBe(0);
-    expect([...screen.getByTestId("topic-what").querySelectorAll(".oa-src .one")].map((s) => s.textContent)).toEqual(["材料 借阅规则.md「借书和还书都可以在自助借还机上办理，也可以到服务台办理。」"]);
+    expect([...screen.getByTestId("topic-what").querySelectorAll(".oa-src .one")].map((s) => s.textContent)).toEqual(["输入资料 借阅规则.md「借书和还书都可以在自助借还机上办理，也可以到服务台办理。」"]);
     cleanup();
     // 把页里那半句改成与材料一字不差，再加一条支持整页的材料来源：两句都标出来，点一句定位到它自己的出处。
     const t = change(overallTask(), "OA-002", (p) => {
@@ -148,7 +148,7 @@ describe("节的各块", () => {
     expect(quotes.map((q) => q.textContent)).toEqual(["借书和还书都可以在自助借还机上办理，也可以到服务台办理。", "借期都是 30 天"]);
     fireEvent.click(quotes[1]);
     expect(locate).toHaveBeenCalledWith(" 借期都是 30 天 ", "inputs/规定.md");
-    expect([...screen.getByTestId("topic-what").querySelectorAll(".oa-src .one")].map((s) => s.textContent)[1]).toBe("材料 规定.md「 借期都是 30 天 」");
+    expect([...screen.getByTestId("topic-what").querySelectorAll(".oa-src .one")].map((s) => s.textContent)[1]).toBe("输入资料 规定.md「 借期都是 30 天 」");
   });
 
   it("它是什么：理由没有引原文、标不出是哪几个字时，整块旁边画一道边；确认之后都不标", () => {
@@ -220,7 +220,7 @@ describe("节的各块", () => {
     const rules = [...screen.getByTestId("topic-settled").querySelectorAll(".oa-rules li")];
     expect(rules.length).toBe(4);
     expect(rules.map((li) => li.classList.contains("pending"))).toEqual([false, false, false, true]);
-    expect(text(rules[1].querySelector(".t"))).toBe("一本书同一时间只能被一个人预约。材料 借阅规则.md「同一册图书同一时间只接受一位读者的预约。」");
+    expect(text(rules[1].querySelector(".t"))).toBe("一本书同一时间只能被一个人预约。输入资料 借阅规则.md「同一册图书同一时间只接受一位读者的预约。」");
     expect(rules[3].querySelector(".oa-src .one")).toHaveClass("v");
   });
 
@@ -233,10 +233,10 @@ describe("节的各块", () => {
     expect(screen.getByTestId("topic-what").querySelector(".oa-src .one.v")).toBeNull();
   });
 
-  it("出处是材料原文时点一下去右边的材料里看那句原文", () => {
+  it("出处是输入资料原文时点一下去右边的输入资料里看那句原文", () => {
     const locate = vi.fn();
     render(<Panel t={overallTask()} spies={{ locate }} />);
-    fireEvent.click(within(screen.getByTestId("topic-settled-1")).getByText(/^材料 借阅规则\.md/));
+    fireEvent.click(within(screen.getByTestId("topic-settled-1")).getByText(/^输入资料 借阅规则\.md/));
     expect(locate).toHaveBeenCalledWith("同一册图书同一时间只接受一位读者的预约。", "inputs/借阅规则.md");
   });
 
@@ -557,7 +557,7 @@ describe("节末尾的三块", () => {
         { kind: "用户的话", locator: "", excerpt: "这算流程。", supports: [{ field: "标签" }] }] as never;
     });
     render(<Panel t={t} first="OA-003" spies={{ locate }} />);
-    expect(text(screen.getByTestId("topic-trace"))).toBe("追溯材料 借阅规则.md›澄清记录 1 条");
+    expect(text(screen.getByTestId("topic-trace"))).toBe("追溯输入资料 借阅规则.md›澄清记录 1 条");
     fireEvent.click(within(screen.getByTestId("trace-materials")).getByRole("button"));
     expect(locate).toHaveBeenCalledWith("预约也叫预借。", "inputs/借阅规则.md");
     fireEvent.click(within(screen.getByTestId("trace-clarified")).getByRole("button"));

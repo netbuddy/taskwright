@@ -91,7 +91,7 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   // 需求资产六类的现状：材料一份、已被引用；业务说明的节数与待澄清数同上面 description 的；三张图用户都没有打开过；
   // 两条用例里一条没有看过、一条因依据的页没看过而待核实；没有评审过、没有发布过。
   assert.deepEqual(status.assets.map((one) => [one.key, one.name, one.count, one.unit, one.text, one.note]), [
-    ["materials", "材料与证据", 1, "份", "1 份", "均有引用"], ["description", "业务说明", 7, "节", "7 节", "1 处待澄清"], ["models", "分析模型", 3, "张", "3 张", "3 未查看"],
+    ["materials", "输入资料", 1, "份", "1 份", "均有引用"], ["description", "业务说明", 7, "节", "7 节", "1 处待澄清"], ["models", "分析模型", 3, "张", "3 张", "3 未查看"],
     ["items", "需求条目", 2, "条", "2 条", "1 未读 · 1 待核实"], ["review", "评审与确认", 0, "轮", "未评审", ""], ["versions", "文档与版本", 0, "版", "未发布", ""]]);
   // 每格写由哪些活动产出（取自各项活动的定义里「写」那一栏）；材料来自上传，没有产出它的活动。
   assert.deepEqual(status.assets.map((one) => one.produced_by), [[], ["核读材料", "澄清", "整理建模", "编写文档"], ["整理建模"], ["写条目", "评审确认", "逆向解析"], ["评审确认"], ["编写文档", "发布"]]);
@@ -112,22 +112,22 @@ test("任务状况：阶段、各章的节数、待澄清、图、条目、还�
   assert.deepEqual(status.catalog!.activities.filter((one) => !one.alone).map((one) => one.key), ["parse_spec"]);
   assert.deepEqual(status.catalog!.flows.map((one) => one.work_item), [{ record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }, { record_id: 1, name: "需求分析", node: "writing" }]);
   const reading = status.catalog!.activities[0];
-  assert.deepEqual([reading.reads, reading.writes, reading.prerequisite_text], [[{ key: "materials", name: "材料与证据" }, { key: "knowledge", name: "知识库" }],
-    [{ key: "description", name: "业务说明" }], "前置条件：至少一份项目材料。"]);
+  assert.deepEqual([reading.reads, reading.writes, reading.prerequisite_text], [[{ key: "materials", name: "输入资料" }, { key: "knowledge", name: "知识库" }],
+    [{ key: "description", name: "业务说明" }], "前置条件：至少一份输入资料。"]);
   assert.ok(reading.purpose.length > 0 && reading.example.length > 0);
   assert.deepEqual(status.catalog, stage.catalog, "与整份数据里的是同一份");
   // 起点页上的几段文字：定位的话里带任务名；常见起点已并入流程卡，不再有主按钮下面那一句与三张小卡。
   const name = library.taskSnapshot(ws)[1]!.task_name;
-  assert.equal(status.start_page.lead, `本任务用于编制并持续维护「${name}」的需求规格说明。所有工作围绕同一套需求资产进行；每启动一个工作项，资产即得到补充或修正。`);
+  assert.equal(status.start_page.lead, `本任务实例用于编制并持续维护「${name}」的需求规格说明。所有工作围绕同一套需求资产进行；每启动一个工作项，资产即得到补充或修正。`);
   assert.deepEqual(Object.keys(status.start_page).sort(), ["intake", "lead"]);
   // 处境写在流程声明的 cases 一栏，随目录的流程卡给出。
   assert.deepEqual(status.catalog!.flows.map((one) => [one.key, one.cases]), [["analysis", ["我有调研材料", "我只有口头想法"]], ["change", ["已发布过，现在要改"]], ["reengineering", ["我有一份旧版规格说明"]]]);
   // 输入页上的几段：一段话、四类文件、目标系统描述的说明与三句示例、启动后两种情形各一句。
   const intake = status.start_page.intake;
-  assert.match(intake.lead, /^项目材料与目标系统描述至少提供一项。/);
+  assert.match(intake.lead, /^输入资料与目标系统描述至少提供一项。/);
   assert.deepEqual([intake.material_kinds.length, intake.describe_examples.length, intake.after.length], [4, 3, 2]);
   assert.ok(intake.describe_note.startsWith("说明三点：") && intake.describe_placeholder.endsWith("……"));
-  assert.deepEqual(intake.after.map((one) => one.slice(0, 4)), ["有材料：", "无材料："]);
+  assert.deepEqual(intake.after.map((one) => one.slice(0, 6)), ["有输入资料：", "无输入资料："]);
 });
 
 test("刚建的任务：没有页、没有图、没有提议，各项都是空的；早先建的任务没有阶段，没有状况", () => {

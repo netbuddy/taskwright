@@ -38,7 +38,7 @@ export function revisionLine(row: Pick<DiagramRow, "revision_no" | "revision_by"
 
 /** 图里画的一个条目不可点时写在后面的说明；还在的条目没有说明。 */
 export function drawnNote(one: DrawnItem): string | null {
-  return one.state === "deleted" ? "已经删除" : one.state === "missing" ? "任务里没有这个条目" : null;
+  return one.state === "deleted" ? "已经删除" : one.state === "missing" ? "任务实例里没有这个条目" : null;
 }
 
 /**

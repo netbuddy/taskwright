@@ -60,12 +60,12 @@ export function UploadSettings() {
     <div data-testid="upload-settings">
       <div className="page-title"><h1>上传</h1></div>
       <p className="lede">
-        单个文件最大能传多大。任务材料在任务页与对话区上传，知识库文档在知识库页面上传，两种各有一个上限，都不能超过 {cap} MB。
+        单个文件最大能传多大。输入资料在任务起点页与对话区上传，知识库文档在知识库页面上传，两种各有一个上限，都不能超过 {cap} MB。
         这里的设置存在服务上，用这个服务的人都按它算。
       </p>
 
       <div className="section-title first">单个文件的上限</div>
-      {row("任务材料", material, setMaterial, view?.defaults.material_mb, "upload-material")}
+      {row("输入资料", material, setMaterial, view?.defaults.material_mb, "upload-material")}
       {row("知识库文档", knowledge, setKnowledge, view?.defaults.knowledge_mb, "upload-knowledge")}
       {view && (!valid(material) || !valid(knowledge)) && <div className="ferr" data-testid="upload-invalid">请填 1 到 {cap} 的整数。</div>}
       <div className="inl">

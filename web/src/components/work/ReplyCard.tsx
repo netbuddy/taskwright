@@ -273,7 +273,7 @@ export function ReplyCard({ act, replyMessageId, replyText = "", task, disabled,
           <div>
             {(act.basis ?? []).map((b, i) => (
               <span key={i} className="evi" title={b.excerpt} onClick={() => b.kind === "文档原文" && onLocate?.(b.excerpt, b.locator)}>
-                依据：{b.kind === "文档原文" ? (isKnowledgeLocator(b.locator ?? "") ? "知识库" : "材料原文") : b.kind}{b.kind && b.kind === SOURCE_ITEM && b.locator ? ` ${b.locator}` : ""}{b.excerpt ? `「${b.excerpt.length > 18 ? b.excerpt.slice(0, 18) + "…" : b.excerpt}」` : ""}
+                依据：{b.kind === "文档原文" ? (isKnowledgeLocator(b.locator ?? "") ? "知识库" : "输入资料原文") : b.kind}{b.kind && b.kind === SOURCE_ITEM && b.locator ? ` ${b.locator}` : ""}{b.excerpt ? `「${b.excerpt.length > 18 ? b.excerpt.slice(0, 18) + "…" : b.excerpt}」` : ""}
               </span>
             ))}
           </div>

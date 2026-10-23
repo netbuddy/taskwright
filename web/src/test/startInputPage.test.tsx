@@ -47,18 +47,18 @@ function activityOf(key: string, name: string, over: Partial<CatalogActivity> = 
 const NODES = [kind("reading", "核读材料"), kind("clarifying", "澄清"), kind("modeling", "整理建模"), kind("publish", "发布")];
 function flowOf(over: Partial<CatalogFlow> = {}): CatalogFlow {
   return {
-    key: "analysis", name: "需求分析", purpose: "需求分析的目的。", applies: "项目尚无需求资产。", nodes: NODES, inputs: "项目材料（可选）、目标系统描述",
+    key: "analysis", name: "需求分析", purpose: "需求分析的目的。", applies: "项目尚无需求资产。", nodes: NODES, inputs: "输入资料（可选）、目标系统描述",
     prerequisite_text: "无前置条件；可从空白开始。", example: "经过。", enabled: true, state: "可以启动", recommended: true, at: null, start: "clarifying", cases: [], ...over,
   };
 }
-const READING = activityOf("reading", "核读材料", { reads: [kind("materials", "材料与证据"), kind("knowledge", "知识库")], writes: [kind("description", "业务说明")], prerequisite_text: "前置条件：至少一份项目材料。" });
+const READING = activityOf("reading", "核读材料", { reads: [kind("materials", "输入资料"), kind("knowledge", "知识库")], writes: [kind("description", "业务说明")], prerequisite_text: "前置条件：至少一份输入资料。" });
 const CLARIFYING = activityOf("clarifying", "澄清", { mode: "dialogue", mode_name: "逐项对话", writes: [kind("description", "业务说明")], prerequisite_text: "无前置条件；可从空白开始。" });
 const MODELING = activityOf("modeling", "整理建模");
 const DOCUMENT = activityOf("document", "编写文档", { reads: [kind("all", "全部资产")] });
 const TEXTS = {
   lead: "定位的话。",
   intake: {
-    lead: "项目材料与目标系统描述至少提供一项。", material_kinds: ["需求调研记录、访谈纪要", "现行制度、业务规则、办法"],
+    lead: "输入资料与目标系统描述至少提供一项。", material_kinds: ["需求调研记录、访谈纪要", "现行制度、业务规则、办法"],
     describe_note: "说明三点：建设什么系统、服务哪些用户、解决什么问题。", describe_placeholder: "建设什么系统……",
     describe_examples: ["建设图书馆借阅管理系统。", "现行借阅依靠人工登记。"], after: ["有材料：助手核读材料。", "无材料：助手依据描述复述理解。"],
   },
@@ -118,7 +118,7 @@ describe("活动输入页上算出来的东西", () => {
     expect([flow.kind, of("modeling").kind, startTarget(catalog, "nothing"), startTarget(null, "analysis")]).toEqual(["flow", "activity", null, null]);
   });
 
-  it("显示哪几块：流程有项目材料与领域知识库，业务说明空着时另有目标系统描述；单项活动按它读哪几类资产，另有范围说明", () => {
+  it("显示哪几块：流程有输入资料与领域知识库，业务说明空着时另有目标系统描述；单项活动按它读哪几类资产，另有范围说明", () => {
     expect(inputBlocks(flow, assets(), true)).toEqual({ materials: true, knowledge: true, description: true, scope: false });
     expect(inputBlocks(flow, assets({ description: 3 }), false)).toEqual({ materials: true, knowledge: false, description: false, scope: false });
     expect(inputBlocks(of("reading"), assets({ materials: 1 }), true)).toEqual({ materials: true, knowledge: true, description: false, scope: true });
@@ -133,7 +133,7 @@ describe("活动输入页上算出来的东西", () => {
   it("启动时发的两项、标题旁的一句与主按钮上的字", () => {
     expect([startFields(flow), startFields(of("modeling"))]).toEqual([{ activity: "clarifying", in_flow: true, flow: "analysis" }, { activity: "modeling", in_flow: false }]);
     expect(startFields({ kind: "flow", flow: flowOf({ enabled: false, start: null }) })).toBeNull();
-    expect(startSubtitle(flow)).toBe("从「澄清」开始；上传项目材料后从「核读材料」开始");
+    expect(startSubtitle(flow)).toBe("从「澄清」开始；上传输入资料后从「核读材料」开始");
     expect(startSubtitle({ kind: "flow", flow: flowOf({ start: "reading" }) })).toBe("从「核读材料」开始");
     expect(startSubtitle(of("clarifying"))).toBe("逐项对话");
     expect([startButton(flow), startButton(of("modeling"))]).toEqual(["启动需求分析", "启动整理建模"]);
@@ -146,34 +146,34 @@ describe("活动输入页上算出来的东西", () => {
     expect(blockedLine(running)).toBe("现在还不能启动：已有流程工作项「需求分析」，位于「整理建模」。");
     expect([existingFlowItem(running), existingFlowItem(flow), existingFlowItem(of("modeling"))]).toEqual([3, null, null]);
     const blocks = inputBlocks(flow, assets(), true);
-    expect(missingInput(flow, blocks, assets(), "  ")).toBe("请先上传项目材料，或填写目标系统描述。");
+    expect(missingInput(flow, blocks, assets(), "  ")).toBe("请先上传输入资料，或填写目标系统描述。");
     expect([missingInput(flow, blocks, assets(), "建设借阅系统"), missingInput(flow, blocks, assets({ materials: 1 }), "")]).toEqual([null, null]);
     expect(missingInput(of("clarifying"), inputBlocks(of("clarifying"), assets(), true), assets(), "")).toBeNull();
     const named = (key: string, name: string) => ({ key, name });
     expect(firstMessage(named("clarifying", "澄清"), "  建设借阅系统。 ")).toBe("建设借阅系统。");
     expect([firstMessage(named("reading", "核读材料"), ""), firstMessage(named("clarifying", "澄清"), ""), firstMessage(named("modeling", "整理建模"), ""),
       firstMessage(named("document", "编写文档"), " ")]).toEqual([
-      "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。", "请逐项澄清：一次只问一件事，先给出候选再问。", "请开始整理建模。", "请开始编写文档。"]);
+      "请通读输入资料，把输入资料里已经写明的概念、角色、流程与目标各立一页主题。", "请逐项澄清：一次只问一件事，先给出候选再问。", "请开始整理建模。", "请开始编写文档。"]);
     // 六个阶段之外的活动没有固定的句子：写「请开始某某。」，名字取自活动目录。
     expect(firstMessage(named("parse_spec", "逆向解析"), "")).toBe("请开始逆向解析。");
   });
 });
 
 describe("活动输入页：需求分析", () => {
-  it("空任务：标题、各站、摘要、一段话、项目材料、领域知识库、目标系统描述与「启动后」；没有范围说明，没有会话的选择；没有材料又没有描述时主按钮点不动并写原因", async () => {
+  it("空任务：标题、各站、摘要、一段话、输入资料、领域知识库、目标系统描述与「启动后」；没有范围说明，没有会话的选择；没有材料又没有描述时主按钮点不动并写原因", async () => {
     page("analysis");
     expect(await submit()).toHaveTextContent("启动需求分析");
     expect(screen.getByTestId("back-to-start")).toHaveAttribute("href", "#/tasks/TASK-P");
-    expect(screen.getByTestId("start-subtitle")).toHaveTextContent("从「澄清」开始；上传项目材料后从「核读材料」开始");
+    expect(screen.getByTestId("start-subtitle")).toHaveTextContent("从「澄清」开始；上传输入资料后从「核读材料」开始");
     expect(text(screen.getByTestId("start-steps"))).toBe("提供输入›核读材料›澄清›整理建模›发布");
     expect([...screen.getByTestId("start-summary").querySelectorAll("dt, dd")].map(text)).toEqual(["目的", "需求分析的目的。", "适用", "项目尚无需求资产。", "前提", "无前置条件；可从空白开始。"]);
-    expect(screen.getByTestId("start-lead")).toHaveTextContent("项目材料与目标系统描述至少提供一项。");
-    expect(text(screen.getByTestId("start-split"))).toBe("材料与知识库的分工材料是本任务的几份一手证据，助手逐句引用；规范、接口说明、法规、旧文档等参考资料放进知识库，可供多个任务选用。");
+    expect(screen.getByTestId("start-lead")).toHaveTextContent("输入资料与目标系统描述至少提供一项。");
+    expect(text(screen.getByTestId("start-split"))).toBe("输入资料与知识库的分工输入资料是本任务实例的几份一手证据，助手逐句引用；规范、接口说明、法规、旧文档等参考资料放进知识库，可供多个任务实例选用。");
     const materials = screen.getByTestId("materials-card");
-    expect(text(materials.querySelector(".tp-sec-h"))).toBe("项目材料0 份可选 · 推荐");
+    expect(text(materials.querySelector(".tp-sec-h"))).toBe("输入资料0 份可选 · 推荐");
     expect([...materials.querySelectorAll(".tp-in-kinds li")].map(text)).toEqual(["需求调研记录、访谈纪要", "现行制度、业务规则、办法"]);
     expect(screen.getByTestId("upload-hint")).toBeInTheDocument();
-    expect(text(screen.getByTestId("describe-block").querySelector(".aside"))).toBe("无材料时必填 · 作为会话的第一条消息发给助手");
+    expect(text(screen.getByTestId("describe-block").querySelector(".aside"))).toBe("无输入资料时必填 · 作为会话的第一条消息发给助手");
     expect(screen.getByTestId("describe-input")).toHaveAttribute("placeholder", "建设什么系统……");
     expect(text(screen.getByTestId("start-after").querySelector("h2"))).toBe("启动后");
     expect([...screen.getByTestId("start-after").querySelectorAll("li")].map(text)).toEqual([
@@ -181,7 +181,7 @@ describe("活动输入页：需求分析", () => {
     expect(screen.queryByTestId("scope-block")).toBeNull();
     expect(screen.queryByTestId("start-session")).toBeNull();
     expect(await submit()).toBeDisabled();
-    expect(screen.getByTestId("start-missing")).toHaveTextContent("请先上传项目材料，或填写目标系统描述。");
+    expect(screen.getByTestId("start-missing")).toHaveTextContent("请先上传输入资料，或填写目标系统描述。");
   });
 
   it("点一句示例填进文本框；写了描述点主按钮：先在新会话里从澄清启动，再把描述作为第一句话发出，然后进那条会话的工作台", async () => {
@@ -207,7 +207,7 @@ describe("活动输入页：需求分析", () => {
     fireEvent.click(await submit());
     await waitFor(() => expect(window.location.hash).toBe("#/tasks/TASK-P/sessions/S-new"));
     expect(calls.startNew).toHaveBeenCalledWith("TASK-P", { activity: "reading", in_flow: true, flow: "analysis" });
-    expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。" });
+    expect(calls.say.mock.calls[0][2]).toMatchObject({ text: "请通读输入资料，把输入资料里已经写明的概念、角色、流程与目标各立一页主题。" });
   });
 
   it("需求再工程：从逆向解析启动，发 flow: reengineering 与 activity: parse_spec，没有写描述时第一句话是「请开始逆向解析。」", async () => {
@@ -235,13 +235,13 @@ describe("活动输入页：需求分析", () => {
     page("reengineering", detail({ materials: [loose] }), statusWith(reengineering()));
     expect(await submit()).toBeDisabled();
     expect(screen.getByTestId("start-blocked")).toHaveTextContent("现在还不能启动：还没有上传「既有规格说明」。");
-    // 三块按声明的先后；没有原来的「项目材料」与「目标系统描述」两块，也没有那一段话。
+    // 三块按声明的先后；没有原来的「输入资料」与「目标系统描述」两块，也没有那一段话。
     expect([...screen.getByTestId("slot-blocks").querySelectorAll("[data-testid^=slot-]")].map((one) => one.getAttribute("data-testid"))).toEqual(["slot-spec", "slot-evidence", "slot-goal"]);
     expect([text(screen.getByTestId("slot-spec").querySelector(".aside")), text(screen.getByTestId("slot-evidence").querySelector(".aside")), text(screen.getByTestId("slot-goal").querySelector(".aside"))])
       .toEqual(["必填", "可选", "可选 · 作为会话的第一条消息发给助手"]);
     expect([screen.queryByTestId("materials-card"), screen.queryByTestId("describe-block"), screen.queryByTestId("start-lead")]).toEqual([null, null, null]);
     expect(within(screen.getByTestId("slot-spec")).queryAllByTestId("material-row")).toHaveLength(0);
-    expect(screen.getByTestId("slot-spec")).toHaveTextContent("还没有放进这一块的材料。");
+    expect(screen.getByTestId("slot-spec")).toHaveTextContent("还没有放进这一块的输入资料。");
     // 没放进槽位的材料（角色「证据」）：并入角色相同的「补充证据」块，能看能删，不能替换（替换会沿用空的槽位）；页面上没有单列的一块。
     expect(screen.queryByTestId("unslotted-materials")).toBeNull();
     expect(screen.queryByText("未放入槽位的材料")).toBeNull();
@@ -286,7 +286,7 @@ describe("活动输入页：需求分析", () => {
     expect(screen.getByTestId("start-open-flow-session")).toHaveAttribute("href", "#/tasks/TASK-P/sessions/S-flow");
   });
 
-  it("勾选一个知识库：当场改这个任务选用的知识库；每个知识库都可以勾上或去掉；服务没有知识库时没有这一块", async () => {
+  it("勾选一个知识库：当场改这个任务实例选用的知识库；每个知识库都可以勾上或去掉；服务没有知识库时没有这一块", async () => {
     const calls = page("analysis");
     await submit();
     const general = await screen.findByTestId("kb-check-general");
@@ -343,10 +343,10 @@ describe("活动输入页：单项活动", () => {
     expect(calls.action).not.toHaveBeenCalled();
   });
 
-  it("核读材料有项目材料与领域知识库两块；澄清从空白开始时有目标系统描述（可选）与范围说明，写了描述就把它作为第一句话", async () => {
+  it("核读材料有输入资料与领域知识库两块；澄清从空白开始时有目标系统描述（可选）与范围说明，写了描述就把它作为第一句话", async () => {
     page("reading", detail({ materials: [material("inputs/调研记录.md")] }), statusOf({ assets: assets({ materials: 1 }) }));
     await submit();
-    expect(text(screen.getByTestId("materials-card").querySelector(".tp-sec-h"))).toBe("项目材料1 份");
+    expect(text(screen.getByTestId("materials-card").querySelector(".tp-sec-h"))).toBe("输入资料1 份");
     expect(await screen.findByTestId("knowledge-choice")).toBeInTheDocument();
     expect([screen.queryByTestId("describe-block"), !!screen.queryByTestId("scope-block")]).toEqual([null, true]);
     cleanup(); vi.restoreAllMocks();

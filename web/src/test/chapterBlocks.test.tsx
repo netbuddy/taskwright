@@ -170,7 +170,7 @@ describe("第 5 章 业务规则的章首页", () => {
     const table = screen.getByTestId("rules-table");
     expect([...table.querySelectorAll("thead th")].map((th) => th.textContent)).toEqual(["规则", "出自", "出处"]);
     expect([...table.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => text(td)).join("|"))).toEqual([
-      "学生一次最多借 5 本。|3.2 借书与还书|材料 借阅规则.md「学生一次最多借 5 本」 等 2 条",
+      "学生一次最多借 5 本。|3.2 借书与还书|输入资料 借阅规则.md「学生一次最多借 5 本」 等 2 条",
       "保留期内这本书不能续借。有冲突，已记为待澄清|3.3 预约取书|你说的「有人预约的书不能续借。」",
       "每本书可以续借一次。有冲突，已记为待澄清|3.4 续借|—",
       // 助手补的、用户还没有确认的规则：出处里不写「你确认过」。

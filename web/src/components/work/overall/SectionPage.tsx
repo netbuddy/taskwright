@@ -42,7 +42,7 @@ function SourceLine({ sources, pending = false, onLocate }: { sources: Source[];
         const canLocate = !supplement && String(s.kind) === "文档原文" && !!onLocate;
         return (
           <span key={i} className={`one${supplement && pending ? " v" : ""}${canLocate ? " link" : ""}`} role={canLocate ? "button" : undefined}
-            title={canLocate ? "在右边的材料里看这句原文" : undefined} onClick={canLocate ? () => onLocate!(s.excerpt, s.locator) : undefined}>
+            title={canLocate ? "在右边的输入资料里看这句原文" : undefined} onClick={canLocate ? () => onLocate!(s.excerpt, s.locator) : undefined}>
             {sourceShortText(s, pending)}
           </span>
         );
@@ -187,7 +187,7 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
       <div className={`oa-title${gone ? " gone" : ""}`} role="heading" aria-level={2} title={item.item_id} data-testid="topic-title">{titleOf(item)}</div>
       <div className="oa-meta" data-testid="topic-meta">
         <span data-testid="topic-lead">
-          {[lead.materials > 0 ? `材料 ${lead.materials} 处` : "", lead.clarified > 0 ? `澄清 ${lead.clarified} 条` : "", lead.seen ? "你看过" : ""].filter(Boolean).join(" · ") || "还没有来源"}
+          {[lead.materials > 0 ? `输入资料 ${lead.materials} 处` : "", lead.clarified > 0 ? `澄清 ${lead.clarified} 条` : "", lead.seen ? "你看过" : ""].filter(Boolean).join(" · ") || "还没有来源"}
         </span>
         <span className="sep" />
         {labels.length === 0 && !introOf && <span className="oa-tag none">{UNSORTED_NAME}</span>}
@@ -229,7 +229,7 @@ export function SectionPage({ task, item, def, contents, readOnly, writesOff = f
             const marks = (one: typeof parts) => one.map((part, k) => (part.mark === "added"
               ? <span key={k} className="oa-hl" title="这几个字是助手补的，你还没有确认">{part.text}</span>
               : part.mark === "material"
-                ? <span key={k} className={`oa-qt${onLocate ? " link" : ""}`} role={onLocate ? "button" : undefined} title="这一句逐字出自材料，点一下在右边的材料里看原文"
+                ? <span key={k} className={`oa-qt${onLocate ? " link" : ""}`} role={onLocate ? "button" : undefined} title="这一句逐字出自输入资料，点一下在右边的输入资料里看原文"
                     onClick={onLocate ? () => onLocate(part.source!.excerpt, part.source!.locator) : undefined}>{part.text}</span>
                 : <span key={k}>{part.text}</span>));
             const table = tables[i];

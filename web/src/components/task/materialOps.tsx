@@ -45,7 +45,7 @@ export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChang
       await api.deleteMaterial(taskId, path);
       forgetDocx(taskId, path);
       forgetPdf(taskId, path);
-      toast.success(`已删除材料《${fileName(path)}》。`);
+      toast.success(`已删除输入资料《${fileName(path)}》。`);
       onChanged();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "删除没有成功。");
@@ -90,7 +90,7 @@ export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChang
       forgetPdf(taskId, path);
       forgetPdf(taskId, r.path);
       const [was, now] = [fileName(path), fileName(r.path)];
-      toast.success(was === now ? `已替换材料《${was}》。` : `已把材料《${was}》替换成《${now}》。`);
+      toast.success(was === now ? `已替换输入资料《${was}》。` : `已把输入资料《${was}》替换成《${now}》。`);
       onChanged();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "替换没有成功。");
@@ -166,15 +166,15 @@ export function useMaterialOps(taskId: string, info: ServiceInfo | null, onChang
       <input ref={picker} type="file" accept={uploadAccept(info)} hidden onChange={(e) => picked(e.target.files?.[0])} data-testid="material-replace-input" />
       {/* 补齐用的文件选择框：看不见，由「补齐」打开。 */}
       <input ref={filler} type="file" accept={uploadAccept(info)} hidden onChange={(e) => void filled(e.target.files?.[0])} data-testid="material-replenish-input" />
-      <Modal title={replacing ? `用《${replacing.file.name}》替换材料《${fileName(replacing.path)}》？` : ""} open={!!replacing}
+      <Modal title={replacing ? `用《${replacing.file.name}》替换输入资料《${fileName(replacing.path)}》？` : ""} open={!!replacing}
         onCancel={() => { if (!swapping) setReplacing(null); }} onOk={() => void doReplace()} okText="替换" cancelText="取消" confirmLoading={swapping}
         cancelButtonProps={{ disabled: swapping }} closable={!swapping} maskClosable={!swapping} keyboard={!swapping} destroyOnHidden>
-        <p>用新文件替换这份材料，旧文件就没有了；助手下次开始会话时看到的是新文件。</p>
+        <p>用新文件替换这份输入资料，旧文件就没有了；助手下次开始会话时看到的是新文件。</p>
       </Modal>
-      <Modal title={deleting ? `删除材料《${fileName(deleting)}》？` : ""} open={!!deleting} onCancel={() => { if (!removing) setDeleting(null); }}
+      <Modal title={deleting ? `删除输入资料《${fileName(deleting)}》？` : ""} open={!!deleting} onCancel={() => { if (!removing) setDeleting(null); }}
         onOk={() => void doRemove()} okText="删除" cancelText="取消" confirmLoading={removing} cancelButtonProps={{ disabled: removing }}
         closable={!removing} maskClosable={!removing} keyboard={!removing} destroyOnHidden>
-        <p>删除之后这份材料就没有了，助手下次开始会话时不会再看到它。</p>
+        <p>删除之后这份输入资料就没有了，助手下次开始会话时不会再看到它。</p>
       </Modal>
     </>
   );

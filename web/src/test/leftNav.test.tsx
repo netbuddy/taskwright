@@ -66,10 +66,10 @@ function nav(over: Partial<Parameters<typeof LeftNav>[0]> = {}) {
 const text = (el: Element | null) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
 
 describe("展开态五段", () => {
-  it("任务一组：「任务列表」回列表，任务名去任务起点页；工作视图里两行都不高亮，没有单独的任务头", () => {
+  it("任务一组：「任务实例列表」回列表，任务名去任务起点页；工作视图里两行都不高亮，没有单独的任务头", () => {
     nav();
     expect(screen.getByTestId("nav-tasks")).toHaveAttribute("href", "#/tasks");
-    expect(text(screen.getByTestId("nav-tasks"))).toBe("任务列表");
+    expect(text(screen.getByTestId("nav-tasks"))).toBe("任务实例列表");
     expect(screen.getByTestId("nav-task")).toHaveAttribute("href", "#/tasks/TASK-L");
     expect(text(screen.getByTestId("nav-task"))).toBe("图书借阅");
     expect(screen.getByTestId("nav-tasks")).not.toHaveClass("on");
@@ -78,7 +78,7 @@ describe("展开态五段", () => {
     expect(screen.getByTestId("left-nav")).toHaveClass("open");
   });
 
-  it("任务起点页高亮任务名一行；任务列表页只有「任务列表」一行并高亮，没有工作与待处理事项；知识库页高亮「知识库」", () => {
+  it("任务起点页高亮任务名一行；任务实例列表页只有「任务实例列表」一行并高亮，没有工作与待处理事项；知识库页高亮「知识库」", () => {
     nav({ here: "task" });
     expect(screen.getByTestId("nav-task")).toHaveClass("on");
     cleanup();

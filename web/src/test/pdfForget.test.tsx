@@ -1,4 +1,4 @@
-// PDF 材料被删除或替换之后，先前读过的位置表、原始字节与投影不作数了（state/pdfStore.ts 的 forgetPdf）：
+// PDF 输入资料被删除或替换之后，先前读过的位置表、原始字节与投影不作数了（state/pdfStore.ts 的 forgetPdf）：
 // 丢掉之后再要就重新读；读到一半被丢掉的，读回来的旧结果不写进缓存。工作视图收到材料被删、新增的事件时丢。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +19,7 @@ type Content = Awaited<ReturnType<typeof api.materialContent>>;
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); resetPdfStore(); handlers = null; });
 
-describe("丢掉一份 PDF 材料的缓存", () => {
+describe("丢掉一份 PDF 输入资料的缓存", () => {
   it("丢掉之后三样都重新读，读到的是新文件；别的材料、别的任务的缓存不动", async () => {
     let version = "旧";
     const content = vi.spyOn(api, "materialContent").mockImplementation(async (_task, path) =>
@@ -88,7 +88,7 @@ describe("工作视图收到材料的事件时丢缓存", () => {
     expect(pdfBytesEntry("TASK-1", PATH)).not.toBe(again);
   });
 
-  it("新来了一份材料（material_added）：同一个路径上先前读过的那一份丢掉；它替换掉的那一份也丢", async () => {
+  it("新来了一份输入资料（material_added）：同一个路径上先前读过的那一份丢掉；它替换掉的那一份也丢", async () => {
     const before = await cached();
     renderHook(() => useWorkView("TASK-1", "S-1"));
     await emit("material_added", { session_id: null, at: "", path: "inputs/新名.pdf", bytes: 1, modified_at: "", replaces: PATH });

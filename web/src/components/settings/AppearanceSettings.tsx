@@ -22,7 +22,7 @@ export function AppearanceSettings() {
             <button type="button" key={one.key} role="radio" aria-checked={on} className={`style-card${on ? " on" : ""}`}
               data-testid={`style-${one.key}`} onClick={() => saveTheme(one.key)}>
               <span className="pv" data-theme={one.key} aria-hidden="true">
-                <span className="pv-top">任务的名字</span>
+                <span className="pv-top">任务实例的名字</span>
                 <span className="pv-body">
                   <span className="pv-text">正文是这个样子。</span>
                   <span className="pv-rule" />

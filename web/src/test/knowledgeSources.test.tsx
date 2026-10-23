@@ -56,7 +56,7 @@ function OpenItem({ sources, libraries, onLocate }: { sources: unknown[]; librar
 const boxes = () => [...screen.getByTestId("item-detail").querySelectorAll<HTMLElement>(".srcbox")];
 
 describe("条目详情里出自知识库文档的来源", () => {
-  it("标签写「知识库」并用紫红样式，出处写「知识库名 / 文档名」，Word 文档再写第几段；材料来源照旧是蓝色的「材料原文」、出处可点", () => {
+  it("标签写「知识库」并用紫红样式，出处写「知识库名 / 文档名」，Word 文档再写第几段；材料来源照旧是蓝色的「输入资料原文」、出处可点", () => {
     render(<OpenItem sources={[TERM, WORD, src("inputs/说明.md", "买家可以退货。")]} libraries={LIBRARIES} />);
     const [term, word, material] = boxes();
     expect(term.querySelector(".chip")!.className).toBe("chip src kb");
@@ -64,9 +64,9 @@ describe("条目详情里出自知识库文档的来源", () => {
     expect(within(term).getByTestId("kb-source").textContent).toBe("出处：通用知识库 / 术语.md（点一下看原文）");
     expect(within(word).getByTestId("kb-source").textContent).toBe("出处：行业规范 / 规范.docx · 第 12 段（点一下看原文）");
     expect(term.textContent).not.toMatch(/knowledge\//);
-    // 材料来源照旧：蓝色的「材料原文」，出处可点。
+    // 材料来源照旧：蓝色的「输入资料原文」，出处可点。
     expect(material.querySelector(".chip")!.className).toBe("chip src");
-    expect(material.querySelector(".chip")!.textContent).toBe("材料原文");
+    expect(material.querySelector(".chip")!.textContent).toBe("输入资料原文");
     expect(within(material).getByText("出处：说明.md（点一下看原文）").getAttribute("role")).toBe("button");
   });
 

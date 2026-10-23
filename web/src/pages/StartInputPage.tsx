@@ -161,7 +161,7 @@ export function StartInputPage({ taskId, startKey, pick = [] }: {
 
       {!slotted && blocks.materials && blocks.knowledge && (
         <p className="tp-in-split" data-testid="start-split">
-          <b>材料与知识库的分工</b>材料是本任务的几份一手证据，助手逐句引用；规范、接口说明、法规、旧文档等参考资料放进知识库，可供多个任务选用。
+          <b>输入资料与知识库的分工</b>输入资料是本任务实例的几份一手证据，助手逐句引用；规范、接口说明、法规、旧文档等参考资料放进知识库，可供多个任务实例选用。
         </p>
       )}
       {slotted && (
@@ -169,7 +169,7 @@ export function StartInputPage({ taskId, startKey, pick = [] }: {
           {slots.map((slot) => (slot.accepts === "materials" ? (
             <div key={slot.key} className="tp-in-block">
               <MaterialsCard taskId={taskId} materials={materials.filter((one) => homeOf(one) === slot.key)} info={service.info} onView={view} onChanged={() => void load()}
-                title={slot.name} aside={slot.required ? "必填" : "可选"} slot={slot.key} testId={`slot-${slot.key}`} emptyText="还没有放进这一块的材料。"
+                title={slot.name} aside={slot.required ? "必填" : "可选"} slot={slot.key} testId={`slot-${slot.key}`} emptyText="还没有放进这一块的输入资料。"
                 replace={(one) => !!one.slot} />
             </div>
           ) : (
@@ -190,7 +190,7 @@ export function StartInputPage({ taskId, startKey, pick = [] }: {
           {blocks.materials && (
             <div className="tp-in-wrap">
               <MaterialsCard taskId={taskId} materials={materials} info={service.info} onView={view} onChanged={() => void load()}
-                title="项目材料" aside={target.kind === "flow" ? "可选 · 推荐" : undefined}
+                title="输入资料" aside={target.kind === "flow" ? "可选 · 推荐" : undefined}
                 intro={(
                   <>
                     <p className="tp-in-p">属于本项目的文件。助手核读后逐句引用，作为需求的证据。</p>
@@ -208,7 +208,7 @@ export function StartInputPage({ taskId, startKey, pick = [] }: {
           <section className="tp-pane tp-in-block" aria-label="目标系统描述" data-testid="describe-block">
             <div className="tp-sec-h">
               <h2><EditOutlined className="tp-hic" />目标系统描述</h2>
-              <span className="aside">{target.kind === "flow" ? "无材料时必填" : "可选"} · 作为会话的第一条消息发给助手</span>
+              <span className="aside">{target.kind === "flow" ? "无输入资料时必填" : "可选"} · 作为会话的第一条消息发给助手</span>
             </div>
             {intake && <p className="tp-in-p">{intake.describe_note}</p>}
             <Input.TextArea value={description} onChange={(e) => setDescription(e.target.value)} autoSize={{ minRows: 4, maxRows: 12 }}
@@ -241,7 +241,7 @@ export function StartInputPage({ taskId, startKey, pick = [] }: {
       {blocks.scope && (
         <section className="tp-pane tp-in-block" aria-label="范围说明" data-testid="scope-block">
           <div className="tp-sec-h"><h2><EditOutlined className="tp-hic" />范围说明</h2><span className="aside">可选</span></div>
-          <p className="tp-in-p">限定这次只做哪一部分，例如只针对某几节、某几份材料或某几条条目；不写就是全部。助手在这个工作项的各条会话里都看得到这段话。</p>
+          <p className="tp-in-p">限定这次只做哪一部分，例如只针对某几节、某几份输入资料或某几条条目；不写就是全部。助手在这个工作项的各条会话里都看得到这段话。</p>
           <Input.TextArea value={scope} onChange={(e) => setScope(e.target.value)} autoSize={{ minRows: 2, maxRows: 8 }} maxLength={SCOPE_MAX_LENGTH - (pickedLine ? pickedLine.length + 1 : 0)}
             placeholder="例如：只整理「借书」「还书」两节的流程图。" data-testid="scope-input" />
         </section>

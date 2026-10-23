@@ -1,4 +1,4 @@
-// PDF 材料接进页面的几处：材料区（文件名一行的页数与无文字页、说明、目录、把定位与跳转交给显示部件、选中文字的整理）、
+// PDF 输入资料接进页面的几处：材料区（文件名一行的页数与无文字页、说明、目录、把定位与跳转交给显示部件、选中文字的整理）、
 // 目录（有书签目录与没有两种）、条目详情里的来源标签（「第 N 页 · 章节」）、任务页材料卡上的页数。
 // 显示部件本身在 pdfPaper.test.tsx 里测；这里把它换成一个记下收到什么的替身。
 
@@ -41,7 +41,7 @@ const Wrap = ({ children }: { children: ReactNode }) => (
   <ConfigProvider button={{ autoInsertSpace: false }}><AntApp><div className="app">{children}</div></AntApp></ConfigProvider>
 );
 const PDF = "inputs/借阅管理办法.pdf";
-/** 一个任务，里面一个条目，带给定的来源；条目详情开着。 */
+/** 一个任务实例，里面一个条目，带给定的来源；条目详情开着。 */
 function OpenItem({ sources }: { sources: unknown[] }) {
   const item = { item_id: "UC-001", collection: "功能用例", title: "借阅图书", revision_no: 1, revisions: [1], revision_by: "executor", revision_at: "",
     reviews: [], confirmations: [], confirmation_stale: false, sources, fields: { 用例名称: "借阅图书" } } as unknown as Item;
@@ -126,7 +126,7 @@ describe("目录", () => {
   });
 });
 
-describe("材料区里的 PDF 材料", () => {
+describe("材料区里的 PDF 输入资料", () => {
   it("文件名一行的下拉框选着正在看的这一份；PDF 交给显示部件，文件名一行写页数与有几页没有可读的文字，下面是说明与目录", async () => {
     const content = serve();
     render(<Wrap><MaterialPane taskId="TASK-1" materials={MATERIALS} /></Wrap>);
@@ -136,7 +136,7 @@ describe("材料区里的 PDF 材料", () => {
     expect(screen.getByTestId("pdf-pages-chip").textContent).toBe("5 页");
     expect(screen.getByTestId("pdf-notext-chip").textContent).toBe("其中 1 页没有可读的文字");
     expect(screen.getByTestId("pdf-hint").textContent).toBe(PDF_HINT);
-    expect(PDF_HINT).toBe("PDF 材料按原样分页显示。PDF 里的表格按行读取，不分格。");
+    expect(PDF_HINT).toBe("PDF 输入资料按原样分页显示。PDF 里的表格按行读取，不分格。");
     expect((await screen.findByTestId("pdf-toc-toggle")).textContent).toContain("目录：4 项");
     // 材料区自己不去读 PDF 的文字（那是显示部件与读取缓存的事），只为目录读了位置表、为「分段去向」读了分段清单。
     expect(content.mock.calls.map((call) => call[1]).sort()).toEqual([`${PDF}.locations.json`, `${PDF}.segments.json`]);
@@ -200,7 +200,7 @@ describe("材料区里的 PDF 材料", () => {
     expect(String(window.getSelection())).toContain("\n");
     fireEvent.mouseUp(screen.getByTestId("pdf-paper-stub"));
     fireEvent.click(await screen.findByText("据此新建条目"));
-    expect(onSend).toHaveBeenCalledWith(`请根据材料 ${PDF} 里的这段原文新建条目：「读者凭借书证借书，每本书可以续借一次。」`);
+    expect(onSend).toHaveBeenCalledWith(`请根据输入资料 ${PDF} 里的这段原文新建条目：「读者凭借书证借书，每本书可以续借一次。」`);
     fireEvent.click(screen.getByText("显示不出来"));
     expect(screen.queryByTestId("pdf-hint")).toBeNull();
     expect(screen.queryByTestId("pdf-toc")).toBeNull();
@@ -208,7 +208,7 @@ describe("材料区里的 PDF 材料", () => {
 });
 
 describe("来源标签与任务页材料卡", () => {
-  it("来源出自 PDF 材料：写「文件名 · 第 N 页 · 章节」，页就是出处里的页", async () => {
+  it("来源出自 PDF 输入资料：写「文件名 · 第 N 页 · 章节」，页就是出处里的页", async () => {
     serve();
     render(<OpenItem sources={[{ kind: "文档原文", locator: `${PDF}#p3-2`, excerpt: "学生一次最多借 5 本。", supports: [] }]} />);
     await waitFor(() => expect(document.querySelector(".srcbox .evi")!.textContent).toBe("出处：借阅管理办法.pdf · 第 3 页 · （一）借阅数量（点一下看原文）"));
@@ -259,7 +259,7 @@ describe("来源标签与任务页材料卡", () => {
     expect(screen.queryByText(/^正在上传/)).toBeNull();
   });
 
-  it("任务页的材料卡：PDF 材料名字后面写页数，有没有读出文字的页时写有几页", () => {
+  it("任务页的材料卡：PDF 输入资料名字后面写页数，有没有读出文字的页时写有几页", () => {
     expect(pdfSummary({ pages: 12, no_text_pages: [] })).toBe("12 页");
     expect(pdfSummary({ pages: 12, no_text_pages: [3, 7] })).toBe("12 页，其中 2 页没有可读的文字");
     const onView = vi.fn();
