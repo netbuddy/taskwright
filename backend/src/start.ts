@@ -23,7 +23,7 @@ import { appVersion, logDir } from "./paths.ts";
 import { ENV_SETTINGS_FILE, adoptUserSettings, settingsFile } from "./product_settings.ts";
 import { MODES, type Mode, Service } from "./service.ts";
 import { NewerDataDirectory, ServiceDb } from "./service_db.ts";
-import { cmdlineOf, processState, readProcessFile, recordedEnv, removeProcessFile, writeProcessFile } from "./service_process.ts";
+import { cmdlineOf, processState, readProcessFile, recordedEnv, relaunchCommand, removeProcessFile, writeProcessFile } from "./service_process.ts";
 import * as clock from "./clock.ts";
 import { newerDataText } from "../../agent/src/lib/schema.ts";
 
@@ -211,9 +211,11 @@ export async function startService(options: StartOptions): Promise<Started> {
   service.port = port;
   if (ownProcess) {
     // 监听成功之后写进程文件；不论怎样退出，进程结束时删掉（只删自己的那一份）。
+    // 重起用的命令：产品包的启动程序给了 TASKWRIGHT_RELAUNCH 就用它（见 service_process.ts 的 relaunchCommand）。
+    const relaunch = relaunchCommand();
     writeProcessFile(dataDir, {
-      pid: process.pid, port, host, mode, started_at: clock.now(), product_version: appVersion(), argv: [...process.argv], cmdline: cmdlineOf("self"),
-      cwd: process.cwd(), env: recordedEnv(), node: process.execPath,
+      pid: process.pid, port, host, mode, started_at: clock.now(), product_version: appVersion(), argv: relaunch.argv, cmdline: cmdlineOf("self"),
+      cwd: process.cwd(), env: recordedEnv(), node: relaunch.node,
     });
     process.once("exit", () => removeProcessFile(dataDir, process.pid));
   }

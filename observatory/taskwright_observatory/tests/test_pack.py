@@ -252,6 +252,26 @@ class NoNodeTest(unittest.TestCase):
             self.assertEqual(taskpage.check_completion(Path("/不存在"), "T", {"x": 1}), (None, "未核对（本机没有 node）", ""))
 
 
+class NodeCommandTest(unittest.TestCase):
+    """产品包里起 agent 脚本用的 node（taskpage.node_command）：启动程序给的、单个可执行文件经 TASKWRIGHT_RUN_SCRIPT、都没给时 PATH 里的。"""
+
+    def test_三种情形(self):
+        script = Path("/payload/agent/src/cli/check_completion.mts")
+        with mock.patch.dict(os.environ, {taskpage.ENV_NODE: "/payload/bin/node"}, clear=False):
+            os.environ.pop(taskpage.ENV_NODE_SEA, None)
+            self.assertEqual(taskpage.node_command(script, ["a"]), (["/payload/bin/node", str(script), "a"], None))
+        with mock.patch.dict(os.environ, {taskpage.ENV_NODE: "/opt/taskwright", taskpage.ENV_NODE_SEA: "1"}, clear=False):
+            command, env = taskpage.node_command(script, ["a"])
+            self.assertEqual(command, ["/opt/taskwright", "a"])
+            self.assertEqual(env[taskpage.ENV_RUN_SCRIPT], str(script))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(taskpage.ENV_NODE, None)
+            with mock.patch.object(taskpage.shutil, "which", return_value="/usr/bin/node"):
+                self.assertEqual(taskpage.node_command(script, []), (["/usr/bin/node", str(script)], None))
+            with mock.patch.object(taskpage.shutil, "which", return_value=None):
+                self.assertIsNone(taskpage.node_command(script, []))
+
+
 class KnownFormatsTest(unittest.TestCase):
     def test_观测台认得的格式与产品代码里的常量一致(self):
         pack_format = re.search(r"export const PACK_FORMAT = (\d+);", (REPO / "backend" / "src" / "data_pack.ts").read_text(encoding="utf-8"))

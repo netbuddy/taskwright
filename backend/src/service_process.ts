@@ -46,6 +46,24 @@ export function recordedEnv(env: NodeJS.ProcessEnv = process.env): Record<string
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => isRecordedEnv(entry[0]) && typeof entry[1] === "string"));
 }
 
+/**
+ * 环境变量 TASKWRIGHT_RELAUNCH：重起这个服务应当跑的命令（JSON 字符串数组，第一项是可执行文件）。产品包的启动程序设它
+ * （release/app/main.ts）：AppImage 里的 node 在挂载点下，挂载点每次启动都换，服务停了就卸载；单个可执行文件的 process.argv
+ * 第二项是它自己的重复。所以这两种情形不能照 process.execPath 与 process.argv 重起，要重新运行产品包本身。
+ */
+export const ENV_RELAUNCH = "TASKWRIGHT_RELAUNCH";
+
+/** 进程文件里记的 node 与 argv：有 TASKWRIGHT_RELAUNCH（写对了的）就用它，否则照当前进程。核对用的 cmdline 另取 /proc。 */
+export function relaunchCommand(env: NodeJS.ProcessEnv = process.env): { node: string; argv: string[] } {
+  try {
+    const value = JSON.parse(env[ENV_RELAUNCH] ?? "");
+    if (Array.isArray(value) && value.length > 0 && value.every((one) => typeof one === "string" && one !== "")) return { node: value[0], argv: value };
+  } catch {
+    // 没设或者写得不对：照当前进程
+  }
+  return { node: process.execPath, argv: [...process.argv] };
+}
+
 /** 读进程文件；不在、读不出、不是这个样子时是 null。 */
 export function readProcessFile(dataDir: string): ProcessFile | null {
   try {
