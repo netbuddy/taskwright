@@ -32,6 +32,25 @@ from taskwright_observatory.diffs import diff_list, diff_text
 HERE = Path(__file__).resolve().parent
 RULES_FILE = HERE / "stage_rules.json"
 CHECK_SCRIPT = HERE.parents[1] / "agent" / "src" / "cli" / "check_completion.mts"
+#: 起 agent 脚本用哪个 node（产品包的启动程序设，见 release/app/main.ts）：给了就用它，不给就用 PATH 里的 node。
+ENV_NODE = "TASKWRIGHT_OBSERVATORY_NODE"
+#: 设成 1 表示上面那个是单个可执行文件（Node SEA）：直接运行它会启动内嵌的程序，所以脚本经 TASKWRIGHT_RUN_SCRIPT 交给它的
+#: 引导程序（release/app/boot.cjs），命令行里不写脚本。与后端起 pi 的办法相同（backend/src/launch.ts 的 piLauncher）。
+ENV_NODE_SEA = "TASKWRIGHT_OBSERVATORY_NODE_SEA"
+ENV_RUN_SCRIPT = "TASKWRIGHT_RUN_SCRIPT"
+
+
+def node_command(script: Path, args: list[str]) -> tuple[list[str], dict | None] | None:
+    """运行一个 agent 脚本的命令行与环境（None 表示沿用当前环境）；找不到 node 时返回 None。"""
+    given = os.environ.get(ENV_NODE, "").strip()
+    node = given or shutil.which("node")
+    if not node:
+        return None
+    if given and os.environ.get(ENV_NODE_SEA) == "1":
+        return [node, *args], {**os.environ, ENV_RUN_SCRIPT: str(script)}
+    return [node, str(script), *args], None
+
+
 #: 本机没有 node 时，完成条件的核对写这一句，任务页其余照常（「回复」的排版退回原文）。
 NO_NODE_TEXT = "未核对（本机没有 node）"
 #: 「回复」怎样排成几行给人看，只在 agent 里写一份（终端界面与终端客户端也用它），这里经它的命令行入口调用。
@@ -47,13 +66,13 @@ def render_reply_lines(call: dict) -> list[str] | None:
     key = (str(call.get("调用编号") or ""), rejected)
     if key[0] and key in _RENDERED:
         return _RENDERED[key]
-    node = shutil.which("node")
+    command = node_command(RENDER_SCRIPT, [])
     lines = None
-    if node and RENDER_SCRIPT.is_file():
+    if command and RENDER_SCRIPT.is_file():
         payload = {"tool": call.get("工具"), "is_error": rejected, "text": call.get("结果文字") or "",
                    "details": call.get("结果细节") or {}, "args": call.get("参数") or {}}
         try:
-            done = subprocess.run([node, str(RENDER_SCRIPT)], input=json.dumps(payload, ensure_ascii=False),
+            done = subprocess.run(command[0], input=json.dumps(payload, ensure_ascii=False), env=command[1],
                                   capture_output=True, text=True, timeout=30)
             parsed = json.loads(done.stdout) if done.returncode == 0 else None
             lines = parsed if isinstance(parsed, list) else None
@@ -1113,15 +1132,13 @@ def check_completion(db_path: Path, task_id: str, completion: dict) -> tuple[lis
 
     每项结果带 state：met（已满足）、unmet（还差）、empty（集合为空，这一条暂不需要核对）。
     概括句也由 agent 那一份函数写，与任务现状消息、查询任务状态工具、网页用同一种说法。"""
-    node = shutil.which("node")
-    if not node:
+    command = node_command(CHECK_SCRIPT, [str(db_path), task_id, json.dumps(completion, ensure_ascii=False)])
+    if not command:
         return None, NO_NODE_TEXT, ""
     if not completion:
         return [], "", ""
     try:
-        done = subprocess.run([node, str(CHECK_SCRIPT), str(db_path), task_id,
-                               json.dumps(completion, ensure_ascii=False)],
-                              capture_output=True, text=True, timeout=30)
+        done = subprocess.run(command[0], env=command[1], capture_output=True, text=True, timeout=30)
     except FileNotFoundError:
         # 找到的 node 在调用时已经不在了（例如换了版本）：与没有 node 一样说。
         return None, NO_NODE_TEXT, ""

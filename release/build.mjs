@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the desktop packages: a payload (launcher, backend, web files, pi, agent extension, rg and fd) and, from it,
+// Builds the desktop packages: a payload (launcher, backend, web files, pi, agent extension, the observatory, rg and fd) and, from it,
 // a Linux AppImage and single executables (Node SEA) for Linux and Windows. Node built-in modules only; the web
 // interface, the backend's diagram check engine and the docx package are bundled with the repository's vite.
 //
@@ -359,7 +359,7 @@ const TS_IMPORT = /(\bfrom\s*|\bimport\s*\(?\s*)(["'])(\.{1,2}\/[^"']+?)\.(m?)ts
 const PDF_CLI = "backend/src/pdf_projection_cli.mts";
 function stageBackend(payload) {
   const seen = new Set();
-  const todo = ["backend/src/start.ts", "backend/src/main.mts", "backend/src/diagram_validate.ts", "backend/src/diagram_worker.ts", PDF_CLI].map((rel) => path.join(REPO, rel));
+  const todo = ["backend/src/start.ts", "backend/src/main.mts", "backend/src/desktop_launch.ts", "backend/src/diagram_validate.ts", "backend/src/diagram_worker.ts", PDF_CLI].map((rel) => path.join(REPO, rel));
   while (todo.length) {
     const file = todo.pop();
     if (seen.has(file)) continue;
@@ -578,13 +578,29 @@ async function stagePayload({ work, cache, target, piDir, piPackages, webDist, d
   fs.writeFileSync(path.join(payload, "package.json"), JSON.stringify({ name: product.name, version: product.version, private: true }, null, 2) + "\n");
   copyTree(webDist, path.join(payload, "web"));
   copyTree(piDir, path.join(payload, "pi"), piKeep);
+  const observatory = stageObservatory(payload);
   const tools = await stageTools(cache, target, path.join(payload, "tools"));
 
   const piVersion = JSON.parse(fs.readFileSync(path.join(piDir, "package.json"), "utf8")).version;
   const manifest = { app: "taskwright", version: product.version, target, node: nodeVersion, pi: piVersion, pi_packages: piPackages, pdfjs, ...tools, built_at: new Date().toISOString() };
   fs.writeFileSync(path.join(payload, "manifest.json"), JSON.stringify(manifest, null, 2));
-  log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, diagram check engine ${mb(treeSize(path.join(payload, "backend", "vendor", "mermaid")))}, docx ${mb(treeSize(path.join(payload, "backend", "vendor", "docx")))}, pdfjs-dist ${pdfjs} ${mb(treeSize(path.join(payload, "backend", "vendor", "pdfjs-dist")))}, pi ${mb(treeSize(path.join(payload, "pi")))}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
+  log(`${target} payload: ${mb(treeSize(payload))} (backend ${backendFiles.length} files, diagram check engine ${mb(treeSize(path.join(payload, "backend", "vendor", "mermaid")))}, docx ${mb(treeSize(path.join(payload, "backend", "vendor", "docx")))}, pdfjs-dist ${pdfjs} ${mb(treeSize(path.join(payload, "backend", "vendor", "pdfjs-dist")))}, pi ${mb(treeSize(path.join(payload, "pi")))}, observatory ${mb(observatory)}, installed pi ${mb(treeSize(piDir))}, rg and fd ${mb(treeSize(path.join(payload, "tools")))})`);
   return { payload, manifest };
+}
+
+// The observatory (observatory/taskwright_observatory: Python, standard library only, with its web files and the two
+// JSON tables) goes to <payload>/observatory/, without its tests and compiled caches. The launcher's observatory
+// subcommand runs it with this machine's Python 3.9 or later and PYTHONPATH=<payload>/observatory. Checked here:
+// `python3 -m taskwright_observatory --help` runs from the payload (the build machine has python3). Returns its size.
+function stageObservatory(payload) {
+  const to = path.join(payload, "observatory", "taskwright_observatory");
+  copyTree(path.join(REPO, "observatory", "taskwright_observatory"), to,
+    (rel) => !/(^|\/)(tests|__pycache__)(\/|$)/.test(rel) && !rel.endsWith(".pyc"));
+  const python = process.env.TASKWRIGHT_PYTHON || "python3";
+  const help = execFileSync(python, ["-m", "taskwright_observatory", "--help"], { env: { ...process.env, PYTHONPATH: path.join(payload, "observatory") }, encoding: "utf8" });
+  if (!help.includes("--pack")) throw new Error(`the observatory in the payload did not answer --help: ${help}`);
+  log(`observatory self-check: ${python} -m taskwright_observatory --help ran from the payload`);
+  return treeSize(path.join(payload, "observatory"));
 }
 
 // [u32 index length][index JSON][file bytes...], compressed; read back by release/app/boot.cjs.

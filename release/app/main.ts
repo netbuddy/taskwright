@@ -18,6 +18,12 @@
 //      own arguments, which win (for example --host 0.0.0.0).
 //   4. Open the browser on the actual port. The console window stays as the status window: closing it stops the service.
 //
+// Subcommands (no service is started; see backend/src/desktop_launch.ts):
+//   data …                    the backend's data command (upgrade, export, import)
+//   service status|stop|restart [--data <dir>]   look at, stop or restart the service of a data directory by its process file
+//   observatory [--pack <file> | --runs <dir> --workspaces <dir>] [--port 8770]   the observatory, run with this machine's
+//                             Python 3.9 or later (TASKWRIGHT_PYTHON, python3, python; on Windows also py -3); the browser opens on it
+//
 // Environment:
 //   TASKWRIGHT_PORT          first port to try (default 8950); the next nine are tried when it is taken
 //   TASKWRIGHT_DATA_DIR      the root: tasks, archives, the knowledge base, logs, settings, pi/ and cache/ (default: the backend's user data directory)
@@ -25,6 +31,11 @@
 //   PI_CODING_AGENT_DIR      pi's configuration directory (default: <root>/pi)
 //   TASKWRIGHT_NO_BROWSER=1  do not open a browser
 //   TASKWRIGHT_OPEN_WITH     a command that is run with the URL instead of the platform's opener
+//   TASKWRIGHT_PYTHON        the Python interpreter of the observatory subcommand
+//
+// Set here for the service: TASKWRIGHT_RELAUNCH, the command that restarts it (`service restart`): the AppImage file
+// or the single executable itself with the user's arguments, because the node inside a mounted AppImage goes away
+// with the mount and a single executable repeats itself in process.argv.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -122,6 +133,48 @@ function options(argv: string[]): Options {
   } as Options;
 }
 
+/** Whether this process is a Node single executable (SEA). */
+function singleExecutable(): boolean {
+  try {
+    const sea = process.getBuiltinModule?.("node:sea") as { isSea?: () => boolean } | undefined;
+    return Boolean(sea?.isSea?.());
+  } catch {
+    return false;
+  }
+}
+
+// `taskwright observatory …`: find Python, run the observatory from the payload, open the browser once it answers,
+// and pass Ctrl+C on to it. The exit code is the observatory's.
+async function observatory(args: string[]): Promise<number> {
+  const { findPython, observatoryLaunch } = await import(pathToFileURL(path.join(ROOT, "backend", "src", "desktop_launch.js")).href);
+  const python = findPython(process.env, process.platform);
+  if (python.error) {
+    console.error(python.error);
+    return 2;
+  }
+  const run = observatoryLaunch(python, ROOT, args, process.env, singleExecutable(), process.execPath);
+  const child = spawn(run.command, run.args, { env: run.env, stdio: "inherit", windowsHide: false });
+  const exited = new Promise<number>((resolve) => {
+    child.on("exit", (code, signal) => resolve(code ?? (signal ? 1 : 0)));
+    child.on("error", (error) => { console.error(`观测台没有起来：${error.message}`); resolve(1); });
+  });
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as NodeJS.Signals[]) process.on(signal, () => child.kill(signal));
+  let done = false;
+  void exited.then(() => (done = true));
+  for (let end = Date.now() + 30_000; !done && Date.now() < end; await new Promise((ok) => setTimeout(ok, 300))) {
+    const up = await new Promise<boolean>((resolve) => {
+      const req = http.get({ host: "127.0.0.1", port: run.port, path: "/api/overview", timeout: 1500 }, (res) => { res.resume(); resolve(res.statusCode === 200); });
+      req.on("timeout", () => req.destroy());
+      req.on("error", () => resolve(false));
+    });
+    if (up) {
+      openBrowser(`http://127.0.0.1:${run.port}/`);
+      break;
+    }
+  }
+  return exited;
+}
+
 async function main(): Promise<void> {
   timing("main_entered");
   // `taskwright data upgrade | export | import ...`: no service is started and no browser is opened. The backend's
@@ -133,6 +186,12 @@ async function main(): Promise<void> {
     const { dataCommand } = await import(pathToFileURL(path.join(ROOT, "backend", "src", "data_command.js")).href);
     process.exit(await dataCommand(process.argv.slice(3)));
   }
+  // `taskwright service status|stop|restart`: the backend's service command, by the data directory's process file.
+  if (process.argv[2] === "service") {
+    const { serviceCommand } = await import(pathToFileURL(path.join(ROOT, "backend", "src", "service_command.js")).href);
+    process.exit(await serviceCommand(process.argv.slice(3)));
+  }
+  if (process.argv[2] === "observatory") process.exit(await observatory(process.argv.slice(3)));
   let chosen: Options;
   try {
     // In a single executable process.argv[1] repeats the executable; with node it is this script. Either way the
@@ -152,7 +211,13 @@ async function main(): Promise<void> {
     }
   }
 
-  process.env.TASKWRIGHT_PI_ENTRY ||= PI_ENTRY;
+  // A pi entry given from outside is kept, unless the file is gone: a restart brings back the variables of the
+  // previous start (see the process file), and an AppImage's earlier mount point no longer exists.
+  const givenEntry = process.env.TASKWRIGHT_PI_ENTRY;
+  if (!givenEntry || !fs.existsSync(givenEntry)) process.env.TASKWRIGHT_PI_ENTRY = PI_ENTRY;
+  const backendLaunch = await import(pathToFileURL(path.join(ROOT, "backend", "src", "desktop_launch.js")).href);
+  const relaunch = backendLaunch.relaunchCommand(process.argv, process.env, singleExecutable(), process.execPath);
+  if (relaunch) process.env.TASKWRIGHT_RELAUNCH = JSON.stringify(relaunch);
   // The root: the data directory when one is named (--data wins over the environment variable), otherwise the
   // backend's user data directory. When one is named, the logs and the product settings go there too.
   const backend = (name: string) => import(pathToFileURL(path.join(ROOT, "backend", "src", name)).href);

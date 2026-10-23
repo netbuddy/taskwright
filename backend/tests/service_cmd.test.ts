@@ -12,7 +12,7 @@ import { type ChildProcess, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { RECORDED_ENV, processFilePath, readProcessFile, writeProcessFile } from "../src/service_process.ts";
+import { ENV_RELAUNCH, RECORDED_ENV, processFilePath, readProcessFile, relaunchCommand, writeProcessFile } from "../src/service_process.ts";
 import { BACKEND_MAIN, ROOT, spawnBackend, tempDir } from "./helpers.ts";
 
 const tmp = tempDir();
@@ -140,6 +140,29 @@ test("restart：停掉再照进程文件起，新的进程号不同、接口答�
       }
     }
   }
+});
+
+test("TASKWRIGHT_RELAUNCH：产品包的启动程序给了重起命令时，进程文件的 node 与 argv 用它；核对仍照 /proc 里的命令行，status 是 0", async () => {
+  const data = fresh("data");
+  const given = ["/opt/taskwright/taskwright-linux-x64", "--data", data];
+  const { child } = await serve(data, join(data, "logs"), { [ENV_RELAUNCH]: JSON.stringify(given) });
+  try {
+    const file = readProcessFile(data)!;
+    assert.deepEqual([file.node, file.argv], [given[0], given]);
+    assert.ok(file.cmdline!.some((one) => one.endsWith("main.mts")), "核对用的命令行仍是 /proc 里这个进程的");
+    assert.equal(service("status", data).status, 0);
+  } finally {
+    child.kill("SIGTERM");
+    assert.equal(await exited(child), 0);
+  }
+});
+
+test("TASKWRIGHT_RELAUNCH 没设或者写得不对（不是 JSON、空数组、有空字符串）：照当前进程的 node 与 argv", () => {
+  const own = { node: process.execPath, argv: process.argv };
+  for (const value of [undefined, "", "不是 JSON", "[]", '["/a", ""]', '"/a"', "[1]"]) {
+    assert.deepEqual(relaunchCommand(value === undefined ? {} : { [ENV_RELAUNCH]: value }), own, String(value));
+  }
+  assert.deepEqual(relaunchCommand({ [ENV_RELAUNCH]: '["/a.AppImage", "--port", "1"]' }), { node: "/a.AppImage", argv: ["/a.AppImage", "--port", "1"] });
 });
 
 test("service 命令的用法：不认识的动词与缺动词退出码 2", () => {
