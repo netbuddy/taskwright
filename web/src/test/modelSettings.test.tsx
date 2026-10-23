@@ -310,6 +310,34 @@ describe("设置页面的「模型」一栏", () => {
     expect(screen.queryByTestId("err-api_key")).toBeNull();
   });
 
+  it("添加 ollama、llama.cpp、vLLM 这三种本地模型服务时有一栏可以不填的 API 密钥，下面写一般不用填；填了密钥，请求里带着它", async () => {
+    page(config());
+    const add = vi.spyOn(api, "addProvider").mockResolvedValue({ ok: true, provider: ollama({ id: "taskwright-ollama-2", models: [] }) });
+    vi.spyOn(api, "fetchModels").mockResolvedValue({ ok: true, result: "listed", message: "", provider: ollama({ id: "taskwright-ollama-2", models: [] }) });
+    fireEvent.click(await screen.findByTestId("add-provider"));
+    const form = await screen.findByTestId("add-provider");
+    for (const kind of ["kind-llamacpp", "kind-vllm", "kind-ollama"]) {
+      fireEvent.click(screen.getByTestId(kind));
+      const row = screen.getByTestId("add-key").closest(".frow")!;
+      expect(row).toHaveTextContent("API 密钥可以不填");
+      expect(row).toHaveTextContent("一般不用填；模型服务开了密钥验证时填上。存进去之后不再显示，只显示末四位。");
+    }
+    expect(form).not.toHaveTextContent("本地的模型服务不需要 API 密钥。");
+    fireEvent.change(screen.getByTestId("add-key"), { target: { value: "  local-secret  " } });
+    fireEvent.click(screen.getByTestId("add-save"));
+    await waitFor(() => expect(add).toHaveBeenCalledWith({ purpose: "language", kind: "ollama", base_url: "http://127.0.0.1:11434", api_key: "local-secret" }));
+  });
+
+  it("添加本地模型服务时密钥不填（或只有空格）：请求里不带 api_key", async () => {
+    page(config());
+    const add = vi.spyOn(api, "addProvider").mockRejectedValue(new ApiError("rejected", "连不上这个地址。", 422, { field: "base_url" }));
+    fireEvent.click(await screen.findByTestId("add-provider"));
+    fireEvent.click(await screen.findByTestId("kind-vllm"));
+    fireEvent.change(screen.getByTestId("add-key"), { target: { value: "   " } });
+    fireEvent.click(screen.getByTestId("add-save"));
+    await waitFor(() => expect(add).toHaveBeenCalledWith({ purpose: "language", kind: "vllm", base_url: "http://127.0.0.1:8000" }));
+  });
+
   it("添加 DeepSeek 时密钥被拒：那句话写在 API 密钥下面", async () => {
     page(config());
     vi.spyOn(api, "addProvider").mockRejectedValue(new ApiError("rejected", "模型服务拒绝了这个密钥。", 422, { field: "api_key" }));

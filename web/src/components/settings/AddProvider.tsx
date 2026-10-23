@@ -1,5 +1,6 @@
 // 添加模型服务：第一步选它提供哪一类模型（用途），第二步选种类，第三步填写，「保存」时后端先检查连得上。
 // 一个模型服务只提供一类模型，同一个地址两类模型都有时添加两次；没有这类模型的种类不列出来。
+// 本地的三种（ollama、llama.cpp、vLLM）也有一栏可以不填的 API 密钥，给开了密钥验证的服务用。
 // 被拒（rejected）时停在这个画面，按 data.field 把后端的那句话写在对应的输入框下面；名称可以不填，由后端按种类起名。
 
 import { useState } from "react";
@@ -9,7 +10,7 @@ import { api, ApiError } from "../../api/client";
 import type { ModelType, Provider, ProviderKind } from "../../api/types";
 import { useToast } from "../Toasts";
 import { LoginCommand } from "./ProviderDetail";
-import { DEFAULT_URL, KIND_NAME, LOGIN_NOTE, ONE_PURPOSE_TEXT, PURPOSES, PURPOSE_ORDER, kindChoices, kindGroup } from "./text";
+import { DEFAULT_URL, KIND_NAME, LOCAL_KEY_HELP, LOGIN_NOTE, ONE_PURPOSE_TEXT, PURPOSES, PURPOSE_ORDER, kindChoices, kindGroup } from "./text";
 
 type Field = "name" | "base_url" | "api_key" | "kind" | "purpose";
 
@@ -48,7 +49,7 @@ export function AddProvider({ onAdded, onCancel }: { onAdded: (provider: Provide
       const body: { purpose: ModelType; kind: ProviderKind; name?: string; base_url?: string; api_key?: string } = { purpose, kind };
       if (name.trim()) body.name = name.trim();
       if (group !== "codex" && url.trim()) body.base_url = url.trim();
-      if ((group === "cloud" || group === "compatible") && key.trim()) body.api_key = key.trim();
+      if (group !== "codex" && key.trim()) body.api_key = key.trim();
       const { provider } = await api.addProvider(body);
       toast.success(`已添加模型服务「${provider.name}」。`);
       onAdded(provider);
@@ -88,7 +89,7 @@ export function AddProvider({ onAdded, onCancel }: { onAdded: (provider: Provide
       <div className="flabel">API 密钥{optional ? <span className="opt2">可以不填</span> : <span className="req">*</span>}</div>
       <Input.Password value={key} status={status("api_key")} onChange={(e) => setKey(e.target.value)} placeholder="输入完整的 API 密钥" autoComplete="off" data-testid="add-key" />
       {errors.api_key && <div className="ferr" data-testid="err-api_key">{errors.api_key}</div>}
-      <div className="fhelp">存进去之后不再显示，只显示末四位。</div>
+      <div className="fhelp">{group === "local" ? LOCAL_KEY_HELP : "存进去之后不再显示，只显示末四位。"}</div>
     </div>
   );
 
@@ -117,7 +118,7 @@ export function AddProvider({ onAdded, onCancel }: { onAdded: (provider: Provide
       </Radio.Group>
       <div className="section-title">第三步：填写 <span className="plain">（{KIND_NAME[kind]}，{PURPOSES[purpose].name}）</span></div>
       <div className="card frm">
-        {group === "local" && <>{nameRow}{urlRow(false)}<div className="fhelp">本地的模型服务不需要 API 密钥。</div></>}
+        {group === "local" && <>{nameRow}{urlRow(false)}{keyRow(true)}</>}
         {group === "cloud" && (
           <>
             {nameRow}{keyRow(false)}
