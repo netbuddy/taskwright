@@ -369,7 +369,7 @@ test("诊断包：固定带事件归档、不带材料原件（不看 withEvents
   for (const part of ["运行轨迹", "对话记录", "任务库", "后端日志：这个数据目录里没有", "设置摘录", "材料清单", "材料与知识库的原件和文字版", "密钥", "包里含对话全文与条目摘录，请妥善保管。", "语言模型：deepseek-flash（deepseek，取自启动配置）"]) {
     assert.ok(readme.includes(part), part);
   }
-  assert.deepEqual(result.diagnostic, { logs: 0 });
+  assert.deepEqual(result.diagnostic, { logs: 0, redacted: false });
   assert.match(exportText(result), /^诊断包已经写好：.*\n[^]*这个数据目录里没有任务建立以来写过的后端日志，只带了设置摘录。\n包里含对话全文与条目摘录，请妥善保管。/);
 });
 

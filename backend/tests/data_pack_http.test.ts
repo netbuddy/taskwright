@@ -105,6 +105,15 @@ test("导出接口：任务与知识库各回一个 zip 下载，里面是范围
     put(diagFile, Buffer.from(await diag.arrayBuffer()));
     assert.deepEqual([readPack(diagFile).manifest.diagnostic?.granularity, readPack(diagFile).manifest.with_events, readPack(diagFile).names.includes("settings.redacted.json")],
       ["task", true, true]);
+    // redact=1：脱敏诊断包，文件名后面加 -redacted；经导入接口导入被拒。
+    const redacted = await fetch(`http://127.0.0.1:${port}/api/v1/tasks/${a}/export?diagnostic=1&redact=1`);
+    assert.match(String(redacted.headers.get("content-disposition")), new RegExp(`^attachment; filename="diag-${a}-\\d{8}-\\d{4}-redacted\\.taskwright\\.zip"$`));
+    const redactedData = Buffer.from(await redacted.arrayBuffer());
+    const redactedFile = join(fresh("got"), "redacted.zip");
+    put(redactedFile, redactedData);
+    assert.equal(readPack(redactedFile).manifest.diagnostic?.purpose, "redacted");
+    const refused = await postPack(port, "/api/v1/tasks/import", redactedData);
+    assert.deepEqual([refused.status, refused.body.error.code, refused.body.error.message], [422, "rejected", "脱敏诊断包只供排查，不能导入"]);
     // 实际交给 pi 的模型：服务用的启动配置（测试用的 fake）里的那个。
     const launched = launchModelOf(resolveModel(started.service.profile));
     assert.deepEqual(readPack(diagFile).manifest.diagnostic?.launch_model, launched);

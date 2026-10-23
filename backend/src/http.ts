@@ -425,7 +425,8 @@ const handlers: Record<string, Handler> = {
   },
   // 把一个任务导出成数据包（任务目录与它的对话记录），回一个 zip 文件。查询参数 with_events=1 时另带事件归档（pi-events），
   // with_materials=1 时另带材料原件与派生文件（缺省只带材料清单）。
-  // diagnostic=1 时导出成诊断包（固定带事件归档、不带材料原件，另带后端日志与设置摘录；with_events 与 with_materials 不看），文件名是 diag-<任务编号>-<时刻>。
+  // diagnostic=1 时导出成诊断包（固定带事件归档、不带材料原件，另带后端日志与设置摘录；with_events 与 with_materials 不看），文件名是 diag-<任务编号>-<时刻>；
+  // 再加 redact=1 是脱敏诊断包（redact.ts），文件名后面加 -redacted。
   export_task: (service, req) => {
     const t = service.task(req.params.task);
     const working = () => t.executor.state === "working";
@@ -433,7 +434,8 @@ const handlers: Record<string, Handler> = {
       const settings = settingsExcerpt(piAgentDir(process.env), process.env);
       const logsDir = logDir(service.packLocations().dataDir);
       const launchModel = launchModelOf(resolveModel(service.profile));
-      return packDownload(service, { scope: "task", taskId: t.taskId, working, diagnostic: { settings, logsDir, launchModel } }, diagnosticPackName(t.taskId));
+      const redact = req.query.redact === "1";
+      return packDownload(service, { scope: "task", taskId: t.taskId, working, diagnostic: { settings, logsDir, launchModel, redact } }, diagnosticPackName(t.taskId, new Date(), redact));
     }
     return packDownload(service, { scope: "task", taskId: t.taskId, working, withEvents: req.query.with_events === "1",
       withMaterials: req.query.with_materials === "1" }, `${t.taskId}${PACK_SUFFIX}`);

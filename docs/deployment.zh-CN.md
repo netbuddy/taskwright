@@ -246,7 +246,9 @@ node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 | 清单文件里另有 | — | `diagnostic` 一节：`purpose`（`full`）、`granularity`（`task`）、`session_id`（按任务的为 null）、`product_version`、`task_db_version`、`model`（设置里选中的语言模型的模型名与模型服务的名字，没有选过为 null）、`launch_model`（后端起助手时实际用的模型：模型名、服务商名与它取自哪里——产品设置、启动配置或助手程序的设置；排查时看这一项；命令行导出不知道服务用的启动配置，为 null）、`log_range`（`{from, to}`：任务建立到导出；一份日志都没有带时为 null） |
 | 文件名 | `<任务编号>.taskwright.zip`（命令行由 `--to` 定） | `diag-<任务编号>-<年月日-时分>.taskwright.zip`（命令行由 `--to` 定） |
 
-诊断包照样可以导入（它是数据包的超集），导入时后端日志与设置摘录不解出来。诊断包不用于升级与恢复：`data upgrade --pack` 遇到诊断包时打印「这是诊断包，升级后只保留数据包部分」，写出的新包是普通的数据包，没有后端日志、设置摘录与 `diagnostic` 一节。
+诊断包照样可以导入（它是数据包的超集），导入时后端日志与设置摘录不解出来。
+
+**脱敏诊断包**（`--diagnostic --redact`，接口 `?diagnostic=1&redact=1`，文件名 `diag-<任务编号>-<年月日-时分>-redacted.taskwright.zip`，清单文件 `diagnostic.purpose` 为 `redacted`）：写包时把归档里的事件流（`pi-events` 下的 `service-*.jsonl`，计时文件与后端补记除外）与会话文件逐行改写，只改要改的行，行数与时刻不变，原归档不动。改的是：`read` 读材料目录或知识库目录下的文件（含文字版、分段清单、位置表）、`grep` 搜到材料目录、`search_knowledge` 的结果，换成占位 JSON `{"redacted": true, "tool", "path", "lines"（read 给了行范围时）, "bytes", "sha256_16"}`；`save_revision` 与 `save_diagram` 参数里来源的 `excerpt` 换成「[已脱敏] 摘要值 <SHA-256 前 16 位> 长度 <原字符数>」，这两种调用流式写出参数的碎片（`toolcall_delta`）置空。别的 `read`（任务定义、规矩、技能说明）原样。任务库副本里来源表的摘录换成同样的写法（整理过库文件，按字节也找不到原文），别的表不动；设置摘录里模型服务的地址写「[已脱敏]」。业务说明、条目、问题、理解、卡片、拒绝原文与对话正文不动。导入与 `data upgrade --pack` 遇到脱敏包都拒绝：「脱敏诊断包只供排查，不能导入」。诊断包不用于升级与恢复：`data upgrade --pack` 遇到诊断包时打印「这是诊断包，升级后只保留数据包部分」，写出的新包是普通的数据包，没有后端日志、设置摘录与 `diagnostic` 一节。
 
 **包里有什么。**
 

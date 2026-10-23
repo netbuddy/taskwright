@@ -115,7 +115,7 @@ describe("导出诊断包", () => {
   const row = { ...base, task_id: "T1", task_name: "出了问题的任务", unavailable: null, supported: true, item_count: 2, completion_total: 1, completion_unmet: 0,
     session_count: 1, last_active_at: "2026-10-14T01:00:00-07:00" } as TaskListEntry;
 
-  it("菜单里「导出诊断包」排在「删除任务」之上；点它弹确认框写明用途与保管，「导出」是加 diagnostic=1 的下载地址；不删任何东西", async () => {
+  it("菜单里「导出诊断包」排在「删除任务」之上；点它弹确认框写明用途与保管，选完整或脱敏（默认完整），「导出」是加 diagnostic=1（脱敏再加 redact=1）的下载地址；不删任何东西", async () => {
     vi.spyOn(api, "listTasks").mockResolvedValue([row]);
     const remove = vi.spyOn(api, "deleteTask");
     render(<ConfigProvider><AntApp><TaskListPage /></AntApp></ConfigProvider>);
@@ -127,8 +127,16 @@ describe("导出诊断包", () => {
     expect(screen.getByTestId("diagnostic-task")).toHaveTextContent("任务「出了问题的任务」");
     expect(screen.getByTestId("diagnostic-purpose")).toHaveTextContent("把这个任务的运行记录、对话与条目打成一个文件，供排查问题；不含材料原件与密钥。");
     expect(screen.getByTestId("diagnostic-keep")).toHaveTextContent("包里含对话全文，请妥善保管。");
+    // 两种形态各一句说明；默认是完整。
+    expect(screen.getByTestId("diagnostic-form-full").closest("label")).toHaveTextContent("完整不含材料原件，但含助手读到的材料文本、对话全文与条目，能查内容与流程问题。");
+    expect(screen.getByTestId("diagnostic-form-redacted").closest("label")).toHaveTextContent("脱敏读到的材料文本与来源摘录已替换，只能查流程问题，仍含业务说明与条目的转述。");
     const button = screen.getByTestId("diagnostic-export");
     expect(button).toHaveAttribute("href", "/api/v1/tasks/T1/export?diagnostic=1");
+    // 选脱敏：链接加 redact=1；再选回完整就去掉。
+    fireEvent.click(screen.getByTestId("diagnostic-form-redacted"));
+    expect(screen.getByTestId("diagnostic-export")).toHaveAttribute("href", "/api/v1/tasks/T1/export?diagnostic=1&redact=1");
+    fireEvent.click(screen.getByTestId("diagnostic-form-full"));
+    expect(screen.getByTestId("diagnostic-export")).toHaveAttribute("href", "/api/v1/tasks/T1/export?diagnostic=1");
     fireEvent.click(button);
     expect(remove).not.toHaveBeenCalled();
     expect(screen.queryByTestId("delete-task-text")).toBeNull();

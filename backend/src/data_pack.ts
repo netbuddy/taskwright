@@ -70,6 +70,8 @@ import { appVersion } from "./paths.ts";
 import { PDFJS_VERSION } from "./pdf_projection.ts";
 import { type SettingsExcerpt, excerptLanguageModel } from "./product_settings.ts";
 import { EXPECTED_NAME, expectedFromPack, readExpected, writeExpected } from "./replenish.ts";
+import { REDACTED_MARK, type RedactScope, maskExcerpt, redactFile, sessionCwd } from "./redact.ts";
+import { redactSourceExcerpts } from "../../agent/src/lib/redact_db.ts";
 import { UPLOADING_DIR, newTaskId } from "./service.ts";
 import { DATA_FORMAT, ServiceDb, type TaskEntry, peekDataDirectory } from "./service_db.ts";
 import { readTaskJson } from "./task_json.ts";
@@ -77,11 +79,14 @@ import { ZipError, type ZipEntry, ZipReader, ZipTooLarge, ZipWriter, validEntryN
 
 /** 数据包文件名的结尾。 */
 export const PACK_SUFFIX = ".taskwright.zip";
-/** 诊断包的文件名：diag-<任务编号>-<年月日-时分>.taskwright.zip，时刻是本机时间。 */
-export function diagnosticPackName(taskId: string, at: Date = new Date()): string {
+/** 诊断包的文件名：diag-<任务编号>-<年月日-时分>.taskwright.zip，时刻是本机时间；脱敏的在时刻后面加 -redacted。 */
+export function diagnosticPackName(taskId: string, at: Date = new Date(), redacted = false): string {
   const two = (n: number) => String(n).padStart(2, "0");
-  return `diag-${taskId}-${at.getFullYear()}${two(at.getMonth() + 1)}${two(at.getDate())}-${two(at.getHours())}${two(at.getMinutes())}${PACK_SUFFIX}`;
+  return `diag-${taskId}-${at.getFullYear()}${two(at.getMonth() + 1)}${two(at.getDate())}-${two(at.getHours())}${two(at.getMinutes())}${redacted ? "-redacted" : ""}${PACK_SUFFIX}`;
 }
+
+/** 导入或升级脱敏诊断包时的那句话。 */
+export const REDACTED_IMPORT_TEXT = "脱敏诊断包只供排查，不能导入";
 
 /** 包根上给人看的说明的名字。 */
 export const README_NAME = "说明.txt";
@@ -172,8 +177,8 @@ export interface PackDocument {
 
 /** 诊断包的那一节。 */
 export interface PackDiagnostic {
-  /** 完整的（full）；脱敏的另有写法。 */
-  purpose: "full";
+  /** 完整的（full），或者脱敏的（redacted：助手读到的材料文本、知识库检索命中、来源摘录与模型服务地址已换成占位，见 redact.ts）。 */
+  purpose: "full" | "redacted";
   /** 按任务（task）；按会话的另有写法。 */
   granularity: "task";
   /** 按会话切的诊断包写那条会话；按任务的是 null。 */
@@ -270,8 +275,8 @@ export interface ExportResult {
   files: number;
   /** 带没带材料与知识库文档的原件。 */
   with_materials: boolean;
-  /** 是不是诊断包；是的话带了几份后端日志。 */
-  diagnostic: { logs: number } | null;
+  /** 是不是诊断包；是的话带了几份后端日志、是不是脱敏的。 */
+  diagnostic: { logs: number; redacted: boolean } | null;
   skipped: Skipped[];
 }
 
@@ -296,7 +301,7 @@ export interface ExportOptions {
    * 导出成诊断包：给这一项就是。settings 是设置摘录；logsDir 是后端日志所在的目录（paths.ts 的 logDir：环境变量另给了用它，否则是数据目录下的 logs）。
    * 范围只能是一个任务；事件归档一定带，材料原件一定不带，withEvents 与 withMaterials 不看。
    */
-  diagnostic?: { settings: SettingsExcerpt; logsDir: string; launchModel?: PackDiagnostic["launch_model"] };
+  diagnostic?: { settings: SettingsExcerpt; logsDir: string; launchModel?: PackDiagnostic["launch_model"]; redact?: boolean };
   productVersion?: string;
 }
 
@@ -479,6 +484,36 @@ function backendLogsSince(dir: string, since: string | null, until: Date): { nam
   });
 }
 
+/** 归档里要逐行脱敏的文件：事件流（pi-events 下的 .jsonl，计时文件与后端补记除外）与会话文件（pi-sessions 下的 .jsonl）。 */
+function isRedactedArchiveFile(rel: string): boolean {
+  if (!rel.endsWith(".jsonl")) return false;
+  if (rel.startsWith(`${EVENTS_DIR}/`)) return !rel.endsWith(".times.jsonl") && !rel.endsWith(".backend.jsonl");
+  return rel.startsWith("pi-sessions/");
+}
+
+/** 脱敏看的位置：任务目录（连同会话文件第一行记的工作目录，任务目录挪过时它们不同）、材料目录名、知识库根目录。 */
+function redactScopeOf(taskDir: string, archive: readonly Found[], materialDirs: string[], knowledgeDir: string | null): RedactScope {
+  const dirs = new Set([taskDir]);
+  for (const file of archive) {
+    if (!file.rel.startsWith("pi-sessions/") || !file.rel.endsWith(".jsonl")) continue;
+    try {
+      const first = readFileSync(file.path, "utf-8").split("\n", 1)[0];
+      const cwd = sessionCwd(first);
+      if (cwd) dirs.add(cwd);
+    } catch {
+      // 读不出来就不加
+    }
+  }
+  return { taskDirs: [...dirs], materialDirs: materialDirs.length ? materialDirs : [DEFAULT_MATERIALS_DIR.replace(/\/+$/, "")], knowledgeDir };
+}
+
+/** 脱敏诊断包里的设置摘录：各模型服务的地址换成占位，别的照旧。 */
+function redactedSettings(settings: SettingsExcerpt): SettingsExcerpt {
+  const providers: SettingsExcerpt["providers"] = {};
+  for (const [id, one] of Object.entries(settings.providers)) providers[id] = { ...one, base_url: one.base_url === null ? null : REDACTED_MARK };
+  return { ...settings, providers };
+}
+
 /** 知识库清单里的条目；没有知识库、清单不在或者读不出来时是空的。只读，不建任何东西。 */
 function librariesIn(knowledgeDir: string | null): LibraryRow[] {
   if (!knowledgeDir) return [];
@@ -496,6 +531,7 @@ function librariesIn(knowledgeDir: string | null): LibraryRow[] {
 export async function exportPack(where: PackLocations, given: ExportOptions): Promise<ExportResult> {
   if (given.diagnostic && given.scope !== "task") throw new PackError("refused", "诊断包只能按一个任务导出。");
   const options: ExportOptions = given.diagnostic ? { ...given, withEvents: true, withMaterials: false } : given;
+  const redact = given.diagnostic?.redact === true;
   const skipped: Skipped[] = [];
   // 要带的任务。
   const chosen: { dir: string; row: NonNullable<ReturnType<typeof taskRow>> }[] = [];
@@ -571,6 +607,8 @@ export async function exportPack(where: PackLocations, given: ExportOptions): Pr
         const copy = join(scratch, DB_NAME);
         rmSync(copy, { force: true });
         await library.backupTaskDb(taskDir, copy);
+        // 脱敏诊断包：副本里来源的逐字摘录换成摘要值与长度，原库不动。
+        if (redact) redactSourceExcerpts(copy, maskExcerpt);
         await put(`tasks/${id}/${DB_NAME}`, copy, Math.floor(statSync(join(taskDir, DB_NAME)).mtimeMs));
         rmSync(copy, { force: true });
         // 文件已经不在的材料，指纹照上一个包的清单（升级数据包时）或导入时写下的导出时指纹（还没补齐时）抄。
@@ -585,7 +623,16 @@ export async function exportPack(where: PackLocations, given: ExportOptions): Pr
         manifest.empty_dirs.push(...own.emptyDirs.map((one) => `tasks/${id}/${one}`));
         for (const dir of materialDirs) if (isDir(join(taskDir, dir))) manifest.empty_dirs.push(`tasks/${id}/${dir}`);
         const archive = walk(join(where.runsDir, id), options.withEvents ? new Set() : new Set([EVENTS_DIR]), `任务 ${id} 的归档`, skipped);
-        for (const file of archive.files) await put(`runs/${id}/${file.rel}`, file.path, file.mtimeMs);
+        // 脱敏诊断包：事件流与会话文件逐行改写成脱敏的副本再进包（redact.ts）；计时文件与后端补记里没有材料原文，原样。
+        const scope = redact ? redactScopeOf(taskDir, archive.files, [...materialDirsOf(materials)], where.knowledgeDir) : null;
+        for (const file of archive.files) {
+          if (scope && isRedactedArchiveFile(file.rel)) {
+            const copied = join(scratch, "redacted.jsonl");
+            await redactFile(file.path, copied, scope);
+            await put(`runs/${id}/${file.rel}`, copied, file.mtimeMs);
+            rmSync(copied, { force: true });
+          } else await put(`runs/${id}/${file.rel}`, file.path, file.mtimeMs);
+        }
         manifest.empty_dirs.push(...archive.emptyDirs.map((one) => `runs/${id}/${one}`));
         const lock = occupancy.readLock(taskDir);
         const owner = readTaskJson(taskDir)?.owner ?? "local";
@@ -623,9 +670,11 @@ export async function exportPack(where: PackLocations, given: ExportOptions): Pr
       const since = chosen[0].row.created_at;
       const logs = backendLogsSince(options.diagnostic.logsDir, since, new Date());
       for (const one of logs) await put(`${PACK_LOGS_DIR}/${one.name}`, one.path, one.mtimeMs);
-      await putJson(SETTINGS_EXCERPT_NAME, options.diagnostic.settings);
+      // 脱敏诊断包：模型服务的地址换成占位。
+      const settings = redact ? redactedSettings(options.diagnostic.settings) : options.diagnostic.settings;
+      await putJson(SETTINGS_EXCERPT_NAME, settings);
       manifest.diagnostic = {
-        purpose: "full", granularity: "task", session_id: null, product_version: manifest.product_version, task_db_version: manifest.task_db_version,
+        purpose: redact ? "redacted" : "full", granularity: "task", session_id: null, product_version: manifest.product_version, task_db_version: manifest.task_db_version,
         model: excerptLanguageModel(options.diagnostic.settings), launch_model: options.diagnostic.launchModel ?? null,
         log_range: logs.length > 0 && since ? { from: since, to: manifest.exported_at } : null,
       };
@@ -635,7 +684,8 @@ export async function exportPack(where: PackLocations, given: ExportOptions): Pr
     const bytes = writer.finish();
     renameSync(partial, options.to);
     return { file: options.to, bytes, scope: options.scope, tasks: manifest.tasks, libraries: manifest.libraries, files: manifest.files.length, with_materials: manifest.with_materials,
-      diagnostic: manifest.diagnostic ? { logs: manifest.files.filter((f) => f.path.startsWith(`${PACK_LOGS_DIR}/`)).length } : null, skipped };
+      diagnostic: manifest.diagnostic
+        ? { logs: manifest.files.filter((f) => f.path.startsWith(`${PACK_LOGS_DIR}/`)).length, redacted: manifest.diagnostic.purpose === "redacted" } : null, skipped };
   } catch (error) {
     writer.close();
     rmSync(partial, { force: true });
@@ -700,6 +750,7 @@ function diagnosticReadme(manifest: Pick<Manifest, "exported_at" | "product_vers
   const launch = diagnostic.launch_model;
   const model = launch ? `${launch.model}（${launch.provider}，取自${launch.from}）`
     : diagnostic.model ? `${diagnostic.model.model}（${diagnostic.model.provider}，设置里选定的）` : "不知道（命令行导出，设置里也没有选定）";
+  if (diagnostic.purpose === "redacted") return redactedReadme(manifest, diagnostic, model);
   return [
     "这是诊断包，用来排查问题，不用来恢复任务。",
     `导出时刻：${manifest.exported_at}　产品版本：${manifest.product_version}　语言模型：${model}`,
@@ -728,6 +779,41 @@ function diagnosticReadme(manifest: Pick<Manifest, "exported_at" | "product_vers
   ].join("\n");
 }
 
+/** 脱敏诊断包的说明：换掉了什么、仍含什么、能查什么不能查什么。 */
+function redactedReadme(manifest: Pick<Manifest, "exported_at" | "product_version" | "tasks">, diagnostic: PackDiagnostic, model: string): string {
+  const tasks = manifest.tasks.map((t) => `  ${t.task_id}${t.name ? `「${t.name}」` : ""}`);
+  return [
+    "这是脱敏诊断包，用来排查流程类问题，不用来恢复任务，也不能导入。",
+    `导出时刻：${manifest.exported_at}　产品版本：${manifest.product_version}　语言模型：${model}`,
+    "包里的任务：", ...tasks,
+    "",
+    "已替换",
+    "- 助手读到的材料文本：读材料目录与知识库里文件（连同文字版、分段清单、位置表）、在材料目录里搜索的结果，换成占位：路径、行范围、原文的字节数与校验值。",
+    "- 知识库检索命中的片段：换成同样的占位，检索用的话保留。",
+    "- 条目来源的逐字摘录：任务库与运行轨迹里都换成「[已脱敏] 摘要值 … 长度 …」。",
+    "- 模型服务的地址：设置摘录里写「[已脱敏]」。",
+    "",
+    "仍含（它们可能转述材料内容，这个包不是干净的）",
+    "- 业务说明、条目、问题、助手写的理解、卡片与拒绝的原文。",
+    "- 对话里助手与用户说的话，助手的思考与回复里可能引用的原文。",
+    diagnostic.log_range
+      ? `- 后端日志：任务建立（${diagnostic.log_range.from}）以来写过的后端日志文件，整份（logs/）。`
+      : "- 后端日志：这个数据目录里没有任务建立以来写过的后端日志文件，包里没有带。",
+    "- 材料清单：每份材料的文件名、大小与校验值（manifest.json 里）。",
+    "",
+    "包里没有什么",
+    "- 材料与知识库的原件和文字版。",
+    "- 密钥：模型服务的接口密钥与登录凭据。",
+    "",
+    "能查什么",
+    "- 流程类问题：守卫拒绝、卡片反复、超时、工具调用的先后、理解的写法、步的走向。",
+    "- 查不了内容类问题（助手读到了什么、摘录对不对），那要完整诊断包。",
+    "",
+    "请妥善保管。",
+    "",
+  ].join("\n");
+}
+
 /** 数据目录的格式版本；还没有服务级库，或者读不出来，是 0。 */
 function peekData(dataDir: string): number {
   try {
@@ -750,7 +836,7 @@ const sizeText = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1
 
 /** 导出的结果写成给人看的几行（命令行打印的就是它）。 */
 export function exportText(result: ExportResult): string {
-  const lines = [`${result.diagnostic ? "诊断包" : "数据包"}已经写好：${result.file}（${result.files} 个文件，${sizeText(result.bytes)}）`];
+  const lines = [`${result.diagnostic ? (result.diagnostic.redacted ? "脱敏诊断包" : "诊断包") : "数据包"}已经写好：${result.file}（${result.files} 个文件，${sizeText(result.bytes)}）`];
   for (const task of result.tasks) {
     const using = task.assistant_working ? "；导出时助手正在这个任务里工作" : task.in_use ? "；导出时这个任务正在使用" : "";
     lines.push(`任务 ${task.task_id}${task.name ? `「${task.name}」` : ""}：${task.files} 个文件${using}`);
@@ -760,7 +846,9 @@ export function exportText(result: ExportResult): string {
   for (const one of result.skipped) lines.push(`没有带：${one.what}（${one.reason}）`);
   if (result.diagnostic) {
     lines.push(result.diagnostic.logs > 0 ? `带了 ${result.diagnostic.logs} 份后端日志与设置摘录。` : "这个数据目录里没有任务建立以来写过的后端日志，只带了设置摘录。");
-    lines.push("包里含对话全文与条目摘录，请妥善保管。材料与知识库的原件、密钥不在包里。");
+    lines.push(result.diagnostic.redacted
+      ? "助手读到的材料文本、知识库检索命中、来源摘录与模型服务地址已换成占位；业务说明、条目与对话仍可能转述材料内容，请妥善保管。这个包只能查流程类问题，不能导入。"
+      : "包里含对话全文与条目摘录，请妥善保管。材料与知识库的原件、密钥不在包里。");
     return lines.join("\n") + "\n";
   }
   lines.push(result.with_materials
@@ -802,13 +890,13 @@ function documentsIn(raw: unknown): PackDocument[] | undefined {
 
 /** 清单文件里诊断包的那一节；没有或者写得不对时是 undefined（当作普通的数据包）。 */
 function diagnosticIn(raw: unknown): PackDiagnostic | undefined {
-  if (!isObject(raw) || raw.purpose !== "full" || raw.granularity !== "task") return undefined;
+  if (!isObject(raw) || (raw.purpose !== "full" && raw.purpose !== "redacted") || raw.granularity !== "task") return undefined;
   const model = isObject(raw.model) && typeof raw.model.model === "string" && typeof raw.model.provider === "string" ? { model: raw.model.model, provider: raw.model.provider } : null;
   const launch = isObject(raw.launch_model) && typeof raw.launch_model.model === "string" && typeof raw.launch_model.provider === "string"
     ? { model: raw.launch_model.model, provider: raw.launch_model.provider, from: typeof raw.launch_model.from === "string" ? raw.launch_model.from : "" } : null;
   const range = isObject(raw.log_range) && typeof raw.log_range.from === "string" && typeof raw.log_range.to === "string" ? { from: raw.log_range.from, to: raw.log_range.to } : null;
   return {
-    purpose: "full", granularity: "task", session_id: typeof raw.session_id === "string" ? raw.session_id : null,
+    purpose: raw.purpose, granularity: "task", session_id: typeof raw.session_id === "string" ? raw.session_id : null,
     product_version: typeof raw.product_version === "string" ? raw.product_version : "", task_db_version: isCount(raw.task_db_version) ? raw.task_db_version : 0,
     model, launch_model: launch, log_range: range,
   };
@@ -915,6 +1003,8 @@ export function openPack(file: string): OpenedPack {
       throw error;
     }
     const manifest = parseManifest(text);
+    // 脱敏诊断包的任务库摘录已经换掉，导入会弄坏数据。
+    if (manifest.diagnostic?.purpose === "redacted") throw new PackError("refused", REDACTED_IMPORT_TEXT);
     if (manifest.pack_format > PACK_FORMAT || manifest.data_format > DATA_FORMAT || manifest.tasks.some((t) => t.task_db_version > TASK_DB_VERSION)) {
       throw new PackError("refused", `这个数据包比这个程序新。${newerDataText(manifest.product_version === "unknown" ? null : manifest.product_version)}`);
     }
