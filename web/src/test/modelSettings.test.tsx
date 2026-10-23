@@ -338,6 +338,28 @@ describe("设置页面的「模型」一栏", () => {
     await waitFor(() => expect(add).toHaveBeenCalledWith({ purpose: "language", kind: "vllm", base_url: "http://127.0.0.1:8000" }));
   });
 
+  it("后端报的错误在当前表单里没有对应的栏时，写在保存按钮上面一行，原话照写；有对应栏的照旧写在栏下", async () => {
+    page(config());
+    const add = vi.spyOn(api, "addProvider").mockRejectedValue(new ApiError("rejected", "模型服务拒绝了这个密钥。", 422, { field: "api_key" }));
+    fireEvent.click(await screen.findByTestId("add-provider"));
+    // Codex 订阅的表单没有密钥栏
+    fireEvent.click(screen.getByTestId("kind-codex"));
+    expect(screen.queryByTestId("add-key")).toBeNull();
+    fireEvent.click(screen.getByTestId("add-save"));
+    expect(await screen.findByTestId("err-form")).toHaveTextContent(/^模型服务拒绝了这个密钥。$/);
+    expect(screen.queryByTestId("err-api_key")).toBeNull();
+    // 表单里也没有用途一栏的错误位置
+    add.mockRejectedValueOnce(new ApiError("rejected", "用途只能是语言模型或嵌入模型。", 422, { field: "purpose" }));
+    fireEvent.click(screen.getByTestId("kind-ollama"));
+    expect(screen.queryByTestId("err-form")).toBeNull();
+    fireEvent.click(screen.getByTestId("add-save"));
+    expect(await screen.findByTestId("err-form")).toHaveTextContent("用途只能是语言模型或嵌入模型。");
+    // 有对应栏的：写在密钥栏下面，底部那一行不出现
+    fireEvent.click(screen.getByTestId("add-save"));
+    expect(await screen.findByTestId("err-api_key")).toHaveTextContent("模型服务拒绝了这个密钥。");
+    expect(screen.queryByTestId("err-form")).toBeNull();
+  });
+
   it("添加 DeepSeek 时密钥被拒：那句话写在 API 密钥下面", async () => {
     page(config());
     vi.spyOn(api, "addProvider").mockRejectedValue(new ApiError("rejected", "模型服务拒绝了这个密钥。", 422, { field: "api_key" }));
