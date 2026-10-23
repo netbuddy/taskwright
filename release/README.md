@@ -27,6 +27,7 @@ The payload repeats the repository's layout, so the backend finds its resources 
 | `web/` | The built web interface, served by the backend (`--web`). |
 | `pi/` | The part of the installed pi package that pi loads at run time, about 15 MB of the 400 MB npm installs. |
 | `tools/` | rg (ripgrep) and fd for the target platform, with their licence files. |
+| `observatory/taskwright_observatory/` | The observatory (Python, standard library only, Python 3.9 or later) with its web files and its two JSON tables; its tests and compiled files are left out. The launcher's `observatory` subcommand runs it with the machine's Python and `PYTHONPATH` pointed at `observatory/`. The build checks it: it runs `python3 -m taskwright_observatory --help` from the payload with the build machine's Python and fails when the output does not mention `--pack`. |
 | `package.json`, `manifest.json` | The product name and version; what went into this build. |
 
 ## Files
@@ -37,7 +38,7 @@ The payload repeats the repository's layout, so the backend finds its resources 
 | `diagram/` | For the diagram check engine: `vite.config.mjs` bundles it, `prune.mjs` finds the files it loads for the sample texts in `samples.mjs`, so that `build.mjs` can remove the rest, and checks the reduced bundle against the same samples; the build fails when a sample no longer gives the result it should. The bundle also records which source files went into each file it writes, from which `build.mjs` finds the packages whose licence files to ship. |
 | `docx/` | For the docx package: `vite.config.mjs` bundles it, `check.mjs` writes a small Word document with the bundle; the build fails when that does not work. |
 | `pi/` | Pins the pi that goes into the packages: `package.json` with one exact version, `package-lock.json` with every dependency and its checksum, and the npm settings both are used with. `build.mjs` installs pi from it; `pi/README.md` says how to upgrade. |
-| `app/main.ts` | The launcher: recognizes a running instance, sets up pi, rg and fd, starts the service in the same process and opens the browser. |
+| `app/main.ts` | The launcher: recognizes a running instance, sets up pi, rg and fd, starts the service in the same process and opens the browser. It also has three subcommands that start no service: `data …`, `service status\|stop\|restart` and `observatory` (the decisions are in `backend/src/desktop_launch.ts`). |
 | `app/boot.cjs` | The single executable's embedded main script: extracts the payload once, or runs a script as plain Node would (this is how the backend starts pi). |
 | `measure.mjs` | Measures start time, time to the browser being opened, and memory, over several runs (Linux). |
 | `appimage/` | The AppImage's entry script, desktop entry and icon. |
