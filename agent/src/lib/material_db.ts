@@ -6,6 +6,8 @@
  * 所以与建任务一样是后端不写库的例外（backend/tests/no_writes.test.ts 的白名单）。删除或被替换不删行，只写上那一刻。
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { definitionsFor } from "./activity_def_read.ts";
 import type { FlowSlot } from "./activity_def.ts";
@@ -27,6 +29,27 @@ export function materialRoles(db: DatabaseSync): Map<string, MaterialRole> {
   if (found === undefined) return new Map();
   const rows = db.prepare("SELECT path, slot, role FROM material WHERE removed_at IS NULL ORDER BY material_id").all() as { path: string; slot: string | null; role: string }[];
   return new Map(rows.map((row) => [row.path, { slot: row.slot, role: row.role }]));
+}
+
+/** 材料表里还在的一行：路径（相对任务目录）、槽位、role 与放进来的时刻。 */
+export interface MaterialRecord extends MaterialRole {
+  path: string;
+  added_at: string;
+}
+
+/** 还在的材料的行，按放进来的先后。库里还没有材料表时是空的。数据包的材料清单与任务详情里的缺失材料用它。 */
+export function materialRecords(db: DatabaseSync): MaterialRecord[] {
+  const found = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'material'").get();
+  if (found === undefined) return [];
+  return db.prepare("SELECT path, slot, role, added_at FROM material WHERE removed_at IS NULL ORDER BY material_id").all() as unknown as MaterialRecord[];
+}
+
+/**
+ * 缺失的材料：材料表里还在、任务目录里却没有文件的那几份（从不带材料的数据包导入、还没补齐），相对任务目录的路径，按放进来的先后。
+ * 资产格与任务状况里的材料份数连它们一起数，与材料卡一致。
+ */
+export function missingMaterialPaths(db: DatabaseSync, workspaceDir: string): string[] {
+  return materialRecords(db).map((row) => row.path).filter((path) => !existsSync(join(workspaceDir, path)));
 }
 
 /** 一份材料的槽位与 role：查不到时是不经槽位的「证据」。 */

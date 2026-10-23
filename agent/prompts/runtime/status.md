@@ -58,6 +58,12 @@
 
 材料目录 {{dir}} 里有 {{count}} 个文件：{{files}}。{{word}}{{pdf}}{{segments}}
 
+## `status.materials_missing`
+
+用途：材料表里有而文件不在的材料（从不带材料的数据包导入、还没补齐），接在材料清单那一句之后；没有缺失时不写。count 是份数，files 是这几份的路径，用「、」隔开。
+
+材料表里另有 {{count}} 份材料的文件缺失，用户补齐前读不到：{{files}}。
+
 ## `status.material_file`
 
 用途：材料清单里的一份材料：路径与大小。

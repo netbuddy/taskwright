@@ -11,7 +11,9 @@ import { after, test } from "node:test";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { TASKS_ROOT_ENV, TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
 import { IMPORTING_PREFIX, IMPORT_LEFTOVER_MS, PACK_FORMAT, PACK_LIBRARIES, type PackLocations, exportPack, importPack, importText, sweepImportLeftovers } from "../src/data_pack.ts";
+import { insertMaterial } from "../../agent/src/lib/material_db.ts";
 import { planUpgrade } from "../src/data_upgrade.ts";
+import { materialRecordRows } from "../src/library.ts";
 import { KnowledgeStore } from "../src/knowledge.ts";
 import { rebaseSessionCwd } from "../src/pi_session.ts";
 import { Service } from "../src/service.ts";
@@ -100,7 +102,7 @@ test("往返：整套导出再导入到一个空的数据目录，任务、归�
   const { where, a, b, lib } = await sampleData();
   const file = packFile("all");
   // 带上事件归档：这一例核对归档逐个文件相同（缺省不带事件归档的导入见 data_pack_events.test.ts）。
-  await exportPack(where, { scope: "all", to: file, productVersion: "0.5.0", withEvents: true });
+  await exportPack(where, { withMaterials: true, scope: "all", to: file, productVersion: "0.5.0", withEvents: true });
 
   const target = locations(fresh("target"));
   const registry = ServiceDb.open(target.dataDir, "0.5.0");
@@ -156,7 +158,7 @@ test("往返：整套导出再导入到一个空的数据目录，任务、归�
 test("编号已经有任务在用：缺省跳过并写明；改编号导入后两个任务并存，新编号的任务服务接手得了、能再存修订，归档原样", async () => {
   const { where, a } = await sampleData();
   const file = packFile(a);
-  await exportPack(where, { scope: "task", taskId: a, to: file, withEvents: true });
+  await exportPack(where, { withMaterials: true, scope: "task", taskId: a, to: file, withEvents: true });
   const before = tree(where.tasksDir);
 
   const registry = ServiceDb.open(where.dataDir, "0.5.0");
@@ -206,7 +208,7 @@ test("编号已经有任务在用：缺省跳过并写明；改编号导入后�
 test("知识库不改编号：没有同编号的照常导入；同编号而空的导入到它的位置上；同编号而有文档的跳过；重名的加「（导入）」", async () => {
   const { where, lib } = await sampleData();
   const file = packFile("all");
-  await exportPack(where, { scope: "all", to: file });
+  await exportPack(where, { withMaterials: true, scope: "all", to: file });
 
   // 目标里：升级留下的通用知识库有一份文档；有一个与包里的库重名的库；包里那个库的编号在目标里是一个空库。
   const target = locations(fresh("target"));
@@ -258,7 +260,7 @@ test("知识库不改编号：没有同编号的照常导入；同编号而空�
 
 async function libraryPack(where: PackLocations, id: string): Promise<string> {
   const file = packFile(id);
-  await exportPack(where, { scope: "library", libraryId: id, to: file });
+  await exportPack(where, { withMaterials: true, scope: "library", libraryId: id, to: file });
   return file;
 }
 
@@ -278,7 +280,7 @@ test("任务选用的知识库不在目标数据目录里：照常导入，报�
 test("整个包有一处不对就什么都不导入：不是数据包、比这个程序新、文件与清单文件对不上、校验值不符、路径不该有、范围不对", async () => {
   const { where, a } = await sampleData();
   const good = packFile("good");
-  await exportPack(where, { scope: "all", to: good, productVersion: "9.9.9" });
+  await exportPack(where, { withMaterials: true, scope: "all", to: good, productVersion: "9.9.9" });
   const target = locations(fresh("target"));
   const refused = async (file: string, pattern: RegExp, options: { only?: "task" | "library" } = {}) => {
     const report = await importPack(target, { file, ...options });
@@ -323,7 +325,7 @@ test("整个包有一处不对就什么都不导入：不是数据包、比这�
 test("一个任务没有导入成不挡别的：它的任务库与清单文件对不上，另一个照常导入，它什么都没有留下", async () => {
   const { where, a, b } = await sampleData();
   const good = packFile("good");
-  await exportPack(where, { scope: "all", to: good });
+  await exportPack(where, { withMaterials: true, scope: "all", to: good });
   // 把乙的任务库换成甲的（清单文件里的摘要与长度跟着改，包本身是自洽的）。
   const file = packFile("swapped");
   await repack(good, file, (manifest, contents) => {
@@ -393,4 +395,24 @@ test("暂存目录不被当成任务；留了一小时以上的遗留暂存目�
   } finally {
     await started.stop();
   }
+});
+
+test("导入不带材料的包：任务导入了，材料目录在而且是空的，材料表的行原样在；任务库的内容与别的文件与原来相同", async () => {
+  const where = await dataWith(fresh("data"), ["甲"]);
+  const [a] = where.ids;
+  const task = join(where.tasksDir, a);
+  put(join(task, "inputs", "纪要.md"), "会上定了三件事。\n");
+  insertMaterial(task, "inputs/纪要.md", { slot: "evidence", role: "证据" });
+  const file = packFile(a);
+  await exportPack(where, { scope: "task", taskId: a, to: file });
+  const target = locations(fresh("target"));
+  const report = await importPack(target, { file });
+  assert.deepEqual(report.tasks.map((t) => [t.task_id, t.outcome]), [[a, "imported"]]);
+  const imported = join(target.tasksDir, a);
+  assert.deepEqual([existsSync(join(imported, "inputs")), readdirSync(join(imported, "inputs"))], [true, []]);
+  assert.deepEqual(materialRecordRows(imported).map((row) => [row.path, row.slot, row.role]), [["inputs/纪要.md", "evidence", "证据"]]);
+  // 任务库是备份出来的副本，按内容比；别的文件逐个相同（材料目录除外）。
+  assert.deepEqual(facts(imported), facts(task));
+  const without = (files: Record<string, string>) => Object.fromEntries(Object.entries(files).filter(([name]) => !name.startsWith("inputs/") && !name.startsWith(DB_NAME)));
+  assert.deepEqual(without(tree(imported)), without(tree(task)));
 });

@@ -15,9 +15,11 @@ import { FLOW_ANALYSIS, type FlowItemRef, LAUNCH_READY, type LampInput, type Sta
 
 /** 算六类资产的现状与前置条件要的数。 */
 export interface AssetFacts {
-  /** 材料的份数（由 Word、PDF 生成的文字版不另算），与其中还没有被任何一节或问题引用的份数。 */
+  /** 材料的份数（由 Word、PDF 生成的文字版不另算），与其中还没有被任何一节或问题引用的份数。只数文件在的，前提按它判。 */
   materials: number;
   materialsUnread: number;
+  /** 材料表里有而文件不在的材料份数（还没补齐）；资产格的份数连它们一起数，前提与槽位不算它们。 */
+  materialsMissing?: number;
   /** 材料按放进的槽位（工作流声明里的槽位键）各几份：由 Word、PDF 生成的文字版不算，不经槽位上传的不计入任何键。 */
   materialsBySlot: Record<string, number>;
   /** 业务说明的节数：在用的主题页，按章归好的与未归类的都算，章的导语页不算。 */
@@ -53,7 +55,8 @@ export function assetFacts(input: LampInput): AssetFacts {
   const items = input.items.filter((one) => !questions.has(one.item_id));
   return {
     materials: input.materials.length,
-    materialsUnread: input.materials.filter((one) => !cited.has(one)).length,
+    materialsUnread: [...input.materials, ...(input.missingMaterials ?? [])].filter((one) => !cited.has(one)).length,
+    materialsMissing: (input.missingMaterials ?? []).length,
     materialsBySlot: { ...(input.materialsBySlot ?? {}) },
     sections,
     sectionsPending: input.pages.filter((one) => !one.deprecated && one.pending).length,
@@ -130,9 +133,11 @@ export interface AssetCell {
 
 /** 六类资产的现状，照 ASSETS 的次序；names 是任务定义的资产显示名（lib/asset_names.ts 的 assetNamesOf）。 */
 export function assetCells(facts: AssetFacts, activities: readonly ActivityDef[], names: Readonly<Record<AssetKey, string>>): AssetCell[] {
+  // 材料份数与材料卡一致：文件缺失的也算（facts.materialsMissing）。
+  const shownMaterials = facts.materials + (facts.materialsMissing ?? 0);
   const itemsNote = [facts.itemsUnread > 0 ? `${facts.itemsUnread} 未读` : "", facts.itemsPending > 0 ? `${facts.itemsPending} 待核实` : ""].filter(Boolean).join(" · ");
   const shown: Record<AssetKey, [count: number, unit: string, text: string | null, note: string]> = {
-    materials: [facts.materials, "份", null, facts.materials === 0 ? "" : facts.materialsUnread === 0 ? "均有引用" : `${facts.materialsUnread} 份未被引用`],
+    materials: [shownMaterials, "份", null, shownMaterials === 0 ? "" : facts.materialsUnread === 0 ? "均有引用" : `${facts.materialsUnread} 份未被引用`],
     description: [facts.sections, "节", null, facts.openQuestions > 0 ? `${facts.openQuestions} 处待澄清` : facts.sections > 0 ? "无待澄清事项" : ""],
     models: [facts.diagrams, "张", null, facts.diagrams === 0 ? "" : facts.diagramsUnviewed === 0 ? "均已查看" : `${facts.diagramsUnviewed} 未查看`],
     items: [facts.items, "条", null, facts.items === 0 ? "" : itemsNote || "均已确认"],

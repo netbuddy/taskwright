@@ -795,6 +795,12 @@ PDF {{noun}}的出处要写页与块，例如 {{path}}#p3-2；{{pointer}}
 
 这一步只读{{roles}}一类的材料：「{{material}}」是「{{role}}」一类的，这次没有读它。
 
+## `source.read_missing_material`
+
+用途：材料表里有这份材料而文件不在（从不带材料的数据包导入、还没补齐），自带的 read 要读它或由它生成的文字版，这次调用不执行，这句作为工具结果交给助手（hooks/missing_material.ts）。name 是那份材料的文件名。
+
+材料 {{name}} 的文件缺失，请用户在材料页补齐后再读；不要凭记忆补写它的内容。
+
 ## `source.grep_refused`
 
 用途：同上，自带的 grep 的 path 指向 role 不在里面的材料，或者指向含有这种材料的目录（不写 path 时是任务目录）。kinds 是这项活动认的 role，不带书名号，用「或」隔开。

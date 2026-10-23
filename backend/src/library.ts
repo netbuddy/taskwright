@@ -24,7 +24,7 @@ import { type ViewPage, type ViewQuestion, type ViewSource, decisionsAndOpenQues
 import { FLOW_ANALYSIS as FLOW_ANALYSIS_KEY, flowKeyOf, QUESTION_KEEP_STATUS, QUESTION_KIND_FIELD, QUESTION_OPEN_STATUS, QUESTION_SUGGESTION_FIELD } from "../../agent/src/lib/stage.ts";
 import { type OpenProposal, openProposal } from "../../agent/src/lib/stage_proposal.ts";
 import { type VersionRecord, versionRecords } from "../../agent/src/lib/versions.ts";
-import { type MaterialRole, materialRoles, roleOf } from "../../agent/src/lib/material_db.ts";
+import { type MaterialRecord, type MaterialRole, materialRecords, materialRoles, roleOf } from "../../agent/src/lib/material_db.ts";
 import { type WorkItemBrief, activityRecords, archivedSessions, stageSummaryOf, taskDefinitionsOf, workItemBrief, workItemSessionName, workItemSessions } from "../../agent/src/lib/stage_read.ts";
 import type { Definitions } from "../../agent/src/lib/activity_def_read.ts";
 import {
@@ -393,6 +393,21 @@ export function materialRoleRows(taskDir: string): Map<string, MaterialRole> {
     }
   } catch {
     return new Map();
+  }
+}
+
+/** 材料表里还在的行（agent/src/lib/material_db.ts），按放进来的先后；没有库、读不出库时是空的。 */
+export function materialRecordRows(taskDir: string): MaterialRecord[] {
+  try {
+    const db = openRo(taskDir);
+    if (db === null) return [];
+    try {
+      return materialRecords(db);
+    } finally {
+      db.close();
+    }
+  } catch {
+    return [];
   }
 }
 

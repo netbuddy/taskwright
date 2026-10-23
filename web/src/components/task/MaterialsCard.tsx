@@ -2,6 +2,7 @@
 // 这里上传的一律是材料，不问去向；参考文档在知识库页面上传。材料一旦进入了对话（上传之后有会话活动过）就不能删除、也不能替换，
 // 后端在任务详情里给每份材料标了 deletable，这里只按它决定：为真时「替换」与「删除」都可以点；为假时没有「删除」，
 // 「替换」是灰的、点不动，鼠标停在上面说明为什么。任务已结束时这两样都没有，也没有上传区。
+// 文件缺失的材料（后端标了 missing：从不带材料的数据包导入、还没补齐）在大小一栏写「文件缺失，请补齐」，「查看」是灰的，没有替换与删除。
 
 import type { ReactNode } from "react";
 import { Upload } from "antd";
@@ -13,6 +14,9 @@ import { fileName, useMaterialOps } from "./materialOps";
 
 /** 已经进入对话的材料不能替换：灰色的「替换」上鼠标悬停时写的说明（与后端拒绝时的原话相同）。 */
 export const ENTERED_REPLACE_HINT = "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。";
+
+/** 文件缺失的材料在大小一栏写的话。 */
+export const MISSING_FILE_TEXT = "文件缺失，请补齐";
 
 /** 上传区的说明：类型与大小两半句取自服务信息；还没取到时只写前一句，不猜。 */
 export function uploadHintText(info: ServiceInfo | null): string {
@@ -72,14 +76,18 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
                   {m.pdf && <span className="tp-mnote" data-testid="material-pdf">{pdfSummary(m.pdf)}</span>}
                   {m.role && <span className="tp-mrole" data-testid="material-role">{m.role}</span>}
                 </td>
-                <td className="num">{formatBytes(m.bytes)}</td>
+                <td className="num" data-testid={m.missing ? "material-missing" : undefined}>{m.missing ? MISSING_FILE_TEXT : formatBytes(m.bytes)}</td>
                 <td className="num">{formatTimeShort(m.modified_at)}</td>
-                <td>
-                  <a className="tp-lnk" role="button" onClick={() => onView(m)} data-testid="material-view">查看</a>
-                  {canReplace(m) && m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.replace(m.path)} data-testid="material-replace">替换</a>}
-                  {canReplace(m) && !m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
-                  {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.remove(m.path)} data-testid="material-delete">删除</a>}
-                </td>
+                {m.missing ? (
+                  <td><span className="tp-lnk off" aria-disabled="true" data-testid="material-view-off">查看</span></td>
+                ) : (
+                  <td>
+                    <a className="tp-lnk" role="button" onClick={() => onView(m)} data-testid="material-view">查看</a>
+                    {canReplace(m) && m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.replace(m.path)} data-testid="material-replace">替换</a>}
+                    {canReplace(m) && !m.deletable && <span className="tp-lnk off" aria-disabled="true" title={ENTERED_REPLACE_HINT} data-testid="material-replace-off">替换</span>}
+                    {m.deletable && <a className="tp-lnk quiet" role="button" onClick={() => ops.remove(m.path)} data-testid="material-delete">删除</a>}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

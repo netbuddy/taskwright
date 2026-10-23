@@ -37,7 +37,7 @@ import {
 } from "./stage.ts";
 import { refusalText } from "./texts.ts";
 import { listMaterials } from "./task_status.ts";
-import { materialRoles, roleOf } from "./material_db.ts";
+import { materialRoles, missingMaterialPaths, roleOf } from "./material_db.ts";
 import { envSegmentParams, materialFacts } from "./segments.ts";
 import { versionCount } from "./versions.ts";
 
@@ -816,6 +816,7 @@ export function lampInput(db: DatabaseSync, workspaceDir: string, taskId: string
     ...facts,
     materials,
     materialsBySlot,
+    missingMaterials: missingMaterialPaths(db, workspaceDir).filter((path) => !listed.includes(path)),
     coverage: materialCoverage(db, workspaceDir, taskId, listed, materials),
     review: {
       failing, any: db.prepare("SELECT 1 FROM review WHERE task_id = ? LIMIT 1").get(taskId) !== undefined,

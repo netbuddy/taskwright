@@ -38,6 +38,7 @@ import { registerToolLimits } from "./hooks/tool_limits.ts";
 import { registerStagePrompt } from "./hooks/stage_prompt.ts";
 import { registerDefinitionView } from "./hooks/definition_view.ts";
 import { registerSourceRoles } from "./hooks/source_roles.ts";
+import { registerMissingMaterial } from "./hooks/missing_material.ts";
 
 export default function (pi: ExtensionAPI) {
   registerSaveRevision(withTuiRenderers(pi));
@@ -63,4 +64,6 @@ export default function (pi: ExtensionAPI) {
   registerDefinitionView(pi);
   // 按材料 role拦自带的 read 与 grep：当前活动的声明写了「sources_from_roles」时，role不在里面的材料不读不搜（hooks/source_roles.ts）。
   registerSourceRoles(pi);
+  // 读缺失的材料：材料表里有这份材料而文件不在时拦下自带的 read，让助手请用户补齐（hooks/missing_material.ts）。
+  registerMissingMaterial(pi);
 }

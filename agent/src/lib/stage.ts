@@ -677,6 +677,8 @@ export interface LampInput {
   materials: string[];
   /** 上面这些材料按放进的槽位（工作流声明里的槽位键）各几份；不经槽位上传的不计入任何键。没有给时当作空的。 */
   materialsBySlot?: Record<string, number>;
+  /** 材料表里有而文件不在的材料（lib/material_db.ts 的 missingMaterialPaths）：只算进资产格的份数，不算进前提与槽位。没有给时当作没有。 */
+  missingMaterials?: string[];
   /** 业务说明的页与问题条目当前修订上「文档原文」来源的出处，原样（可以带 # 后面的位置）。 */
   citedDocuments: string[];
   /** 任务里还在的图。 */

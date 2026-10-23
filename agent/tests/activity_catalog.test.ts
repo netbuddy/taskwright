@@ -23,7 +23,7 @@ const input = (more: Partial<LampInput> = {}): LampInput => ({
   review: { failing: [], any: false, rounds: 0 }, completion: { satisfied: false, unmet: [] }, ...more,
 });
 const EMPTY: AssetFacts = {
-  materials: 0, materialsUnread: 0, sections: 0, sectionsPending: 0, openQuestions: 0, diagrams: 0, diagramsUnviewed: 0,
+  materials: 0, materialsUnread: 0, materialsMissing: 0, sections: 0, sectionsPending: 0, openQuestions: 0, diagrams: 0, diagramsUnviewed: 0,
   items: 0, itemsUnread: 0, itemsPending: 0, itemsConfirmed: 0, reviewRounds: 0, openFindings: 0, versions: 0, materialsBySlot: {},
 };
 const DEFS = readDefinitions(SRS_SKILL_DIR);
@@ -45,6 +45,14 @@ test("材料与证据：份数；没有被任何一节或问题引用的算未�
   assert.deepEqual([facts.materials, facts.materialsUnread], [2, 1]);
   assert.deepEqual(cellsOf(facts).materials, ["2 份", "1 份未被引用"]);
   assert.deepEqual(cellsOf({ ...facts, materialsUnread: 0 }).materials, ["2 份", "均有引用"]);
+});
+
+test("材料与证据：文件缺失的材料（材料表里有而文件不在）算进份数与未被引用，前提「有材料」不算它们", () => {
+  const facts = assetFacts(input({ materials: ["inputs/甲.md"], missingMaterials: ["inputs/乙.docx", "inputs/丙.pdf"], citedDocuments: ["inputs/甲.md#p3", "inputs/丙.pdf#p1-2"] }));
+  assert.deepEqual([facts.materials, facts.materialsMissing, facts.materialsUnread], [1, 2, 1]);
+  assert.deepEqual(cellsOf(facts).materials, ["3 份", "1 份未被引用"]);
+  const onlyMissing = assetFacts(input({ missingMaterials: ["inputs/乙.docx"] }));
+  assert.deepEqual([cellsOf(onlyMissing).materials, conditionMet("has_materials", onlyMissing)], [["1 份", "1 份未被引用"], false]);
 });
 
 test("业务说明：节数只数在用的主题页，已废弃的页与章的导语页不数；待澄清数的是没有了结的待澄清问题", () => {
