@@ -5,8 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { after, test } from "node:test";
 import * as library from "../src/library.ts";
 import { makeWorkspace, tempDir } from "./helpers.ts";
@@ -154,20 +153,4 @@ test("被依据的那一页没有待核实的内容、但用户还没有看过�
   assert.deepEqual(basisOf(), { item_id: "OA-001", reason: "unviewed", see: null });
   confirm(ws, "OA-001", 1);
   assert.equal(basisOf(), null);
-});
-
-test("依据的材料补齐后与导出时不同、用户还没有接受：引自它的条目因依据而待核实（material_changed）；接受之后消掉", () => {
-  const ws = build("material-changed", DEFINITION, [[READY], { view: ["OA-001"] }, [
-    { op: "add", collection: "用例", fields: { 名称: "预约图书", 步骤: ["读者办预约取书"] }, sources: [SOURCE] },
-  ]]);
-  const basis = () => (library.taskSnapshot(ws)[1]!.items.find((i) => i.item_id === "UC-001")! as Record<string, any>).basis_pending;
-  assert.equal(basis(), null);
-  const write = (check: Record<string, unknown>) => writeFileSync(join(ws, "inputs", ".expected.json"), JSON.stringify({
-    version: 1, exported_at: "", product_version: "", projection: null,
-    materials: [{ path: "inputs/材料.md", bytes: 1, sha256: "0".repeat(64), slot: null, role: "证据", added_at: "", derived: [], segments: null, check }],
-  }));
-  write({ at: "", original: "different", derived: [], verdict: "mismatch", accepted: false, reasons: ["上传的不是导出时那份文件（校验值不同）"] });
-  assert.deepEqual(basis(), { item_id: "inputs/材料.md", reason: "material_changed", see: null });
-  write({ at: "", original: "different", derived: [], verdict: "mismatch", accepted: true, reasons: [] });
-  assert.equal(basis(), null);
 });

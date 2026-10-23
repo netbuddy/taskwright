@@ -120,7 +120,6 @@ export const NOT_IN_TABLE: {
     delete_material: { reason: "pending" },
     replace_material: { reason: "pending" },
     replenish_material: { reason: "pending", note: "补齐导入后缺失的材料，结果写进材料目录的 .expected.json，不进任务库" },
-    accept_replenished: { reason: "pending", note: "接受补齐后与导出时的不同，记在 .expected.json，不进任务库" },
     set_task_knowledge: { reason: "pending" },
     "/api/v1/tasks/import": { reason: "pending", note: "导入任务的数据包" },
     actions: { reason: "dispatch" },

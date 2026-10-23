@@ -6,6 +6,8 @@ export const STATUS: Record<string, number> = {
   not_found: 404,
   // 材料表里有这份材料而文件不在（从不带材料的数据包导入、还没补齐）。
   material_missing: 404,
+  // 补齐材料时上传的不是导出时那份文件（校验值不同），没有导入。
+  replenish_mismatch: 422,
   rejected: 422,
   stale_revision: 409,
   undo_conflict: 409,

@@ -18,7 +18,7 @@ import { FALLBACK_TEXT, USER_EDIT, baseMessages, branch, messages as conversatio
 import { ApiError } from "./errors.ts";
 import { readTextFile, readTextFileLenient } from "./files.ts";
 import * as library from "./library.ts";
-import { checkOf, compareReplenished, projectionNow, readExpected, writeExpected } from "./replenish.ts";
+import { checkOf, compareReplenished, derivedLogLine, projectionNow, readExpected, writeExpected } from "./replenish.ts";
 import { workItemView } from "./task_status.ts";
 import * as occupancy from "./occupancy.ts";
 import { PDF_NO_TEXT, PdfUploadError, runPdfProjection } from "./pdf_upload.ts";
@@ -48,10 +48,10 @@ export const duplicateContentText = (name: string) => `这份文件与已有的�
 /** 上传的文件名与本任务已有的某份材料相同、内容不同时的那句话（错误码 name_taken）。 */
 /** 补齐时文件已经在、上一次补齐也不是与导出时不同的：不用补。 */
 export const REPLENISH_PRESENT_TEXT = "这份材料的文件在，不用补齐。";
+/** 补齐时上传的原件校验值与导出时不同：不导入（错误码 replenish_mismatch）。 */
+export const REPLENISH_MISMATCH_TEXT = "不是导出时那份文件（校验值不同），没有导入";
 /** 补齐时上传的文件类型与材料不同。 */
 export const replenishTypeText = (name: string) => `补齐要上传与《${name}》同一种类型的文件。`;
-/** 接受差异时这份材料并不是「补齐后与导出时不同」。 */
-export const ACCEPT_NOT_MISMATCH_TEXT = "这份材料没有「补齐后与导出时不同」的结果，用不着接受。";
 
 /** 材料表里有而文件不在的材料：读它时的那句话（页面与原文定位页签照原话显示）。 */
 export const materialMissingText = (name: string) => `文件缺失，请补齐：${name}`;
@@ -925,10 +925,12 @@ export class Service {
 
   /**
    * 补齐一份缺失的材料（材料表里有、文件不在：从不带材料的数据包导入的任务），并与导出时的指纹核对（replenish.ts）。
-   * 前提：材料表里有这一行；文件不在，或者在而上一次补齐的结论是与导出时不同（再补一次就是「换回原件」）；助手不在工作。
-   * 不看「进入对话」：缺失的材料本来就读不到。上传的文件要与这份材料同一种类型（扩展名相同），存到材料原来的路径，不管它叫什么名字。
-   * 做法与上传相同：先在任务目录下的临时目录里放好原件、生成派生文件（Word 当场生成，PDF 另起一次运行），算出各自的指纹与导出时比；
-   * 然后（文件在时先把现在的原件与派生文件移到暂放目录，没做成就移回）把它们一起移进材料目录。不改材料表，不发 material_added。
+   * 前提：材料表里有这一行；文件不在；助手不在工作。不看「进入对话」：缺失的材料本来就读不到。上传的文件要与这份材料同一种类型
+   * （扩展名相同），存到材料原来的路径，不管它叫什么名字。
+   * 原件的 SHA-256 与导出时记的不同就拒绝（replenish_mismatch）：不是导出时那份文件，不导入，什么都不写，材料照旧缺失。
+   * 原件相同时照上传的做法：先在任务目录下的临时目录里放好原件、生成派生文件（Word 当场生成，PDF 另起一次运行），算出各自的指纹与
+   * 导出时比，然后把它们一起移进材料目录。派生文件与导出时不同（本机的解析规则或参数变了）不告诉用户，就用本机重算的，只在后端日志
+   * 里记一行。不改材料表，不发 material_added。
    * 原件的修改时刻设回材料表记的放进来的时刻，所以「进入对话」照导出前的样子算。核对的结果写进 .expected.json，也原样返回。
    */
   async replenishMaterial(t: Task, rel: unknown, filename: string, data: Buffer) {
@@ -939,8 +941,7 @@ export class Service {
     if (!row) throw new ApiError("not_found", `没有材料 ${path}。`);
     const expected = readExpected(t.dir, folderRel);
     const entry = expected?.materials.find((one) => one.path === path);
-    const present = isFile(target);
-    if (present && entry?.check?.verdict !== "mismatch") throw new ApiError("rejected", REPLENISH_PRESENT_TEXT, { path });
+    if (isFile(target)) throw new ApiError("rejected", REPLENISH_PRESENT_TEXT, { path });
     if (t.executor.state === "working") {
       throw new ApiError("session_busy", "助手正在工作，结束后才能补齐材料。", { active_session: t.executor.activeSession, reason: "working" });
     }
@@ -948,6 +949,7 @@ export class Service {
       throw new ApiError("bad_request", replenishTypeText(basename(path)), { path });
     }
     if (data.length > maxUpload()) throw new ApiError("too_large", tooLargeText());
+    if (entry && entry.sha256 !== null && sha256(data) !== entry.sha256) throw new ApiError("replenish_mismatch", REPLENISH_MISMATCH_TEXT, { path });
     const name = basename(path);
     const folder = dirname(target);
     const holding = join(t.dir, UPLOADING_DIR);
@@ -978,18 +980,11 @@ export class Service {
       const files = readdirSync(staging).filter((one) => one === name || (one.startsWith(`${name}.`) && isFile(join(staging, one))));
       const print = (one: string) => ({ path: `${folderRel}${one}`, bytes: statSync(join(staging, one)).size, sha256: sha256(readFileSync(join(staging, one))) });
       const derived = files.filter((one) => one !== name).sort(library.byCodePoint).map(print);
-      const check = compareReplenished(entry, expected?.projection ?? null, projectionNow(segments), print(name), derived, clock.now());
+      const check = compareReplenished(entry, derived, clock.now());
+      // 本机重算的派生文件与导出时不同（解析规则或参数变了）：不告诉用户，就用本机重算的，只在后端日志里记一行。
+      const logLine = derivedLogLine(t.taskId, path, check, expected?.projection ?? null, projectionNow(segments));
+      if (logLine) console.log(logLine);
       const moving = readdirSync(staging).filter((one) => one === name || one.startsWith(`${name}.`));
-      // 文件在（再补一次）：先把现在的原件与由它生成的文件移到暂放目录，新的没有放好就移回去。
-      const aside = join(t.dir, REPLACING_DIR, randomUUID());
-      const parked: string[] = [];
-      if (present) {
-        mkdirSync(aside, { recursive: true });
-        for (const one of readdirSync(folder).filter((n) => n === name || n.startsWith(`${name}.`))) {
-          renameSync(join(folder, one), join(aside, one));
-          parked.push(one);
-        }
-      }
       const moved: string[] = [];
       try {
         for (const one of moving) {
@@ -998,10 +993,7 @@ export class Service {
         }
       } catch (error) {
         for (const one of moved) rmSync(join(folder, one), { recursive: true, force: true });
-        for (const one of parked) renameSync(join(aside, one), join(folder, one));
         throw error;
-      } finally {
-        if (present) rmSync(aside, { recursive: true, force: true });
       }
       const addedAt = new Date(row.added_at);
       if (!Number.isNaN(addedAt.getTime())) utimesSync(target, addedAt, addedAt);
@@ -1017,25 +1009,7 @@ export class Service {
       } catch {
         // 还有别的上传在用，或者已经不在了
       }
-      try {
-        rmdirSync(join(t.dir, REPLACING_DIR));
-      } catch {
-        // 不在，或者还有别的在用
-      }
     }
-  }
-
-  /** 接受一份补齐后与导出时不同的材料：.expected.json 里它的核对结果记为已接受，依据它的条目不再因此待核实。只有结论是不同的才能接受。 */
-  acceptReplenished(t: Task, rel: unknown) {
-    const path = typeof rel === "string" ? rel : "";
-    this.materialPath(t, path);
-    const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
-    const expected = readExpected(t.dir, folderRel);
-    const entry = expected?.materials.find((one) => one.path === path);
-    if (!expected || !entry?.check || entry.check.verdict !== "mismatch") throw new ApiError("rejected", ACCEPT_NOT_MISMATCH_TEXT, { path });
-    entry.check = { ...entry.check, accepted: true };
-    writeExpected(t.dir, folderRel, expected);
-    return { ok: true as const, path, check: entry.check };
   }
 
   /**

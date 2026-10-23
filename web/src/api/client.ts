@@ -312,15 +312,12 @@ export const api = {
     form.append("file", file, file.name);
     return request<{ ok: true; path: string; replaced: string }>("POST", `${task(taskId)}/materials/replace?path=${encodeURIComponent(path)}`, form);
   },
-  /** 补齐一份缺失的材料（或者把补齐后与导出时不同的换回原件）：上传 file，与导出时的指纹核对，返回核对结果。 */
+  /** 补齐一份缺失的材料：上传 file，与导出时的指纹核对，返回核对结果；原件不是导出时那份时后端拒绝（replenish_mismatch）。 */
   replenishMaterial: (taskId: string, path: string, file: File) => {
     const form = new FormData();
     form.append("file", file, file.name);
     return request<{ ok: true; path: string; check: ReplenishCheck }>("POST", `${task(taskId)}/materials/replenish?path=${encodeURIComponent(path)}`, form);
   },
-  /** 接受一份补齐后与导出时不同的材料。 */
-  acceptReplenished: (taskId: string, path: string) =>
-    request<{ ok: true; path: string; check: ReplenishCheck }>("POST", `${task(taskId)}/materials/replenish/accept?path=${encodeURIComponent(path)}`),
   control: (taskId: string, sessionId: string, action: "stop") =>
     request<{ ok: true; cleared?: string[] }>("POST", `${task(taskId)}/control?session=${encodeURIComponent(sessionId)}`, { action }),
 

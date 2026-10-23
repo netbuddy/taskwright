@@ -274,7 +274,7 @@ export interface Item {
   /** 还待核实的各处：字段与（列表字段的）第几项，从 0 起；field 为 null 指整个条目。 */
   pending_places?: { field: string | null; index: number | null }[];
   /** 因依据而待核实：它依据的业务说明的一页待核实（pending）或已废弃（deprecated，see 是那一页写的改看）；没有是 null。 */
-  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | "unviewed" | "material_changed" | string; see: string | null } | null;
+  basis_pending?: { item_id: string; reason: "pending" | "deprecated" | string; see: string | null } | null;
   /** 只有业务说明的页有：别的页与别的条目的文字里提到它的地方，一处都没有是空列表。 */
   mentioned_by?: Mention[];
 }
@@ -435,17 +435,14 @@ export interface Material {
 }
 
 /**
- * 补齐一份材料之后与导出时比的结果（POST …/materials/replenish 的 check）。original：原件同不同（没有可比的时是 null）；
- * derived：三样派生文件各自的结果（absent_before 是导出时没有这一样）；verdict：restored 已恢复、mismatch 与导出时不同、
- * unverified 没有导出时的校验值可比；accepted：用户接受了不同；reasons：程序能说的原因。
+ * 补齐一份材料之后与导出时比的结果（POST …/materials/replenish 的 check）。original：原件与导出时相同（收下的都相同；没有可比的时是 null）；
+ * derived：三样派生文件各自与导出时比的结果（只记下，不告诉用户）；verdict：restored 已恢复，unverified 没有导出时的校验值可比。
  */
 export interface ReplenishCheck {
   at: string;
-  original: "same" | "different" | null;
+  original: "same" | null;
   derived: { name: string; result: "same" | "different" | "absent_before" }[];
-  verdict: "restored" | "mismatch" | "unverified";
-  accepted: boolean;
-  reasons: string[];
+  verdict: "restored" | "unverified";
 }
 
 export type ExecutorStateName = "not_started" | "starting" | "idle" | "working" | "exited" | "failed_to_start";

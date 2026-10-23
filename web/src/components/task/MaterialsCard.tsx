@@ -3,8 +3,7 @@
 // 后端在任务详情里给每份材料标了 deletable，这里只按它决定：为真时「替换」与「删除」都可以点；为假时没有「删除」，
 // 「替换」是灰的、点不动，鼠标停在上面说明为什么。任务已结束时这两样都没有，也没有上传区。
 // 文件缺失的材料（后端标了 missing：从不带材料的数据包导入、还没补齐）在大小一栏写「文件缺失，请补齐」，「查看」是灰的，没有替换与删除，
-// 有「补齐」（选一份文件上传，与导出时的指纹核对）。补齐后与导出时不同、还没有接受的材料，名字后面标「与导出时不同」，
-// 操作里多「接受」与「换回原件」两样（换回原件就是再补一次）。
+// 有「补齐」（选一份文件上传，与导出时的指纹核对；原件不是导出时那份的不收）。
 
 import type { ReactNode } from "react";
 import { Upload } from "antd";
@@ -13,7 +12,6 @@ import type { Material, ServiceInfo } from "../../api/types";
 import { formatBytes, formatTimeShort } from "../../model/format";
 import { uploadAccept, uploadLimitText, uploadTypesText } from "../../model/upload";
 import { fileName, useMaterialOps } from "./materialOps";
-import { MISMATCH_TAG, awaitingDecision } from "../../model/replenish";
 
 /** 已经进入对话的材料不能替换：灰色的「替换」上鼠标悬停时写的说明（与后端拒绝时的原话相同）。 */
 export const ENTERED_REPLACE_HINT = "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。";
@@ -78,18 +76,6 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
                   {/\.docx$/i.test(m.path) ? <FileWordOutlined className="fic" /> : /\.pdf$/i.test(m.path) ? <FilePdfOutlined className="fic" /> : <FileTextOutlined className="fic" />}{fileName(m.path)}
                   {m.pdf && <span className="tp-mnote" data-testid="material-pdf">{pdfSummary(m.pdf)}</span>}
                   {m.role && <span className="tp-mrole" data-testid="material-role">{m.role}</span>}
-                  {awaitingDecision(m.replenish) && (
-                    // 与导出时不同：标记后面紧跟「接受」「换回原件」，不挤进操作一栏（那一栏放不下五样，会把名字挤成好几行）。
-                    <span className="tp-mdecide">
-                      <span className="tp-mrole" title={m.replenish!.reasons.join("；")} data-testid="material-mismatch">{MISMATCH_TAG}</span>
-                      {ops.busy === m.path
-                        ? <span className="tp-lnk off" aria-disabled="true" data-testid="material-replenish-busy">处理中</span>
-                        : <>
-                          <a className="tp-lnk" role="button" onClick={() => ops.accept(m.path)} data-testid="material-accept">接受</a>
-                          <a className="tp-lnk quiet" role="button" onClick={() => ops.replenish(m.path)} data-testid="material-restore">换回原件</a>
-                        </>}
-                    </span>
-                  )}
                 </td>
                 <td className="num" data-testid={m.missing ? "material-missing" : undefined}>{m.missing ? MISSING_FILE_TEXT : formatBytes(m.bytes)}</td>
                 <td className="num">{formatTimeShort(m.modified_at)}</td>

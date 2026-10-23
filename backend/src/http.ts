@@ -730,8 +730,6 @@ const handlers: Record<string, Handler> = {
     const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
     return json(200, await service.replenishMaterial(t, req.query.path ?? "", name, data));
   },
-  // 接受一份补齐后与导出时不同的材料（查询参数 path）。
-  accept_replenished: (service, req) => json(200, service.acceptReplenished(service.task(req.params.task), req.query.path ?? "")),
   replace_material: async (service, req) => {
     const t = service.task(req.params.task);
     const [name, data] = parseMultipart(String(req.headers["content-type"] ?? ""), req.body);
@@ -868,7 +866,6 @@ export const ROUTES: [string, RegExp, string][] = ([
   ["POST", `/api/v1/tasks/${T}/materials/delete`, "delete_material"],
   ["POST", `/api/v1/tasks/${T}/materials/replace`, "replace_material"],
   ["POST", `/api/v1/tasks/${T}/materials/replenish`, "replenish_material"],
-  ["POST", `/api/v1/tasks/${T}/materials/replenish/accept`, "accept_replenished"],
   ["GET", `/api/v1/tasks/${T}/knowledge`, "task_knowledge"],
   ["POST", `/api/v1/tasks/${T}/knowledge`, "set_task_knowledge"],
   ["GET", "/api/v1/knowledge", "knowledge"],

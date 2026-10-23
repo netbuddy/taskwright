@@ -142,7 +142,7 @@ data: {
 每个条目另有几项读的时候现算的事实，不存库：
 
 - `pending_verification`、`pending_sources`、`pending_places`（**待核实**）。条目当前所在的修订上有 `助手补充` 的来源、而用户还没有确认过时，`pending_verification` 为真。用户打开看过或点了确认（一条 `basis` 不是 `ui_edit` 的接受）是确认整个条目；用户亲手改（`ui_edit`）只确认他改写的那几处：保存时这几处从助手补充来源的 `supports` 里去掉，一条来源支持的各处都被改写了，它就不再留在新修订上；没有写 `supports` 的来源改哪里都留着，只有看过才算确认。用户只改别的字段、删掉列表里别的一项、撤销一次修订，都不算确认。助手之后又改了条目，重新算起。`pending_sources` 是还待核实的来源有几条；`pending_places` 是这些来源支持的、用户还没有改到的各处，`field` 是字段名，`index` 是列表字段的第几项（从 0 起，不是列表字段或者指整个字段时是 null），`field` 为 null 指整个条目。不待核实时是 `false`、`0`、`[]`。
-- `basis_pending`（**因依据而待核实**）。条目有一条种类为 `条目` 的来源，指向业务说明里一页已废弃、待核实或者用户还没有看过的主题时，或者有一条种类为 `图` 的来源、那张图现在的内容用户还没有看过时（这时 `item_id` 是图的编号，`reason` 是 `unviewed`），给出 `{ "item_id", "reason", "see" }`：`reason` 是 `pending`（那一页待核实）、`unviewed`（那一页没有待核实的内容，但用户还没有打开看过或点过确认）或 `deprecated`（那一页已废弃，`see` 是它的「改看」写的那一页，没有写时是 null）；另有 `material_changed`：条目有一条种类为 `文档原文` 的来源，指向的材料导入后补齐、与导出时不同而用户还没有接受（`item_id` 是材料的路径，见第 5.1 节「补齐材料」）；几条来源都这样时，按来源的先后取头一条。只看一层：被依据的那一页自己依据了谁不往下追。没有时是 null。
+- `basis_pending`（**因依据而待核实**）。条目有一条种类为 `条目` 的来源，指向业务说明里一页已废弃、待核实或者用户还没有看过的主题时，或者有一条种类为 `图` 的来源、那张图现在的内容用户还没有看过时（这时 `item_id` 是图的编号，`reason` 是 `unviewed`），给出 `{ "item_id", "reason", "see" }`：`reason` 是 `pending`（那一页待核实）、`unviewed`（那一页没有待核实的内容，但用户还没有打开看过或点过确认）或 `deprecated`（那一页已废弃，`see` 是它的「改看」写的那一页，没有写时是 null）；几条来源都这样时，按来源的先后取头一条。只看一层：被依据的那一页自己依据了谁不往下追。没有时是 null。
 - `mentioned_by`（**提到**；只有「业务说明」集合的条目带这一项）。贴了标签、在用的主题的标题与别名是词表；别的页与别的条目当前修订的文字里出现了这一页的词，就各记一条：`item_id` 与 `collection` 是出现在哪个条目里，`field` 与 `index` 是哪个字段的第几项，`word` 是认出来的词，`sentence` 是那一句原话，`revision_no` 是被提到的这一页现在的修订号（页面可以拿它记住用户看到这条提到时那一页是哪次修订，那一页之后又改了就能提醒）。一个位置上取词表里最长的词；一句话里同一页只记一次；一页不记自己提到自己；两页的标题或别名相同时两页各记一条。没有贴标签的页与已废弃的页是空列表。
 
 
@@ -267,9 +267,7 @@ data: {
 
 **导出时的指纹。** 从不带材料的数据包导入任务时，包里这个任务的材料清单与 `projection` 一节写成材料目录里的 `.expected.json`（`{version, exported_at, product_version, projection, materials}`，`materials` 照包里的原样）。它是导入这台机器的状态：不进任务库，导出时不进包，材料清单不列它（材料目录里以点开头的文件都不列）。带了材料的包、早先没有材料清单的包不写。
 
-**补齐材料。** `POST …/materials/replenish?path=inputs/…`（multipart，单文件）：把缺失的材料补上，与导出时的指纹核对。前提：材料表里有这一行；文件不在，或者在而上一次补齐的结论是 `mismatch`（再补一次就是换回原件）；智能体不在工作（否则 `session_busy`）。不看是否进入过对话。上传的文件要与这份材料同一种类型（扩展名相同，否则 `bad_request`「补齐要上传与《…》同一种类型的文件。」），存到材料原来的路径；文件在而不需要补时返回 `rejected`「这份材料的文件在，不用补齐。」；材料表里没有这份材料返回 `not_found`。Word 与 PDF 照上传的规矩重新生成文字版、分段清单与位置表；原件的修改时刻设回材料表里放进来的时刻；不改材料表，不推送 `material_added`。返回 `{ok, path, check}`，`check` 也写回 `.expected.json` 里这份材料的那一项：`{at, original, derived: [{name, result}], verdict, accepted, reasons}`。`original` 是原件与导出时 `same` 或 `different`；`derived` 是每样派生文件（`name` 是它的路径）`same`、`different`（导出时有、现在没有生成也算）或 `absent_before`（导出时没有这一样）；`verdict` 是 `restored`（都相同）、`mismatch`（有不同）或 `unverified`（没有 `.expected.json` 或者里面没有这份材料，这时 `original` 为 null、`derived` 为空）；`reasons` 是程序能说的原因：原件不同时是「上传的不是导出时那份文件（校验值不同）」，原件相同而派生文件不同时写导出时与本机的规则版本、pdf.js 版本、分段参数哪几样不同。任务页接口的 `materials` 每份用户放进来的材料另带 `replenish`：这个结果，没有补齐过为 null。
-
-**接受补齐后的不同。** `POST …/materials/replenish/accept?path=inputs/…`：把这份材料的 `check.accepted` 记为 `true`，返回 `{ok, path, check}`；结论不是 `mismatch` 时返回 `rejected`。补齐后结论是 `mismatch` 而还没有接受的材料，引自它的条目（来源种类为 `文档原文`、出处指向它）因依据而待核实，`basis_pending` 的 `reason` 为 `material_changed`、`item_id` 是材料的路径（见第 4 节）；接受或者换回原件之后消掉。
+**补齐材料。** `POST …/materials/replenish?path=inputs/…`（multipart，单文件）：把缺失的材料补上，与导出时的指纹核对。前提：材料表里有这一行；文件不在；智能体不在工作（否则 `session_busy`）。不看是否进入过对话。上传的文件要与这份材料同一种类型（扩展名相同，否则 `bad_request`「补齐要上传与《…》同一种类型的文件。」），存到材料原来的路径；文件在而不需要补时返回 `rejected`「这份材料的文件在，不用补齐。」；材料表里没有这份材料返回 `not_found`。原件的 SHA-256 与导出时记的不同时返回 `replenish_mismatch`（422），说明是「不是导出时那份文件（校验值不同），没有导入」，`data.path` 是那份材料：文件不放进材料目录，`.expected.json` 不改，材料照旧缺失。原件相同时，Word 与 PDF 照上传的规矩重新生成文字版、分段清单与位置表；原件的修改时刻设回材料表里放进来的时刻；不改材料表，不推送 `material_added`。返回 `{ok, path, check}`，`check` 也写回 `.expected.json` 里这份材料的那一项：`{at, original, derived: [{name, result}], verdict}`。`original` 是 `same`（收下的原件都与导出时相同）；`derived` 是每样派生文件（`name` 是它的路径）`same`、`different`（导出时有、现在没有生成也算）或 `absent_before`（导出时没有这一样）；`verdict` 是 `restored`（原件与导出时相同，已经放回）或 `unverified`（没有 `.expected.json` 或者里面没有这份材料，这时 `original` 为 null、`derived` 为空）。本机重算的派生文件与导出时不同（解析规则或参数变了）不算差异，不告诉用户，派生文件就用本机重算的；后端日志里写一行「补齐材料：任务 … 的材料 … 原件与导出时相同，本机重算的 … 与导出时不同，已用本机重算的；导出时 …；本机 …」，写明两边的 PDF 位置规则版本、位置表格式版本、pdf.js 版本与分段参数。任务页接口的 `materials` 每份用户放进来的材料另带 `replenish`：这个结果，没有补齐过为 null。
 
 ### 5.2 智能体回复
 
@@ -399,6 +397,7 @@ data: {
 |---|---|---|
 | `bad_request` | 400 | 请求格式错误，或路径落在材料目录之外、落在知识库某个库的 `files/` 之外 |
 | `not_found` | 404 | 任务、会话、条目、材料、知识库的库、知识库的文档或端点不存在，或者这个服务没有知识库 |
+| `replenish_mismatch` | 422 | 补齐材料时上传的原件校验值与导出时不同，没有导入，见第 5.1 节「补齐材料」 |
 | `material_missing` | 404 | 材料表里有这份材料而文件不在（从不带材料的数据包导入、还没补齐），见第 5.1 节「缺失的材料」 |
 | `rejected` | 422 | 校验未通过；`data.reasons` 列出每一条原因 |
 | `stale_revision` | 409 | 修订检查未通过；`data.items` 为 `[{item_id, base_revision, current_revision, changed_by}]` |
