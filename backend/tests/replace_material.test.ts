@@ -14,11 +14,10 @@ import { request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { crc32 } from "node:zlib";
 import { ApiError } from "../src/errors.ts";
 import { dispatch, makeServer } from "../src/http.ts";
 import { ENTERED_CONVERSATION_REPLACE_TEXT, REPLACING_DIR, SAME_AS_REPLACED_TEXT, Service, maxUpload, tooLargeText, unsupportedTypeText } from "../src/service.ts";
-import { ROOT, captureConsole, sqlRun, tempDir } from "./helpers.ts";
+import { ROOT, captureConsole, smallDocx, sqlRun, tempDir } from "./helpers.ts";
 
 captureConsole();
 
@@ -49,24 +48,6 @@ async function rejected(promise: Promise<unknown>): Promise<ApiError> {
   throw new Error("没有被拒绝");
 }
 
-/** 一份只有几段文字的 .docx（不压缩的 zip，只含 word/document.xml）。 */
-function smallDocx(...paragraphs: string[]): Buffer {
-  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
-  const body = paragraphs.map((p) => `<w:p><w:r><w:t>${p}</w:t></w:r></w:p>`).join("");
-  const data = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><w:document ${W}><w:body>${body}</w:body></w:document>`, "utf8");
-  const name = Buffer.from("word/document.xml", "utf8");
-  const crc = crc32(data);
-  const local = Buffer.alloc(30);
-  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14);
-  local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26);
-  const central = Buffer.alloc(46);
-  central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16);
-  central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(name.length, 28);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10);
-  end.writeUInt32LE(central.length + name.length, 12); end.writeUInt32LE(local.length + name.length + data.length, 16);
-  return Buffer.concat([local, name, data, central, name, end]);
-}
 
 const files = (t: { dir: string }) => readdirSync(join(t.dir, "inputs")).sort();
 const read = (t: { dir: string }, name: string) => readFileSync(join(t.dir, "inputs", name), "utf-8");

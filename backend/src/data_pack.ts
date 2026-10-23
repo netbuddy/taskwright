@@ -69,6 +69,7 @@ import { type TaskOutcome, type UpgradeReport, planUpgrade, runUpgrade } from ".
 import { appVersion } from "./paths.ts";
 import { PDFJS_VERSION } from "./pdf_projection.ts";
 import { type SettingsExcerpt, excerptLanguageModel } from "./product_settings.ts";
+import { EXPECTED_NAME, expectedFromPack, readExpected, writeExpected } from "./replenish.ts";
 import { UPLOADING_DIR, newTaskId } from "./service.ts";
 import { DATA_FORMAT, ServiceDb, type TaskEntry, peekDataDirectory } from "./service_db.ts";
 import { readTaskJson } from "./task_json.ts";
@@ -572,11 +573,15 @@ export async function exportPack(where: PackLocations, given: ExportOptions): Pr
         await library.backupTaskDb(taskDir, copy);
         await put(`tasks/${id}/${DB_NAME}`, copy, Math.floor(statSync(join(taskDir, DB_NAME)).mtimeMs));
         rmSync(copy, { force: true });
-        const materials = materialList(taskDir, options.previous?.tasks.find((one) => one.task_id === id)?.materials);
+        // 文件已经不在的材料，指纹照上一个包的清单（升级数据包时）或导入时写下的导出时指纹（还没补齐时）抄。
+        const materials = materialList(taskDir, options.previous?.tasks.find((one) => one.task_id === id)?.materials
+          ?? readExpected(taskDir, DEFAULT_MATERIALS_DIR)?.materials);
         // 不带材料时材料目录整个不进包，只记成空目录，导入后照样有这个目录。
         const materialDirs = manifest.with_materials ? new Set<string>() : materialDirsOf(materials);
         const own = walk(taskDir, new Set([...TASK_LEFT_OUT, ...materialDirs]), `任务 ${id}`, skipped);
-        for (const file of own.files) await put(`tasks/${id}/${file.rel}`, file.path, file.mtimeMs);
+        // 材料目录里导入时写下的导出时指纹（replenish.ts）是这台机器的状态，不进包。
+        const local = new Set([...materialDirsOf(materials)].map((dir) => `${dir}/${EXPECTED_NAME}`));
+        for (const file of own.files.filter((one) => !local.has(one.rel))) await put(`tasks/${id}/${file.rel}`, file.path, file.mtimeMs);
         manifest.empty_dirs.push(...own.emptyDirs.map((one) => `tasks/${id}/${one}`));
         for (const dir of materialDirs) if (isDir(join(taskDir, dir))) manifest.empty_dirs.push(`tasks/${id}/${dir}`);
         const archive = walk(join(where.runsDir, id), options.withEvents ? new Set() : new Set([EVENTS_DIR]), `任务 ${id} 的归档`, skipped);
@@ -1133,7 +1138,7 @@ function importLibrary(where: PackLocations, staging: Staging, one: PackLibrary,
 
 /** 导入一个任务：判编号有没有被占，需要时改编号，归档与任务目录改名进位，记进登记表。 */
 function importTask(where: PackLocations, staging: Staging, one: PackTask, options: ImportOptions, register: Map<string, Record<string, any>>,
-  upgraded: TaskOutcome | null): ImportedTask {
+  upgraded: TaskOutcome | null, manifest: Manifest): ImportedTask {
   const out: ImportedTask = { task_id: one.task_id, name: one.name, outcome: "failed", new_id: null, upgraded_from: upgraded?.ok ? upgraded.from : null, reason: null, notes: [] };
   let staged = join(staging.tasks, one.task_id);
   let stagedRuns = join(staging.runs, one.task_id);
@@ -1170,6 +1175,12 @@ function importTask(where: PackLocations, staging: Staging, one: PackTask, optio
         stagedRuns = join(staging.runs, id);
       }
       out.new_id = id;
+    }
+    // 不带材料的包：把导出时的材料清单与规则版本写成材料目录里的 .expected.json，补齐材料时据它核对（replenish.ts）。
+    const expected = expectedFromPack(manifest, one);
+    if (expected) {
+      mkdirSync(join(staged, expected.dir), { recursive: true });
+      writeExpected(staged, expected.dir, expected.value);
     }
     // 归档先进位，任务目录后进位：服务是按任务目录认任务的，它看到这个任务时归档已经在了。
     if (existsSync(stagedRuns)) {
@@ -1233,7 +1244,7 @@ export async function importPack(where: PackLocations, options: ImportOptions): 
     if (upgrade?.fatal) throw new PackError("refused", `数据包里有上一版格式的任务，升级没有做成：${upgrade.fatal}`);
     const outcomes = new Map((upgrade?.tasks ?? []).map((t) => [t.dir, t]));
     const register = stagedRegister(staging);
-    for (const one of manifest.tasks) report.tasks.push(importTask(where, staging, one, options, register, outcomes.get(one.task_id) ?? null));
+    for (const one of manifest.tasks) report.tasks.push(importTask(where, staging, one, options, register, outcomes.get(one.task_id) ?? null, manifest));
   } catch (error) {
     if (!(error instanceof PackError)) throw error;
     report.fatal = error.message;

@@ -15,7 +15,7 @@ import { pdfUploadingText } from "../model/upload";
 import { chapterOfPage, headingOfPage } from "../model/pdfView";
 import { resetPdfStore } from "../state/pdfStore";
 import { ItemsPanel } from "../components/work/ItemsPanel";
-import type { Item, Material, Task } from "../api/types";
+import type { Item, Material, ReplenishCheck, Task } from "../api/types";
 
 type PaperProps = { path: string; locate: LocateRequest | null; jump?: { page: number; nonce: number } | null;
   paperRef?: RefObject<HTMLDivElement | null>; onMouseUp?: () => void;
@@ -286,5 +286,54 @@ describe("来源标签与任务页材料卡", () => {
     expect(keptRow.querySelector("[data-testid=material-missing]")).toBeNull();
     expect(keptRow.querySelector("[data-testid=material-view]")).toBeTruthy();
     expect(keptRow.querySelector("[data-testid=material-delete]")).toBeTruthy();
+  });
+});
+
+describe("材料卡：导入后补齐材料", () => {
+  const check = (over: Partial<ReplenishCheck>): ReplenishCheck => ({ at: "", original: "same", derived: [], verdict: "restored", ...over });
+  const MISSING = material("inputs/规格.docx", { bytes: 0, missing: true, deletable: false });
+  const card = (materials: Material[]) => {
+    const onChanged = vi.fn();
+    render(<Wrap><ToastProvider><MaterialsCard taskId="TASK-1" materials={materials} info={null} onView={() => {}} onChanged={onChanged} /></ToastProvider></Wrap>);
+    return onChanged;
+  };
+  const choose = (name = "规格.docx") => {
+    const file = new File(["x"], name);
+    fireEvent.change(screen.getByTestId("material-replenish-input"), { target: { files: [file] } });
+    return file;
+  };
+
+  it("缺失行有「补齐」：选好文件直接上传；已恢复与没有可比的各一种提示，之后重读任务", async () => {
+    const cases: [ReplenishCheck, string][] = [
+      [check({}), "《规格.docx》已恢复到导出时的状态。"],
+      // 派生文件与导出时不同照样是已恢复，不告诉用户。
+      [check({ derived: [{ name: "inputs/规格.docx.segments.json", result: "different" }] }), "《规格.docx》已恢复到导出时的状态。"],
+      [check({ verdict: "unverified", original: null }), "《规格.docx》已补齐（没有导出时的校验值可比）。"],
+    ];
+    for (const [result, text] of cases) {
+      const onChanged = card([MISSING]);
+      const call = vi.spyOn(api, "replenishMaterial").mockResolvedValue({ ok: true, path: MISSING.path, check: result });
+      fireEvent.click(screen.getByTestId("material-replenish"));
+      const file = choose();
+      await waitFor(() => expect(call).toHaveBeenCalledWith("TASK-1", "inputs/规格.docx", file));
+      expect(await screen.findByText(text)).toBeInTheDocument();
+      await waitFor(() => expect(onChanged).toHaveBeenCalled());
+      cleanup();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("原件不是导出时那份：照后端的原话报错，行仍是缺失", async () => {
+    card([MISSING]);
+    vi.spyOn(api, "replenishMaterial").mockRejectedValue(new ApiError("replenish_mismatch", "不是导出时那份文件（校验值不同），没有导入", 422));
+    fireEvent.click(screen.getByTestId("material-replenish"));
+    choose();
+    expect(await screen.findByText("不是导出时那份文件（校验值不同），没有导入")).toBeInTheDocument();
+  });
+
+  it("补齐过的材料（哪怕派生文件与导出时不同）照普通材料显示：没有差异标记，也没有「接受」", () => {
+    card([material("inputs/规格.docx", { deletable: false, missing: false, replenish: check({ derived: [{ name: "inputs/规格.docx.md", result: "different" }] }) })]);
+    for (const id of ["material-mismatch", "material-accept", "material-restore", "material-replenish"]) expect(screen.queryByTestId(id)).toBeNull();
+    expect(screen.getByTestId("material-view")).toBeInTheDocument();
   });
 });

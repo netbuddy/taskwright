@@ -4,8 +4,10 @@
 // 文档要向量化成数字串之后才能按意思查找：文档表格里每份文档有向量化状态，表格上面一行是这个知识库「已向量化几份 / 一共几份」与进度条；
 // 选了嵌入模型而且有没向量化的文档时给「开始向量化」，向量化失败的文档给「重试」。有文档在等待向量化或者向量化中时，隔两秒再取一次清单。
 // 文档表格下面是「试一试按意思查找」（components/KnowledgeSearchBox.tsx），只查选中的这一个知识库。
+// 清单里有而文件不在的文档（从不带文档的数据包导入、还没补齐）：大小一栏写「文件缺失，请补齐」，「查看」是灰的，多一个「补齐」：
+// 选一份文件上传，校验值与导出时相同才收下（提示「已恢复」），不同就照后端的原话拒绝（知识库文档没有「接受差异」）。
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Alert, Button, Empty, Input, Modal, Spin, Upload } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { api, ApiError } from "../api/client";
@@ -33,6 +35,10 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
   const [name, setName] = useState("");
   const [removingLib, setRemovingLib] = useState<EmbeddedLibrary | null>(null);
   const [removingDoc, setRemovingDoc] = useState<string | null>(null);
+  // 补齐文档：点「补齐」记下是哪一份、打开文件选择框，选好了直接上传；上传期间那一行的「补齐」不可点。
+  const filler = useRef<HTMLInputElement>(null);
+  const fillFor = useRef<string | null>(null);
+  const [filling, setFilling] = useState<string | null>(null);
   // 「查看」打开的那份文档的出处（knowledge/知识库编号/文档名）：Word 与 PDF 按原样分页显示，与点来源看原文同一个对话框。
   const [viewing, setViewing] = useState<string | null>(null);
   const toast = useToast();
@@ -101,6 +107,29 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
       void load();
     } catch (e) {
       fail(e, "删除没有成功。");
+    }
+  };
+
+  const pickReplenish = (name: string) => {
+    fillFor.current = name;
+    if (filler.current) {
+      filler.current.value = "";
+      filler.current.click();
+    }
+  };
+  const replenish = async (file: File | undefined) => {
+    const name = fillFor.current;
+    fillFor.current = null;
+    if (!current || !name || !file) return;
+    setFilling(name);
+    try {
+      await api.replenishDocument(current.id, name, file);
+      toast.success(`《${name}》已恢复到导出时的状态。`);
+    } catch (e) {
+      fail(e, "补齐没有成功。");
+    } finally {
+      setFilling(null);
+      void load();
     }
   };
 
@@ -214,14 +243,19 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
                           <tr className={failed ? "failed" : undefined}>
                             <td className="dn">{d.name}</td>
                             <td>{kindName(service.info, d.kind)}</td>
-                            <td>{formatBytes(d.bytes)}</td>
+                            <td data-testid={d.missing ? `kb-doc-missing-${d.name}` : undefined}>{d.missing ? "文件缺失，请补齐" : formatBytes(d.bytes)}</td>
                             <td>{formatTime(d.uploaded_at)}</td>
                             <td className={`de ${d.embedding.status}`} data-testid={`kb-doc-embedding-${d.name}`}>
                               {embeddingStatusText(d.embedding)}
                               {failed && embedding.model !== null && <a role="button" className="retry" onClick={() => void embed(current.id, d.name)}>重试</a>}
                             </td>
                             <td className="ops">
-                              <a role="button" onClick={() => setViewing(knowledgeLocator(current.id, d.name))} data-testid={`kb-doc-view-${d.name}`}>查看</a>
+                              {d.missing
+                                ? <span className="off" aria-disabled="true" data-testid={`kb-doc-view-off-${d.name}`}>查看</span>
+                                : <a role="button" onClick={() => setViewing(knowledgeLocator(current.id, d.name))} data-testid={`kb-doc-view-${d.name}`}>查看</a>}
+                              {d.missing && (filling === d.name
+                                ? <span className="off" aria-disabled="true">补齐中</span>
+                                : <a role="button" onClick={() => pickReplenish(d.name)} data-testid={`kb-doc-replenish-${d.name}`}>补齐</a>)}
                               <a role="button" onClick={() => setRemovingDoc(d.name)}>删除</a>
                             </td>
                           </tr>
@@ -233,6 +267,8 @@ export function KnowledgePage({ libraryId }: { libraryId: string | null }) {
                 </table>
               )}
             {current.documents.length > 0 && <KnowledgeSearchBox key={current.id} library={current} model={embedding.model} />}
+            {/* 补齐用的文件选择框：看不见，由「补齐」打开。 */}
+            <input ref={filler} type="file" hidden onChange={(e) => void replenish(e.target.files?.[0])} data-testid="kb-replenish-input" />
             <div className="kbfoot">文档没有版本：一份文档改了，就当作一份新文件上传。助手在任务里看到的是所选用的知识库的文档清单（名称、种类、大小），需要时到文档里查找相关的片段。</div>
           </div>
         )}

@@ -213,8 +213,9 @@ test("上传之后自动换算：文档依次是换算中、等待换算、已�
   ]);
   assert.deepEqual(after.embedding, { model: MODEL, running: false, ready: true, pending: 0, total: 4, stopped_reason: null });
   assert.deepEqual(after.libraries[0].embedding, { done: 4, total: 4 });
-  // 文档清单里别的项照旧。
-  assert.deepEqual(Object.keys(after.libraries[0].documents[0]), ["name", "kind", "bytes", "uploaded_at", "embedding"]);
+  // 文档清单里别的项照旧；另有 missing（文件在，为假）。
+  assert.deepEqual(Object.keys(after.libraries[0].documents[0]), ["name", "kind", "bytes", "uploaded_at", "embedding", "missing"]);
+  assert.equal(after.libraries[0].documents[0].missing, false);
 
   // 按文档的先后算；空白的那一份不发请求；40 个片段分成 32 加 8 两批；请求体带 truncate: false。
   assert.deepEqual(fake.hits.map((h) => [h.model, h.truncate, h.input.length]), [["bge-m3", false, 5], ["bge-m3", false, 11], ["bge-m3", false, 32], ["bge-m3", false, 8]]);

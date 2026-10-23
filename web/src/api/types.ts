@@ -430,6 +430,19 @@ export interface Material {
   deletable?: boolean;
   /** 材料表里有这份材料而文件不在（从不带材料的数据包导入、还没补齐）：这时 bytes 是 0，modified_at 是放进来的时刻。早先的后端不给。 */
   missing?: boolean;
+  /** 导入后补齐过：与导出时比的结果（只有任务详情里给）；没有补齐过是 null。 */
+  replenish?: ReplenishCheck | null;
+}
+
+/**
+ * 补齐一份材料之后与导出时比的结果（POST …/materials/replenish 的 check）。original：原件与导出时相同（收下的都相同；没有可比的时是 null）；
+ * derived：三样派生文件各自与导出时比的结果（只记下，不告诉用户）；verdict：restored 已恢复，unverified 没有导出时的校验值可比。
+ */
+export interface ReplenishCheck {
+  at: string;
+  original: "same" | null;
+  derived: { name: string; result: "same" | "different" | "absent_before" }[];
+  verdict: "restored" | "unverified";
 }
 
 export type ExecutorStateName = "not_started" | "starting" | "idle" | "working" | "exited" | "failed_to_start";
@@ -1067,6 +1080,8 @@ export interface KnowledgeDocument {
   kind: KnowledgeKind;
   bytes: number;
   uploaded_at: string;
+  /** 清单里有而文件不在（从不带文档的数据包导入、还没补齐）。早先的后端不给。 */
+  missing?: boolean;
 }
 
 /** 知识库里的一个库（GET /api/v1/knowledge 的一项）。used_by_tasks 是本服务接手的进行中任务里选用了它的个数。 */

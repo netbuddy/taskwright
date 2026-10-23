@@ -79,7 +79,8 @@ export function roleLimitInWorkspace(workspaceDir: string, sessionId: string | n
 function materialFiles(workspaceDir: string, materialsDir: string): string[] {
   const dir = join(workspaceDir, materialsDir);
   try {
-    return readdirSync(dir).filter((name) => statSync(join(dir, name)).isFile()).map((name) => `${materialsDir}${name}`);
+    // 以点开头的不是材料（导入时写下的导出时指纹之类），与材料清单相同。
+    return readdirSync(dir).filter((name) => !name.startsWith(".") && statSync(join(dir, name)).isFile()).map((name) => `${materialsDir}${name}`);
   } catch {
     return [];
   }

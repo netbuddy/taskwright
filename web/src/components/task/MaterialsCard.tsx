@@ -2,7 +2,8 @@
 // 这里上传的一律是材料，不问去向；参考文档在知识库页面上传。材料一旦进入了对话（上传之后有会话活动过）就不能删除、也不能替换，
 // 后端在任务详情里给每份材料标了 deletable，这里只按它决定：为真时「替换」与「删除」都可以点；为假时没有「删除」，
 // 「替换」是灰的、点不动，鼠标停在上面说明为什么。任务已结束时这两样都没有，也没有上传区。
-// 文件缺失的材料（后端标了 missing：从不带材料的数据包导入、还没补齐）在大小一栏写「文件缺失，请补齐」，「查看」是灰的，没有替换与删除。
+// 文件缺失的材料（后端标了 missing：从不带材料的数据包导入、还没补齐）在大小一栏写「文件缺失，请补齐」，「查看」是灰的，没有替换与删除，
+// 有「补齐」（选一份文件上传，与导出时的指纹核对；原件不是导出时那份的不收）。
 
 import type { ReactNode } from "react";
 import { Upload } from "antd";
@@ -79,7 +80,12 @@ export function MaterialsCard({ taskId, materials, info, onView, onChanged, titl
                 <td className="num" data-testid={m.missing ? "material-missing" : undefined}>{m.missing ? MISSING_FILE_TEXT : formatBytes(m.bytes)}</td>
                 <td className="num">{formatTimeShort(m.modified_at)}</td>
                 {m.missing ? (
-                  <td><span className="tp-lnk off" aria-disabled="true" data-testid="material-view-off">查看</span></td>
+                  <td>
+                    <span className="tp-lnk off" aria-disabled="true" data-testid="material-view-off">查看</span>
+                    {ops.busy === m.path
+                      ? <span className="tp-lnk off" aria-disabled="true" data-testid="material-replenish-busy">补齐中</span>
+                      : <a className="tp-lnk" role="button" onClick={() => ops.replenish(m.path)} data-testid="material-replenish">补齐</a>}
+                  </td>
                 ) : (
                   <td>
                     <a className="tp-lnk" role="button" onClick={() => onView(m)} data-testid="material-view">查看</a>

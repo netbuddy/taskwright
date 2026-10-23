@@ -210,6 +210,9 @@ body {
 .kbtable .de .retry { margin-left: 0.5rem; }
 .kbtable .ops { white-space: nowrap; }
 .kbtable .ops a + a { margin-left: 0.8rem; }
+/* 文件缺失的文档：「查看」灰掉，与「补齐」隔开。 */
+.kbtable .ops .off { color: var(--mut); cursor: not-allowed; }
+.kbtable .ops > * + * { margin-left: 0.8rem; }
 /* 换算失败的原因：在那份文档下面单独一行，横跨整张表；上面那一行不画底线，两行看起来是一份文档 */
 .kbtable tr.failed td { border-bottom: none; padding-bottom: 0.15rem; }
 .kbtable tr.why td { color: var(--gap); font-size: 0.86rem; padding-top: 0; word-break: break-word; }

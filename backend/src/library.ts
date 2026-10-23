@@ -1483,6 +1483,8 @@ export function materials(taskDir: string, definition: ParsedDefinition | Record
   }
   const files: [string, ReturnType<typeof statSync>][] = [];
   for (const name of names.sort(byCodePoint)) {
+    // 以点开头的不是材料（导入时写下的导出时指纹 .expected.json 之类，见 replenish.ts）。
+    if (name.startsWith(".")) continue;
     try {
       const st = statSync(join(folder, name), { bigint: true });
       if (st.isFile()) files.push([name, st as any]);

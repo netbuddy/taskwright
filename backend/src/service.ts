@@ -5,8 +5,8 @@
  * 列表里写明被谁占用，打开它的请求一律以 task_occupied 拒绝。数据格式早于本程序能升级的最早格式的任务（旧格式）不接手，列表里标明不支持。
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, rmdirSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { MIN_TASK_DB_VERSION, TASK_DB_VERSION, newerDataText, olderDataText, taskWrittenBy } from "../../agent/src/lib/schema.ts";
@@ -18,6 +18,7 @@ import { FALLBACK_TEXT, USER_EDIT, baseMessages, branch, messages as conversatio
 import { ApiError } from "./errors.ts";
 import { readTextFile, readTextFileLenient } from "./files.ts";
 import * as library from "./library.ts";
+import { checkOf, compareReplenished, derivedLogLine, projectionNow, readExpected, writeExpected } from "./replenish.ts";
 import { workItemView } from "./task_status.ts";
 import * as occupancy from "./occupancy.ts";
 import { PDF_NO_TEXT, PdfUploadError, runPdfProjection } from "./pdf_upload.ts";
@@ -45,6 +46,13 @@ export const maxUpload = (): number => readUploadLimits().material_mb * MB;
 /** 上传的内容与本任务已有的某份材料完全相同时的那句话（错误码 duplicate_content）。 */
 export const duplicateContentText = (name: string) => `这份文件与已有的材料《${name}》内容完全相同，没有重复保存。`;
 /** 上传的文件名与本任务已有的某份材料相同、内容不同时的那句话（错误码 name_taken）。 */
+/** 补齐时文件已经在、上一次补齐也不是与导出时不同的：不用补。 */
+export const REPLENISH_PRESENT_TEXT = "这份材料的文件在，不用补齐。";
+/** 补齐时上传的原件校验值与导出时不同：不导入（错误码 replenish_mismatch）。 */
+export const REPLENISH_MISMATCH_TEXT = "不是导出时那份文件（校验值不同），没有导入";
+/** 补齐时上传的文件类型与材料不同。 */
+export const replenishTypeText = (name: string) => `补齐要上传与《${name}》同一种类型的文件。`;
+
 /** 材料表里有而文件不在的材料：读它时的那句话（页面与原文定位页签照原话显示）。 */
 export const materialMissingText = (name: string) => `文件缺失，请补齐：${name}`;
 export const nameTakenText = (name: string) => `这个任务里已经有一份叫《${name}》的材料，内容与这份不同。请给文件换一个名字再上传。`;
@@ -552,9 +560,11 @@ export class Service {
     const sessions = this.sessionRows(t);
     // deletable：现在调删除接口会不会被这份材料本身的情况挡住（派生文件、已经进入对话）；助手正在工作是一时的，不算在内。
     const lastActivity = t.executor.sessions.lastActivityMs(false);
+    // 导入后补齐过的材料另带 replenish：与导出时比的结果（replenish.ts）；没有补齐过是 null。
+    const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const materials = withMissing(t.dir, library.materials(t.dir, t.definition()).map((m) => ({
       ...m, deletable: m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
-    })));
+    }))).map((m) => (m.derived_from === null ? { ...m, replenish: checkOf(t.dir, folderRel, m.path) } : m));
     // 任务类型说明的版本：这个任务建的时候复制进来的是第几版（task.json 记着），用户目录里的这种任务类型现在是第几版。
     // 说明不随升级更新，页面在两个数不同时写一句。上一版建的任务没有记，copied 是 null。
     const meta = readTaskJson(t.dir);
@@ -914,6 +924,95 @@ export class Service {
   }
 
   /**
+   * 补齐一份缺失的材料（材料表里有、文件不在：从不带材料的数据包导入的任务），并与导出时的指纹核对（replenish.ts）。
+   * 前提：材料表里有这一行；文件不在；助手不在工作。不看「进入对话」：缺失的材料本来就读不到。上传的文件要与这份材料同一种类型
+   * （扩展名相同），存到材料原来的路径，不管它叫什么名字。
+   * 原件的 SHA-256 与导出时记的不同就拒绝（replenish_mismatch）：不是导出时那份文件，不导入，什么都不写，材料照旧缺失。
+   * 原件相同时照上传的做法：先在任务目录下的临时目录里放好原件、生成派生文件（Word 当场生成，PDF 另起一次运行），算出各自的指纹与
+   * 导出时比，然后把它们一起移进材料目录。派生文件与导出时不同（本机的解析规则或参数变了）不告诉用户，就用本机重算的，只在后端日志
+   * 里记一行。不改材料表，不发 material_added。
+   * 原件的修改时刻设回材料表记的放进来的时刻，所以「进入对话」照导出前的样子算。核对的结果写进 .expected.json，也原样返回。
+   */
+  async replenishMaterial(t: Task, rel: unknown, filename: string, data: Buffer) {
+    const path = typeof rel === "string" ? rel : "";
+    const target = this.materialPath(t, path);
+    const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
+    const row = library.materialRecordRows(t.dir).find((one) => one.path === path);
+    if (!row) throw new ApiError("not_found", `没有材料 ${path}。`);
+    const expected = readExpected(t.dir, folderRel);
+    const entry = expected?.materials.find((one) => one.path === path);
+    if (isFile(target)) throw new ApiError("rejected", REPLENISH_PRESENT_TEXT, { path });
+    if (t.executor.state === "working") {
+      throw new ApiError("session_busy", "助手正在工作，结束后才能补齐材料。", { active_session: t.executor.activeSession, reason: "working" });
+    }
+    if (extname(filename).toLowerCase() !== extname(path).toLowerCase()) {
+      throw new ApiError("bad_request", replenishTypeText(basename(path)), { path });
+    }
+    if (data.length > maxUpload()) throw new ApiError("too_large", tooLargeText());
+    if (entry && entry.sha256 !== null && sha256(data) !== entry.sha256) throw new ApiError("replenish_mismatch", REPLENISH_MISMATCH_TEXT, { path });
+    const name = basename(path);
+    const folder = dirname(target);
+    const holding = join(t.dir, UPLOADING_DIR);
+    const staging = join(holding, randomUUID());
+    mkdirSync(staging, { recursive: true });
+    const staged = join(staging, name);
+    const segments = segmentParamsOf(this.profile);
+    try {
+      writeFileSync(staged, data);
+      if (/\.docx$/i.test(name)) {
+        try {
+          writeProjection(staged, path, segments);
+        } catch (error) {
+          if (!(error instanceof ProjectionError)) throw error;
+          throw new ApiError("unsupported_type", `${error.message}，请用 Word 另存为 .docx 后再上传。`);
+        }
+      } else if (/\.pdf$/i.test(name)) {
+        let parsed;
+        try {
+          parsed = await runPdfProjection(staged, path, segments, pdfLimitsOf(this.profile));
+        } catch (error) {
+          if (!(error instanceof PdfUploadError)) throw error;
+          throw new ApiError("unsupported_type", error.message);
+        }
+        if (parsed.units === 0) throw new ApiError("unsupported_type", PDF_NO_TEXT);
+      }
+      // 临时目录里的原件与派生文件（Word 的图片目录不算指纹，跟着一起移）。
+      const files = readdirSync(staging).filter((one) => one === name || (one.startsWith(`${name}.`) && isFile(join(staging, one))));
+      const print = (one: string) => ({ path: `${folderRel}${one}`, bytes: statSync(join(staging, one)).size, sha256: sha256(readFileSync(join(staging, one))) });
+      const derived = files.filter((one) => one !== name).sort(library.byCodePoint).map(print);
+      const check = compareReplenished(entry, derived, clock.now());
+      // 本机重算的派生文件与导出时不同（解析规则或参数变了）：不告诉用户，就用本机重算的，只在后端日志里记一行。
+      const logLine = derivedLogLine(t.taskId, path, check, expected?.projection ?? null, projectionNow(segments));
+      if (logLine) console.log(logLine);
+      const moving = readdirSync(staging).filter((one) => one === name || one.startsWith(`${name}.`));
+      const moved: string[] = [];
+      try {
+        for (const one of moving) {
+          renameSync(join(staging, one), join(folder, one));
+          moved.push(one);
+        }
+      } catch (error) {
+        for (const one of moved) rmSync(join(folder, one), { recursive: true, force: true });
+        throw error;
+      }
+      const addedAt = new Date(row.added_at);
+      if (!Number.isNaN(addedAt.getTime())) utimesSync(target, addedAt, addedAt);
+      if (expected && entry) {
+        entry.check = check;
+        writeExpected(t.dir, folderRel, expected);
+      }
+      return { ok: true as const, path, check };
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+      try {
+        rmdirSync(holding);
+      } catch {
+        // 还有别的上传在用，或者已经不在了
+      }
+    }
+  }
+
+  /**
    * 用另一个文件替换一份还没有进入对话的材料（前提与删除相同，见 requireUntouched）。新文件照上传的规矩收（类型、大小、留用的名字、
    * 与别的材料重内容或重名、Word 材料与 PDF 材料生成派生文件），名字与类型可以和旧的不同；新文件与旧文件内容完全相同时不换。
    *
@@ -996,6 +1095,8 @@ export class Service {
     return store.libraries().map((lib) => {
       const documents = store.documents(lib.id).map((row) => ({
         name: row.name, kind: row.kind, bytes: row.bytes, uploaded_at: row.uploaded_at, embedding: embedder.documentState(lib.id, row, model),
+        // 清单里有而文件不在（从不带文档的数据包导入、还没补齐）。
+        missing: store.isMissing(lib.id, row.name),
       }));
       return {
         ...lib,
@@ -1028,6 +1129,14 @@ export class Service {
     const embedder = this.embedder!;
     if (embedder.model() !== null) embedder.enqueue({ library: id, name: row.name });
     return row;
+  }
+
+  /** 补齐一份缺失的知识库文档（knowledge.ts 的 replenish），做成了照上传之后的做法排队换算数字串。 */
+  async replenishDocument(id: string, name: unknown, data: Buffer) {
+    const row = await this.requireKnowledge().replenish(id, name, data, segmentParamsOf(this.profile), pdfLimitsOf(this.profile));
+    const embedder = this.embedder!;
+    if (embedder.model() !== null) embedder.enqueue({ library: id, name: row.name });
+    return { ok: true as const, name: row.name };
   }
 
   /** 删除一份文档：正在换算或者排着队的先放下，再连同它的数字串一起删。 */

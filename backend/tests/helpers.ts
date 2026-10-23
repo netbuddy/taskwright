@@ -4,6 +4,7 @@
  * 用 sqlRun 在临时副本上直接执行 SQL；那只是测试夹具，不是产品代码的写入路径。
  */
 
+import { crc32 } from "node:zlib";
 import { type ChildProcess, type SpawnOptions, spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { request } from "node:http";
@@ -288,4 +289,23 @@ export function keepGeneral(root: string): void {
   const store = new KnowledgeStore(root);
   store.ensure();
   if (!store.has(GENERAL)) store.adopt({ id: GENERAL, name: GENERAL_NAME, created_at: "2026-01-01T00:00:00" });
+}
+
+/** 一份只有几段文字的 .docx（不压缩的 zip，只含 word/document.xml）。 */
+export function smallDocx(...paragraphs: string[]): Buffer {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const body = paragraphs.map((p) => `<w:p><w:r><w:t>${p}</w:t></w:r></w:p>`).join("");
+  const data = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><w:document ${W}><w:body>${body}</w:body></w:document>`, "utf8");
+  const name = Buffer.from("word/document.xml", "utf8");
+  const crc = crc32(data);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(crc, 14);
+  local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt32LE(crc, 16);
+  central.writeUInt32LE(data.length, 20); central.writeUInt32LE(data.length, 24); central.writeUInt16LE(name.length, 28);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length + name.length, 12); end.writeUInt32LE(local.length + name.length + data.length, 16);
+  return Buffer.concat([local, name, data, central, name, end]);
 }

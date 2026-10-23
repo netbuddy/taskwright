@@ -265,6 +265,10 @@ data: {
 
 **缺失的材料。** 材料表里还在的一行（没有记删除的时刻）而材料目录里没有它的文件，这份材料就是缺失的：从不带材料的数据包导入（第 12 节）、还没补齐时就是这样。缺失现算，不存库。任务页接口与整份数据的 `materials` 每项带 `missing`：文件在的为 `false`；缺失的另补一项，`missing` 为 `true`，`bytes` 为 0，`modified_at` 是材料表里放进来的时刻，`derived_from` 为 null，`slot` 与 `role` 照材料表，`deletable` 为 `false`（删除与替换要求文件在，见上面两节），按路径排进清单里。读它的两个接口（`materials/content` 与 `materials/raw`）返回 `material_missing`。助手用自带的 read 读它或由它生成的文字版、分段清单、位置表时，调用不执行，工具结果是「材料 <文件名> 的文件缺失，请用户在材料页补齐后再读；不要凭记忆补写它的内容。」
 
+**导出时的指纹。** 从不带材料的数据包导入任务时，包里这个任务的材料清单与 `projection` 一节写成材料目录里的 `.expected.json`（`{version, exported_at, product_version, projection, materials}`，`materials` 照包里的原样）。它是导入这台机器的状态：不进任务库，导出时不进包，材料清单不列它（材料目录里以点开头的文件都不列）。带了材料的包、早先没有材料清单的包不写。
+
+**补齐材料。** `POST …/materials/replenish?path=inputs/…`（multipart，单文件）：把缺失的材料补上，与导出时的指纹核对。前提：材料表里有这一行；文件不在；智能体不在工作（否则 `session_busy`）。不看是否进入过对话。上传的文件要与这份材料同一种类型（扩展名相同，否则 `bad_request`「补齐要上传与《…》同一种类型的文件。」），存到材料原来的路径；文件在而不需要补时返回 `rejected`「这份材料的文件在，不用补齐。」；材料表里没有这份材料返回 `not_found`。原件的 SHA-256 与导出时记的不同时返回 `replenish_mismatch`（422），说明是「不是导出时那份文件（校验值不同），没有导入」，`data.path` 是那份材料：文件不放进材料目录，`.expected.json` 不改，材料照旧缺失。原件相同时，Word 与 PDF 照上传的规矩重新生成文字版、分段清单与位置表；原件的修改时刻设回材料表里放进来的时刻；不改材料表，不推送 `material_added`。返回 `{ok, path, check}`，`check` 也写回 `.expected.json` 里这份材料的那一项：`{at, original, derived: [{name, result}], verdict}`。`original` 是 `same`（收下的原件都与导出时相同）；`derived` 是每样派生文件（`name` 是它的路径）`same`、`different`（导出时有、现在没有生成也算）或 `absent_before`（导出时没有这一样）；`verdict` 是 `restored`（原件与导出时相同，已经放回）或 `unverified`（没有 `.expected.json` 或者里面没有这份材料，这时 `original` 为 null、`derived` 为空）。本机重算的派生文件与导出时不同（解析规则或参数变了）不算差异，不告诉用户，派生文件就用本机重算的；后端日志里写一行「补齐材料：任务 … 的材料 … 原件与导出时相同，本机重算的 … 与导出时不同，已用本机重算的；导出时 …；本机 …」，写明两边的 PDF 位置规则版本、位置表格式版本、pdf.js 版本与分段参数。任务页接口的 `materials` 每份用户放进来的材料另带 `replenish`：这个结果，没有补齐过为 null。
+
 ### 5.2 智能体回复
 
 只有智能体调用 `reply` 工具且被接受的那次调用，才会成为带 `via_reply_tool: true` 的 `assistant_reply` 事件。如果一个工作单元结束时没有一次被接受的回复，服务器会转发最后一段助手文本，带 `via_reply_tool: false` 且不带 `act`；如果连这个也没有，就发送代码为 `no_reply` 的 `problem`。工作单元因为出错而结束时，改发代码为 `failed` 的 `problem`，文字是「助手这一轮因为出错停下了，你可以再说一句，让它接着做。」。用户让它停下时，两种都不发。被停下或出错结束的工作单元即使没有步骤、也没有回复，也保留它的 `work_summary`，刷新之后也在。
@@ -393,6 +397,7 @@ data: {
 |---|---|---|
 | `bad_request` | 400 | 请求格式错误，或路径落在材料目录之外、落在知识库某个库的 `files/` 之外 |
 | `not_found` | 404 | 任务、会话、条目、材料、知识库的库、知识库的文档或端点不存在，或者这个服务没有知识库 |
+| `replenish_mismatch` | 422 | 补齐材料时上传的原件校验值与导出时不同，没有导入，见第 5.1 节「补齐材料」 |
 | `material_missing` | 404 | 材料表里有这份材料而文件不在（从不带材料的数据包导入、还没补齐），见第 5.1 节「缺失的材料」 |
 | `rejected` | 422 | 校验未通过；`data.reasons` 列出每一条原因 |
 | `stale_revision` | 409 | 修订检查未通过；`data.items` 为 `[{item_id, base_revision, current_revision, changed_by}]` |
@@ -521,7 +526,7 @@ data: {
 
 | 端点 | 用途 | 返回 |
 |---|---|---|
-| `GET /api/v1/knowledge` | 全部知识库与每个知识库的文档清单，连同向量化状态 | `{ok, libraries: [{id, name, created_at, used_by_tasks, embedding, documents: [{name, kind, bytes, uploaded_at, embedding}]}], embedding}`。`used_by_tasks` 数的是本服务接手的任务里选用了这个知识库的个数；被别的服务占用的任务不数。三处 `embedding` 见下面「文档的向量化」 |
+| `GET /api/v1/knowledge` | 全部知识库与每个知识库的文档清单，连同向量化状态 | `{ok, libraries: [{id, name, created_at, used_by_tasks, embedding, documents: [{name, kind, bytes, uploaded_at, embedding, missing}]}], embedding}`。`missing` 为真表示清单里有而文件不在（从不带文档的数据包导入、还没补齐，见下面的补齐文档）。`used_by_tasks` 数的是本服务接手的任务里选用了这个知识库的个数；被别的服务占用的任务不数。三处 `embedding` 见下面「文档的向量化」 |
 | `POST /api/v1/knowledge/embed` `{library?, name?}` | 开始向量化 | `{ok, queued, embedding}`。把现在选定的嵌入模型下还没有向量化的文档排进后台的队：不给范围是全部知识库，给 `library` 是那一个知识库，再给 `name` 是那一份文档（没算成之后重试用）。`queued` 是这一次新排进去几份，已经在算或者已经在队里的不重复排；`embedding` 与 `GET /api/v1/knowledge` 顶层的那一项相同。没有选嵌入模型返回 `rejected`，说明「还没有选嵌入模型。」；没有那个知识库或那份文档返回 `not_found`；只给 `name` 不给 `library` 返回 `bad_request` |
 | `POST /api/v1/knowledge/search` `{query, libraries?, limit?}` | 查找：按意思与按字面两路 | `{ok, mode, reason, model, ready, pending, libraries, documents, chunks, uncovered_semantic, uncovered, hits, candidates, timing}`，见下面「查找」。按意思那一路做不了时不拒绝，退到只按字面（`mode` 与 `reason` 说明是哪一种）；请求写得不对返回 `bad_request`；调用的一方在回答发出之前断开连接时以 `cancelled` 结束 |
 | `POST /api/v1/knowledge/libraries` `{name}` | 新建知识库 | `{ok, library: {id, name, created_at}}`。名字空返回 `rejected`，说明「知识库的名字不能是空的。」；与已有的知识库同名（同名规则与材料相同）返回 `rejected`，说明「已经有一个叫「…」的知识库了。」 |
@@ -529,6 +534,7 @@ data: {
 | `POST /api/v1/knowledge/libraries/{id}/delete` | 删除知识库，文档一并删除 | `{ok, id}`。本服务接手的任务里选用了它的，自动不再选用，在它的 `knowledge.json` 的 `notes` 里记一句，不发事件；被别的服务占用的任务不改。 |
 | `POST /api/v1/knowledge/libraries/{id}/documents` | 上传文档（multipart，单文件，另带字段 `kind`） | `{ok, document: {name, kind, bytes, uploaded_at}}`。检查照上传材料的办法（第 5.1 节）：文件名、类型（`.md`、`.txt`、Word 的 `.docx` 与 PDF；PDF 文档照 PDF 材料的办法解析，整份没有可读文字、解析不了或者到时限没有解析完的拒绝，见第 5.1 节）、保留的文件名、大小（按第 10.5 节的上限，没有改过时是 20 MB，`too_large`；请求体的收法与超过时的拒绝同上传材料，见第 10.5 节）、`kind`（`bad_request`）、内容、文件名。内容与文件名只在同一个知识库里比：内容相同返回 `duplicate_content`，说明「这份文件与这个知识库里已有的文档《…》内容完全相同，没有重复保存。」；同名而内容不同返回 `name_taken`，说明「这个知识库里已经有一份叫《…》的文档，内容与这份不同。请给文件换一个名字再上传。」；两种拒绝的 `data.name` 都是已有的那份文档。读不出来的 `.docx` 返回 `unsupported_type`，什么都不留下。选了嵌入模型时，这份文档随即排进后台向量化 |
 | `POST /api/v1/knowledge/libraries/{id}/documents/delete` `{name}` | 删除文档，生成的文件与向量化得到的数字串一起删 | `{ok}`。这份文档正在向量化时，手上的请求放下 |
+| `POST /api/v1/knowledge/libraries/{id}/documents/replenish?name=…`（multipart，单文件） | 补齐一份缺失的文档 | `{ok, name}`。清单里有这个名字而文件不在时，收下的文件 SHA-256 与清单记的相同才放进文档目录（照上传的规矩生成派生文件，清单不改），并照上传之后的做法排队向量化；不同返回 `rejected`「不是导出时那份文件（校验值与导出时不同）。要换成别的文件，请先删掉这份文档再上传。」，什么都不写；文件在时返回 `rejected`「这份文档的文件在，不用补齐。」；没有这个名字返回 `not_found`。知识库文档没有「接受差异」 |
 | `GET /api/v1/knowledge/libraries/{id}/documents/content?name=…` | 文档的正文 | `{ok, name, text}`；`.docx` 与 `.pdf` 给文字版。文件必须落在那个知识库的 `files/` 里，否则返回 `bad_request` |
 | `GET /api/v1/knowledge/libraries/{id}/documents/raw?name=…` | 文档文件的原样内容 | 文件的原始字节，`Content-Type` 与材料相同。页面按原样显示知识库里的 PDF 与 Word 文档时用它（点知识库来源的出处、知识库页面的「查看」）；这些文档的位置表（`文档名.pdf.locations.json`、`文档名.docx.locations.json`）与文字版照旧经 `…/documents/content` 取。名字越出这个知识库的 `files/` 时以 `bad_request` 拒绝 |
 | `GET /api/v1/tasks/{task_id}/knowledge` | 这个任务选用的知识库 | `{ok, libraries: [知识库编号…], embedding: {model, ready, pending}}`；`GET /api/v1/tasks/{task_id}` 的 `knowledge_libraries` 是其中的 `libraries`。`embedding` 按这个任务选用的知识库算：`ready` 表示选了嵌入模型而且这些知识库里的文档都向量化完成，按意思查找据此决定能不能用 |
