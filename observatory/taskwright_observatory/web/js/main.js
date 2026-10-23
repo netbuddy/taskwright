@@ -91,6 +91,9 @@ async function start() {
   // 打开的是数据包（--pack）时顶部多一块包头；包的格式比观测台新时只显示包头，不读别的。
   if (!(await renderPack(overview))) return;
   packShown = !!overview["诊断包"];
+  // 按会话的诊断包：一打开就定位到那条会话。
+  const only = overview["诊断包"] && overview["诊断包"].会话编号;
+  if (only && !location.hash) history.replaceState(null, "", `#/session/${encodeURIComponent(only)}`);
   window.addEventListener("hashchange", route);
   await route();
 }

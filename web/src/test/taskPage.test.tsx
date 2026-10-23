@@ -661,6 +661,28 @@ describe("会话清单", () => {
     expect(document.body.textContent).not.toMatch(/已做完/);
   });
 
+  it("每行末尾的「…」菜单只有「导出这条会话的诊断包」；点它弹「导出诊断包」确认框，第一行写任务名与会话名，「导出」带 diagnostic=1 与 session=<会话编号>，选脱敏再加 redact=1；不进那条会话", async () => {
+    page(detail({ sessions: [session("S1", "请把退款说明整理成功能用例。", "2026-09-28T18:02:00"), session("S2", null, null)] }));
+    await ready();
+    const before = window.location.hash;
+    fireEvent.click(screen.getByTestId("session-menu-S1"));
+    expect((await screen.findAllByRole("menuitem")).map((one) => one.textContent)).toEqual(["导出这条会话的诊断包"]);
+    fireEvent.click(screen.getByText("导出这条会话的诊断包"));
+    expect(await screen.findByText("导出诊断包", { selector: ".ant-modal-title" })).toBeInTheDocument();
+    expect(window.location.hash).toBe(before);
+    expect(screen.getByTestId("diagnostic-task")).toHaveTextContent("任务实例「退款需求走查」的会话「请把退款说明整理成功能用例。」");
+    expect(screen.getByTestId("diagnostic-purpose")).toHaveTextContent("把这条会话的运行记录与对话，连同任务实例的条目，打成一个文件，供排查问题；不含别的会话的对话、输入资料原件与密钥。");
+    expect(screen.getByTestId("diagnostic-keep")).toHaveTextContent("包里含对话全文，请妥善保管。");
+    expect(screen.getByTestId("diagnostic-export")).toHaveAttribute("href", "/api/v1/tasks/TASK-P/export?diagnostic=1&session=S1");
+    fireEvent.click(screen.getByTestId("diagnostic-form-redacted"));
+    expect(screen.getByTestId("diagnostic-export")).toHaveAttribute("href", "/api/v1/tasks/TASK-P/export?diagnostic=1&redact=1&session=S1");
+    fireEvent.click(screen.getByTestId("diagnostic-export"));
+    // 没有名字的会话在确认框里写「未命名会话」。
+    fireEvent.click(screen.getByTestId("session-menu-S2"));
+    fireEvent.click((await screen.findAllByText("导出这条会话的诊断包")).at(-1)!);
+    await waitFor(() => expect(screen.getByTestId("diagnostic-task")).toHaveTextContent("任务实例「退款需求走查」的会话「未命名会话」"));
+  });
+
   it("「显示已归档的会话」默认关着；勾上时另取带归档的清单，归档的会话接在后面、标「已归档」，点它照样进那条会话；再去掉勾就不列", async () => {
     const calls = page(detail({ sessions: [session("S1", "需求分析", "2026-10-13T09:10:00", { work_item: null })] }), info, statusOf({ assets: FILLED_ASSETS }));
     const list = vi.spyOn(api, "listSessions").mockResolvedValue([

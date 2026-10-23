@@ -224,6 +224,7 @@ def read_launch(path: Path) -> dict:
     knowledge_note = next((n for n in notes if n.get("记录") == "知识仓库摘要"), None)
     context_note = next((n for n in notes if n.get("记录") == "上下文文件"), None)
     skills_note = next((n for n in notes if n.get("记录") == "已加载的 skill"), None)
+    session_starts = [n for n in notes if n.get("记录") == "会话起点"]
 
     return {
         "归档文件": path.name,
@@ -248,6 +249,8 @@ def read_launch(path: Path) -> dict:
             "知识仓库摘要": knowledge_note,
             "上下文文件": context_note,
             "已加载的 skill": skills_note,
+            # 启动、切换、新建会话之后各一条；这件事做出来之前的归档没有，是空的。
+            "会话起点": session_starts,
         },
     }
 
@@ -827,14 +830,65 @@ def attach_entry_ids(runs: list[dict], session_file: dict | None) -> None:
 NO_EVENTS = "没有事件归档"
 
 
-def build_sessions(archive_dir: Path) -> list[dict]:
+def session_segments(launch: dict) -> list[tuple[int, str]]:
+    """一次 pi 进程启动里各条会话从第几行起：[(起始行号, 会话编号)]，按行号排。
+
+    有「会话起点」补记的（新归档）照它：记录里的起始行号是记它时事件流已有的行数，这条会话从下一行起。
+    没有的（旧归档）照事件流里 get_state 回应报的会话编号：编号变了的那一行起算另一条会话。
+    """
+    starts = launch["后端补记"].get("会话起点") or []
+    segments = [(int(n.get("起始行号") or 0) + 1, str(n.get("会话编号") or "")) for n in starts if n.get("会话编号")]
+    if not segments:
+        for event in launch["事件"]:
+            if event.get("type") == "response" and event.get("command") == "get_state":
+                sid = str((event.get("data") or {}).get("sessionId") or "")
+                if sid and (not segments or segments[-1][1] != sid):
+                    segments.append((int(event.get(LINE_KEY) or 0), sid))
+    return sorted(segments)
+
+
+def events_of_session(launch: dict, session_id: str) -> list[dict]:
+    """一次启动里属于这条会话的事件。第一段之前的事件（启动时的那几行）算第一段的会话。"""
+    segments = session_segments(launch)
+    if not segments:
+        return []
+    kept = []
+    for event in launch["事件"]:
+        line = int(event.get(LINE_KEY) or 0)
+        owner = segments[0][1]
+        for start, sid in segments:
+            if line >= start:
+                owner = sid
+            else:
+                break
+        if owner == session_id:
+            kept.append(event)
+    return kept
+
+
+def only_this_session(launches: list[dict], session_id: str) -> list[dict]:
+    """打开按会话的诊断包时用：一组归档常跨几条会话，把每次启动的事件切到只剩这条会话的那几段，没有这条会话的启动不要。
+    归档文件本身不动，切的是读进内存的事件。"""
+    kept = []
+    for launch in launches:
+        if not any(sid == session_id for _, sid in session_segments(launch)):
+            continue
+        kept.append({**launch, "事件": events_of_session(launch, session_id), "会话编号": session_id})
+    return kept
+
+
+def build_sessions(archive_dir: Path, only_session: str = "") -> list[dict]:
     """扫一遍归档目录，给出全部会话，以及那几次没能启动起来的 pi。
 
     一条会话可能对应好几次 pi 进程启动：每打一次 /restart 就多一次。
     启动失败的那几次没有会话编号，单独列出来，不混进正常会话里。
+    给了 only_session（打开按会话的诊断包时）只给这一条会话：每次启动的事件只留属于它的那几段，别的会话与启动失败的都不列。
     """
     launches = scan_launches(archive_dir)
     session_files = scan_session_files(archive_dir)
+    if only_session:
+        launches = only_this_session(launches, only_session)
+        session_files = {k: v for k, v in session_files.items() if k == only_session}
 
     grouped: dict[str, list[dict]] = {}
     failures: list[dict] = []

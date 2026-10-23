@@ -114,6 +114,22 @@ test("导出接口：任务与知识库各回一个 zip 下载，里面是范围
     assert.equal(readPack(redactedFile).manifest.diagnostic?.purpose, "redacted");
     const refused = await postPack(port, "/api/v1/tasks/import", redactedData);
     assert.deepEqual([refused.status, refused.body.error.code, refused.body.error.message], [422, "rejected", "脱敏诊断包只供排查，不能导入"]);
+    // session=<会话编号>：按会话的诊断包，文件名在任务编号后面加会话编号前 8 位，可与 redact=1 叠加；没有这条会话时 404；经导入接口导入被拒。
+    const sid = "01a11a9d-031c-7481-91dc-06673e05c0b1";
+    const bySession = await fetch(`http://127.0.0.1:${port}/api/v1/tasks/${a}/export?diagnostic=1&redact=1&session=${sid}`);
+    assert.equal(bySession.status, 200);
+    assert.match(String(bySession.headers.get("content-disposition")), new RegExp(`^attachment; filename="diag-${a}-01a11a9d-\\d{8}-\\d{4}-redacted\\.taskwright\\.zip"$`));
+    const sessionData = Buffer.from(await bySession.arrayBuffer());
+    const sessionFile = join(fresh("got"), "session.zip");
+    put(sessionFile, sessionData);
+    assert.deepEqual([readPack(sessionFile).manifest.diagnostic?.granularity, readPack(sessionFile).manifest.diagnostic?.session_id, readPack(sessionFile).manifest.diagnostic?.purpose],
+      ["session", sid, "redacted"]);
+    const noSuch = await fetch(`http://127.0.0.1:${port}/api/v1/tasks/${a}/export?diagnostic=1&session=01a11a9d-0000-7000-8000-000000000000`);
+    assert.equal(noSuch.status, 404);
+    await noSuch.arrayBuffer();
+    const fullSession = Buffer.from(await (await fetch(`http://127.0.0.1:${port}/api/v1/tasks/${a}/export?diagnostic=1&session=${sid}`)).arrayBuffer());
+    const sessionRefused = await postPack(port, "/api/v1/tasks/import", fullSession);
+    assert.deepEqual([sessionRefused.status, sessionRefused.body.error.message], [422, "按会话的诊断包只供排查，不能导入。"]);
     // 实际交给 pi 的模型：服务用的启动配置（测试用的 fake）里的那个。
     const launched = launchModelOf(resolveModel(started.service.profile));
     assert.deepEqual(readPack(diagFile).manifest.diagnostic?.launch_model, launched);

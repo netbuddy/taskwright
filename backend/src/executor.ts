@@ -341,15 +341,17 @@ export class Executor {
     if (expected !== null && state.sessionId !== expected) await this.resumeFailedLocked(pi, expected, state.sessionId ?? null, "带会话文件启动 pi");
     await this.ensureModel(pi, state);
     this.pi = pi;
-    this.adopt(state);
+    this.adopt(state, pi, "start");
     this.cursor = null;
     void this.pumpLoop(pi);
     this.setState("idle");
   }
 
-  private adopt(state: Dict): void {
+  /** 采纳 pi 报来的会话：记下活动会话与它的会话文件，并在后端补记里记一条「会话起点」。 */
+  private adopt(state: Dict, pi: PiSession, how: "start" | "switch" | "new"): void {
     this.activeSession = state.sessionId ?? null;
     if (state.sessionFile && this.activeSession) this.sessions.remember(this.activeSession, String(state.sessionFile));
+    if (this.activeSession) pi.noteSessionStart(this.activeSession, how);
   }
 
   /**
@@ -404,7 +406,7 @@ export class Executor {
     }
     if (state.sessionId !== sessionId) return this.resumeFailedLocked(pi, sessionId, state.sessionId ?? null, "切换会话");
     await this.ensureModel(pi, state);
-    this.adopt(state);
+    this.adopt(state, pi, "switch");
     this.cursor = null;
     this.setState("idle");
   }
@@ -452,7 +454,7 @@ export class Executor {
           piUnavailable(error);
         }
         await this.ensureModel(pi, state);
-        this.adopt(state);
+        this.adopt(state, pi, "new");
         this.cursor = null;
         this.setState("idle");
       }

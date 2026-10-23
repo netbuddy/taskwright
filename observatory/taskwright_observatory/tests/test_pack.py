@@ -242,6 +242,71 @@ class ServerTest(PackCase):
         self.assertEqual(rows[0]["终态"], runs.NO_EVENTS)
 
 
+class SessionPackTest(PackCase):
+    """按会话的诊断包：只列那条会话；一组里几条会话交替出现时，只把属于它的段算进它的运行；判不出的组写在包头里。"""
+
+    S1 = "01a11a9d-0000-7000-8000-000000000001"
+    S2 = "01a11a9d-0000-7000-8000-000000000002"
+
+    def archive(self, with_starts: bool) -> Path:
+        """一组归档里会话交替：S1、S2、S1 各一次运行。with_starts 为真时另有「会话起点」补记（新归档），否则只靠 get_state（旧归档）。"""
+        root = self.tmp / ("new" if with_starts else "old") / "TASK-20260920-AAAA"
+        events = root / "pi-events"
+        events.mkdir(parents=True)
+        lines, starts = [], []
+        for sid, label in [(self.S1, "甲"), (self.S2, "乙"), (self.S1, "丙")]:
+            lines.append({"id": f"s-{len(lines)}", "type": "response", "command": "get_state", "success": True,
+                          "data": {"sessionId": sid, "sessionFile": f"/x/{sid}.jsonl"}})
+            starts.append({"记录": "会话起点", "时刻": "2026-09-20T10:00:00", "会话编号": sid,
+                           "本组文件名": "service-20260920-100000.jsonl", "起始行号": len(lines), "进入方式": "switch"})
+            lines += [{"type": "agent_start"}, {"type": "turn_start"},
+                      {"type": "message_end", "message": {"role": "user", "content": [{"type": "text", "text": label}]}},
+                      {"type": "turn_end"}, {"type": "agent_end"}, {"type": "agent_settled"}]
+        (events / "service-20260920-100000.jsonl").write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in lines), encoding="utf-8")
+        (events / "service-20260920-100000.times.jsonl").write_text(
+            "".join(json.dumps({"行号": i + 1, "收到时刻": 1790000000.0 + i}) + "\n" for i in range(len(lines))), encoding="utf-8")
+        notes = [{"记录": "启动", "时刻": "2026-09-20T10:00:00"}] + (starts if with_starts else [])
+        (events / "service-20260920-100000.backend.jsonl").write_text(
+            "".join(json.dumps(x, ensure_ascii=False) + "\n" for x in notes), encoding="utf-8")
+        return root
+
+    def users_said(self, launch: dict, sid: str) -> list[str]:
+        return [e["message"]["content"][0]["text"] for e in runs.events_of_session(launch, sid) if e.get("type") == "message_end"]
+
+    def test_两条会话交替时切出的段只含这条会话的事件(self):
+        for with_starts in (True, False):
+            launch = runs.scan_launches(self.archive(with_starts))[0]
+            self.assertEqual(self.users_said(launch, self.S1), ["甲", "丙"], with_starts)
+            self.assertEqual(self.users_said(launch, self.S2), ["乙"], with_starts)
+            # 这条会话的段里只有它自己的那一次运行。段的边界：新归档在会话起点记的行号之后，旧归档在报出新编号的 get_state 那一行。
+            kept = runs.events_of_session(launch, self.S2)
+            self.assertEqual([e["type"] for e in kept].count("agent_start"), 1, with_starts)
+
+    def test_只列这条会话_它的运行只数它自己的段(self):
+        root = self.archive(True)
+        everyone = runs.build_sessions(root)
+        self.assertEqual([s["会话编号"] for s in everyone], [self.S1], "普通打开方式不变：整组算给第一个会话")
+        only = runs.build_sessions(root, self.S2)
+        self.assertEqual([[s["会话编号"], s["运行次数"]] for s in only], [[self.S2, 1]])
+        self.assertEqual([s["运行次数"] for s in runs.build_sessions(root, self.S1)], [2])
+        self.assertEqual(runs.build_sessions(root, "01a11a9d-ffff-7000-8000-000000000009"), [])
+
+    def test_包头写粒度与没有带的归档组_服务只列这条会话(self):
+        sid = runs.build_sessions(self.open(FULL).runs_dir / json.loads(zipfile.ZipFile(FULL).read(packs.MANIFEST))["tasks"][0]["task_id"])[0]["会话编号"]
+        omitted = [{"group": "service-20260920-140000", "reason": "这组归档没有会话起点记录与会话编号，收到时刻文件不在或是空的，判断不了它是否属于这条会话。"}]
+
+        def to_session(manifest):
+            manifest["diagnostic"] = {**manifest["diagnostic"], "granularity": "session", "session_id": sid, "omitted_groups": omitted}
+        opened = self.open(self.rewritten(FULL, "session.taskwright.zip", to_session))
+        head = packs.header(opened)
+        self.assertEqual([head["粒度"], head["会话编号"]], ["一条会话", sid])
+        self.assertEqual(head["没有带的归档组"], [{"组": omitted[0]["group"], "原因": omitted[0]["reason"]}])
+        self.assertEqual(packs.session_of(opened), sid)
+        self.assertEqual(packs.session_of(self.open(FULL)), "")
+        cache = IndexCache([opened.runs_dir], opened.tasks_dir, "", "", only_session=packs.session_of(opened))
+        self.assertEqual([s["会话编号"] for s in cache.get().sessions], [sid])
+
+
 class NoNodeTest(unittest.TestCase):
     def test_没有_node_时完成条件写未核对(self):
         with mock.patch.object(taskpage.shutil, "which", return_value=None):

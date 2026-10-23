@@ -6,7 +6,7 @@
 
 import { api } from "./api.js";
 import { esc, unknown } from "./util.js";
-import { freshView, setCrumb, setLangfuse } from "./state.js";
+import { freshView, setCrumb, setLangfuse, state } from "./state.js";
 import { renderTaskPage } from "./taskpage.js";
 
 function failedPage(detail) {
@@ -52,5 +52,15 @@ export async function renderSession(sessionId, anchor) {
     return;
   }
   renderTaskPage(view, await api.taskpageSession(sessionId));
+  view.insertAdjacentHTML("afterbegin", omittedGroupsNote(sessionId));
   focusMessage(anchor);
+}
+
+/** 按会话的诊断包里有判不出归属、没有带的归档组时，会话页顶上写明：这段的归档不在包里，并列出组名与原因。 */
+function omittedGroupsNote(sessionId) {
+  const head = state.overview && state.overview["诊断包"];
+  const groups = (head && head.会话编号 === sessionId && head.没有带的归档组) || [];
+  if (!groups.length) return "";
+  return `<section class="panel" data-testid="omitted-groups"><p class="warn">这段的归档不在包里：</p><ul>` +
+    groups.map((g) => `<li>${esc(g.组)}（${esc(g.原因)}）</li>`).join("") + `</ul></section>`;
 }
