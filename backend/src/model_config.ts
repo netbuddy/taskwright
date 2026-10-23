@@ -27,6 +27,7 @@ import {
   DEFAULT_PURPOSE, ID_PREFIX, PURPOSES, PURPOSE_INFO, checkWritable, isPurpose, migratePurposes, nameWithPurpose, needsPurposeMigration,
   newProviderId, readPiDirSettings, updatePiDirSettings,
 } from "./product_settings.ts";
+import { isCertificateError, trustSystemCertificates } from "./system_ca.ts";
 
 export { ID_PREFIX };
 
@@ -38,6 +39,8 @@ export { CODEX_PROVIDER };
 
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
 export const UNREACHABLE_TEXT = "连不上这个地址。请确认模型服务已经启动，地址与端口没有写错。";
+/** 连得上、但对方的证书没有通过校验（自签证书或企业内部证书，签发它的根证书不在操作系统信任库里）。 */
+export const CERTIFICATE_TEXT = "这个地址的证书没有通过校验。请把签发它的根证书装进这台电脑的操作系统信任库，再重试。";
 export const KEY_REJECTED_TEXT = "模型服务拒绝了这个密钥。";
 export const NOT_OFFERED_TEXT = "这个模型服务没有提供模型的清单，请手工添加。";
 
@@ -132,12 +135,16 @@ interface Answer {
   body: any;
   /** 连不上时的原因（给排查用）。 */
   error?: string;
+  /** 连不上是因为对方的证书没有通过校验。 */
+  certificate?: boolean;
 }
 
 async function call(url: string, options: { key?: string | null; method?: string; body?: unknown; timeout?: number } = {}): Promise<Answer> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (options.key) headers.Authorization = `Bearer ${options.key}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  // 连之前先让本进程认操作系统信任库里的根证书（system_ca.ts，只做一次）。
+  trustSystemCertificates();
   try {
     const res = await fetch(url, {
       method: options.method ?? "GET", headers, body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -152,7 +159,7 @@ async function call(url: string, options: { key?: string | null; method?: string
     }
     return { status: res.status, body };
   } catch (error) {
-    return { status: 0, body: null, error: String((error as Error)?.message ?? error) };
+    return { status: 0, body: null, error: String((error as Error)?.message ?? error), certificate: isCertificateError(error) };
   }
 }
 
@@ -160,7 +167,7 @@ async function call(url: string, options: { key?: string | null; method?: string
 async function checkConnection(kind: Kind, base: string, key: string | null): Promise<{ ok: boolean; field: "base_url" | "api_key" | null; message: string }> {
   const url = kind === "ollama" ? `${rootOf(base)}/api/tags` : modelsUrl(kind, base);
   const answer = await call(url, { key });
-  if (answer.status === 0) return { ok: false, field: "base_url", message: UNREACHABLE_TEXT };
+  if (answer.status === 0) return { ok: false, field: "base_url", message: answer.certificate ? CERTIFICATE_TEXT : UNREACHABLE_TEXT };
   if (answer.status === 401 || answer.status === 403) return { ok: false, field: "api_key", message: KEY_REJECTED_TEXT };
   return { ok: true, field: null, message: "" };
 }
@@ -186,7 +193,7 @@ function failed(reason: string, advice = "可以稍后再试，或者手工添�
 }
 
 function reasonOf(answer: Answer): string {
-  if (answer.status === 0) return "连不上这个模型服务";
+  if (answer.status === 0) return answer.certificate ? "这个模型服务的证书没有通过校验" : "连不上这个模型服务";
   if (answer.status === 401 || answer.status === 403) return "模型服务拒绝了这个密钥";
   return `模型服务回答了错误（HTTP ${answer.status}）`;
 }

@@ -17,6 +17,7 @@ import { byCodePoint } from "./library.ts";
 import { PROFILE_DIR, fromRoot } from "./paths.ts";
 import { selectedLanguageModel, settingsFile } from "./product_settings.ts";
 import { SEGMENTS_ENV, type SegmentParams, segmentParams } from "../../agent/src/lib/segments.ts";
+import { USE_SYSTEM_CA_ENV } from "./system_ca.ts";
 
 export const ENV_PLUGIN = "TASKWRIGHT_LANGFUSE_PLUGIN";
 export const ENV_KEY_FILE = "TASKWRIGHT_LANGFUSE_ENV_FILE";
@@ -222,6 +223,8 @@ export function buildEnvironment(profile: Profile): Record<string, string> {
   const tag = (profile.langfuse || {}).environment;
   if (tag) env[ENV_TRACING_ENVIRONMENT] = env[ENV_TRACING_ENVIRONMENT] || tag;
   env[SEGMENTS_ENV] = JSON.stringify(segmentParamsOf(profile));
+  // pi 向模型服务发请求时也认操作系统信任库里的根证书（Node 启动时读这个变量；见 system_ca.ts）。
+  env[USE_SYSTEM_CA_ENV] = "1";
   if (profile[DEBUG_MODE]) env[ENV_DEBUG_SETTINGS] = settingsFile(process.env);
   else delete env[ENV_DEBUG_SETTINGS];
   return env;

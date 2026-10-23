@@ -246,6 +246,10 @@ async function main(): Promise<void> {
     }
   }
   process.env.TASKWRIGHT_CACHE_DIR = layout.cache;
+  // Every Node process started from here (pi among them) also trusts the root certificates in the operating system's
+  // store, so model services with a self-signed or company certificate work once its root is installed there. The
+  // service in this process does the same on its own at run time (backend/src/system_ca.ts).
+  process.env.NODE_USE_SYSTEM_CA ||= "1";
   if (fs.existsSync(TOOLS_DIR)) process.env.PATH = `${TOOLS_DIR}${path.delimiter}${process.env.PATH ?? ""}`;
   const agent = agentDir(layout.cache);
   if (agent) process.env.TASKWRIGHT_AGENT_DIR = agent;

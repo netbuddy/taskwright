@@ -5,6 +5,7 @@
  */
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -55,6 +56,20 @@ test("启动配置拼出的 pi 命令行与期望值逐字一致", () => {
   } finally {
     process.env.TASKWRIGHT_PI_ENTRY = FAKE_PI;
   }
+});
+
+test("交给 pi 的环境里有 NODE_USE_SYSTEM_CA=1：用这份环境起的 Node 默认根证书里含操作系统信任库的根证书", () => {
+  const built = buildCommand(PROFILE, workspace, join(tmp, "sd-ca"), null);
+  assert.equal(built.env.NODE_USE_SYSTEM_CA, "1");
+  const count = "const t = require('node:tls'); console.log(JSON.stringify([t.getCACertificates('default').length, t.getCACertificates('bundled').length, t.getCACertificates('system').length]))";
+  const run = (env: Record<string, string>) => JSON.parse(spawnSync(process.execPath, ["-e", count], { env, encoding: "utf-8" }).stdout) as number[];
+  const without = { ...built.env };
+  delete without.NODE_USE_SYSTEM_CA;
+  const [plainDefault, bundled] = run(without);
+  const [withDefault, , system] = run(built.env);
+  assert.equal(plainDefault, bundled);
+  // 本机系统信任库里没有根证书时（极少见）两者相同，只核对不少。
+  assert.ok(withDefault >= bundled && (system === 0 || withDefault > bundled), JSON.stringify({ withDefault, bundled, system }));
 });
 
 test("注入 pi 的入口脚本时用当前的 Node 运行它；入口不存在时报清楚", () => {
