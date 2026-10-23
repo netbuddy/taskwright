@@ -242,7 +242,7 @@ test("分段参数经环境变量给：参数变了，读的时候按新参数�
   }
 });
 
-test("材料表里有而文件不在的材料（导入不带材料的数据包、还没补齐）记进 details.materials.missing；给助手的文字照旧只写目录里的文件", () => {
+test("材料表里有而文件不在的材料（导入不带材料的数据包、还没补齐）记进 details.materials.missing；给助手的文字在材料那一句之后另起一句列出它们", () => {
   const dir = makeWorkspace(undefined, { material: false });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
   mkdirSync(join(dir, "inputs"), { recursive: true });
@@ -252,4 +252,16 @@ test("材料表里有而文件不在的材料（导入不带材料的数据包�
   const message = taskStatusMessage(dir, FRESH, "s")!;
   assert.deepEqual([message.details.materials.files.map((f: { path: string }) => f.path), message.details.materials.missing], [["inputs/在的.md"], ["inputs/缺的.docx"]]);
   assert.match(message.text, /材料目录 inputs\/ 里有 1 个文件：inputs\/在的\.md/);
+  assert.match(message.text, /材料表里另有 1 份材料的文件缺失，用户补齐前读不到：inputs\/缺的\.docx。/);
+});
+
+test("没有缺失的材料时，任务状况里不写缺失那一句", () => {
+  const dir = makeWorkspace(undefined, { material: false });
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  mkdirSync(join(dir, "inputs"), { recursive: true });
+  writeFileSync(join(dir, "inputs/在的.md"), "读者可以借书。", "utf-8");
+  insertMaterial(dir, "inputs/在的.md", { slot: null, role: "证据" });
+  const message = taskStatusMessage(dir, FRESH, "s")!;
+  assert.doesNotMatch(message.text, /文件缺失/);
+  assert.equal("missing" in message.details.materials, false);
 });

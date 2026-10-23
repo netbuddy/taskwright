@@ -244,8 +244,17 @@ function sizeText(bytes: number): string {
  * 材料清单那一句。Word 材料（.docx）旁边有上传时生成的 Markdown 投影（同名加 .md；0.2 的任务里是同名加 .txt 的纯文本投影），
  * 清单里照样列出，另加一句：Word 材料读投影，引用时出处写 Word 文件加段落号。带了分段情况时，每份 Word 材料再写一句段数、块数与分段清单。
  * PDF 材料（.pdf）同样：读由它生成的投影，出处写 PDF 文件加页与块；带了分段情况时写页数、块数、哪几页没有文字与分段清单。
+ * 材料表里有而文件不在的材料（materials.missing）另起一句列出，说明用户补齐前读不到；没有缺失时不写。
  */
 export function materialsSentence(materials: Materials): string {
+  const missing = materials.missing?.length
+    ? fillText("status.materials_missing", { count: materials.missing.length, files: materials.missing.join("、") })
+    : "";
+  return presentMaterialsSentence(materials) + missing;
+}
+
+/** 材料清单那一句里目录中实有的文件那部分。 */
+function presentMaterialsSentence(materials: Materials): string {
   if (materials.files.length === 0) return fillText("status.materials_none", { dir: materials.dir });
   const paths = new Set(materials.files.map((f) => f.path));
   const words = materials.files.filter((f) => /\.docx$/i.test(f.path) && (paths.has(`${f.path}.md`) || paths.has(`${f.path}.txt`))).map((f) => f.path);
