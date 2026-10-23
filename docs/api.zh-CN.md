@@ -585,7 +585,7 @@ data: {
 
 | 接口 | 作用 | 返回 |
 |---|---|---|
-| `GET /api/v1/tasks/{task_id}/export` | 把一个任务（任务目录与它的对话记录）导出成数据包；带 `?with_events=1` 时另带它的事件归档（`pi-events`）；材料的原件与派生文件缺省不带，只带材料清单，带 `?with_materials=1` 时才带。带 `?diagnostic=1` 时导出成诊断包：固定带事件归档、不带材料原件（前两个参数不看），另带任务建立以来的后端日志（`logs/`）与设置摘录（`settings.redacted.json`），清单文件另有 `diagnostic` 一节，文件名是 `diag-<任务编号>-<年月日-时分>.taskwright.zip`；见部署说明第 8.2 节 | zip 文件的字节，`Content-Type: application/zip`，`Content-Disposition: attachment; filename="<任务编号>.taskwright.zip"`，带 `Content-Length`。没有这个任务是 `not_found` |
+| `GET /api/v1/tasks/{task_id}/export` | 把一个任务（任务目录与它的对话记录）导出成数据包；带 `?with_events=1` 时另带它的事件归档（`pi-events`）；材料的原件与派生文件缺省不带，只带材料清单，带 `?with_materials=1` 时才带。带 `?diagnostic=1` 时导出成诊断包：固定带事件归档、不带材料原件（前两个参数不看），另带任务建立以来的后端日志（`logs/`）与设置摘录（`settings.redacted.json`），清单文件另有 `diagnostic` 一节，文件名是 `diag-<任务编号>-<年月日-时分>.taskwright.zip`；再带 `&redact=1` 是脱敏诊断包，文件名后面加 `-redacted`；见部署说明第 8.2 节 | zip 文件的字节，`Content-Type: application/zip`，`Content-Disposition: attachment; filename="<任务编号>.taskwright.zip"`，带 `Content-Length`。没有这个任务是 `not_found` |
 | `GET /api/v1/knowledge/libraries/{id}/export` | 把一个知识库导出成数据包；文档的原件与派生文件缺省不带，只带文档清单，带 `?with_materials=1` 时才带 | 同上，文件名是 `<知识库编号>.taskwright.zip`。没有这个知识库是 `not_found` |
 | `POST /api/v1/tasks/import` | 导入一个范围是一个任务的数据包 | `{ "ok": true, "report": … }` |
 | `POST /api/v1/knowledge/import` | 导入一个范围是一个知识库的数据包 | 同上 |
@@ -602,7 +602,7 @@ data: {
 - `pack` 是从包里读出的：范围（`task` 或 `library`）、导出它的产品版本与导出时刻。
 - `file` 是报告写进的文件（数据目录的 `logs/` 下），`text` 是给人看的整段文字。
 
-回答是 200 不等于每一项都导入了：个别项没有导入成时仍是 200，看各项的 `outcome`。整个包被拒绝时（不是数据包、比这个程序新、包里的文件与清单文件对不上或校验值不符、范围不是这个接口收的那一种）返回 `rejected`（422），`error.message` 是原因，`error.data.report` 是同一份报告（`fatal` 就是这个原因），这时数据没有任何改变。导入的任务由服务当场接手，随后的 `GET /api/v1/tasks` 里就有它。
+回答是 200 不等于每一项都导入了：个别项没有导入成时仍是 200，看各项的 `outcome`。整个包被拒绝时（不是数据包、比这个程序新、包里的文件与清单文件对不上或校验值不符、范围不是这个接口收的那一种、是脱敏诊断包——说明是「脱敏诊断包只供排查，不能导入」）返回 `rejected`（422），`error.message` 是原因，`error.data.report` 是同一份报告（`fatal` 就是这个原因），这时数据没有任何改变。导入的任务由服务当场接手，随后的 `GET /api/v1/tasks` 里就有它。
 
 ## 13 调试模式
 

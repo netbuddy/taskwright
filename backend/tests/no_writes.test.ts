@@ -108,6 +108,8 @@ const ALLOWED: Record<string, string[]> = {
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。改任务类型时用 loadDefinition 核对改后的任务定义读得通（只读文件，不碰库）。
   "definition.ts": ["DEFAULT_MATERIALS_DIR", "FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition", "withPlatformCollections"],
   "asset_names.ts": ["assetNamesOf"],
+  // 脱敏诊断包：改写暂存目录里任务库副本的来源摘录（写入，与 renumberTask 同类的例外，只改副本，见下面的测试）。
+  "redact_db.ts": ["redactSourceExcerpts"],
   "assets.ts": ["parseAssetNames"],
   // 任务类型的分析提纲的原文（只读文件，不碰库）：任务定义视图带上它，页面据它把业务说明的目录画成提纲的树。
   "outline_read.ts": ["outlineTextFor"],
@@ -199,6 +201,11 @@ test("改任务库的 upgradeTaskDatabase 只有数据升级模块导入", () =>
 test("给任务换编号的 renumberTask 只有数据包模块导入", () => {
   const importers = files(join(BACKEND, "src")).filter((file) => agentImports(readFileSync(file, "utf-8")).some(([module, name]) => module === "renumber_task.ts" && name === "renumberTask"));
   assert.deepEqual(importers.map((file) => relative(join(BACKEND, "src"), file)).filter((name) => name !== "data_pack.ts"), []);
+});
+
+test("改写任务库副本里来源摘录的 redactSourceExcerpts 只有数据包模块导入", () => {
+  const importers = files(join(BACKEND, "src")).filter((file) => agentImports(readFileSync(file, "utf-8")).some(([module, name]) => module === "redact_db.ts" && name === "redactSourceExcerpts"));
+  assert.deepEqual(importers.map((file) => relative(join(BACKEND, "src"), file)), ["data_pack.ts"]);
 });
 
 test("服务级库只经它的数据模块读写：别的文件不导入 node:sqlite，也不出现它的文件名", () => {

@@ -211,7 +211,7 @@ test("导出：缺省不带材料，加 --with-materials 才带；用法里写�
   assert.equal(full.status, 0, full.err);
   assert.deepEqual([readPack(join(dir, "bare.zip")).manifest.with_materials, readPack(join(dir, "bare.zip")).names.includes(`tasks/${a}/inputs/材料.md`)], [false, false]);
   assert.deepEqual([readPack(join(dir, "full.zip")).manifest.with_materials, readPack(join(dir, "full.zip")).names.includes(`tasks/${a}/inputs/材料.md`)], [true, true]);
-  assert.match(run(["data", "export"]).err, /\[--with-events\] \[--with-materials\] \[--diagnostic\] --to <数据包>/);
+  assert.match(run(["data", "export"]).err, /\[--with-events\] \[--with-materials\] \[--diagnostic \[--redact\]\] --to <数据包>/);
 });
 
 test("导出诊断包：--diagnostic 只能与 --task 一起写；导出的是诊断包，带事件归档，设置摘录取数据目录下的设置文件", async () => {
@@ -219,6 +219,12 @@ test("导出诊断包：--diagnostic 只能与 --task 一起写；导出的是�
   const [a] = where.ids;
   putArchive(where, a);
   const dir = outDir();
+  const redactAlone = run(["data", "export", "--data", where.dataDir, "--task", a, "--redact", "--to", join(dir, "r.zip")]);
+  assert.deepEqual([redactAlone.status, /--redact 要与 --diagnostic 一起写/.test(redactAlone.err)], [2, true]);
+  const redacted = run(["data", "export", "--data", where.dataDir, "--task", a, "--diagnostic", "--redact", "--to", join(dir, "redacted.zip")]);
+  assert.equal(redacted.status, 0, redacted.err);
+  assert.match(redacted.out, /^脱敏诊断包已经写好：/);
+  assert.equal(readPack(join(dir, "redacted.zip")).manifest.diagnostic?.purpose, "redacted");
   const alone = run(["data", "export", "--data", where.dataDir, "--diagnostic", "--to", join(dir, "all.zip")]);
   assert.equal(alone.status, 2);
   assert.match(alone.err, /--diagnostic 要与 --task 一起写：诊断包只能按一个任务导出。/);
