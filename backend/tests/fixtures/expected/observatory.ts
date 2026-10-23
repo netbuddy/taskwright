@@ -54,8 +54,8 @@ function stop(child: ChildProcess): Promise<void> {
   });
 }
 
-/** 起后端与假端点，跑完那一段对话，停掉，返回 [归档目录, 任务目录]。 */
-export async function runConversation(root: string): Promise<[string, string]> {
+/** 起后端与假端点，跑完那一段对话，停掉，返回 [归档目录, 任务目录]。script 是假端点照着回答的脚本，缺省是上面的 SCRIPT。 */
+export async function runConversation(root: string, script: unknown[] = SCRIPT): Promise<[string, string]> {
   const tasks = join(root, "tasks");
   const runs = join(root, "runs");
   mkdirSync(tasks, { recursive: true });
@@ -63,7 +63,7 @@ export async function runConversation(root: string): Promise<[string, string]> {
   const env: Dict = { ...process.env };
   for (const name of DROPPED_ENV) delete env[name];
   const scriptFile = join(root, "script.json");
-  writeFileSync(scriptFile, JSON.stringify(SCRIPT), "utf-8");
+  writeFileSync(scriptFile, JSON.stringify(script), "utf-8");
   const fake = spawn(process.execPath, [join(ROOT, "tools", "fake-model", "main.mts"), "--script", scriptFile, "--log", join(root, "fake.jsonl"),
     "--port", "0", "--agent-dir", join(root, "pi-agent")], { env });
   let out = "";

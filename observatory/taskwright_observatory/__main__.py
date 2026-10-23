@@ -3,6 +3,7 @@
     python3 -m taskwright_observatory --runs <归档目录> --workspaces <任务目录所在目录> --port 8770
     python3 -m taskwright_observatory --runs ./runs          # 产品后端按任务分目录存归档时，一次收进全部任务（含启动之后新建的）
     python3 -m taskwright_observatory --sim-root ./sim-runs  # 看模拟器的演练与评测：每一遍演练的任务与会话都收进来
+    python3 -m taskwright_observatory --pack diag-TASK-…-redacted.taskwright.zip  # 打开用户发来的诊断包（或别的数据包）回放
 
 Langfuse 的服务地址与项目标识经命令行参数或环境变量给，不写在代码与配置文件里。
 不给也能用，只是界面上不显示到 Langfuse 的链接。另有环境变量 TASKWRIGHT_LANGFUSE_ENV_FILE 指向一个放 Langfuse 密钥的文件时，
@@ -17,6 +18,7 @@ import os
 import sys
 from pathlib import Path
 
+from taskwright_observatory.pack import PackError, open_pack
 from taskwright_observatory.server import expand_archive_dirs, serve  # noqa: F401 - 测试从这里取 expand_archive_dirs
 
 #: 环境变量名。与后端别处用的是同一批名字。
@@ -49,6 +51,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help=f"模拟器的演练根目录（sim.run 与 sim.evals 的 --sim-root）。给了它，下面每一遍演练的归档"
                              f"（sim-<序号>/backend）与任务目录（sim-<序号>/tasks）都收进来，「评测」页签读它下面的评测结果。"
                              f"给了它就可以不给 --runs；两样都给时合在一起看。不给就取环境变量 {ENV_SIM_ROOT}。")
+    parser.add_argument("--pack", default="",
+                        help="打开一个数据包（产品导出的 .taskwright.zip，例如用户发来的诊断包）：解到用户缓存目录"
+                             "（$XDG_CACHE_HOME/taskwright/observatory/<包的指纹>/，同一个包不重解），以其中的 runs/ 与 tasks/ "
+                             "当归档目录与任务目录所在目录。一次只开一个包；与 --runs、--workspaces、--sim-root 不能同时给。")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT,
                         help=f"监听端口，默认 {DEFAULT_PORT}。")
     parser.add_argument("--host", default="0.0.0.0",
@@ -71,6 +77,21 @@ def default_workspaces_dir(first_given: Path) -> Path:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    if args.pack:
+        if args.runs or args.workspaces or args.sim_root:
+            print("--pack 与 --runs、--workspaces、--sim-root 不能同时给：打开一个包时，归档目录与任务目录都取包里的。",
+                  file=sys.stderr)
+            return 2
+        try:
+            pack = open_pack(Path(args.pack))
+        except PackError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        # 格式过新时不解析包里的数据：只起页面显示包头与那句说明。
+        given_dirs = [] if pack.too_new else [pack.runs_dir]
+        workspaces_dir = None if pack.too_new else pack.tasks_dir
+        serve(given_dirs, workspaces_dir, args.port, args.host, args.langfuse_base, args.langfuse_project, None, pack=pack)
+        return 0
     given = args.runs or ([os.environ[ENV_RUNS_DIR]] if os.environ.get(ENV_RUNS_DIR) else [])
     sim_root = Path(args.sim_root).expanduser().resolve() if args.sim_root else None
     if not given and sim_root is None:

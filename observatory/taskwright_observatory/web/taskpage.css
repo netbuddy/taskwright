@@ -442,3 +442,5 @@ body.tp-resizing{cursor:col-resize;user-select:none}
 .tp .rbody .noteline,.tp .rbody .chgblock,.tp .rbody .lv3,.tp .rbody .tl,.tp .rbody .reply,.tp .rbody .replycard{max-width:none}
 /* 回复里告知点名的条目 */
 .tp .mentioned{margin:4px 0 0;font-size:12.2px;color:var(--ink3)}
+/* 脱敏诊断包里换掉的摘录：照原样显示，颜色调淡 */
+.tp .squote.redacted{opacity:.55}

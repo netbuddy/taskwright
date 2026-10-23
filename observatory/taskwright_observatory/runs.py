@@ -116,6 +116,34 @@ def split_segment(text: str) -> tuple[str, dict | None]:
 ROLE_NAMES = {"user": "用户消息", "assistant": "助手消息", "toolResult": "工具结果消息"}
 
 
+#: 脱敏诊断包里工具结果换成的占位（产品 backend/src/redact.ts 的 placeholder）：以这一段开头的 JSON。
+REDACTED_PREFIX = '{"redacted":true'
+
+
+def redacted_view(text: str) -> tuple[str, dict | None]:
+    """工具结果是脱敏占位时，换成给人看的一句「已脱敏（路径 …，第 … 到 … 行，… 字节）」，另交回占位里的各项；不是占位时原样。"""
+    if not isinstance(text, str) or not text.lstrip().startswith(REDACTED_PREFIX):
+        return text, None
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return text, None
+    if not isinstance(value, dict) or value.get("redacted") is not True:
+        return text, None
+    parts = []
+    if value.get("path"):
+        parts.append(f"路径 {value['path']}")
+    libraries = value.get("libraries")
+    if isinstance(libraries, list) and libraries:
+        parts.append(f"知识库 {'、'.join(str(one) for one in libraries)}")
+    lines = value.get("lines")
+    if isinstance(lines, list) and len(lines) == 2:
+        parts.append(f"第 {lines[0]} 到 {lines[1]} 行")
+    if isinstance(value.get("bytes"), int):
+        parts.append(f"{value['bytes']} 字节")
+    return f"已脱敏（{'，'.join(parts)}）" if parts else "已脱敏", value
+
+
 def _message_summary(message: dict) -> dict:
     """把一条消息压成一行：谁说的，说了什么的开头。
 
@@ -267,7 +295,8 @@ def read_session_file(path: Path) -> dict:
             "条目编号": str(record.get("id") or ""),
             "角色": str(message.get("role") or ""),
             "时刻": epoch_from_iso(record.get("timestamp")),
-            "文字": text_of_content(message.get("content")),
+            "文字": redacted_view(text_of_content(message.get("content")))[0] if message.get("role") == "toolResult"
+                    else text_of_content(message.get("content")),
         })
     return {
         "会话编号": str(header.get("id") or ""),
@@ -334,13 +363,16 @@ def _tool_call_record(call: dict, starts: dict, ends: dict) -> dict:
     texts = [b.get("text", "") for b in (result.get("content") or [])
              if isinstance(b, dict) and b.get("type") == "text"]
     has_end = "isError" in end
+    text, redacted = redacted_view("\n".join(t for t in texts if t).strip())
     return {
         "调用编号": call_id,
         "工具": str(call.get("name") or ""),
         "参数": call.get("arguments") if isinstance(call.get("arguments"), dict) else {},
         "有没有执行结果": has_end,
         "是否被拒": bool(end.get("isError")) if has_end else None,
-        "结果文字": "\n".join(t for t in texts if t).strip(),
+        "结果文字": text,
+        # 脱敏诊断包里换成占位的结果：占位里的各项（路径、行范围、字节数、摘要值）。不是占位时没有这一项。
+        **({"已脱敏": redacted} if redacted else {}),
         # 工具返回的 details 原样留着：「回复」的整理后原文与是否降级放行（degraded）都在这里。
         "结果细节": result.get("details") if isinstance(result.get("details"), dict) else None,
         "耗时秒": _seconds_between(start, end),
@@ -625,6 +657,7 @@ def build_runs(launches: list[dict]) -> list[dict]:
                     pending_request = None
                 elif role == "toolResult":
                     own, segment = split_segment(text_of_content(message.get("content")))
+                    own = redacted_view(own)[0]
                     turn_results.append({
                         "调用编号": str(message.get("toolCallId") or ""),
                         "工具": str(message.get("toolName") or ""),

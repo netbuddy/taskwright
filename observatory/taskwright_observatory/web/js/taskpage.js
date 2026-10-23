@@ -40,6 +40,9 @@ const 位置 = (t) => `第 ${t.运行序号} 次运行 · 第 ${t.序数} 轮`;
 const 工具名 = (c) => c.中文名 && c.中文名 !== c.工具 ? `工具「${c.中文名}」（${c.工具}）` : `工具 ${c.工具} `;
 
 /* ───── 比对结果的画法：分段由后端算好，这里只上色 ───── */
+// 脱敏诊断包里换掉的摘录以这个记号开头（产品 backend/src/redact.ts 的 REDACTED_MARK）：照原样显示，颜色调淡。
+const REDACTED_MARK = "[已脱敏]";
+
 // 一条来源：种类、出处、支持哪几处、摘录。「用户的话」的出处是「会话编号#会话条目编号」，
 // 链到那条会话并定位到那条用户消息（会话页地址的第三段是 msg-<会话条目编号>）。
 function 来源HTML(s, 间距, 字号) {
@@ -51,7 +54,7 @@ function 来源HTML(s, 间距, 字号) {
   return `<div style="margin-bottom:${间距}px"><span class="stag">${esc(s.种类)}</span>
     <span style="color:var(--ink2);font-size:${字号}px">${出处}</span>
     ${s.支持 ? `<span style="color:var(--ink3);font-size:12px">　支持${esc(s.支持)}</span>` : ""}
-    <div class="squote">${esc(s.摘录)}</div></div>`;
+    <div class="squote${String(s.摘录 || "").startsWith(REDACTED_MARK) ? " redacted" : ""}">${esc(s.摘录)}</div></div>`;
 }
 
 function 画分段(段, 取) {
