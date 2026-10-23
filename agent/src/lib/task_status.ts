@@ -45,6 +45,7 @@ import { isLocationTable } from "./docx_locations.ts";
 import { isPdfLocationTable } from "./pdf_locations.ts";
 import { type SelectedLibrary, envKnowledgeRoot, knowledgeChangedAt, selectedKnowledge } from "./knowledge.ts";
 import { type MaterialFacts, envSegmentParams, materialFacts } from "./segments.ts";
+import { missingMaterialPaths } from "./material_db.ts";
 import { hasOverall } from "./overall_analysis.ts";
 import { openProposal, proposalLine } from "./stage_proposal.ts";
 import { fillText } from "./texts.ts";
@@ -105,6 +106,7 @@ export function taskStatusMessage(workspaceDir: string, facts: SessionFacts, ses
     const definition = validateDefinition(JSON.parse(task.definition_text));
     const materials: Materials = listMaterials(workspaceDir, definition.materialsDir);
     materials.facts = materialFacts(db, task.task_id, workspaceDir, materials.files.map((f) => f.path), envSegmentParams());
+    materials.missing = missingMaterialPaths(db, workspaceDir);
     const libraries = selectedKnowledge(workspaceDir, knowledgeRoot);
     const fresh = !facts.hasUserMessage && !facts.hasStatusMessage;
     const message = fresh || facts.lastMessageAt === null
@@ -212,6 +214,8 @@ export interface Materials {
   dir: string;
   files: MaterialFile[];
   facts?: MaterialFacts[];
+  /** 材料表里有而文件不在的材料（lib/material_db.ts 的 missingMaterialPaths）：只记进 details（有才写），页面数材料份数时连它们一起数。 */
+  missing?: string[];
 }
 
 /**
@@ -282,6 +286,8 @@ export function citationSentence(facts: MaterialFacts[] | undefined): string {
 const materialsDetails = (materials: Materials) => ({
   dir: materials.dir,
   files: materials.files.map((f) => ({ path: f.path, bytes: f.bytes })),
+  // 只在有缺失的材料时写这一项，平常的消息与原来一样。
+  ...(materials.missing?.length ? { missing: materials.missing } : {}),
   citations: (materials.facts ?? []).map((f) => (f.kind === "word"
     ? { path: f.path, text_paragraphs: f.text_paragraphs, blocks: f.blocks.length, uncited: f.uncited }
     : f.kind === "pdf"

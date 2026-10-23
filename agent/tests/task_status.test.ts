@@ -1,6 +1,7 @@
 /** 任务现状消息：新会话写现状，续接写上次之后的变化，没有变化不写；会话事实从分支条目读出。 */
 
 import assert from "node:assert/strict";
+import { insertMaterial } from "../src/lib/material_db.ts";
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -239,4 +240,16 @@ test("分段参数经环境变量给：参数变了，读的时候按新参数�
     if (before === undefined) delete process.env[SEGMENTS_ENV];
     else process.env[SEGMENTS_ENV] = before;
   }
+});
+
+test("材料表里有而文件不在的材料（导入不带材料的数据包、还没补齐）记进 details.materials.missing；给助手的文字照旧只写目录里的文件", () => {
+  const dir = makeWorkspace(undefined, { material: false });
+  createTask(callIn(dir), { definition_path: DEFINITION_PATH });
+  mkdirSync(join(dir, "inputs"), { recursive: true });
+  writeFileSync(join(dir, "inputs/在的.md"), "读者可以借书。", "utf-8");
+  insertMaterial(dir, "inputs/在的.md", { slot: null, role: "证据" });
+  insertMaterial(dir, "inputs/缺的.docx", { slot: "spec", role: "既有规格说明" });
+  const message = taskStatusMessage(dir, FRESH, "s")!;
+  assert.deepEqual([message.details.materials.files.map((f: { path: string }) => f.path), message.details.materials.missing], [["inputs/在的.md"], ["inputs/缺的.docx"]]);
+  assert.match(message.text, /材料目录 inputs\/ 里有 1 个文件：inputs\/在的\.md/);
 });

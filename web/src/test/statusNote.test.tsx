@@ -38,6 +38,13 @@ describe("折叠成的那一行写什么", () => {
     expect(statusNoteLine(note({ details: START_DETAILS }))).toBe("助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
   });
 
+  it("开始会话、有文件缺失的材料（details.materials.missing）：连它们一起数，与材料卡一致", () => {
+    const details = { ...START_DETAILS, materials: { dir: "inputs/", files: [], missing: ["inputs/需求.docx", "inputs/办法.pdf"], citations: [] } };
+    expect(statusNoteLine(note({ details }))).toBe("助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
+    const mixed = { ...START_DETAILS, materials: { dir: "inputs/", files: FILES, missing: ["inputs/旧稿.md"], citations: [] } };
+    expect(statusNoteLine(note({ details: mixed }))).toBe("助手开始这条会话时看到的任务状况：3 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
+  });
+
   it("开始会话、没有知识库文档、还没有材料：不写知识库那一项", () => {
     const { knowledge: _, ...rest } = START_DETAILS;
     const details = { ...rest, materials: { dir: "inputs/", files: [] }, conditions_total: 6, conditions_met: 0, conditions_empty: 5, unresolved: 2 };

@@ -24,11 +24,14 @@ function ownMaterialPaths(details: Dict): string[] | null {
   return files.map(dict).filter((file): file is Dict => file !== null && !file.derived_from).map((file) => String(file.path ?? ""));
 }
 
-/** 开始会话那一种的要点：几份材料 · 几个知识库几份文档 · 完成条件 · 未解决的问题。 */
+/** 材料表里有而文件不在的材料（还没补齐）的路径；早先的消息没有这一项，是空的。 */
+const missingMaterialPaths = (details: Dict): string[] => (list(dict(details.materials)?.missing) ?? []).map(String);
+
+/** 开始会话那一种的要点：几份材料（文件缺失的也算，与材料卡一致） · 几个知识库几份文档 · 完成条件 · 未解决的问题。 */
 function startPoints(details: Dict): string[] {
   const points: string[] = [];
   const own = ownMaterialPaths(details);
-  if (own !== null) points.push(`${own.length} 份材料`);
+  if (own !== null) points.push(`${new Set([...own, ...missingMaterialPaths(details)]).size} 份材料`);
   const libraries = list(details.knowledge);
   if (libraries !== null) {
     const documents = libraries.reduce<number>((sum, library) => sum + (list(dict(library)?.documents)?.length ?? 0), 0);

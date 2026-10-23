@@ -251,6 +251,9 @@ test("导入不带材料的包：任务照常打开，材料表里的每份材�
     assert.equal(page.status, 200);
     assert.deepEqual(page.body.materials.map((m: Dict) => [m.path, m.missing, m.bytes, m.modified_at, m.role, m.deletable]),
       [["inputs/规格.pdf", true, 0, addedAt, "既有规格说明", false]]);
+    // 起点页「需求资产现状」的材料与证据份数与材料卡一致：文件缺失的也算。
+    const status = await getJson(port, `/api/v1/tasks/${a}/status`);
+    assert.deepEqual(status.body.status.assets.find((one: Dict) => one.key === "materials").text, "1 份");
     for (const kind of ["content", "raw"]) {
       const got = await getJson(port, `/api/v1/tasks/${a}/materials/${kind}?path=${encodeURIComponent("inputs/规格.pdf")}`);
       assert.deepEqual([got.status, got.body.error.code, got.body.error.message], [404, "material_missing", "文件缺失，请补齐：规格.pdf"], kind);

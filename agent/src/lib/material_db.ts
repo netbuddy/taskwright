@@ -6,6 +6,8 @@
  * 所以与建任务一样是后端不写库的例外（backend/tests/no_writes.test.ts 的白名单）。删除或被替换不删行，只写上那一刻。
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { definitionsFor } from "./activity_def_read.ts";
 import type { FlowSlot } from "./activity_def.ts";
@@ -40,6 +42,14 @@ export function materialRecords(db: DatabaseSync): MaterialRecord[] {
   const found = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'material'").get();
   if (found === undefined) return [];
   return db.prepare("SELECT path, slot, role, added_at FROM material WHERE removed_at IS NULL ORDER BY material_id").all() as unknown as MaterialRecord[];
+}
+
+/**
+ * 缺失的材料：材料表里还在、任务目录里却没有文件的那几份（从不带材料的数据包导入、还没补齐），相对任务目录的路径，按放进来的先后。
+ * 资产格与任务状况里的材料份数连它们一起数，与材料卡一致。
+ */
+export function missingMaterialPaths(db: DatabaseSync, workspaceDir: string): string[] {
+  return materialRecords(db).map((row) => row.path).filter((path) => !existsSync(join(workspaceDir, path)));
 }
 
 /** 一份材料的槽位与 role：查不到时是不经槽位的「证据」。 */
