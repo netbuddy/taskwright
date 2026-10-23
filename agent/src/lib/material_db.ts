@@ -29,6 +29,19 @@ export function materialRoles(db: DatabaseSync): Map<string, MaterialRole> {
   return new Map(rows.map((row) => [row.path, { slot: row.slot, role: row.role }]));
 }
 
+/** 材料表里还在的一行：路径（相对任务目录）、槽位、role 与放进来的时刻。 */
+export interface MaterialRecord extends MaterialRole {
+  path: string;
+  added_at: string;
+}
+
+/** 还在的材料的行，按放进来的先后。库里还没有材料表时是空的。数据包的材料清单与任务详情里的缺失材料用它。 */
+export function materialRecords(db: DatabaseSync): MaterialRecord[] {
+  const found = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'material'").get();
+  if (found === undefined) return [];
+  return db.prepare("SELECT path, slot, role, added_at FROM material WHERE removed_at IS NULL ORDER BY material_id").all() as unknown as MaterialRecord[];
+}
+
 /** 一份材料的槽位与 role：查不到时是不经槽位的「证据」。 */
 export function roleOf(roles: ReadonlyMap<string, MaterialRole>, path: string): MaterialRole {
   return roles.get(path) ?? { slot: null, role: DEFAULT_MATERIAL_ROLE };

@@ -45,6 +45,8 @@ export const maxUpload = (): number => readUploadLimits().material_mb * MB;
 /** 上传的内容与本任务已有的某份材料完全相同时的那句话（错误码 duplicate_content）。 */
 export const duplicateContentText = (name: string) => `这份文件与已有的材料《${name}》内容完全相同，没有重复保存。`;
 /** 上传的文件名与本任务已有的某份材料相同、内容不同时的那句话（错误码 name_taken）。 */
+/** 材料表里有而文件不在的材料：读它时的那句话（页面与原文定位页签照原话显示）。 */
+export const materialMissingText = (name: string) => `文件缺失，请补齐：${name}`;
 export const nameTakenText = (name: string) => `这个任务里已经有一份叫《${name}》的材料，内容与这份不同。请给文件换一个名字再上传。`;
 
 /**
@@ -184,6 +186,18 @@ export function taskTypeVersion(taskType: string, root: string = TASK_TYPES_DIR)
 /** 按码位排好的目录项。 */
 function sortedEntries(dir: string): string[] {
   return readdirSync(dir).sort(library.byCodePoint);
+}
+
+/**
+ * 材料清单加上缺失的材料：每份另带 missing。材料表里有行而文件不在的（从不带材料的数据包导入、还没补齐）补成缺失行，
+ * 上传时间取放进来的时刻，大小记 0，不能删也不能替换；按路径排进清单里。缺失现算，不存库。
+ */
+function withMissing<T extends { path: string }>(taskDir: string, listed: T[]) {
+  const present = new Set(listed.map((m) => m.path));
+  const missing = library.materialRecordRows(taskDir).filter((row) => !present.has(row.path)).map((row) => ({
+    path: row.path, bytes: 0, modified_at: row.added_at, derived_from: null, slot: row.slot, role: row.role, deletable: false, missing: true,
+  }));
+  return [...listed.map((m) => ({ ...m, missing: false })), ...missing].sort((x, y) => library.byCodePoint(x.path, y.path));
 }
 
 function isFile(path: string): boolean {
@@ -538,9 +552,9 @@ export class Service {
     const sessions = this.sessionRows(t);
     // deletable：现在调删除接口会不会被这份材料本身的情况挡住（派生文件、已经进入对话）；助手正在工作是一时的，不算在内。
     const lastActivity = t.executor.sessions.lastActivityMs(false);
-    const materials = library.materials(t.dir, t.definition()).map((m) => ({
+    const materials = withMissing(t.dir, library.materials(t.dir, t.definition()).map((m) => ({
       ...m, deletable: m.derived_from === null && !this.enteredConversation(join(t.dir, m.path), lastActivity),
-    }));
+    })));
     // 任务类型说明的版本：这个任务建的时候复制进来的是第几版（task.json 记着），用户目录里的这种任务类型现在是第几版。
     // 说明不随升级更新，页面在两个数不同时写一句。上一版建的任务没有记，copied 是 null。
     const meta = readTaskJson(t.dir);
@@ -610,7 +624,7 @@ export class Service {
     return {
       seq, generated_at: clock.now(), executor: t.executor.view(),
       session: info ? { session_id: info.session_id, name: info.name, started_at: info.started_at, last_active_at: info.last_active_at } : null,
-      task: view, materials: library.materials(t.dir, t.definition()), conversation: conv, current_work: work,
+      task: view, materials: withMissing(t.dir, library.materials(t.dir, t.definition())), conversation: conv, current_work: work,
       review_in_progress: review,
     };
   }
@@ -671,6 +685,16 @@ export class Service {
   }
 
   // ───────────── 材料 ─────────────
+
+  /**
+   * 读材料的两个接口（文字与原始字节）在文件不在时拒绝：材料表里还有这一行的是缺失（material_missing，请用户补齐），
+   * 根本没有这份材料的照旧是 not_found。
+   */
+  requireMaterialFile(t: Task, rel: string, target: string): void {
+    if (isFile(target)) return;
+    if (library.materialRecordRows(t.dir).some((row) => row.path === rel)) throw new ApiError("material_missing", materialMissingText(basename(rel)), { path: rel });
+    throw new ApiError("not_found", `没有材料 ${rel}。`);
+  }
 
   materialPath(t: Task, rel: string): string {
     const folder = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;

@@ -3,16 +3,23 @@
  *
  * 包里有什么：
  *   说明.txt                     给人看的说明：包里有什么、没有什么、怎样导入（packReadme）。不列在文件清单里，导入时不解出来。
- *   manifest.json                清单文件：包的格式版本、产品版本、数据的格式版本、导出时刻、导出范围、是否带了事件归档、任务清单、知识库清单、
+ *   manifest.json                清单文件：包的格式版本、产品版本、数据的格式版本、导出时刻、导出范围、是否带了事件归档与材料原件、任务清单
+ *                                （每个任务另有材料清单）、知识库清单（每个库另有文档清单）、生成文字版与分段清单的规则版本与参数、
  *                                每个文件的路径、字节数、SHA-256 与修改时刻，还有包里的空目录。它是包里最后一个条目，自己不列在文件清单里。
- *   tasks/<任务编号>/…           任务目录里的文件：任务库（task.sqlite，一个完整的副本）、docs、inputs、task.json、选用的知识库、
- *                                建任务时放进来的设置与方法说明。
+ *   tasks/<任务编号>/…           任务目录里的文件：任务库（task.sqlite，一个完整的副本）、docs、task.json、选用的知识库、
+ *                                建任务时放进来的设置与方法说明。材料目录（inputs）里的原件与它们的文字版、分段清单、位置表缺省不带，
+ *                                只把材料目录记成空目录；导出时选了带材料（withMaterials，命令行 --with-materials）才带。
  *   runs/<任务编号>/…            这个任务的归档，原样：对话记录（pi-sessions）。事件归档（pi-events，pi 每一步的原始输出与运行日志）缺省不带，
  *                                导出时选了带事件归档（withEvents，命令行 --with-events）才带。没有对话过的任务没有这一部分。
- *   knowledge/<库编号>/…         知识库目录，原样：文档、文字版、片段与换算好的数字串。
+ *   knowledge/<库编号>/…         知识库目录：文档清单（documents.json）。files 目录里的文档、文字版、片段与换算好的数字串缺省不带，
+ *                                只把 files 记成空目录；选了带材料才原样带。
  *   knowledge/libraries.json     包里这些库在知识库清单里的条目。
  *   service/tasks.json           包里这些任务在任务登记表里的行。
  * 包里没有：产品设置、模型配置与密钥、用户与会话；占用标记、任务库旁边的日志文件、上传到一半的暂存目录与各种临时文件。
+ *
+ * 材料清单与文档清单：不带原件时，凭它们知道包里少了哪些文件、补齐的文件对不对。材料清单取任务库材料表里还在的行，每份记大小与
+ * SHA-256（导出时从磁盘现算）、三样派生文件各自的大小与 SHA-256、分段清单的块数；文档清单照抄 documents.json。带不带原件，两张清单都写。
+ * 导出时磁盘上已经没有的材料（例如从不带材料的包导入、还没补齐），清单里那一项照上一个包的清单（previous）抄，没有可抄的就不写大小与校验值。
  *
  * 目录名一律用编号：任务目录与归档目录都按任务编号（归档本来就是按任务编号放的；任务目录平时也以编号为名，手工复制来的可以不同，
  * 清单文件里记着原来的目录名）。读不出任务编号的目录不进包，导出的结果里写原因。
@@ -38,12 +45,15 @@
  * 本文件不直接碰数据库：读任务库经 library.ts，服务级库经 service_db.ts，改任务编号经助手一侧的 renumberTask。
  */
 
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { TASK_ID_PATTERN } from "../../agent/src/lib/create_task.ts";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
+import { DEFAULT_MATERIALS_DIR } from "../../agent/src/lib/definition.ts";
+import { PDF_LOCATIONS_FORMAT_VERSION, PDF_LOCATION_RULES_VERSION } from "../../agent/src/lib/pdf_locations.ts";
+import { SEGMENT_DEFAULTS, type SegmentParams } from "../../agent/src/lib/segments.ts";
 // renumberTask 是后端里除建任务、数据升级之外唯一会改任务库的调用，只在这里（导入时改编号）用，改的是还在暂存目录里的副本。
 import { renumberTask } from "../../agent/src/lib/renumber_task.ts";
 import { TASKS_ROOT_ENV, TASK_DB_VERSION, newerDataText } from "../../agent/src/lib/schema.ts";
@@ -53,6 +63,7 @@ import * as library from "./library.ts";
 import * as occupancy from "./occupancy.ts";
 import { type TaskOutcome, type UpgradeReport, planUpgrade, runUpgrade } from "./data_upgrade.ts";
 import { appVersion } from "./paths.ts";
+import { PDFJS_VERSION } from "./pdf_projection.ts";
 import { UPLOADING_DIR, newTaskId } from "./service.ts";
 import { DATA_FORMAT, ServiceDb, type TaskEntry, peekDataDirectory } from "./service_db.ts";
 import { readTaskJson } from "./task_json.ts";
@@ -62,6 +73,8 @@ import { ZipError, type ZipEntry, ZipReader, ZipTooLarge, ZipWriter, validEntryN
 export const PACK_SUFFIX = ".taskwright.zip";
 /** 包根上给人看的说明的名字。 */
 export const README_NAME = "说明.txt";
+/** 知识库目录里放文档本体与派生文件的目录：缺省不带进包。 */
+export const LIBRARY_FILES_DIR = "files";
 /** 归档里的事件归档目录：缺省不带进包。 */
 export const EVENTS_DIR = "pi-events";
 /** 包的格式版本：包里的布局与清单文件的写法。以后改了布局就加 1，旧程序据此拒绝读不了的包。 */
@@ -107,6 +120,43 @@ export interface PackTask {
   assistant_working: boolean;
   /** 包里属于这个任务的文件数（任务目录与归档合计）。 */
   files: number;
+  /** 材料清单：任务库材料表里还在的每份材料一项。早先的包没有这一项。 */
+  materials?: PackMaterial[];
+}
+
+/** 材料清单里一份文件的指纹：路径（相对任务目录）、字节数与 SHA-256；导出时文件已经不在、又没有可抄的旧清单时两项是 null。 */
+export interface PackFingerprint {
+  path: string;
+  bytes: number | null;
+  sha256: string | null;
+}
+
+/** 材料清单里的一份材料。 */
+export interface PackMaterial extends PackFingerprint {
+  slot: string | null;
+  role: string;
+  added_at: string;
+  /** 由它生成的文字版、分段清单、位置表，有哪样记哪样。 */
+  derived: PackFingerprint[];
+  /** 分段清单里的块数；没有分段清单时是 null。 */
+  segments: number | null;
+}
+
+/** 知识库的文档清单里的一份文档，照抄 documents.json。 */
+export interface PackDocument {
+  name: string;
+  kind: string;
+  bytes: number;
+  sha256: string;
+  uploaded_at: string;
+}
+
+/** 生成文字版、分段清单与位置表所用的规则版本与参数，取导出时这个程序的值。 */
+export interface PackProjection {
+  pdf_location_rules_version: number;
+  pdf_locations_format_version: number;
+  pdfjs_version: string;
+  segment_params: SegmentParams;
 }
 
 /** 清单文件里的一个知识库。 */
@@ -114,6 +164,8 @@ export interface PackLibrary {
   id: string;
   name: string;
   files: number;
+  /** 文档清单。早先的包没有这一项。 */
+  documents?: PackDocument[];
 }
 
 /** 清单文件里的一个文件。 */
@@ -138,6 +190,10 @@ export interface Manifest {
   scope: PackScope;
   /** 带没带事件归档（runs/<任务编号>/pi-events）。早先的包没有这一项，那时一律带着。 */
   with_events: boolean;
+  /** 带没带材料与知识库文档的原件和派生文件。早先的包没有这一项，那时一律带着。 */
+  with_materials: boolean;
+  /** 文字版与分段清单的规则版本与参数。早先的包没有这一项。 */
+  projection?: PackProjection;
   tasks: PackTask[];
   libraries: PackLibrary[];
   files: PackFile[];
@@ -170,6 +226,8 @@ export interface ExportResult {
   tasks: PackTask[];
   libraries: PackLibrary[];
   files: number;
+  /** 带没带材料与知识库文档的原件。 */
+  with_materials: boolean;
   skipped: Skipped[];
 }
 
@@ -184,6 +242,12 @@ export interface ExportOptions {
   working?: (taskId: string) => boolean;
   /** 带上事件归档（runs/<任务编号>/pi-events）；缺省不带，只带对话记录。 */
   withEvents?: boolean;
+  /** 带上材料与知识库文档的原件和派生文件；缺省不带，只带两张清单。 */
+  withMaterials?: boolean;
+  /** 后端实际用的分段参数（启动配置「材料分段」）；命令行导出没有启动配置，用默认值。 */
+  segmentParams?: SegmentParams;
+  /** 上一个包的清单（升级数据包时给）：磁盘上已经没有的材料，清单里的指纹照它抄。 */
+  previous?: Manifest;
   productVersion?: string;
 }
 
@@ -279,6 +343,67 @@ export function tasksIn(tasksDir: string): { dir: string; row: ReturnType<typeof
   return out;
 }
 
+/** 一个文件的指纹（rel 相对 dir）；不是普通文件、读不出来时是 null。 */
+function fingerprintOf(dir: string, rel: string): PackFingerprint | null {
+  try {
+    const path = join(dir, rel);
+    if (!statSync(path).isFile()) return null;
+    const data = readFileSync(path);
+    return { path: rel, bytes: data.length, sha256: createHash("sha256").update(data).digest("hex") };
+  } catch {
+    return null;
+  }
+}
+
+/** 由一份材料生成的文件跟在它路径后面的后缀：文字版、分段清单、位置表；.txt 是 0.2 留下的 Word 纯文本文字版，只认 .docx 的。 */
+const DERIVED_SUFFIXES = [".md", ".txt", ".segments.json", ".locations.json"];
+
+/** 分段清单里有几块；没有这个文件或者读不出来时是 null。 */
+function segmentCount(path: string): number | null {
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf-8"));
+    return Array.isArray(raw?.blocks) ? raw.blocks.length : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 一个任务的材料清单：材料表里还在的每一行一项。原件与派生文件的指纹从磁盘现算；原件已经不在的，指纹、派生文件与块数照 previous
+ * （上一个包里这个任务的材料清单）里同一路径的那一项抄，没有就是 null 与空的。
+ */
+function materialList(taskDir: string, previous: readonly PackMaterial[] | undefined): PackMaterial[] {
+  return library.materialRecordRows(taskDir).map((row) => {
+    const own = fingerprintOf(taskDir, row.path);
+    const before = previous?.find((one) => one.path === row.path);
+    const placement = { slot: row.slot, role: row.role, added_at: row.added_at };
+    if (own === null) {
+      return { path: row.path, bytes: before?.bytes ?? null, sha256: before?.sha256 ?? null, ...placement, derived: before?.derived ?? [], segments: before?.segments ?? null };
+    }
+    const suffixes = DERIVED_SUFFIXES.filter((suffix) => suffix !== ".txt" || row.path.toLowerCase().endsWith(".docx"));
+    const derived = suffixes.map((suffix) => fingerprintOf(taskDir, row.path + suffix)).filter((one): one is PackFingerprint => one !== null);
+    return { ...own, ...placement, derived, segments: segmentCount(join(taskDir, row.path + ".segments.json")) };
+  });
+}
+
+/** 任务目录第一层里放材料的目录名：缺省的 inputs，加上材料表里各份材料路径的第一段（任务定义改过材料目录的）。 */
+function materialDirsOf(materials: readonly PackMaterial[]): Set<string> {
+  const dirs = new Set([DEFAULT_MATERIALS_DIR.replace(/\/+$/, "")]);
+  for (const one of materials) {
+    const first = one.path.split("/")[0];
+    if (first && first !== one.path) dirs.add(first);
+  }
+  return dirs;
+}
+
+const isDir = (path: string) => {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
 /** 知识库清单里的条目；没有知识库、清单不在或者读不出来时是空的。只读，不建任何东西。 */
 function librariesIn(knowledgeDir: string | null): LibraryRow[] {
   if (!knowledgeDir) return [];
@@ -340,7 +465,13 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
   const writer = ZipWriter.create(partial);
   const manifest: Manifest = {
     pack_format: PACK_FORMAT, product_version: options.productVersion ?? appVersion(), data_format: peekData(where.dataDir), task_db_version: TASK_DB_VERSION,
-    exported_at: clock.now(), scope: options.scope, with_events: options.withEvents === true, tasks: [], libraries: [], files: [], empty_dirs: [],
+    exported_at: clock.now(), scope: options.scope, with_events: options.withEvents === true, with_materials: options.withMaterials === true,
+    // 升级一个不带材料的包时，派生文件不在包里、没有重新生成，规则版本与参数照原包的写。
+    projection: !options.withMaterials && options.previous?.projection ? options.previous.projection : {
+      pdf_location_rules_version: PDF_LOCATION_RULES_VERSION, pdf_locations_format_version: PDF_LOCATIONS_FORMAT_VERSION, pdfjs_version: PDFJS_VERSION,
+      segment_params: { ...(options.segmentParams ?? SEGMENT_DEFAULTS) },
+    },
+    tasks: [], libraries: [], files: [], empty_dirs: [],
   };
   const put = async (path: string, source: string, mtimeMs: number) => {
     const written = await writer.addFile(path, source, { store: STORED.has(extname(path).toLowerCase()), mtime: new Date(mtimeMs) });
@@ -365,9 +496,13 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
         await library.backupTaskDb(taskDir, copy);
         await put(`tasks/${id}/${DB_NAME}`, copy, Math.floor(statSync(join(taskDir, DB_NAME)).mtimeMs));
         rmSync(copy, { force: true });
-        const own = walk(taskDir, TASK_LEFT_OUT, `任务 ${id}`, skipped);
+        const materials = materialList(taskDir, options.previous?.tasks.find((one) => one.task_id === id)?.materials);
+        // 不带材料时材料目录整个不进包，只记成空目录，导入后照样有这个目录。
+        const materialDirs = manifest.with_materials ? new Set<string>() : materialDirsOf(materials);
+        const own = walk(taskDir, new Set([...TASK_LEFT_OUT, ...materialDirs]), `任务 ${id}`, skipped);
         for (const file of own.files) await put(`tasks/${id}/${file.rel}`, file.path, file.mtimeMs);
         manifest.empty_dirs.push(...own.emptyDirs.map((one) => `tasks/${id}/${one}`));
+        for (const dir of materialDirs) if (isDir(join(taskDir, dir))) manifest.empty_dirs.push(`tasks/${id}/${dir}`);
         const archive = walk(join(where.runsDir, id), options.withEvents ? new Set() : new Set([EVENTS_DIR]), `任务 ${id} 的归档`, skipped);
         for (const file of archive.files) await put(`runs/${id}/${file.rel}`, file.path, file.mtimeMs);
         manifest.empty_dirs.push(...archive.emptyDirs.map((one) => `runs/${id}/${one}`));
@@ -376,7 +511,7 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
         manifest.tasks.push({
           task_id: id, name: row.name, owner, dir, task_db_version: library.taskDbVersion(taskDir) ?? 0,
           in_use: occupancy.isOurs(lock) || occupancy.occupiedByOther(lock), assistant_working: options.working?.(id) ?? false,
-          files: manifest.files.length - before,
+          files: manifest.files.length - before, materials,
         });
         // 登记表里的那一行：有登记就照登记的（属主以它为准），没有就照任务库现在的样子拼一行。目录一律记成编号。
         const listed = registry?.task(id) ?? null;
@@ -390,10 +525,15 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
     }
     for (const row of libraries) {
       const before = manifest.files.length;
-      const found = walk(join(where.knowledgeDir!, row.id), new Set(), `知识库 ${row.id}`, skipped);
+      const libraryDir = join(where.knowledgeDir!, row.id);
+      // 不带材料时文档目录整个不进包，只记成空目录；文档清单 documents.json 照带。
+      const found = walk(libraryDir, manifest.with_materials ? new Set() : new Set([LIBRARY_FILES_DIR]), `知识库 ${row.id}`, skipped);
       for (const file of found.files) await put(`knowledge/${row.id}/${file.rel}`, file.path, file.mtimeMs);
       manifest.empty_dirs.push(...found.emptyDirs.map((one) => `knowledge/${row.id}/${one}`));
-      manifest.libraries.push({ id: row.id, name: row.name, files: manifest.files.length - before });
+      if (!manifest.with_materials && isDir(join(libraryDir, LIBRARY_FILES_DIR))) manifest.empty_dirs.push(`knowledge/${row.id}/${LIBRARY_FILES_DIR}`);
+      const documents = new KnowledgeStore(where.knowledgeDir!).documents(row.id)
+        .map((one) => ({ name: one.name, kind: one.kind, bytes: one.bytes, sha256: one.sha256, uploaded_at: one.uploaded_at }));
+      manifest.libraries.push({ id: row.id, name: row.name, files: manifest.files.length - before, documents });
     }
     if (libraries.length > 0) await putJson(PACK_LIBRARIES, { version: 1, libraries });
     if (register.length > 0) await putJson(PACK_REGISTER, { version: 1, tasks: register });
@@ -401,7 +541,7 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
     await writer.addBuffer(MANIFEST_NAME, Buffer.from(JSON.stringify(manifest, null, 2) + "\n", "utf-8"));
     const bytes = writer.finish();
     renameSync(partial, options.to);
-    return { file: options.to, bytes, scope: options.scope, tasks: manifest.tasks, libraries: manifest.libraries, files: manifest.files.length, skipped };
+    return { file: options.to, bytes, scope: options.scope, tasks: manifest.tasks, libraries: manifest.libraries, files: manifest.files.length, with_materials: manifest.with_materials, skipped };
   } catch (error) {
     writer.close();
     rmSync(partial, { force: true });
@@ -413,10 +553,11 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
 }
 
 /**
- * 包根上那份给人看的说明（说明.txt）：用日常语言写包里有什么、没有什么、怎样导入。照导出的范围与带没带事件归档写，
+ * 包根上那份给人看的说明（说明.txt）：用日常语言写包里有什么、没有什么、怎样导入。照导出的范围与带没带事件归档、材料原件写，
  * 不列具体文件（具体文件在清单文件里）。
  */
-export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_version" | "scope" | "with_events" | "tasks" | "libraries">): string {
+export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_version" | "scope" | "with_events" | "with_materials" | "tasks" | "libraries">): string {
+  const bare = !manifest.with_materials;
   const scope = manifest.scope === "task" ? "一个任务" : manifest.scope === "library" ? "一个知识库" : "全部任务与知识库";
   const tasks = manifest.tasks.map((t) => `  ${t.task_id}${t.name ? `「${t.name}」` : ""}`);
   const libraries = manifest.libraries.map((x) => `  ${x.id}「${x.name}」`);
@@ -429,23 +570,30 @@ export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_ver
     "包里有什么",
     ...(tasks.length ? [
       "- 任务库：条目、修订、评审与确认、版本记录等，每个任务一份完整的副本（tasks/<任务编号>/task.sqlite）。",
-      "- 材料：放进任务里的文件和由它们生成的文字版（tasks/<任务编号>/inputs）。",
+      bare
+        ? "- 材料清单：每份材料的文件名、大小、校验值与它的文字版、分段清单、位置表的校验值（manifest.json 里）。"
+        : "- 材料：放进任务里的文件和由它们生成的文字版（tasks/<任务编号>/inputs）。",
       "- 发布过的各版的文档存档（tasks/<任务编号>/versions），发布过才有。",
       "- 对话记录：与助手的每一条会话（runs/<任务编号>/pi-sessions）。",
       "- 这个任务用的任务类型说明与规则的副本（tasks/<任务编号>/.pi 与 tasks/<任务编号>/docs）。",
       ...(manifest.with_events ? ["- 运行日志与事件归档：助手每一步的原始记录（runs/<任务编号>/pi-events）。导出时选了带上它们。"] : []),
     ] : []),
-    ...(libraries.length ? ["- 知识库：文档和它们的文字版、片段（knowledge/<库编号>）。"] : []),
+    ...(libraries.length ? [bare
+      ? "- 知识库的文档清单：每份文档的文件名、大小与校验值（knowledge/<库编号>/documents.json 与 manifest.json 里）。"
+      : "- 知识库：文档和它们的文字版、片段（knowledge/<库编号>）。"] : []),
     "- 清单文件 manifest.json：每个文件的大小与校验值，导入时据此核对。",
     "",
     "包里没有什么",
     ...(tasks.length && !manifest.with_events ? ["- 运行日志与事件归档（助手每一步的原始记录）。要带上它们，导出时加 --with-events。"] : []),
+    ...(bare && tasks.length ? ["- 材料与知识库的原件和文字版。这个包含条目里的逐字摘录、业务说明的转述与对话记录，不是干净的；要连原件一起带，导出时加 --with-materials。"] : []),
+    ...(bare && !tasks.length && libraries.length ? ["- 知识库文档的原件和文字版。要连原件一起带，导出时加 --with-materials。"] : []),
     "- 产品设置、模型配置与密钥。",
     "",
     "怎样导入",
     "- 用命令行：taskwright data import --from <这个文件>（可以加 --data <数据目录> 指定导到哪里）。",
     "  编号已经有任务在用的任务缺省跳过；加 --renumber 就给它一个新编号导入。",
     "- 导入之前会核对整个包，有一处不对就整包不导入，原有的数据不动。导入不改这个文件。",
+    ...(bare && tasks.length ? ["- 导入后材料页会列出缺的文件，重新上传同一份文件即可补齐。"] : []),
     "",
   ];
   return lines.join("\n");
@@ -481,7 +629,9 @@ export function exportText(result: ExportResult): string {
   for (const one of result.libraries) lines.push(`知识库 ${one.id}「${one.name}」：${one.files} 个文件`);
   if (result.tasks.length === 0 && result.libraries.length === 0) lines.push("这个数据目录里没有任务，也没有知识库：包里只有清单文件与说明。");
   for (const one of result.skipped) lines.push(`没有带：${one.what}（${one.reason}）`);
-  lines.push("包里有材料与对话记录的副本，请妥善保管。产品设置、模型配置与密钥不在包里。");
+  lines.push(result.with_materials
+    ? "包里有材料与对话记录的副本，请妥善保管。产品设置、模型配置与密钥不在包里。"
+    : "包里有对话记录与条目里的摘录，请妥善保管。材料与知识库的原件不在包里（要带上它们，导出时加 --with-materials），产品设置、模型配置与密钥也不在。");
   return lines.join("\n") + "\n";
 }
 
@@ -489,6 +639,44 @@ export function exportText(result: ExportResult): string {
 
 const isObject = (value: unknown): value is Record<string, any> => value !== null && typeof value === "object" && !Array.isArray(value);
 const isCount = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0;
+
+const isSha = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+const fingerprintIn = (one: unknown): PackFingerprint | null => (isObject(one) && typeof one.path === "string"
+  ? { path: one.path, bytes: isCount(one.bytes) ? one.bytes : null, sha256: isSha(one.sha256) ? one.sha256 : null } : null);
+
+/** 清单文件里一个任务的材料清单；没有这一项（早先的包）时是 undefined，写得不对的项不要。导入不靠它，只原样留着。 */
+function materialsIn(raw: unknown): PackMaterial[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.flatMap((one: unknown) => {
+    const own = fingerprintIn(one);
+    if (own === null || !isObject(one)) return [];
+    return [{
+      ...own, slot: typeof one.slot === "string" ? one.slot : null, role: typeof one.role === "string" ? one.role : "", added_at: typeof one.added_at === "string" ? one.added_at : "",
+      derived: Array.isArray(one.derived) ? one.derived.map(fingerprintIn).filter((x: PackFingerprint | null): x is PackFingerprint => x !== null) : [],
+      segments: isCount(one.segments) ? one.segments : null,
+    }];
+  });
+}
+
+/** 清单文件里一个知识库的文档清单；没有这一项时是 undefined，写得不对的项不要。 */
+function documentsIn(raw: unknown): PackDocument[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.flatMap((one: unknown) => (isObject(one) && typeof one.name === "string" && isCount(one.bytes) && isSha(one.sha256)
+    ? [{ name: one.name, kind: typeof one.kind === "string" ? one.kind : "", bytes: one.bytes, sha256: one.sha256, uploaded_at: typeof one.uploaded_at === "string" ? one.uploaded_at : "" }]
+    : []));
+}
+
+/** 清单文件里的规则版本与参数；没有或者写得不对时是 undefined。 */
+function projectionIn(raw: unknown): PackProjection | undefined {
+  if (!isObject(raw) || !isObject(raw.segment_params)) return undefined;
+  const params = raw.segment_params;
+  if (!isCount(raw.pdf_location_rules_version) || !isCount(raw.pdf_locations_format_version) || typeof raw.pdfjs_version !== "string") return undefined;
+  if (!isCount(params.heading_depth) || !isCount(params.max_paragraphs) || !isCount(params.min_paragraphs)) return undefined;
+  return {
+    pdf_location_rules_version: raw.pdf_location_rules_version, pdf_locations_format_version: raw.pdf_locations_format_version, pdfjs_version: raw.pdfjs_version,
+    segment_params: { heading_depth: params.heading_depth, max_paragraphs: params.max_paragraphs, min_paragraphs: params.min_paragraphs },
+  };
+}
 
 /** 把清单文件读成对象并核对它的样子与里面的编号；不对时抛 PackError（refused）。版本在 openPack 里另看。 */
 function parseManifest(text: string): Manifest {
@@ -509,11 +697,13 @@ function parseManifest(text: string): Manifest {
       task_id: one.task_id, name: typeof one.name === "string" && one.name ? one.name : null, owner: typeof one.owner === "string" && one.owner ? one.owner : "local",
       dir: typeof one.dir === "string" ? one.dir : one.task_id, task_db_version: one.task_db_version, in_use: one.in_use === true,
       assistant_working: one.assistant_working === true, files: isCount(one.files) ? one.files : 0,
+      ...(materialsIn(one.materials) ? { materials: materialsIn(one.materials) } : {}),
     };
   });
   const libraries: PackLibrary[] = raw.libraries.map((one: unknown) => {
     if (!isObject(one) || typeof one.id !== "string" || !LIBRARY_ID_PATTERN.test(one.id)) throw bad("知识库清单里有一项写得不对");
-    return { id: one.id, name: typeof one.name === "string" && one.name ? one.name : one.id, files: isCount(one.files) ? one.files : 0 };
+    const documents = documentsIn(one.documents);
+    return { id: one.id, name: typeof one.name === "string" && one.name ? one.name : one.id, files: isCount(one.files) ? one.files : 0, ...(documents ? { documents } : {}) };
   });
   const files: PackFile[] = raw.files.map((one: unknown) => {
     if (!isObject(one) || typeof one.path !== "string" || !isCount(one.bytes) || typeof one.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(one.sha256)) throw bad("文件清单里有一项写得不对");
@@ -526,7 +716,9 @@ function parseManifest(text: string): Manifest {
   return {
     pack_format: raw.pack_format, product_version: typeof raw.product_version === "string" && raw.product_version ? raw.product_version : "unknown",
     data_format: raw.data_format, task_db_version: raw.task_db_version, exported_at: typeof raw.exported_at === "string" ? raw.exported_at : "",
-    scope: raw.scope, with_events: raw.with_events === undefined ? true : raw.with_events === true, tasks, libraries, files, empty_dirs: emptyDirs,
+    scope: raw.scope, with_events: raw.with_events === undefined ? true : raw.with_events === true,
+    with_materials: raw.with_materials === undefined ? true : raw.with_materials === true,
+    ...(projectionIn(raw.projection) ? { projection: projectionIn(raw.projection) } : {}), tasks, libraries, files, empty_dirs: emptyDirs,
   };
 }
 
@@ -976,9 +1168,9 @@ export async function upgradePack(file: string, to: string, options: { productVe
     pack.reader.close();
     const upgrade = await upgradeStaged(staging, options.productVersion ?? appVersion());
     if (upgrade?.fatal) throw new PackError("refused", `数据包没有升级成：${upgrade.fatal}`);
-    // 原包带着事件归档的（早先的包一律带着），升级出来的包照样带。
+    // 原包带着事件归档的（早先的包一律带着），升级出来的包照样带；材料原件也照原包带或不带，不带的，材料清单的指纹照原包抄。
     const written = await exportPack(where, { scope: manifest.scope, taskId: manifest.tasks[0]?.task_id, libraryId: manifest.libraries[0]?.id, to, productVersion: options.productVersion,
-      withEvents: manifest.with_events });
+      withEvents: manifest.with_events, withMaterials: manifest.with_materials, previous: manifest });
     return { written, from_version: manifest.product_version, tasks: upgrade?.tasks ?? [] };
   } finally {
     pack.reader.close();

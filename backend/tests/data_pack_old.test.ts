@@ -42,7 +42,7 @@ async function oldPack(versions: string[]): Promise<string> {
   mkdirSync(where.tasksDir, { recursive: true });
   for (const version of versions) cpSync(join(SAMPLES, version), join(where.tasksDir, version), { recursive: true });
   const file = packFile("old");
-  await exportPack(where, { scope: "all", to: file, productVersion: "0.5.0" });
+  await exportPack(where, { scope: "all", to: file, productVersion: "0.5.0", withMaterials: true });
   return file;
 }
 

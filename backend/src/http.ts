@@ -11,6 +11,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
+import { segmentParamsOf } from "./launch.ts";
 import * as library from "./library.ts";
 import { type SessionFact, taskStatus, workItemView } from "./task_status.ts";
 import { UPGRADED_VERSION_NOTE } from "../../agent/src/lib/schema.ts";
@@ -397,7 +398,7 @@ async function packDownload(service: Service, options: Omit<ExportOptions, "to">
   const file = join(dir, name);
   let bytes: number;
   try {
-    bytes = (await exportPack(service.packLocations(), { ...options, to: file })).bytes;
+    bytes = (await exportPack(service.packLocations(), { segmentParams: segmentParamsOf(service.profile), ...options, to: file })).bytes;
   } catch (error) {
     rmSync(dir, { recursive: true, force: true });
     if (error instanceof PackError) throw new ApiError(error.code === "not_found" ? "not_found" : "rejected", error.message);
@@ -422,16 +423,17 @@ const handlers: Record<string, Handler> = {
     const agent = typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"] : "";
     return json(200, await service.deleteTask(t, [req.remote ?? "未知地址", agent].filter(Boolean).join("，")));
   },
-  // 把一个任务导出成数据包（任务目录与它的对话记录），回一个 zip 文件。查询参数 with_events=1 时另带事件归档（pi-events）。
+  // 把一个任务导出成数据包（任务目录与它的对话记录），回一个 zip 文件。查询参数 with_events=1 时另带事件归档（pi-events），
+  // with_materials=1 时另带材料原件与派生文件（缺省只带材料清单）。
   export_task: (service, req) => {
     const t = service.task(req.params.task);
-    return packDownload(service, { scope: "task", taskId: t.taskId, working: () => t.executor.state === "working", withEvents: req.query.with_events === "1" },
-      `${t.taskId}${PACK_SUFFIX}`);
+    return packDownload(service, { scope: "task", taskId: t.taskId, working: () => t.executor.state === "working", withEvents: req.query.with_events === "1",
+      withMaterials: req.query.with_materials === "1" }, `${t.taskId}${PACK_SUFFIX}`);
   },
-  // 把一个知识库导出成数据包。
+  // 把一个知识库导出成数据包。查询参数 with_materials=1 时另带文档原件与派生文件（缺省只带文档清单）。
   export_library: (service, req) => {
     const row = service.requireKnowledge().library(req.params.lib);
-    return packDownload(service, { scope: "library", libraryId: row.id }, `${row.id}${PACK_SUFFIX}`);
+    return packDownload(service, { scope: "library", libraryId: row.id, withMaterials: req.query.with_materials === "1" }, `${row.id}${PACK_SUFFIX}`);
   },
   service_info: (service, req) => json(200, serviceInfo(service, req.remote ?? null)),
   // 数据升级：看要升级什么、做到哪里了、做完后的报告。没有要做的升级（多数时候）时 upgrade 是 null。
@@ -690,14 +692,14 @@ const handlers: Record<string, Handler> = {
     const t = service.task(req.params.task);
     const rel = req.query.path ?? "";
     const target = service.materialPath(t, rel);
-    if (!isFile(target)) throw new ApiError("not_found", `没有材料 ${rel}。`);
+    service.requireMaterialFile(t, rel, target);
     return json(200, { ok: true, path: rel, text: service.materialText(target, rel) });
   },
   material_raw: (service, req) => {
     const t = service.task(req.params.task);
     const rel = req.query.path ?? "";
     const target = service.materialPath(t, rel);
-    if (!isFile(target)) throw new ApiError("not_found", `没有材料 ${rel}。`);
+    service.requireMaterialFile(t, rel, target);
     return { status: 200, headers: { "Content-Type": RAW_TYPES[extname(target).toLowerCase()] ?? "application/octet-stream" }, body: readFileSync(target) };
   },
   upload: async (service, req) => {

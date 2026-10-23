@@ -198,3 +198,18 @@ test("数据包升级：旧包升成新包并能导入；参数不对、比这�
   assert.match(refused.err, /数据包没有升级：这个数据包比这个程序新。这份数据由 0\.9\.0 写入，请用 0\.9\.0 或更新的版本打开。/);
   assert.deepEqual(readdirSync(dir).sort(), ["new.taskwright.zip", "newer.zip", "old.taskwright.zip"]);
 });
+
+test("导出：缺省不带材料，加 --with-materials 才带；用法里写着这个开关", async () => {
+  const where = await dataWith(fresh("data"), ["甲"]);
+  const [a] = where.ids;
+  put(join(where.tasksDir, a, "inputs", "材料.md"), "读者凭借书证借书。\n");
+  const dir = outDir();
+  const bare = run(["data", "export", "--data", where.dataDir, "--task", a, "--to", join(dir, "bare.zip")]);
+  assert.equal(bare.status, 0, bare.err);
+  assert.match(bare.out, /材料与知识库的原件不在包里/);
+  const full = run(["data", "export", "--data", where.dataDir, "--task", a, "--with-materials", "--to", join(dir, "full.zip")]);
+  assert.equal(full.status, 0, full.err);
+  assert.deepEqual([readPack(join(dir, "bare.zip")).manifest.with_materials, readPack(join(dir, "bare.zip")).names.includes(`tasks/${a}/inputs/材料.md`)], [false, false]);
+  assert.deepEqual([readPack(join(dir, "full.zip")).manifest.with_materials, readPack(join(dir, "full.zip")).names.includes(`tasks/${a}/inputs/材料.md`)], [true, true]);
+  assert.match(run(["data", "export"]).err, /\[--with-events\] \[--with-materials\] --to <数据包>/);
+});

@@ -80,7 +80,7 @@ const ALLOWED: Record<string, string[]> = {
   // PDF 材料：文字规范化（不依赖任何模块的纯函数）；定位符与位置表的格式（同上）；分段清单的算法与写成材料旁边的文件
   // （与 Word 材料的投影、分段清单、位置表一样是文件，不是库）。
   "pdf_normalize.ts": ["comparablePdfText", "tidyPdfText"],
-  "pdf_locations.ts": ["PDF_LOCATIONS_SUFFIX", "PDF_LOCATION_RULES_VERSION", "PdfBox", "PdfLocationFile", "PdfPageLocation", "pdfAnchor", "pdfBlockBox",
+  "pdf_locations.ts": ["PDF_LOCATIONS_FORMAT_VERSION", "PDF_LOCATIONS_SUFFIX", "PDF_LOCATION_RULES_VERSION", "PdfBox", "PdfLocationFile", "PdfPageLocation", "pdfAnchor", "pdfBlockBox",
     "pdfChapterOf", "pdfLocationFile", "pdfLocationsJson"],
   "pdf_segments.ts": ["INFERRED", "PDF_SEGMENTS_SUFFIX", "PdfSegmentList", "buildPdfSegments", "pdfProjectionUnits", "writePdfSegments"],
   // PDF 材料的来源：从投影取各块（只做计算，页面也用它）；知识库切片段时用。
@@ -104,9 +104,9 @@ const ALLOWED: Record<string, string[]> = {
   "versions.ts": ["VersionRecord", "versionRecords", "versionDir", "ARCHIVED_MARKDOWN", "ARCHIVED_DOCX"],
   // 材料表：查每份材料的槽位与角色（查不到时按不经槽位的「证据」算）、在流程声明里找收材料的槽位（只读）。
   // insertMaterial 与 retireMaterial 是写入，与 createTask 同类的例外：上传、替换、删除材料是用户直接对任务目录的操作，不经 pi。
-  "material_db.ts": ["DEFAULT_MATERIAL_ROLE", "MaterialRole", "materialRoles", "materialSlot", "roleOf", "insertMaterial", "retireMaterial"],
+  "material_db.ts": ["DEFAULT_MATERIAL_ROLE", "MaterialRecord", "MaterialRole", "materialRecords", "materialRoles", "materialSlot", "roleOf", "insertMaterial", "retireMaterial"],
   // 任务定义里字段类型的两个名字（常量，不碰库）：导出 Word 时按它们决定一个字段的值怎样写。改任务类型时用 loadDefinition 核对改后的任务定义读得通（只读文件，不碰库）。
-  "definition.ts": ["FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition", "withPlatformCollections"],
+  "definition.ts": ["DEFAULT_MATERIALS_DIR", "FIELD_ITEM_REF", "FIELD_TEXT_LIST", "loadDefinition", "withPlatformCollections"],
   "asset_names.ts": ["assetNamesOf"],
   "assets.ts": ["parseAssetNames"],
   // 任务类型的分析提纲的原文（只读文件，不碰库）：任务定义视图带上它，页面据它把业务说明的目录画成提纲的树。

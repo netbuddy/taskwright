@@ -11,6 +11,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { insertMaterial } from "../../agent/src/lib/material_db.ts";
 import { PACK_MAX_UPLOAD, PACK_UPLOAD_TOO_LARGE_TEXT, exportPack } from "../src/data_pack.ts";
 import { UPGRADE_PENDING_TEXT, makeServer } from "../src/http.ts";
 import { KnowledgeStore } from "../src/knowledge.ts";
@@ -73,7 +74,13 @@ test("导出接口：任务与知识库各回一个 zip 下载，里面是范围
     const pack = readPack(file);
     // 导出的服务自己占着这个任务；助手没有在工作。
     assert.deepEqual([pack.manifest.scope, pack.manifest.tasks.map((t) => [t.task_id, t.name, t.in_use, t.assistant_working]), pack.manifest.libraries], ["task", [[a, "甲", true, false]], []]);
-    assert.ok(pack.names.includes(`tasks/${a}/inputs/材料.md`) && pack.names.some((name) => name.startsWith(`runs/${a}/pi-sessions/`)));
+    // 缺省不带材料：材料目录只是空目录；with_materials=1 才带。
+    assert.ok(!pack.names.some((name) => name.startsWith(`tasks/${a}/inputs/`)) && pack.names.some((name) => name.startsWith(`runs/${a}/pi-sessions/`)));
+    assert.deepEqual([pack.manifest.with_materials, pack.manifest.empty_dirs.includes(`tasks/${a}/inputs`)], [false, true]);
+    const full = await fetch(`http://127.0.0.1:${port}/api/v1/tasks/${a}/export?with_materials=1`);
+    const fullFile = join(fresh("got"), "task-full.zip");
+    put(fullFile, Buffer.from(await full.arrayBuffer()));
+    assert.deepEqual([readPack(fullFile).manifest.with_materials, readPack(fullFile).names.includes(`tasks/${a}/inputs/材料.md`)], [true, true]);
     assert.ok(!pack.names.some((name) => name.includes("service.lock")));
 
     const got = await fetch(`http://127.0.0.1:${port}/api/v1/knowledge/libraries/${lib.id}/export`);
@@ -81,6 +88,13 @@ test("导出接口：任务与知识库各回一个 zip 下载，里面是范围
     put(libFile, Buffer.from(await got.arrayBuffer()));
     assert.deepEqual([got.status, got.headers.get("content-disposition")], [200, `attachment; filename="${lib.id}.taskwright.zip"`]);
     assert.deepEqual([readPack(libFile).manifest.scope, readPack(libFile).manifest.libraries.map((x) => [x.id, x.name])], ["library", [[lib.id, "售后规范"]]]);
+    // 知识库也缺省不带文档，只带文档清单；with_materials=1 才带。
+    assert.deepEqual([readPack(libFile).manifest.with_materials, readPack(libFile).names.filter((name) => name.includes("/files/"))], [false, []]);
+    assert.deepEqual(readPack(libFile).manifest.libraries[0].documents!.map((one) => one.name), ["退款处理规范.md"]);
+    const libFull = await fetch(`http://127.0.0.1:${port}/api/v1/knowledge/libraries/${lib.id}/export?with_materials=1`);
+    const libFullFile = join(fresh("got"), "lib-full.zip");
+    put(libFullFile, Buffer.from(await libFull.arrayBuffer()));
+    assert.ok(readPack(libFullFile).names.includes(`knowledge/${lib.id}/files/退款处理规范.md`));
 
     const none = await getJson(port, "/api/v1/tasks/TASK-NOPE/export");
     assert.deepEqual([none.status, none.body.error.code], [404, "not_found"]);
@@ -99,9 +113,9 @@ test("导入接口：收下一个任务的包并让服务接手它；再发一�
   const taskPack = join(dir, "task.zip");
   const libraryPack = join(dir, "library.zip");
   const allPack = join(dir, "all.zip");
-  await exportPack(where, { scope: "task", taskId: a, to: taskPack });
-  await exportPack(where, { scope: "library", libraryId: lib.id, to: libraryPack });
-  await exportPack(where, { scope: "all", to: allPack });
+  await exportPack(where, { scope: "task", taskId: a, to: taskPack, withMaterials: true });
+  await exportPack(where, { scope: "library", libraryId: lib.id, to: libraryPack, withMaterials: true });
+  await exportPack(where, { scope: "all", to: allPack, withMaterials: true });
   const read = (file: string) => readFileSync(file);
 
   const target = locations(fresh("target"));
@@ -211,6 +225,38 @@ test("数据升级还没有做完时：导出与导入的四个接口都答 upgr
     }
     assert.deepEqual(staged(join(data, "tasks")), []);
     assert.deepEqual(readdirSync(join(data, "tasks")), ["TASK-A"]);
+  } finally {
+    await started.stop();
+  }
+});
+
+test("导入不带材料的包：任务照常打开，材料表里的每份材料标 missing、大小 0、上传时间照原样；两个读材料的接口答 material_missing，不在材料表里的照旧 not_found", async () => {
+  const where = await dataWith(fresh("data"), ["甲"]);
+  const [a] = where.ids;
+  const task = join(where.tasksDir, a);
+  put(join(task, "inputs", "规格.pdf"), "%PDF-1.4 假的 PDF\n");
+  put(join(task, "inputs", "规格.pdf.md"), "[p1-1] 第一页\n");
+  insertMaterial(task, "inputs/规格.pdf", { slot: "spec", role: "既有规格说明" });
+  const file = join(fresh("packs"), "bare.zip");
+  mkdirSync(join(file, ".."), { recursive: true });
+  await exportPack(where, { scope: "task", taskId: a, to: file });
+  const addedAt = readPack(file).manifest.tasks[0].materials![0].added_at;
+
+  const target = locations(fresh("target"));
+  const started = await start(target.dataDir);
+  try {
+    const { port } = started;
+    assert.equal((await postPack(port, "/api/v1/tasks/import", readFileSync(file))).status, 200);
+    const page = await getJson(port, `/api/v1/tasks/${a}`);
+    assert.equal(page.status, 200);
+    assert.deepEqual(page.body.materials.map((m: Dict) => [m.path, m.missing, m.bytes, m.modified_at, m.role, m.deletable]),
+      [["inputs/规格.pdf", true, 0, addedAt, "既有规格说明", false]]);
+    for (const kind of ["content", "raw"]) {
+      const got = await getJson(port, `/api/v1/tasks/${a}/materials/${kind}?path=${encodeURIComponent("inputs/规格.pdf")}`);
+      assert.deepEqual([got.status, got.body.error.code, got.body.error.message], [404, "material_missing", "文件缺失，请补齐：规格.pdf"], kind);
+      const none = await getJson(port, `/api/v1/tasks/${a}/materials/${kind}?path=${encodeURIComponent("inputs/没有的.md")}`);
+      assert.deepEqual([none.status, none.body.error.code], [404, "not_found"], kind);
+    }
   } finally {
     await started.stop();
   }

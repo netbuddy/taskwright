@@ -270,4 +270,21 @@ describe("来源标签与任务页材料卡", () => {
     fireEvent.click(rows[0].querySelector("[data-testid=material-view]")!);
     expect(onView).toHaveBeenCalledWith(MATERIALS[0]);
   });
+
+  it("任务页的材料卡：文件缺失的材料在大小一栏写「文件缺失，请补齐」，「查看」是灰的点不动，没有替换与删除；别的材料照旧", () => {
+    const onView = vi.fn();
+    const gone = material(PDF, { bytes: 0, missing: true, deletable: false });
+    const kept = material("inputs/说明.md", { deletable: true, missing: false });
+    render(<Wrap><MaterialsCard taskId="TASK-1" materials={[gone, kept]} info={null} onView={onView} onChanged={() => {}} /></Wrap>);
+    const [missingRow, keptRow] = screen.getAllByTestId("material-row");
+    expect(missingRow.querySelector("[data-testid=material-missing]")!.textContent).toBe("文件缺失，请补齐");
+    const off = missingRow.querySelector("[data-testid=material-view-off]")!;
+    expect(off.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(off);
+    expect(onView).not.toHaveBeenCalled();
+    for (const id of ["material-view", "material-replace", "material-replace-off", "material-delete"]) expect(missingRow.querySelector(`[data-testid=${id}]`)).toBeNull();
+    expect(keptRow.querySelector("[data-testid=material-missing]")).toBeNull();
+    expect(keptRow.querySelector("[data-testid=material-view]")).toBeTruthy();
+    expect(keptRow.querySelector("[data-testid=material-delete]")).toBeTruthy();
+  });
 });

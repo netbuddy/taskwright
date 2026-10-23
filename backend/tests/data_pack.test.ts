@@ -12,7 +12,9 @@ import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
-import { MANIFEST_NAME, PACK_FORMAT, PACK_LIBRARIES, PACK_REGISTER, PackError, README_NAME, exportPack, exportText } from "../src/data_pack.ts";
+import { insertMaterial } from "../../agent/src/lib/material_db.ts";
+import { MANIFEST_NAME, PACK_FORMAT, PACK_LIBRARIES, PACK_REGISTER, PackError, README_NAME, exportPack, exportText, upgradePack } from "../src/data_pack.ts";
+import { PDFJS_VERSION } from "../src/pdf_projection.ts";
 import { KnowledgeStore } from "../src/knowledge.ts";
 import { LOCK_NAME } from "../src/occupancy.ts";
 import { DATA_FORMAT } from "../src/service_db.ts";
@@ -63,7 +65,7 @@ test("整套导出：清单文件记着版本、范围、任务与知识库；�
   const to = join(fresh("out"), "all.taskwright.zip");
   mkdirSync(join(to, ".."), { recursive: true });
   // 带上事件归档：这一例核对归档原样进包（缺省不带事件归档的情形见 data_pack_events.test.ts）。
-  const result = await exportPack(where, { scope: "all", to, productVersion: "0.5.0", withEvents: true });
+  const result = await exportPack(where, { withMaterials: true, scope: "all", to, productVersion: "0.5.0", withEvents: true });
   assert.deepEqual([result.file, result.bytes, result.scope, result.skipped], [to, statSync(to).size, "all", []]);
   assert.deepEqual(readdirSync(join(to, "..")), ["all.taskwright.zip"], "没有留下临时文件");
 
@@ -183,7 +185,7 @@ test("还没有升级的数据目录也能导出：目录名与编号不同的�
   cpSync(join(SAMPLES, "format-8-b"), join(where.tasksDir, "format-8-b"), { recursive: true });
   const to = join(fresh("out"), "old.taskwright.zip");
   mkdirSync(join(to, ".."), { recursive: true });
-  const result = await exportPack(where, { scope: "all", to });
+  const result = await exportPack(where, { withMaterials: true, scope: "all", to });
   const { manifest, names, content } = readPack(to);
   assert.deepEqual([manifest.data_format, manifest.task_db_version, manifest.libraries], [0, TASK_DB_VERSION, []]);
   assert.deepEqual(manifest.tasks.map((t) => [t.task_id, t.name, t.dir, t.task_db_version, t.owner]), [["TASK-SAMPLE-8B", "图书借阅（样本乙）", "format-8-b", 8, "local"]]);
@@ -204,7 +206,7 @@ test("正在使用的任务照样导出，清单文件记着；读不出编号�
   symlinkSync(join(where.tasksDir, id, "task.json"), join(where.tasksDir, id, "inputs", "link.json"));
   const to = join(fresh("out"), "busy.taskwright.zip");
   mkdirSync(join(to, ".."), { recursive: true });
-  const result = await exportPack(where, { scope: "all", to, working: (taskId) => taskId === id });
+  const result = await exportPack(where, { withMaterials: true, scope: "all", to, working: (taskId) => taskId === id });
   assert.deepEqual(result.tasks.map((t) => [t.task_id, t.in_use, t.assistant_working]), [[id, true, true]]);
   assert.deepEqual(result.skipped.map((one) => [one.what, one.reason]).sort(), [
     ["任务目录 broken", "读不出任务编号，没有带"],
@@ -226,4 +228,83 @@ test("一个空的数据目录：包里只有清单文件与说明", async () =>
   assert.deepEqual(readPack(to).names, [README_NAME]);
   assert.match(exportText(result), /包里只有清单文件/);
   assert.equal(existsSync(where.dataDir), false, "导出不建数据目录");
+});
+
+/** 一个空的输出目录。 */
+const outDir = () => {
+  const dir = fresh("out");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
+
+/** 一个任务：材料表里记着一份 PDF（旁边有它的文字版、分段清单、位置表）与一份 Markdown；一个有一份文档的知识库。 */
+async function materialData() {
+  const where = await dataWith(fresh("data"), ["甲"]);
+  const [a] = where.ids;
+  const task = join(where.tasksDir, a);
+  put(join(task, "inputs", "规格.pdf"), "%PDF-1.4 假的 PDF\n");
+  put(join(task, "inputs", "规格.pdf.md"), "[p1-1] 第一页\n");
+  put(join(task, "inputs", "规格.pdf.segments.json"), JSON.stringify({ version: 1, blocks: [{ index: 1 }, { index: 2 }] }));
+  put(join(task, "inputs", "规格.pdf.locations.json"), "{}\n");
+  put(join(task, "inputs", "纪要.md"), "会上定了三件事。\n");
+  insertMaterial(task, "inputs/规格.pdf", { slot: "spec", role: "既有规格说明" });
+  insertMaterial(task, "inputs/纪要.md", { slot: "evidence", role: "证据" });
+  const store = new KnowledgeStore(where.knowledgeDir);
+  const lib = store.create("售后规范");
+  await store.upload(lib.id, "退款处理规范.md", Buffer.from("退款处理规范全文\n", "utf-8"), "standard");
+  return { where, a, task, lib };
+}
+
+test("缺省导出不带材料与知识库文档：inputs 与 files 下没有文件，只记成空目录；清单文件写 with_materials 为假、材料清单、文档清单与规则版本", async () => {
+  const { where, a, task, lib } = await materialData();
+  const to = join(outDir(), "all.taskwright.zip");
+  const result = await exportPack(where, { scope: "all", to, segmentParams: { heading_depth: 2, max_paragraphs: 200, min_paragraphs: 4 } });
+  const { manifest, names } = readPack(to);
+  assert.equal(result.with_materials, false);
+  assert.deepEqual(names.filter((one) => one.startsWith(`tasks/${a}/inputs/`) || one.startsWith(`knowledge/${lib.id}/files/`)), []);
+  assert.ok(names.includes(`knowledge/${lib.id}/documents.json`) && names.includes(`tasks/${a}/knowledge.json`));
+  assert.ok(manifest.empty_dirs.includes(`tasks/${a}/inputs`) && manifest.empty_dirs.includes(`knowledge/${lib.id}/files`));
+  assert.equal(manifest.with_materials, false);
+  const file = (rel: string) => readFileSync(join(task, rel));
+  const print = (rel: string) => ({ path: rel, bytes: file(rel).length, sha256: sha256(file(rel)) });
+  assert.deepEqual(manifest.tasks[0].materials!.map(({ added_at, ...rest }) => (assert.match(added_at, /^\d{4}-\d\d-\d\dT/), rest)), [
+    { ...print("inputs/规格.pdf"), slot: "spec", role: "既有规格说明", segments: 2,
+      derived: [print("inputs/规格.pdf.md"), print("inputs/规格.pdf.segments.json"), print("inputs/规格.pdf.locations.json")] },
+    { ...print("inputs/纪要.md"), slot: "evidence", role: "证据", segments: null, derived: [] },
+  ]);
+  assert.deepEqual(manifest.projection, {
+    pdf_location_rules_version: 2, pdf_locations_format_version: 1, pdfjs_version: PDFJS_VERSION, segment_params: { heading_depth: 2, max_paragraphs: 200, min_paragraphs: 4 },
+  });
+  const docs = new KnowledgeStore(where.knowledgeDir).documents(lib.id);
+  assert.deepEqual(manifest.libraries.find((one) => one.id === lib.id)!.documents, docs.map(({ name, kind, bytes, sha256: digest, uploaded_at }) => ({ name, kind, bytes, sha256: digest, uploaded_at })));
+  assert.match(exportText(result), /材料与知识库的原件不在包里（要带上它们，导出时加 --with-materials）/);
+});
+
+test("选了带材料（withMaterials）：inputs 与 files 下的文件都在包里，两张清单照样写、内容与缺省导出的一样", async () => {
+  const { where, a, lib } = await materialData();
+  const bare = join(outDir(), "bare.taskwright.zip");
+  const full = join(outDir(), "full.taskwright.zip");
+  await exportPack(where, { scope: "all", to: bare });
+  await exportPack(where, { scope: "all", to: full, withMaterials: true });
+  const one = readPack(bare).manifest;
+  const two = readPack(full);
+  assert.equal(two.manifest.with_materials, true);
+  for (const name of ["规格.pdf", "规格.pdf.md", "规格.pdf.segments.json", "规格.pdf.locations.json", "纪要.md"]) assert.ok(two.names.includes(`tasks/${a}/inputs/${name}`), name);
+  assert.ok(two.names.includes(`knowledge/${lib.id}/files/退款处理规范.md`));
+  assert.deepEqual(two.manifest.tasks[0].materials, one.tasks[0].materials);
+  assert.deepEqual(two.manifest.libraries.map((x) => x.documents), one.libraries.map((x) => x.documents));
+  assert.equal(two.manifest.empty_dirs.includes(`tasks/${a}/inputs`), false);
+});
+
+test("从不带材料的包升级出的包：材料清单的指纹与规则版本照原包抄，不因为文件不在而丢", async () => {
+  const { where, a } = await materialData();
+  const bare = join(outDir(), "bare.taskwright.zip");
+  await exportPack(where, { scope: "task", taskId: a, to: bare, segmentParams: { heading_depth: 2, max_paragraphs: 200, min_paragraphs: 4 } });
+  const upgraded = join(outDir(), "upgraded.taskwright.zip");
+  await upgradePack(bare, upgraded);
+  const before = readPack(bare).manifest;
+  const after = readPack(upgraded).manifest;
+  assert.equal(after.with_materials, false);
+  assert.deepEqual(after.tasks[0].materials, before.tasks[0].materials);
+  assert.deepEqual(after.projection, before.projection);
 });

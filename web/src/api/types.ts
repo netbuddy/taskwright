@@ -428,6 +428,8 @@ export interface Material {
   role?: string;
   /** 现在能不能删除（只有任务详情里给）：任务进行中、不是派生文件、还没有进入对话（上传之后没有任何会话有过活动）。能不能替换也看它。 */
   deletable?: boolean;
+  /** 材料表里有这份材料而文件不在（从不带材料的数据包导入、还没补齐）：这时 bytes 是 0，modified_at 是放进来的时刻。早先的后端不给。 */
+  missing?: boolean;
 }
 
 export type ExecutorStateName = "not_started" | "starting" | "idle" | "working" | "exited" | "failed_to_start";
