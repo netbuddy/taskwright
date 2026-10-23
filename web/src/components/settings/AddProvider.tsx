@@ -1,7 +1,7 @@
 // 添加模型服务：第一步选它提供哪一类模型（用途），第二步选种类，第三步填写，「保存」时后端先检查连得上。
 // 一个模型服务只提供一类模型，同一个地址两类模型都有时添加两次；没有这类模型的种类不列出来。
 // 本地的三种（ollama、llama.cpp、vLLM）也有一栏可以不填的 API 密钥，给开了密钥验证的服务用。
-// 被拒（rejected）时停在这个画面，按 data.field 把后端的那句话写在对应的输入框下面；名称可以不填，由后端按种类起名。
+// 被拒（rejected）时停在这个画面，按 data.field 把后端的那句话写在对应的输入框下面，当前表单里没有那一栏时写在保存按钮上面一行；名称可以不填，由后端按种类起名。
 
 import { useState } from "react";
 import { Button, Input, Radio } from "antd";
@@ -66,6 +66,10 @@ export function AddProvider({ onAdded, onCancel }: { onAdded: (provider: Provide
     }
   };
 
+  // 当前表单里显示着的栏（种类的错误一直写在卡片底部）；别的字段的错误写在保存按钮上面一行，免得丢掉。
+  const shown = new Set<string>(["kind",
+    ...(group === "local" || group === "compatible" ? ["name", "base_url", "api_key"] : group === "cloud" ? ["name", "api_key", ...(advanced ? ["base_url"] : [])] : [])]);
+  const unplaced = Object.entries(errors).filter(([field, text]) => text && !shown.has(field)).map(([, text]) => text);
   const status = (field: Field) => (errors[field] ? "error" as const : undefined);
   const urlRow = (required: boolean) => (
     <div className="frow">
@@ -138,6 +142,7 @@ export function AddProvider({ onAdded, onCancel }: { onAdded: (provider: Provide
         )}
         {errors.kind && <div className="ferr" data-testid="err-kind">{errors.kind}</div>}
       </div>
+      {unplaced.length > 0 && <div className="ferr" data-testid="err-form">{unplaced.join(" ")}</div>}
       <div className="formfoot">
         <Button type="primary" loading={saving} onClick={() => void save()} data-testid="add-save">{saving ? "正在检查连得上……" : "保存"}</Button>
         <Button onClick={onCancel} disabled={saving}>取消</Button>

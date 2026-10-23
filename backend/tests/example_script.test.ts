@@ -11,14 +11,15 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
 import { FakeModel } from "../../tools/fake-model/server.ts";
-import { ROOT, spawnBackend, tempDir } from "./helpers.ts";
+import { ROOT, spawnBackend, tempDir, piMissing } from "./helpers.ts";
 
 type Dict = Record<string, any>;
 const SCRIPT = join(ROOT, "examples", "library-lending", "run.sh");
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-const missing = ["pi", "curl", "python3", "bash"].filter((cmd) => spawnSync(cmd, ["--version"], { encoding: "utf-8" }).error);
+// pi 经 piMissing 探测，配置目录指到临时目录（见 helpers.ts）。
+const missing = [...(piMissing() ? ["pi"] : []), ...["curl", "python3", "bash"].filter((cmd) => spawnSync(cmd, ["--version"], { encoding: "utf-8" }).error)];
 const SKIP = missing.length ? `本机 PATH 上没有 ${missing.join("、")}` : false;
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "TASKWRIGHT_TASKS_ROOT",
   "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT"];
