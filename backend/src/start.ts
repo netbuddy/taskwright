@@ -23,6 +23,8 @@ import { appVersion, logDir } from "./paths.ts";
 import { ENV_SETTINGS_FILE, adoptUserSettings, settingsFile } from "./product_settings.ts";
 import { MODES, type Mode, Service } from "./service.ts";
 import { NewerDataDirectory, ServiceDb } from "./service_db.ts";
+import { cmdlineOf, processState, readProcessFile, recordedEnv, removeProcessFile, writeProcessFile } from "./service_process.ts";
+import * as clock from "./clock.ts";
 import { newerDataText } from "../../agent/src/lib/schema.ts";
 
 export interface StartOptions {
@@ -121,6 +123,16 @@ export async function startService(options: StartOptions): Promise<Started> {
   const { dataDir, tasksDir, runsDir, knowledgeDir } = locate(options);
   // 日志与产品设置文件跟着数据目录走（环境变量另给了的除外）。先前的版本把设置文件放在用户数据目录下，这里复制过来一次。
   teeLogs(logDir(dataDir));
+  // 进程文件（service_process.ts）：这个数据目录已经有一个活着的服务就不启动；记的进程已经不在了就当残留清掉。
+  // 只管自己一个进程起的服务（测试在同一进程里起的不写这个文件）。
+  if (ownProcess) {
+    const left = readProcessFile(dataDir);
+    if (left && left.pid !== process.pid) {
+      if (processState(left).same) throw new StartError(`服务已在运行（pid ${left.pid}，端口 ${left.port}），要重启请用 service restart`);
+      removeProcessFile(dataDir, left.pid);
+      console.log(`清掉了残留的进程文件（记的是 pid ${left.pid}，端口 ${left.port}，那个进程已经不在了）。`);
+    }
+  }
   try {
     const adopted = adoptUserSettings(dataDir);
     if (adopted) console.log(adopted);
@@ -184,7 +196,10 @@ export async function startService(options: StartOptions): Promise<Started> {
   };
 
   if (ownProcess) {
-    const stopAndExit = () => void stop().finally(() => process.exit(0));
+    const stopAndExit = () => void stop().finally(() => {
+      removeProcessFile(dataDir, process.pid);
+      process.exit(0);
+    });
     for (const signal of exitSignals()) process.on(signal, stopAndExit);
     service.exitHandler = () => {
       console.log("收到本机发来的退出请求，服务收尾后退出。");
@@ -194,6 +209,14 @@ export async function startService(options: StartOptions): Promise<Started> {
 
   const port = await listenFrom(server, options.port, host);
   service.port = port;
+  if (ownProcess) {
+    // 监听成功之后写进程文件；不论怎样退出，进程结束时删掉（只删自己的那一份）。
+    writeProcessFile(dataDir, {
+      pid: process.pid, port, host, mode, started_at: clock.now(), product_version: appVersion(), argv: [...process.argv], cmdline: cmdlineOf("self"),
+      cwd: process.cwd(), env: recordedEnv(), node: process.execPath,
+    });
+    process.once("exit", () => removeProcessFile(dataDir, process.pid));
+  }
   if (options.port !== 0 && port !== options.port) console.log(`端口 ${options.port} 被占用，改用端口 ${port}。`);
   const web = options.web ? `，网页 ${options.web}` : "";
   console.log(`任务服务在 http://${host}:${port}/api/v1/tasks ，任务目录 ${tasksDir}，归档 ${runsDir}，知识库 ${service.knowledge!.root}，运行形态 ${mode}${web}${service.debug ? "，调试模式已打开（只在自己的机器上用）" : ""}`);
