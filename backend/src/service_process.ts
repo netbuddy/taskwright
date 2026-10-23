@@ -3,7 +3,7 @@
  *
  * 服务（自己一个进程起的，startService 的 ownProcess）监听成功后写这个文件：进程号、实际监听的端口与地址、运行形态、启动时刻、
  * 产品版本、启动时的命令行（process.argv，另记 /proc 里看到的原样命令行 cmdline）、工作目录、TASKWRIGHT_ 开头的环境变量与
- * PI_CODING_AGENT_DIR、node 的路径；正常退出时删掉。启动时发现旧文件而它记的进程还活着、命令行也对得上，就拒绝启动；
+ * 另外几个（RECORDED_ENV）、node 的路径；正常退出时删掉。启动时发现旧文件而它记的进程还活着、命令行也对得上，就拒绝启动；
  * 进程已经不在（或者那个进程号已经是别的程序），就当残留覆盖掉。
  *
  * 不起服务的 service 命令（service_command.ts）只认这个文件里的那一个进程：查看、停止、重启都按它来，不按端口、名字或目录去找进程。
@@ -28,7 +28,7 @@ export interface ProcessFile {
   /** 启动时 /proc/<pid>/cmdline 里的原样命令行；读不到（不是 Linux）时是 null。核对「是不是这个服务」用它。 */
   cmdline: string[] | null;
   cwd: string;
-  /** 启动时 TASKWRIGHT_ 开头的环境变量与 PI_CODING_AGENT_DIR。 */
+  /** 启动时 TASKWRIGHT_ 开头的环境变量与 RECORDED_ENV 里的几个。 */
   env: Record<string, string>;
   /** node 的路径（process.execPath）。 */
   node: string;
@@ -36,8 +36,11 @@ export interface ProcessFile {
 
 export const processFilePath = (dataDir: string) => join(dataDir, RUN_DIR, PROCESS_FILE);
 
-/** 要记下的环境变量：TASKWRIGHT_ 开头的与 PI_CODING_AGENT_DIR。 */
-export const isRecordedEnv = (name: string) => name.startsWith("TASKWRIGHT_") || name === "PI_CODING_AGENT_DIR";
+/** 除 TASKWRIGHT_ 开头的以外要记下的环境变量：pi 的配置目录、临时目录与数据目录、代理。 */
+export const RECORDED_ENV = ["PI_CODING_AGENT_DIR", "TMPDIR", "XDG_DATA_HOME", "NO_PROXY", "HTTP_PROXY", "HTTPS_PROXY"];
+
+/** 要记下的环境变量：TASKWRIGHT_ 开头的与 RECORDED_ENV 里的几个。 */
+export const isRecordedEnv = (name: string) => name.startsWith("TASKWRIGHT_") || RECORDED_ENV.includes(name);
 
 export function recordedEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => isRecordedEnv(entry[0]) && typeof entry[1] === "string"));

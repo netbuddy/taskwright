@@ -1,6 +1,6 @@
 /**
  * 服务的进程文件（service_process.ts）与 service 命令（service_command.ts），起真的后端进程核对：
- * - 监听之后写出 <数据目录>/run/service.json，字段齐全，环境变量只记 TASKWRIGHT_ 开头的与 PI_CODING_AGENT_DIR；
+ * - 监听之后写出 <数据目录>/run/service.json，字段齐全，环境变量只记 TASKWRIGHT_ 开头的与 RECORDED_ENV 里的几个；
  * - 同一个数据目录再起一个服务被拒，并指明在运行的那一个；
  * - service status 在运行时退出码 0；stop 发 SIGTERM，进程退出、文件删掉，之后 status 是 2（没有文件）；
  * - 进程文件记的进程已经不在：status 是 1（残留）；再起服务时清掉残留、照常起来；
@@ -12,7 +12,7 @@ import { type ChildProcess, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { processFilePath, readProcessFile, writeProcessFile } from "../src/service_process.ts";
+import { RECORDED_ENV, processFilePath, readProcessFile, writeProcessFile } from "../src/service_process.ts";
 import { BACKEND_MAIN, ROOT, spawnBackend, tempDir } from "./helpers.ts";
 
 const tmp = tempDir();
@@ -39,7 +39,8 @@ const exited = (child: ChildProcess) => (child.exitCode !== null || child.signal
 test("进程文件：监听之后写出，字段齐全，环境变量只记两类；同一个数据目录再起一个被拒；status 是 0，stop 之后进程退出、文件删掉，status 是 2", async () => {
   const data = fresh("data");
   const logs = join(data, "logs");
-  const { child, port } = await serve(data, logs, { SOME_OTHER_VAR: "不该记下" });
+  const extra = { SOME_OTHER_VAR: "不该记下", TMPDIR: join(data, "tmp"), XDG_DATA_HOME: join(data, "xdg"), NO_PROXY: "localhost", HTTP_PROXY: "http://proxy.example.test:3128", HTTPS_PROXY: "http://proxy.example.test:3129" };
+  const { child, port } = await serve(data, logs, extra);
   try {
     const file = readProcessFile(data)!;
     assert.deepEqual([file.pid, file.port, file.host, file.mode], [child.pid, port, "127.0.0.1", "server"]);
@@ -47,7 +48,10 @@ test("进程文件：监听之后写出，字段齐全，环境变量只记两�
     assert.ok(file.argv[1].endsWith("main.mts") && file.argv.includes("--data") && file.argv.includes(data), JSON.stringify(file.argv));
     assert.ok(Array.isArray(file.cmdline) && file.cmdline.includes("--data"), JSON.stringify(file.cmdline));
     assert.equal(file.cwd, ROOT);
-    assert.deepEqual(Object.keys(file.env).filter((name) => !name.startsWith("TASKWRIGHT_") && name !== "PI_CODING_AGENT_DIR"), []);
+    assert.deepEqual(Object.keys(file.env).filter((name) => !name.startsWith("TASKWRIGHT_") && !RECORDED_ENV.includes(name)), []);
+    assert.equal("SOME_OTHER_VAR" in file.env, false);
+    assert.deepEqual([file.env.TMPDIR, file.env.XDG_DATA_HOME, file.env.NO_PROXY, file.env.HTTP_PROXY, file.env.HTTPS_PROXY],
+      [extra.TMPDIR, extra.XDG_DATA_HOME, extra.NO_PROXY, extra.HTTP_PROXY, extra.HTTPS_PROXY]);
     assert.equal(file.env.TASKWRIGHT_LOG_DIR, logs);
     assert.equal(file.env.PI_CODING_AGENT_DIR, join(data, "pi-agent"));
     assert.ok(/^\d{4}-\d\d-\d\dT/.test(file.started_at) && typeof file.product_version === "string");
@@ -100,11 +104,11 @@ test("残留的进程文件：记的进程已经不在，status 是 1、stop 不
 test("restart：停掉再照进程文件起，新的进程号不同、接口答话；输出写着用了哪几个记下的环境变量名，不写值；新进程的输出接到 service-<时刻>.out", async () => {
   const data = fresh("data");
   const logs = join(data, "logs");
-  const { child } = await serve(data, logs, { TASKWRIGHT_EXTRA_FLAG: "secret-value" });
+  const { child } = await serve(data, logs, { TASKWRIGHT_EXTRA_FLAG: "secret-value", XDG_DATA_HOME: join(data, "xdg") });
   let fresh_pid: number | null = null;
   try {
-    // 执行 restart 的环境里另有一个不同值的同名变量：新进程用的是进程文件里记的。
-    const done = service("restart", data, { TASKWRIGHT_EXTRA_FLAG: "from-shell" });
+    // 执行 restart 的环境里另有不同值的同名变量：新进程用的是进程文件里记的。
+    const done = service("restart", data, { TASKWRIGHT_EXTRA_FLAG: "from-shell", XDG_DATA_HOME: join(data, "shell-xdg") });
     assert.equal(done.status, 0, done.err + done.out);
     assert.equal(await exited(child), 0);
     const now = readProcessFile(data)!;
@@ -116,6 +120,9 @@ test("restart：停掉再照进程文件起，新的进程号不同、接口答�
     assert.ok(done.out.includes(`用了进程文件里记的环境变量：${names.join("、")}。`), done.out);
     assert.equal(done.out.includes("secret-value"), false, "不打印变量的值");
     assert.equal(now.env.TASKWRIGHT_EXTRA_FLAG, "secret-value");
+    // 新进程的环境里确实是记下的值，执行 restart 的环境里的同名变量没有盖过它。
+    const environ = Object.fromEntries(readFileSync(`/proc/${now.pid}/environ`, "utf-8").split("\0").filter(Boolean).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]));
+    assert.deepEqual([environ.TASKWRIGHT_EXTRA_FLAG, environ.XDG_DATA_HOME], ["secret-value", join(data, "xdg")]);
     const res = await fetch(`http://127.0.0.1:${now.port}/api/v1/service`);
     assert.equal(res.status, 200);
     assert.ok(readdirSync(logs).some((name) => /^service-\d{8}-\d{6}\.out$/.test(name)), readdirSync(logs).join(","));
