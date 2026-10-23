@@ -3,7 +3,7 @@
  * - 声明的这一栏怎样读；
  * - 保存修订：逆向解析（声明了既有规格说明）引用角色为证据的材料被拒，引用既有规格说明放行；没有声明这一栏的活动不受影响；
  * - 自带工具调用之前（hooks/source_roles.ts）：read 读证据被拦、读既有规格说明放行，grep 搜含证据的目录被拦，ls 不拦，没有声明的活动放行；
- * - 「原文未给」：没有配对的缺失问题被拒，同批记了、或者任务里已经有的放行。
+ * - 「原文未给」：没有配对的缺失问题被拒，同批记了、或者任务里已经有的放行；只许写在必填字段，可空字段写了被拒。
  */
 
 import assert from "node:assert/strict";
@@ -105,6 +105,27 @@ test("「原文未给」：没有配对的缺失问题被拒；同一批记了�
   assert.equal(refusal(dir, PARSE, [useCase("借书", ["原文未给"]), missing("UC-001 原文未给步骤", "UC-001")]), null);
   // 任务里已经有关联它的缺失问题：再改这条条目、仍写「原文未给」，放行。
   assert.equal(refusal(dir, PARSE, [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "借阅图书" } }]), null);
+});
+
+test("「原文未给」写在可空字段：被拒，原因码是 save_revision.unstated_optional_field，配了缺失问题也不放行", () => {
+  const dir = workspace();
+  const withNote = { ...useCase("借书", ["读者出示借书证。"]), fields: { 名称: "借书", 步骤: ["读者出示借书证。"], 备注: "原文未给" } };
+  try {
+    saveRevision(callIn(dir, PARSE), { operations: [withNote, missing("UC-001 原文未给备注", "UC-001")] });
+    assert.fail("应当被拒");
+  } catch (error) {
+    assert.ok(error instanceof SaveRejected, String(error));
+    assert.ok(error.message.includes("UC-001 的「备注」写了「原文未给」，这是可空字段，原文没给就留空"), error.message);
+    assert.ok(error.message.includes("新增时不写这个字段，修改时把它写成空的"), error.message);
+    assert.deepEqual(error.codes, ["save_revision.unstated_optional_field"]);
+  }
+  assert.equal(count(dir, "revision"), 0);
+});
+
+test("「原文未给」写在必填字段并同批配了缺失问题：照旧放行", () => {
+  const dir = workspace();
+  assert.equal(refusal(dir, PARSE, [useCase("借书", ["原文未给"]), missing("UC-001 原文未给步骤", "UC-001")]), null);
+  assert.equal(count(dir, "revision"), 1);
 });
 
 test("自带工具调用之前：逆向解析的 read 读证据被拦、读既有规格说明放行；grep 搜材料目录或不写 path 被拦，path 写既有规格说明放行；ls 不拦", () => {

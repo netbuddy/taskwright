@@ -515,12 +515,18 @@ function save(db: DatabaseSync, call: CallContext, params: SaveRevisionParams): 
       })));
     });
   };
-  // 字段写了「原文未给」的条目（助手写的，问题集合之外）：这一批全部核对通过之后，看它们各有没有种类为缺失、关联它的问题条目。
+  // 字段写了「原文未给」的条目（助手写的，问题集合之外）：必填字段等这一批全部核对通过之后，看它们各有没有种类为缺失、关联它的问题条目；
+  // 可空字段原文没给就该留空，写了「原文未给」当场记一条原因。
   const unstated: { label: string; itemId: string; fields: string[] }[] = [];
   const noteUnstated = (label: string, itemId: string | undefined, collection: CollectionDef, fields: Fields): void => {
     if (call.actor === ACTOR_USER || itemId === undefined || keepPendingField(collection) !== null) return;
     const hit = Object.keys(fields).filter((name) => isUnstated(fields[name]));
-    if (hit.length > 0) unstated.push({ label, itemId, fields: hit });
+    const optional = hit.filter((name) => collection.fields.find((field) => field.name === name)?.required === false);
+    if (optional.length > 0) {
+      problems.push(reasonOf(label, itemId, optional.map((field) => problem(refusalText("save_revision.unstated_optional_field", { item: itemId, field })))));
+    }
+    const required = hit.filter((name) => !optional.includes(name));
+    if (required.length > 0) unstated.push({ label, itemId, fields: required });
   };
   const outline = readingTemplate ? outlineTitlesFor(call.workspaceDir, definition.skillPath) : null;
   /**
