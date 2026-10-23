@@ -13,7 +13,7 @@ import { after, test } from "node:test";
 import { DB_NAME } from "../../agent/src/lib/db.ts";
 import { TASK_DB_VERSION } from "../../agent/src/lib/schema.ts";
 import { insertMaterial } from "../../agent/src/lib/material_db.ts";
-import { MANIFEST_NAME, PACK_FORMAT, PACK_LIBRARIES, PACK_REGISTER, PackError, README_NAME, SETTINGS_EXCERPT_NAME, diagnosticPackName, exportPack, exportText, upgradePack } from "../src/data_pack.ts";
+import { MANIFEST_NAME, PACK_FORMAT, PACK_LIBRARIES, PACK_REGISTER, PackError, README_NAME, SETTINGS_EXCERPT_NAME, diagnosticPackName, exportPack, exportText, upgradePack, upgradePackText } from "../src/data_pack.ts";
 import { settingsExcerpt } from "../src/product_settings.ts";
 import { PDFJS_VERSION } from "../src/pdf_projection.ts";
 import { KnowledgeStore } from "../src/knowledge.ts";
@@ -343,7 +343,8 @@ test("诊断包：固定带事件归档、不带材料原件（不看 withEvents
   const { where, a, settings } = await diagnosticData();
   const to = join(outDir(), diagnosticPackName(a, new Date(2026, 9, 22, 9, 5)));
   assert.equal(basename(to), `diag-${a}-20261022-0905.taskwright.zip`);
-  const result = await exportPack(where, { scope: "task", taskId: a, to, withEvents: false, withMaterials: true, diagnostic: { settings, logsDir: join(where.dataDir, "logs") } });
+  const launchModel = { model: "deepseek-flash", provider: "deepseek", from: "启动配置" };
+  const result = await exportPack(where, { scope: "task", taskId: a, to, withEvents: false, withMaterials: true, diagnostic: { settings, logsDir: join(where.dataDir, "logs"), launchModel } });
   const { manifest, names, content } = readPack(to);
   assert.deepEqual([manifest.with_events, manifest.with_materials], [true, false]);
   assert.ok(names.some((one) => one.startsWith(`runs/${a}/pi-events/`)) && names.some((one) => one.startsWith(`runs/${a}/pi-sessions/`)));
@@ -351,7 +352,7 @@ test("诊断包：固定带事件归档、不带材料原件（不看 withEvents
   assert.ok(names.includes(SETTINGS_EXCERPT_NAME) && manifest.files.some((one) => one.path === SETTINGS_EXCERPT_NAME));
   assert.deepEqual(manifest.diagnostic, {
     purpose: "full", granularity: "task", session_id: null, product_version: manifest.product_version, task_db_version: manifest.task_db_version,
-    model: { model: "deepseek-chat", provider: "深度求索" }, log_range: null,
+    model: { model: "deepseek-chat", provider: "深度求索" }, launch_model: launchModel, log_range: null,
   }, "数据目录里没有后端日志时 log_range 是 null");
   // 设置摘录只有版本、选中的模型与各模型服务的五项；全文里没有 key 这个词。
   const excerpt = content(SETTINGS_EXCERPT_NAME).toString("utf-8");
@@ -365,7 +366,7 @@ test("诊断包：固定带事件归档、不带材料原件（不看 withEvents
   for (const name of names) assert.doesNotMatch(content(name).toString("latin1") + content(name).toString("utf-8"), /api_key|apiKey|Authorization|sk-secret-value/, name);
   const readme = content(README_NAME).toString("utf-8");
   assert.ok(readme.startsWith("这是诊断包，用来排查问题，不用来恢复任务。\n"), readme);
-  for (const part of ["运行轨迹", "对话记录", "任务库", "后端日志：这个数据目录里没有", "设置摘录", "材料清单", "材料与知识库的原件和文字版", "密钥", "包里含对话全文与条目摘录，请妥善保管。", "语言模型：deepseek-chat（深度求索）"]) {
+  for (const part of ["运行轨迹", "对话记录", "任务库", "后端日志：这个数据目录里没有", "设置摘录", "材料清单", "材料与知识库的原件和文字版", "密钥", "包里含对话全文与条目摘录，请妥善保管。", "语言模型：deepseek-flash（deepseek，取自启动配置）"]) {
     assert.ok(readme.includes(part), part);
   }
   assert.deepEqual(result.diagnostic, { logs: 0 });
@@ -398,6 +399,21 @@ test("诊断包的后端日志：文件名日期不晚于导出那天、最后�
   assert.equal(manifest.diagnostic!.log_range!.to, manifest.exported_at);
   assert.ok(manifest.diagnostic!.log_range!.from.startsWith(String(new Date(started).getFullYear())));
   assert.match(content(README_NAME).toString("utf-8"), /- 后端日志：任务建立（.*）以来写过的后端日志文件，整份（logs\/）。/);
+});
+
+test("诊断包里没有给实际用的模型（命令行导出）时 launch_model 是 null，说明里写设置里选定的那个；升级诊断包时说只保留数据包部分", async () => {
+  const { where, a, settings } = await diagnosticData();
+  const to = join(outDir(), "diag.taskwright.zip");
+  await exportPack(where, { scope: "task", taskId: a, to, diagnostic: { settings, logsDir: join(where.dataDir, "logs") } });
+  const { manifest, content } = readPack(to);
+  assert.deepEqual([manifest.diagnostic!.model, manifest.diagnostic!.launch_model], [{ model: "deepseek-chat", provider: "深度求索" }, null]);
+  assert.match(content(README_NAME).toString("utf-8"), /语言模型：deepseek-chat（深度求索，设置里选定的）/);
+  const upgraded = join(outDir(), "upgraded.taskwright.zip");
+  const result = await upgradePack(to, upgraded);
+  assert.equal(result.was_diagnostic, true);
+  assert.match(upgradePackText(result), /^数据包升级（原来的包由 .* 导出）\n这是诊断包，升级后只保留数据包部分\n/);
+  assert.equal(readPack(upgraded).manifest.diagnostic, undefined);
+  assert.equal(readPack(upgraded).names.includes(SETTINGS_EXCERPT_NAME), false);
 });
 
 test("诊断包只能按一个任务导出", async () => {

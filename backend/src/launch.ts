@@ -76,6 +76,13 @@ export function resolveModel(profile: Profile, env: NodeJS.ProcessEnv | Record<s
   return fromProfile;
 }
 
+/** 交给 pi 的模型拆成服务商名与模型名（「服务商/模型」在第一个斜杠处分开），连同取自哪里；启动配置没写模型时是 null。诊断包记它。 */
+export function launchModelOf(resolved: ResolvedModel): { model: string; provider: string; from: string } | null {
+  const at = resolved.model.indexOf("/");
+  if (!resolved.model) return null;
+  return at > 0 ? { provider: resolved.model.slice(0, at), model: resolved.model.slice(at + 1), from: resolved.from } : { provider: "", model: resolved.model, from: resolved.from };
+}
+
 /**
  * 启动配置有问题，带一句说明缺什么、怎么补。说明会显示在页面顶部（执行者状态的附带说明）。
  * 给了 technical 时，说明是给用户看的那句，technical 是排查要用的原话，写进后端日志与接口错误的附带信息 detail。

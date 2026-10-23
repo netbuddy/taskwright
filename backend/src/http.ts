@@ -11,7 +11,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, diagnosticPackName, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
-import { piAgentDir, segmentParamsOf } from "./launch.ts";
+import { launchModelOf, piAgentDir, resolveModel, segmentParamsOf } from "./launch.ts";
 import * as library from "./library.ts";
 import { type SessionFact, taskStatus, workItemView } from "./task_status.ts";
 import { UPGRADED_VERSION_NOTE } from "../../agent/src/lib/schema.ts";
@@ -432,7 +432,8 @@ const handlers: Record<string, Handler> = {
     if (req.query.diagnostic === "1") {
       const settings = settingsExcerpt(piAgentDir(process.env), process.env);
       const logsDir = logDir(service.packLocations().dataDir);
-      return packDownload(service, { scope: "task", taskId: t.taskId, working, diagnostic: { settings, logsDir } }, diagnosticPackName(t.taskId));
+      const launchModel = launchModelOf(resolveModel(service.profile));
+      return packDownload(service, { scope: "task", taskId: t.taskId, working, diagnostic: { settings, logsDir, launchModel } }, diagnosticPackName(t.taskId));
     }
     return packDownload(service, { scope: "task", taskId: t.taskId, working, withEvents: req.query.with_events === "1",
       withMaterials: req.query.with_materials === "1" }, `${t.taskId}${PACK_SUFFIX}`);

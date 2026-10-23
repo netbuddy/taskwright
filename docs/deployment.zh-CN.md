@@ -243,10 +243,10 @@ node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 | 材料与知识库原件 | 缺省不带，`--with-materials` 才带 | 一定不带 |
 | 后端日志 | 不带 | 带：数据目录 `logs/` 下文件名日期不晚于导出那天、最后修改不早于任务建立时刻的 `backend-<年月日>.log`，整份，放在包里的 `logs/` 下（日志行没有时刻，所以不切行；文件名的日期是写它的进程启动那天） |
 | 设置摘录 | 不带 | 带：`settings.redacted.json`，只有设置版本、选中的模型、各模型服务的种类、用途、名字、地址与模型清单；从读出的设置里挑这几项写出，不复制设置文件，不含密钥 |
-| 清单文件里另有 | — | `diagnostic` 一节：`purpose`（`full`）、`granularity`（`task`）、`session_id`（按任务的为 null）、`product_version`、`task_db_version`、`model`（选中的语言模型的模型名与模型服务的名字，没有选过为 null）、`log_range`（`{from, to}`：任务建立到导出；一份日志都没有带时为 null） |
+| 清单文件里另有 | — | `diagnostic` 一节：`purpose`（`full`）、`granularity`（`task`）、`session_id`（按任务的为 null）、`product_version`、`task_db_version`、`model`（设置里选中的语言模型的模型名与模型服务的名字，没有选过为 null）、`launch_model`（后端起助手时实际用的模型：模型名、服务商名与它取自哪里——产品设置、启动配置或助手程序的设置；排查时看这一项；命令行导出不知道服务用的启动配置，为 null）、`log_range`（`{from, to}`：任务建立到导出；一份日志都没有带时为 null） |
 | 文件名 | `<任务编号>.taskwright.zip`（命令行由 `--to` 定） | `diag-<任务编号>-<年月日-时分>.taskwright.zip`（命令行由 `--to` 定） |
 
-诊断包照样可以导入（它是数据包的超集），导入时后端日志与设置摘录不解出来。
+诊断包照样可以导入（它是数据包的超集），导入时后端日志与设置摘录不解出来。诊断包不用于升级与恢复：`data upgrade --pack` 遇到诊断包时打印「这是诊断包，升级后只保留数据包部分」，写出的新包是普通的数据包，没有后端日志、设置摘录与 `diagnostic` 一节。
 
 **包里有什么。**
 

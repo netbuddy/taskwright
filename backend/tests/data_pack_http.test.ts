@@ -14,6 +14,7 @@ import { after, test } from "node:test";
 import { insertMaterial } from "../../agent/src/lib/material_db.ts";
 import { PACK_MAX_UPLOAD, PACK_UPLOAD_TOO_LARGE_TEXT, exportPack } from "../src/data_pack.ts";
 import { UPGRADE_PENDING_TEXT, makeServer } from "../src/http.ts";
+import { launchModelOf, resolveModel } from "../src/launch.ts";
 import { KnowledgeStore } from "../src/knowledge.ts";
 import { Service } from "../src/service.ts";
 import { ServiceDb } from "../src/service_db.ts";
@@ -104,6 +105,9 @@ test("导出接口：任务与知识库各回一个 zip 下载，里面是范围
     put(diagFile, Buffer.from(await diag.arrayBuffer()));
     assert.deepEqual([readPack(diagFile).manifest.diagnostic?.granularity, readPack(diagFile).manifest.with_events, readPack(diagFile).names.includes("settings.redacted.json")],
       ["task", true, true]);
+    // 实际交给 pi 的模型：服务用的启动配置（测试用的 fake）里的那个。
+    const launched = launchModelOf(resolveModel(started.service.profile));
+    assert.deepEqual(readPack(diagFile).manifest.diagnostic?.launch_model, launched);
 
     const none = await getJson(port, "/api/v1/tasks/TASK-NOPE/export");
     assert.deepEqual([none.status, none.body.error.code], [404, "not_found"]);

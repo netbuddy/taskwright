@@ -181,6 +181,11 @@ export interface PackDiagnostic {
   task_db_version: number;
   /** 设置里选中的语言模型：模型名与模型服务的名字；没有选过是 null（这时运行用的是启动配置里的模型）。 */
   model: { model: string; provider: string } | null;
+  /**
+   * 后端起 pi 时实际交给它的模型（launch.ts 的 resolveModel）：模型名、服务商名，与它取自哪里（产品设置、启动配置、助手程序的设置）。
+   * 排查时看这一项。命令行导出不知道服务用的启动配置，是 null。
+   */
+  launch_model: { model: string; provider: string; from: string } | null;
   /** 带上的后端日志覆盖的时段：任务建立的时刻到导出的时刻；一份日志都没有带时是 null。 */
   log_range: { from: string; to: string } | null;
 }
@@ -290,7 +295,7 @@ export interface ExportOptions {
    * 导出成诊断包：给这一项就是。settings 是设置摘录；logsDir 是后端日志所在的目录（paths.ts 的 logDir：环境变量另给了用它，否则是数据目录下的 logs）。
    * 范围只能是一个任务；事件归档一定带，材料原件一定不带，withEvents 与 withMaterials 不看。
    */
-  diagnostic?: { settings: SettingsExcerpt; logsDir: string };
+  diagnostic?: { settings: SettingsExcerpt; logsDir: string; launchModel?: PackDiagnostic["launch_model"] };
   productVersion?: string;
 }
 
@@ -616,7 +621,7 @@ export async function exportPack(where: PackLocations, given: ExportOptions): Pr
       await putJson(SETTINGS_EXCERPT_NAME, options.diagnostic.settings);
       manifest.diagnostic = {
         purpose: "full", granularity: "task", session_id: null, product_version: manifest.product_version, task_db_version: manifest.task_db_version,
-        model: excerptLanguageModel(options.diagnostic.settings),
+        model: excerptLanguageModel(options.diagnostic.settings), launch_model: options.diagnostic.launchModel ?? null,
         log_range: logs.length > 0 && since ? { from: since, to: manifest.exported_at } : null,
       };
     }
@@ -687,7 +692,9 @@ export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_ver
 /** 诊断包的说明：开头写明它是排查用的，再写包里有什么、没有什么，与怎样用。 */
 function diagnosticReadme(manifest: Pick<Manifest, "exported_at" | "product_version" | "tasks">, diagnostic: PackDiagnostic): string {
   const tasks = manifest.tasks.map((t) => `  ${t.task_id}${t.name ? `「${t.name}」` : ""}`);
-  const model = diagnostic.model ? `${diagnostic.model.model}（${diagnostic.model.provider}）` : "设置里没有选定，用的是启动配置里的模型";
+  const launch = diagnostic.launch_model;
+  const model = launch ? `${launch.model}（${launch.provider}，取自${launch.from}）`
+    : diagnostic.model ? `${diagnostic.model.model}（${diagnostic.model.provider}，设置里选定的）` : "不知道（命令行导出，设置里也没有选定）";
   return [
     "这是诊断包，用来排查问题，不用来恢复任务。",
     `导出时刻：${manifest.exported_at}　产品版本：${manifest.product_version}　语言模型：${model}`,
@@ -792,11 +799,13 @@ function documentsIn(raw: unknown): PackDocument[] | undefined {
 function diagnosticIn(raw: unknown): PackDiagnostic | undefined {
   if (!isObject(raw) || raw.purpose !== "full" || raw.granularity !== "task") return undefined;
   const model = isObject(raw.model) && typeof raw.model.model === "string" && typeof raw.model.provider === "string" ? { model: raw.model.model, provider: raw.model.provider } : null;
+  const launch = isObject(raw.launch_model) && typeof raw.launch_model.model === "string" && typeof raw.launch_model.provider === "string"
+    ? { model: raw.launch_model.model, provider: raw.launch_model.provider, from: typeof raw.launch_model.from === "string" ? raw.launch_model.from : "" } : null;
   const range = isObject(raw.log_range) && typeof raw.log_range.from === "string" && typeof raw.log_range.to === "string" ? { from: raw.log_range.from, to: raw.log_range.to } : null;
   return {
     purpose: "full", granularity: "task", session_id: typeof raw.session_id === "string" ? raw.session_id : null,
     product_version: typeof raw.product_version === "string" ? raw.product_version : "", task_db_version: isCount(raw.task_db_version) ? raw.task_db_version : 0,
-    model, log_range: range,
+    model, launch_model: launch, log_range: range,
   };
 }
 
@@ -1286,6 +1295,8 @@ export interface PackUpgradeResult {
   from_version: string;
   /** 各个任务升级的结果；原来的包里没有要升级的任务时是空的。 */
   tasks: TaskOutcome[];
+  /** 原来的包是诊断包：升级后只保留数据包的部分（后端日志、设置摘录与诊断节不保留）。 */
+  was_diagnostic: boolean;
 }
 
 /**
@@ -1309,7 +1320,7 @@ export async function upgradePack(file: string, to: string, options: { productVe
     // 原包带着事件归档的（早先的包一律带着），升级出来的包照样带；材料原件也照原包带或不带，不带的，材料清单的指纹照原包抄。
     const written = await exportPack(where, { scope: manifest.scope, taskId: manifest.tasks[0]?.task_id, libraryId: manifest.libraries[0]?.id, to, productVersion: options.productVersion,
       withEvents: manifest.with_events, withMaterials: manifest.with_materials, previous: manifest });
-    return { written, from_version: manifest.product_version, tasks: upgrade?.tasks ?? [] };
+    return { written, from_version: manifest.product_version, tasks: upgrade?.tasks ?? [], was_diagnostic: manifest.diagnostic !== undefined };
   } finally {
     pack.reader.close();
     rmSync(scratch, { recursive: true, force: true });
@@ -1319,6 +1330,7 @@ export async function upgradePack(file: string, to: string, options: { productVe
 /** 数据包升级的结果写成给人看的几行。 */
 export function upgradePackText(result: PackUpgradeResult): string {
   const lines = [`数据包升级（原来的包由 ${result.from_version} 导出）`];
+  if (result.was_diagnostic) lines.push("这是诊断包，升级后只保留数据包部分");
   if (result.tasks.length === 0) lines.push("任务：没有要升级的，新的包与原来的内容相同");
   for (const t of result.tasks) {
     const label = `${t.task_id ?? t.dir}${t.name ? `「${t.name}」` : ""}`;
