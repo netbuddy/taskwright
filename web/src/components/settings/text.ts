@@ -88,6 +88,8 @@ export const TYPE_NAME: Record<ModelType, string> = { language: PURPOSES.languag
 /** 「现在用的模型」下面那句灰字；选定之后换成接口返回的 note（同一句话）。 */
 export const APPLIES_TEXT = "更换之后，下一次打开或者新建会话时生效。正在进行的会话不受影响。";
 export const READONLY_PROVIDER_TEXT = "这个模型服务是在配置文件里手工登记的，这里只能看，不能改。";
+/** 添加本地模型服务（ollama、llama.cpp、vLLM）时可选密钥栏下面的那句说明。 */
+export const LOCAL_KEY_HELP = "一般不用填；模型服务开了密钥验证时填上。存进去之后不再显示，只显示末四位。";
 export const LOGIN_NOTE = "这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请选定模型后到任务实例里试着让助手说一句话。";
 /**
  * 登录分两步：先在命令行里运行启动的命令，再在它的界面里输入登录的指令。命令的字面绕不开程序名，别的页面文字不写它。
