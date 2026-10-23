@@ -19,17 +19,24 @@
  * 升到这个程序的格式（服务器形态启动时发现有数据要升级会拒绝启动，并提示先运行它）；data export 导出一个数据包，data import 导入一个
  * 数据包，data upgrade --pack 把一个旧版本导出的数据包升成新的包。
  *
+ * 另有不起服务的 service 命令（见 service_command.ts）：node backend/src/main.mts service status|stop|restart [--data <数据目录>]
+ * 按数据目录下的进程文件 run/service.json 查看、停止、重启服务。服务启动时写这个文件，退出时删；同一个数据目录已经有一个活着的服务时
+ * 拒绝启动。
+ *
  * 本文件只是命令行外壳：检查参数后调 start.ts 的 startService；打包后的启动程序直接调 startService。
  */
 
 import { parseArgs } from "node:util";
 import { dataCommand } from "./data_command.ts";
+import { serviceCommand } from "./service_command.ts";
 import { NoFreePort } from "./listen.ts";
 import { MODES, type Mode } from "./service.ts";
 import { startService } from "./start.ts";
 
 // 第一个参数是 data：数据命令，不起服务。它有自己的参数，不经下面起服务的那一套检查。
 if (process.argv[2] === "data") process.exit(await dataCommand(process.argv.slice(3)));
+// 第一个参数是 service：按进程文件查看、停止、重启服务（service_command.ts），同样不起服务。
+if (process.argv[2] === "service") process.exit(await serviceCommand(process.argv.slice(3)));
 
 const { values } = parseArgs({
   options: {
