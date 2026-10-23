@@ -294,7 +294,7 @@ export function render(taskDir: string, lib: Library, revisionNo: number | null 
   const latest = lib.latestRevision();
   if (latest === 0) throw new ApiError("bad_request", "交付物还没有任何修订，没有东西可以生成。");
   const docRevision = revisionNo || latest;
-  if (docRevision > latest) throw new ApiError("bad_request", `这个任务还没有修订 ${docRevision}，最新是修订 ${latest}。`);
+  if (docRevision > latest) throw new ApiError("bad_request", `这个任务实例还没有修订 ${docRevision}，最新是修订 ${latest}。`);
   let alive = new Map(lib.aliveAt(docRevision));
   if (items !== null) {
     const missing = items.filter((i) => !alive.has(i));

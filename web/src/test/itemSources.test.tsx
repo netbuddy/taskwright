@@ -46,7 +46,7 @@ export function OpenItem({ t, wrap = (node) => node }: { t: Task; wrap?: (node: 
 export const materials = (...paths: string[]): Material[] => paths.map((path) => ({ path, bytes: 1, modified_at: "", derived_from: null }));
 
 describe("条目详情里的来源", () => {
-  it("字段下面没有来源标签，底部有「来源」一节，材料原文、用户的话、助手补充都只在那里列出", () => {
+  it("字段下面没有来源标签，底部有「来源」一节，输入资料原文、用户的话、助手补充都只在那里列出", () => {
     render(<OpenItem t={sourcesTask([
       src("文档原文", "inputs/借阅说明.md", "读者可以借书。", "参与者"),
       src("用户的话", "S#u1", "读者就是持证的人", "参与者"),
@@ -58,7 +58,7 @@ describe("条目详情里的来源", () => {
       expect(field.textContent).not.toMatch(/借阅说明\.md|用户的话|助手补充/);
     }
     expect(within(detail).getByText("来源", { selector: ".sec-h" })).toBeTruthy();
-    expect([...detail.querySelectorAll(".srcbox .chip")].map((c) => c.textContent)).toEqual(["材料原文", "用户的话", "助手补充"]);
+    expect([...detail.querySelectorAll(".srcbox .chip")].map((c) => c.textContent)).toEqual(["输入资料原文", "用户的话", "助手补充"]);
     expect(within(detail).getByText("出处：借阅说明.md（点一下看原文）")).toBeTruthy();
   });
 
@@ -127,7 +127,7 @@ describe("条目详情里的来源", () => {
     expect([chip.textContent, chip.classList.contains("fig")]).toEqual(["图", true]);
   });
 
-  it("底部来源里材料原文的出处点一下，照旧交给材料区定位", () => {
+  it("底部来源里输入资料原文的出处点一下，照旧交给材料区定位", () => {
     const onLocate = vi.fn();
     function Panel() {
       const [selected, setSelected] = useState<string | null>("UC-001");

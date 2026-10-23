@@ -417,15 +417,15 @@ describe("框选原文与高亮联动、「让助手改这一条」", () => {
     const sel = vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "第一句话", anchorNode: paper.firstChild, removeAllRanges: () => {} } as unknown as Selection);
     fireEvent.mouseUp(paper);
     fireEvent.click(await screen.findByText("据此新建条目"));
-    expect(onSend).toHaveBeenLastCalledWith("请根据材料 inputs/a.md 里的这段原文新建条目：「第一句话」");
+    expect(onSend).toHaveBeenLastCalledWith("请根据输入资料 inputs/a.md 里的这段原文新建条目：「第一句话」");
     fireEvent.mouseUp(paper);
     fireEvent.click(screen.getByText("补到当前条目"));
-    expect(onSend).toHaveBeenLastCalledWith("请把材料 inputs/a.md 里的这段原文补到 UC-001：「第一句话」");
+    expect(onSend).toHaveBeenLastCalledWith("请把输入资料 inputs/a.md 里的这段原文补到 UC-001：「第一句话」");
     fireEvent.mouseUp(paper);
     fireEvent.click(screen.getByText("就这段提问"));
     fireEvent.change(screen.getByTestId("selection-question"), { target: { value: "七天从哪天算？" } });
     fireEvent.keyDown(screen.getByTestId("selection-question"), { key: "Enter" });
-    expect(onSend).toHaveBeenLastCalledWith("关于材料 inputs/a.md 里的这段原文：「第一句话」，七天从哪天算？");
+    expect(onSend).toHaveBeenLastCalledWith("关于输入资料 inputs/a.md 里的这段原文：「第一句话」，七天从哪天算？");
     sel.mockRestore();
     spy.mockRestore();
   });
@@ -512,7 +512,7 @@ describe("框选原文与高亮联动、「让助手改这一条」", () => {
     fireEvent.click(screen.getByText("就这段提问"));
     fireEvent.change(screen.getByTestId("selection-question"), { target: { value: "七天从哪天算？" } });
     fireEvent.click(within(screen.getByTestId("selbar")).getByRole("button", { name: "发送" }));
-    expect(onSend).toHaveBeenLastCalledWith("关于材料 inputs/a.md 里的这段原文：「第一句话」，七天从哪天算？");
+    expect(onSend).toHaveBeenLastCalledWith("关于输入资料 inputs/a.md 里的这段原文：「第一句话」，七天从哪天算？");
     await waitFor(() => expect(screen.queryByTestId("selbar")).toBeNull());
     sel.mockRestore();
     spy.mockRestore();
@@ -543,15 +543,15 @@ describe("框选原文与高亮联动、「让助手改这一条」", () => {
     spy.mockRestore();
   });
 
-  it("一段都找不到时仍切到那份材料，顶部提示「没有在材料里找到这段原文」，2 秒后消失", async () => {
+  it("一段都找不到时仍切到那份输入资料，顶部提示「没有在输入资料里找到这段原文」，2 秒后消失", async () => {
     const spy = vi.spyOn(api, "materialContent").mockImplementation(async (_t, path) => ({ path, text: path === "inputs/b.md" ? "乙材料的正文。" : "甲材料的正文。" }));
     const materials = [{ path: "inputs/a.md", bytes: 1, modified_at: "" }, { path: "inputs/b.md", bytes: 1, modified_at: "" }];
     const { rerender } = render(<Wrap><MaterialPane taskId="TASK-001" materials={materials} /></Wrap>);
     expect(await screen.findByText("甲材料的正文。")).toBeInTheDocument();
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    rerender(<Wrap><MaterialPane taskId="TASK-001" materials={materials} locate={{ excerpt: "材料里没有的话", locator: "inputs/b.md", nonce: 1 }} /></Wrap>);
+    rerender(<Wrap><MaterialPane taskId="TASK-001" materials={materials} locate={{ excerpt: "输入资料里没有的话", locator: "inputs/b.md", nonce: 1 }} /></Wrap>);
     expect(await screen.findByText("乙材料的正文。")).toBeInTheDocument();
-    expect(await screen.findByTestId("locate-miss")).toHaveTextContent("没有在材料里找到这段原文");
+    expect(await screen.findByTestId("locate-miss")).toHaveTextContent("没有在输入资料里找到这段原文");
     await vi.advanceTimersByTimeAsync(2100);
     await waitFor(() => expect(screen.queryByTestId("locate-miss")).toBeNull());
     vi.useRealTimers();

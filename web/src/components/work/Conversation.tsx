@@ -274,7 +274,7 @@ export function Conversation({
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />
           <div className="inrow">
             <span className="chip" style={{ cursor: disabled ? "not-allowed" : "pointer" }} role="button"
-              onClick={() => !disabled && fileInput.current?.click()}>📎 附一份材料</span>
+              onClick={() => !disabled && fileInput.current?.click()}>📎 附一份输入资料</span>
             {attachments.map((a) => <span key={a} className="chip on">附件：{a.split("/").pop()}</span>)}
             {statusOn && (
               <span className="chip stbtn" role="button" title="随时调出：本会话的工作项、各类成果、这一段还差什么、待决定" onClick={callStatus} data-testid="status-button">{STATUS_BUTTON}</span>

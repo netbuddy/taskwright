@@ -488,7 +488,7 @@ export function WorkViewPage({ taskId, sessionId, collection = null, diagrams = 
             libraries={hasKnowledge === false ? undefined : libraries} onPending={onPending} />
 
           <div className="chat">
-            <div className="chat-h"><b>{sessionName}</b><span className="chip">本任务共 {sessions.length} 条会话</span></div>
+            <div className="chat-h"><b>{sessionName}</b><span className="chip">本任务实例共 {sessions.length} 条会话</span></div>
             {!task && state.phase === "waiting_snapshot" ? <div className="msgs"><div className="selfnote" data-testid="snapshot-waiting">{executor?.state === "starting" ? STARTING_WAIT_TEXT : "正在读这条会话。"}</div></div> : (
               <Conversation
                 messages={state.messages} currentWork={state.currentWork} outgoing={state.outgoing} task={task}

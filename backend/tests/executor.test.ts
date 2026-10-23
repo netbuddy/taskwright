@@ -100,7 +100,7 @@ test("一次说话：用户的话、步骤行、回复、过程摘要与 work_en
     { type: "tool_execution_start", toolCallId: "c1", toolName: "read", args: { path: "/w/inputs/材料.md" } },
     { type: "tool_execution_end", toolCallId: "c1", toolName: "read", isError: false, result: {} }, { type: "turn_end" });
   got = await drain();
-  assert.deepEqual(got.map(([, d]) => [d.step_key, d.text, d.in_progress]), [["w-u1-0", "正在读材料《材料.md》", true], ["w-u1-0", "读了材料《材料.md》", false]]);
+  assert.deepEqual(got.map(([, d]) => [d.step_key, d.text, d.in_progress]), [["w-u1-0", "正在读输入资料《材料.md》", true], ["w-u1-0", "读了输入资料《材料.md》", false]]);
 
   await feed({ type: "本轮事实", 内容: { turnIndex: 1 } }, { type: "turn_start" },
     { type: "tool_execution_start", toolCallId: "c2", toolName: "reply", args: {} },
@@ -111,7 +111,7 @@ test("一次说话：用户的话、步骤行、回复、过程摘要与 work_en
   const reply = got[1][1];
   assert.deepEqual([reply.message_id, reply.work_id, reply.via_reply_tool, reply.informs, reply.text, reply.degraded], ["a2", "w-u1", true, [{ text: "一" }], "好", false]);
   const summary = got[3][1];
-  assert.deepEqual([summary.work_id, summary.step_count, summary.seconds, summary.stages.map((s: Dict) => s.text)], ["w-u1", 2, 4, ["读了材料《材料.md》", "组织并发出了回复"]]);
+  assert.deepEqual([summary.work_id, summary.step_count, summary.seconds, summary.stages.map((s: Dict) => s.text)], ["w-u1", 2, 4, ["读了输入资料《材料.md》", "组织并发出了回复"]]);
   assert.deepEqual([got[4][1].outcome, got[4][1].step_count], ["replied", 2]);
   assert.equal(got[5][1].state, "idle");
   assert.equal(executor.work, null);
@@ -172,7 +172,7 @@ test("实时步骤行：read 的起始行号超过了文件末尾写已经读到
   await feed(...read("c1", "/w/inputs/说明.docx.md", "Offset 301 is beyond end of file (86 lines total)"),
     ...read("c2", "/w/inputs/没有.md", "ENOENT: no such file or directory, access '/w/inputs/没有.md'"));
   const steps = (await drain()).filter(([n, d]) => n === "step" && !d.in_progress).map(([, d]) => [d.text, d.failed]);
-  assert.deepEqual(steps, [["材料《说明.docx》已经读到末尾", false], ["读材料《没有.md》没有读成", true]]);
+  assert.deepEqual(steps, [["输入资料《说明.docx》已经读到末尾", false], ["读输入资料《没有.md》没有读成", true]]);
 });
 
 test("实时步骤行：保存图被拒时括注认得出的原因（缺来源），仍标成失败", async () => {

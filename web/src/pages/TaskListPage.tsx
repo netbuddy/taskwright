@@ -44,11 +44,11 @@ export function TaskListPage() {
   return (
     <Shell>
       <div className="page-title" style={{ justifyContent: "space-between" }}>
-        <h1>任务</h1>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>新建任务</Button>
+        <h1>任务实例</h1>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>新建任务实例</Button>
       </div>
       <p className="lede">
-        {tasks ? `一共 ${tasks.length} 个任务${old ? `，${old} 个是旧格式、现在的程序打不开` : ""}${mismatched ? `，${mismatched} 个的数据要先处理才能打开` : ""}${taken ? `，${taken} 个正被别的服务占用、这里打不开` : ""}。` : "正在读取任务列表。"}一个任务一份交付物，任务里的所有会话共用这份交付物。
+        {tasks ? `一共 ${tasks.length} 个任务实例${old ? `，${old} 个是旧格式、现在的程序打不开` : ""}${mismatched ? `，${mismatched} 个的数据要先处理才能打开` : ""}${taken ? `，${taken} 个正被别的服务占用、这里打不开` : ""}。` : "正在读取任务实例列表。"}一个任务实例一份交付物，它的所有会话共用这份交付物。
       </p>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: "0.857rem" }} />}
       <Table<TaskListEntry>
@@ -76,7 +76,7 @@ export function TaskListPage() {
             <span style={{ display: "inline-flex", gap: "0.3rem" }} onClick={(e) => e.stopPropagation()}>
               <Button size="small" onClick={() => openTask(t.task_id, go)}>打开</Button>
               <Dropdown trigger={["click"]} menu={{
-                items: [{ key: "diagnostic", label: "导出诊断包" }, { key: "delete", label: "删除任务", danger: true }],
+                items: [{ key: "diagnostic", label: "导出诊断包" }, { key: "delete", label: "删除任务实例", danger: true }],
                 onClick: ({ key }) => (key === "delete" ? setDeleting(t) : setDiagnosing(t)),
               }}>
                 <Button size="small" icon={<EllipsisOutlined />} aria-label="更多操作" title="更多操作" data-testid={`task-menu-${t.task_id}`} />

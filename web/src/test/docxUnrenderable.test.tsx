@@ -103,7 +103,7 @@ describe("排版库画不出来", () => {
 describe("读不到文件", () => {
   it("照旧显示后端的说明，不显示画不出来的那句；来源的出处照写章节", async () => {
     fail.on = "none";
-    vi.spyOn(api, "materialRaw").mockRejectedValue(new ApiError("not_found", "这个任务没有这份材料。", 404));
+    vi.spyOn(api, "materialRaw").mockRejectedValue(new ApiError("not_found", "这个任务实例没有这份输入资料。", 404));
     vi.spyOn(api, "materialContent").mockImplementation(content);
     render(
       <TaskIdContext.Provider value="TASK-U">
@@ -111,7 +111,7 @@ describe("读不到文件", () => {
         <SourceBox source={{ kind: "文档原文", locator: `${PATH}#p91`, excerpt: "系统要能每分钟处理至少 100 笔借还" }} />
       </TaskIdContext.Provider>,
     );
-    expect(await screen.findByText("这个任务没有这份材料。")).toBeInTheDocument();
+    expect(await screen.findByText("这个任务实例没有这份输入资料。")).toBeInTheDocument();
     expect(screen.queryByTestId("docx-unrenderable")).toBeNull();
     await waitFor(() => expect(screen.getByText(/^出处：/).textContent).toBe("出处：requirements-styled.docx · 4 非功能需求（点一下看原文）"));
   });
@@ -137,10 +137,10 @@ describe("文件显示不出来时，材料区上方「Word 文件按原版式�
 
   it("读不到文件（接口出错）", async () => {
     fail.on = "none";
-    vi.spyOn(api, "materialRaw").mockRejectedValue(new ApiError("not_found", "这个任务没有这份材料。", 404));
+    vi.spyOn(api, "materialRaw").mockRejectedValue(new ApiError("not_found", "这个任务实例没有这份输入资料。", 404));
     vi.spyOn(api, "materialContent").mockImplementation(content);
     render(<MaterialPane taskId="TASK-U" materials={materials} locate={null} />);
-    await screen.findByText("这个任务没有这份材料。");
+    await screen.findByText("这个任务实例没有这份输入资料。");
     expect(screen.queryByText(HINT)).toBeNull();
   });
 
@@ -158,22 +158,22 @@ describe("在两份 Word 文件之间切换", () => {
     fail.on = "none";
     const OTHER = "inputs/other.docx";
     vi.spyOn(api, "materialRaw").mockImplementation(async (_t, p) => {
-      if (p === OTHER) throw new ApiError("not_found", "这个任务没有这份材料。", 404);
+      if (p === OTHER) throw new ApiError("not_found", "这个任务实例没有这份输入资料。", 404);
       return SAMPLE.slice().buffer;
     });
     vi.spyOn(api, "materialContent").mockImplementation(content);
     const two = [...materials, { path: OTHER, bytes: 1, modified_at: "", derived_from: null }];
-    // 换材料由中栏「材料与证据」的「查看」带过来（focusPath），这一栏不另列清单。
+    // 换材料由中栏「输入资料」的「查看」带过来（focusPath），这一栏不另列清单。
     const view = (focus: string | null) => <MaterialPane taskId="TASK-U" materials={two} locate={null} focusPath={focus} />;
     const { rerender } = render(view(null));
     await waitFor(() => expect(document.querySelector("[data-testid=docx-paper] section.docx")).toBeTruthy(), SLOW);
     rerender(view(OTHER));
-    await screen.findByText("这个任务没有这份材料。");
+    await screen.findByText("这个任务实例没有这份输入资料。");
     expect(screen.queryByText(/Word 文件按原版式分页显示/)).toBeNull();
     rerender(view(PATH));
     await waitFor(() => expect(screen.getByText(/Word 文件按原版式分页显示/)).toBeInTheDocument());
     rerender(view(OTHER));
-    await screen.findByText("这个任务没有这份材料。");
+    await screen.findByText("这个任务实例没有这份输入资料。");
     expect(screen.queryByText(/Word 文件按原版式分页显示/)).toBeNull();
   });
 });

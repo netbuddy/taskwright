@@ -63,7 +63,7 @@ const LOG: RevisionLogEntry[] = [
     trigger: { kind: "user_action", action: "edit_fields", text: "你改了 UC-002 的「名称」" },
     operations: [{ op: "update", item_id: "UC-002", collection: "用例", title: "卖家处理退款", revision_before: 1, revision_after: 2, fields_changed: ["名称"] }] },
   { revision_no: 1, at: "2026-09-22T21:10:00+08:00", by: "executor", session_id: "s", work_id: "w-u1", op_id: null, undo_of_revision: null,
-    trigger: { kind: "typed", text: "整理一下这份材料", message_id: "u1" },
+    trigger: { kind: "typed", text: "整理一下这份输入资料", message_id: "u1" },
     operations: [
       { op: "add", item_id: "UC-001", collection: "用例", title: "买家申请退款", revision_before: null, revision_after: 1, fields_changed: [] },
       { op: "add", item_id: "UC-002", collection: "用例", title: "卖家处理退款", revision_before: null, revision_after: 1, fields_changed: [] },
@@ -315,7 +315,7 @@ describe("右侧栏「修订」页签", () => {
     const handlers = { onSelectRevision: vi.fn(), onDiff: vi.fn(), onUndo: vi.fn(), onGenerate: vi.fn() };
     render(<Wrap><SidePanel side="rev" onSide={noop} onCollapse={noop} onExpand={noop} taskId="TASK-001" materials={[]} focusPath={null}
       items={[UC1, UC2, TBD]} locate={null} currentItem={null} disabled={false} onOpenItem={noop} onSend={noop}
-      log={LOG} messages={[{ type: "user_message", message_id: "u1", at: "", text: "整理一下这份材料", origin: "typed", annotation: null, queued: false }]}
+      log={LOG} messages={[{ type: "user_message", message_id: "u1", at: "", text: "整理一下这份输入资料", origin: "typed", annotation: null, queued: false }]}
       selectedRevision={null} scrollNonce={0} writesOff={false} readOnly={false} {...handlers} {...props} /></Wrap>);
     return handlers;
   }
@@ -330,7 +330,7 @@ describe("右侧栏「修订」页签", () => {
     expect(cards[0]).toHaveTextContent("修改UC-001买家申请退款改了 步骤查看差异");
     expect(cards[1]).toHaveTextContent("你在界面上改的");
     expect(cards[1]).toHaveTextContent("你改了 UC-002 的「名称」");
-    expect(cards[2]).toHaveTextContent("回应你的第 1 句话：整理一下这份材料");
+    expect(cards[2]).toHaveTextContent("回应你的第 1 句话：整理一下这份输入资料");
     fireEvent.click(cards[0]);
     expect(h.onSelectRevision).toHaveBeenCalledWith(4);
     fireEvent.click(screen.getByTestId("rev-4-look-UC-001"));
@@ -394,7 +394,7 @@ describe("右侧栏「修订」页签", () => {
     side({ log: [{ ...LOG[0], intent: null }, { ...LOG[1], intent: null }, LOG[2]] });
     expect(screen.getByTestId("rev-4")).toHaveTextContent("回应你说的话：寒暑假借期统一为 60 天。");
     expect(screen.getByTestId("rev-2")).toHaveTextContent("你改了 UC-002 的「名称」");
-    expect(screen.getByTestId("rev-1")).toHaveTextContent("回应你的第 1 句话：整理一下这份材料");
+    expect(screen.getByTestId("rev-1")).toHaveTextContent("回应你的第 1 句话：整理一下这份输入资料");
   });
 });
 

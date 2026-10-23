@@ -58,9 +58,9 @@ describe("数据升级页", () => {
     await screen.findByTestId("upgrade-what");
     expect(screen.queryByTestId("normal")).toBeNull();
     expect(screenEl).toHaveAttribute("data-state", "pending");
-    expect(text(screenEl)).toContain("数据升级这台电脑上有上一版留下的数据，要先升级到现在的格式才能接着用。升级不改动任务的内容。");
+    expect(text(screenEl)).toContain("数据升级这台电脑上有上一版留下的数据，要先升级到现在的格式才能接着用。升级不改动任务实例的内容。");
     expect([...screen.getByTestId("upgrade-what").querySelectorAll("li")].map(text)).toEqual([
-      "要升级的任务有 2 个：「借阅系统」、「TASK-2」。", "知识库不需要升级。", "升级之前会先备份，备份放在 /data/backups。", "通常不到一分钟。升级的时候请不要关闭程序。"]);
+      "要升级的任务实例有 2 个：「借阅系统」、「TASK-2」。", "知识库不需要升级。", "升级之前会先备份，备份放在 /data/backups。", "通常不到一分钟。升级的时候请不要关闭程序。"]);
     expect(screen.getByTestId("upgrade-start")).toHaveTextContent("开始升级");
     for (const word of ["迁移", "schema", "pi", "进程", "sqlite", "投影"]) expect(screenEl.textContent).not.toContain(word);
   });
@@ -71,7 +71,7 @@ describe("数据升级页", () => {
       upgrade: view({ service: true, tasks: Array.from({ length: 8 }, (_, i) => ({ task_id: `T${i + 1}`, name: `任务${i + 1}` })) }) });
     page();
     const lines = [...(await screen.findByTestId("upgrade-what")).querySelectorAll("li")].map(text);
-    expect(lines[0]).toBe("要升级的任务有 8 个：「任务1」、「任务2」、「任务3」、「任务4」、「任务5」、「任务6」等 8 个。");
+    expect(lines[0]).toBe("要升级的任务实例有 8 个：「任务1」、「任务2」、「任务3」、「任务4」、「任务5」、「任务6」等 8 个。");
     expect(lines[1]).toBe("任务登记要升级。");
   });
 
@@ -104,7 +104,7 @@ describe("数据升级页", () => {
     const text2 = "数据升级报告（0.5.0）\n任务 TASK-2：格式 0，没有升级成（任务正在被另一个服务使用），用了 3 毫秒\n合计：2 个任务，成功 1 个，没有做成 1 个。\n";
     vi.spyOn(api, "upgradeState").mockResolvedValue({ ok: true, upgrade: view({ state: "done", report: report({ succeeded: 1, failed: 1, text: text2 }) }) });
     page();
-    expect(await screen.findByTestId("upgrade-result")).toHaveTextContent("升级做完了：1 个任务做成了，1 个没有做成。没有做成的任务原样没动，在任务列表里标着「需要处理」。");
+    expect(await screen.findByTestId("upgrade-result")).toHaveTextContent("升级做完了：1 个任务实例做成了，1 个没有做成。没有做成的任务实例原样没动，在任务实例列表里标着「需要处理」。");
     expect(screen.getByTestId("upgrade-report").textContent).toBe(text2);
     expect(screen.queryByTestId("normal")).toBeNull();
     serviceInfo.mockResolvedValue(info(false));

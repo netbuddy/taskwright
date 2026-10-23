@@ -316,7 +316,7 @@ describe("评审页签", () => {
     expect(screen.queryByTestId("rules-area")).toBeNull();
     expect(screen.getByTestId("rules-link")).toHaveTextContent(/^评审规则（共 3 条，开着 2 条）$/);
     fireEvent.click(screen.getByTestId("rules-link"));
-    expect(screen.getByTestId("rules-area")).toHaveTextContent("带锁的不能关；其余的可以关掉，只对这个任务生效。改动只影响之后的评审。");
+    expect(screen.getByTestId("rules-area")).toHaveTextContent("带锁的不能关；其余的可以关掉，只对这个任务实例生效。改动只影响之后的评审。");
     expect(within(screen.getByTestId("rules-area")).getByText("功能用例")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("rules-close"));
     expect(screen.queryByTestId("rules-area")).toBeNull();

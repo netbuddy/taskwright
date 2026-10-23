@@ -332,7 +332,7 @@ function RulesDrawer({ task, off, submit, onClose }: { task: Task; off: string |
       <div className="rv-scrim" onClick={onClose} data-testid="rules-scrim" />
       <div className="rv-drawer" role="dialog" aria-label="评审规则" data-testid="rules-area">
         <div className="dr-h"><b>评审规则</b><Act className="push" onClick={onClose} testId="rules-close">关闭</Act></div>
-        <div className="dr-lead">带锁的不能关；其余的可以关掉，只对这个任务生效。改动只影响之后的评审。</div>
+        <div className="dr-lead">带锁的不能关；其余的可以关掉，只对这个任务实例生效。改动只影响之后的评审。</div>
         <div className="dr-b">
           {ruleCollections(task).map((c) => {
             const switches = c.rule_switches ?? { off: [], promote: [] };

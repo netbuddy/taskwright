@@ -81,9 +81,9 @@ test("包根上有一份说明.txt：写包里有什么、没有什么、怎样�
   assert.equal(manifest.files.some((one) => one.path === README_NAME), false);
   const text = content(README_NAME).toString("utf-8");
   for (const part of ["这是 Taskwright 导出的数据包。", "包里有什么", "- 任务库：", "- 对话记录：",
-    "- 材料清单：每份材料的文件名、大小、校验值与它的文字版、分段清单、位置表的校验值（manifest.json 里）。",
-    "- 材料与知识库的原件和文字版。这个包含条目里的逐字摘录、业务说明的转述与对话记录，不是干净的；要连原件一起带，导出时加 --with-materials。",
-    "- 导入后材料页会列出缺的文件，重新上传同一份文件即可补齐。",
+    "- 输入资料清单：每份输入资料的文件名、大小、校验值与它的文字版、分段清单、位置表的校验值（manifest.json 里）。",
+    "- 输入资料与知识库的原件和文字版。这个包含条目里的逐字摘录、业务说明的转述与对话记录，不是干净的；要连原件一起带，导出时加 --with-materials。",
+    "- 导入后输入资料页会列出缺的文件，重新上传同一份文件即可补齐。",
     "- 这个任务用的任务类型说明与规则的副本（tasks/<任务编号>/.pi 与 tasks/<任务编号>/docs）。", "包里没有什么",
     "- 运行日志与事件归档（助手每一步的原始记录）。要带上它们，导出时加 --with-events。", "- 产品设置、模型配置与密钥。", "怎样导入",
     "taskwright data import --from <这个文件>", `${id}「甲」`]) {
@@ -104,6 +104,6 @@ test("说明.txt 在带了材料（--with-materials）时照原样写材料一�
   const file = packFile("readme-materials");
   await exportPack(where, { scope: "task", taskId: id, to: file, withMaterials: true });
   const text = readPack(file).content(README_NAME).toString("utf-8");
-  assert.ok(text.includes("- 材料：放进任务里的文件和由它们生成的文字版（tasks/<任务编号>/inputs）。"), text);
-  for (const part of ["材料清单", "--with-materials", "补齐"]) assert.equal(text.includes(part), false, part);
+  assert.ok(text.includes("- 输入资料：放进任务里的文件和由它们生成的文字版（tasks/<任务编号>/inputs）。"), text);
+  for (const part of ["输入资料清单", "--with-materials", "补齐"]) assert.equal(text.includes(part), false, part);
 });

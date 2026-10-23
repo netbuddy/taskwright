@@ -70,7 +70,7 @@ describe("工作进展卡各行的写法", () => {
     render(<Wrap><TaskStatusCard status={STATUS} liveProposal={PROPOSAL} onMessage={onMessage} onSend={onSend} /></Wrap>);
     const card = screen.getByTestId("task-status");
     expect(card).toHaveAttribute("data-activity", "modeling");
-    expect(card.querySelector(".k")).toHaveTextContent("工作进展 · 10-11 16:20 程序据任务记录生成");
+    expect(card.querySelector(".k")).toHaveTextContent("工作进展 · 10-11 16:20 程序据任务实例的记录生成");
     expect([...card.querySelectorAll(".row b")].map((b) => b.textContent)).toEqual(["本会话", "业务说明", "模型", "需求条目", "这一段还差", "待决定"]);
     expect(screen.getByTestId("status-description")).toHaveTextContent("16 节：角色 2 · 业务流程 6 · 业务对象 6 · 业务目标 2；1 处待澄清");
     expect(screen.getByTestId("status-description").querySelector("em")).toHaveTextContent("1 处待澄清");

@@ -97,7 +97,7 @@ export function DebugPane({ taskId, stage, items = [], working, onOpenItem, onOp
 
       <section data-testid="debug-lamps">
         <div className="dbg-h">{stage && !idle ? `「${positionLabel(stage.current)}」这一段的灯` : "这一段的灯"}</div>
-        {!stage ? <div className="dbg-none">这个任务没有阶段。</div> : idle ? <div className="dbg-none" data-testid="debug-lamps-idle">{IDLE_TEXT}空闲时没有灯。</div> : lamps.length === 0 ? <div className="dbg-none">这一段没有灯。</div> : lamps.map((lamp) => {
+        {!stage ? <div className="dbg-none">这个任务实例没有阶段。</div> : idle ? <div className="dbg-none" data-testid="debug-lamps-idle">{IDLE_TEXT}空闲时没有灯。</div> : lamps.length === 0 ? <div className="dbg-none">这一段没有灯。</div> : lamps.map((lamp) => {
           const [cls, text] = LAMP_STATE[lamp.ok === true ? 0 : lamp.ok === false ? 1 : 2];
           return (
             <div key={lamp.key} className={`dbg-lamp ${cls}`} data-testid={`debug-lamp-${lamp.key}`}>

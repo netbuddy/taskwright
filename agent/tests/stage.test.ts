@@ -186,14 +186,14 @@ test("对话里怎样说启动、换站、接着做与删除：启动流程、�
 test("开展一项活动的三组选项：正在进行的只是一行；需求分析可以启动或继续；六项活动各带前提，缺什么照交进来的写；发布留到以后", () => {
   // 六项活动各自缺什么前提由读库的一侧按数据算好交进来（lib/activity_catalog.ts），这里只管怎样摆。
   const none = { reading: null, clarifying: null, modeling: null, writing: null, reviewing: null, document: null };
-  const blocked = { ...none, reading: "还没有项目材料", modeling: "业务说明还没有内容", writing: "业务说明还没有内容", reviewing: "还没有需求条目", document: "还没有已确认的需求条目" };
+  const blocked = { ...none, reading: "还没有输入资料", modeling: "业务说明还没有内容", writing: "业务说明还没有内容", reviewing: "还没有需求条目", document: "还没有已确认的需求条目" };
   const facts = { position: IDLE, inFlow: false, flowNode: null, hasMaterials: false, blocked } as const;
   // 新任务：空闲，没有材料、没有页、没有条目。
   const fresh = launchView(facts);
   assert.equal(fresh.current, null);
   assert.deepEqual(fresh.flows, [{ activity: "clarifying", in_flow: true, label: "启动需求分析", enabled: true, state: "从澄清开始" }]);
   assert.deepEqual(fresh.activities.map((one) => [one.label, one.enabled, one.state]), [
-    ["核读材料", false, "还没有项目材料"], ["澄清", true, "可以启动"], ["整理建模", false, "业务说明还没有内容"],
+    ["核读材料", false, "还没有输入资料"], ["澄清", true, "可以启动"], ["整理建模", false, "业务说明还没有内容"],
     ["写条目", false, "业务说明还没有内容"], ["评审确认", false, "还没有需求条目"], ["编写文档", false, "还没有已确认的需求条目"]]);
   assert.ok(fresh.activities.every((one) => one.in_flow === false));
   assert.deepEqual(fresh.later, [{ label: "发布", state: "0.6 后续" }]);

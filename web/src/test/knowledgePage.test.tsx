@@ -98,11 +98,11 @@ describe("知识库页面", () => {
   it("左边列出知识库，照后端给的先后，没有「默认选用」；缺省选中第一个，表格列出文档名、种类、大小、上传时间；升级留下的通用知识库与别的库一样可以改名、删除", async () => {
     page();
     const list = await screen.findByTestId("kb-libraries");
-    expect(within(list).getByTestId("kb-lib-general").textContent).toBe("通用知识库1 份文档 · 3 个任务在用");
-    expect(within(list).getByTestId("kb-lib-lib-hy").textContent).toBe("行业规范0 份文档 · 2 个任务在用");
+    expect(within(list).getByTestId("kb-lib-general").textContent).toBe("通用知识库1 份文档 · 3 个任务实例在用");
+    expect(within(list).getByTestId("kb-lib-lib-hy").textContent).toBe("行业规范0 份文档 · 2 个任务实例在用");
     expect(screen.queryByText("默认选用")).toBeNull();
     const pane = screen.getByTestId("kb-pane");
-    expect(within(pane).getByText("1 份文档。3 个任务在用。")).toBeTruthy();
+    expect(within(pane).getByText("1 份文档。3 个任务实例在用。")).toBeTruthy();
     const cells = [...within(screen.getByTestId("kb-documents")).getAllByRole("cell")].map((c) => c.textContent);
     expect(cells.slice(0, 3)).toEqual(["公司术语表.md", "术语表", "2.0 KB"]);
     expect(within(pane).getByText("改名")).toBeTruthy();
@@ -128,7 +128,7 @@ describe("知识库页面", () => {
     fireEvent.click(okButton());
     await waitFor(() => expect(calls.rename).toHaveBeenCalledWith("lib-hy", "国家标准"));
     fireEvent.click(screen.getByTestId("kb-delete-library"));
-    expect(await screen.findByText("这个知识库里的 0 份文档会一并删除。选用了这个知识库的任务会自动不再选用它。")).toBeTruthy();
+    expect(await screen.findByText("这个知识库里的 0 份文档会一并删除。选用了这个知识库的任务实例会自动不再选用它。")).toBeTruthy();
     fireEvent.click(okButton("删除知识库「行业规范」？"));
     await waitFor(() => expect(calls.removeLib).toHaveBeenCalledWith("lib-hy"));
   });
@@ -157,7 +157,7 @@ describe("知识库页面", () => {
     expect(calls.upload).toHaveBeenCalledTimes(1);
   });
 
-  it("左边导航栏：参考一段的「知识库」一行写着几个库几份文档，当前页面是它时高亮；「任务列表」不高亮", async () => {
+  it("左边导航栏：参考一段的「知识库」一行写着几个库几份文档，当前页面是它时高亮；「任务实例列表」不高亮", async () => {
     page();
     const entry = await screen.findByTestId("nav-knowledge");
     await waitFor(() => expect(entry.textContent).toMatch(/^知识库2 库 \d+ 份$/));
@@ -261,7 +261,7 @@ describe("知识库页面", () => {
     const calls = page(null, EMBEDDED());
     const box = await screen.findByTestId("kb-search");
     expect(within(box).getByText("试一试按意思查找")).toBeTruthy();
-    expect(screen.getByTestId("kb-search-hint").textContent).toBe("在这个知识库的文档里找意思最相近的几个片段，用词不同也找得到。助手在任务里用的是同一种办法，它查的是任务选用的全部知识库。");
+    expect(screen.getByTestId("kb-search-hint").textContent).toBe("在这个知识库的文档里找意思最相近的几个片段，用词不同也找得到。助手在任务实例里用的是同一种办法，它查的是任务实例选用的全部知识库。");
     const input = screen.getByTestId("kb-search-input") as HTMLInputElement;
     expect([input.disabled, input.placeholder]).toEqual([false, "写一句完整的话，例如：图书超期不还怎样罚款"]);
     expect((screen.getByTestId("kb-search-button") as HTMLButtonElement).disabled).toBe(true);

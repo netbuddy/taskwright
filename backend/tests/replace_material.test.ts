@@ -142,7 +142,7 @@ test("新文件与被替换的那份内容完全相同：不换，说明写明�
   const before = stamps(t);
   const [sub] = t.hub.subscribe(null, null);
   const same = await rejected(service.replaceMaterial(t, "inputs/需求.md", "换个名字.md", Buffer.from("买家可以申请退货。")));
-  assert.deepEqual([same.code, same.message, same.data.path], ["duplicate_content", "新文件与这份材料内容完全相同，没有替换。", "inputs/需求.md"]);
+  assert.deepEqual([same.code, same.message, same.data.path], ["duplicate_content", "新文件与这份输入资料内容完全相同，没有替换。", "inputs/需求.md"]);
   assert.equal(same.message, SAME_AS_REPLACED_TEXT);
   assert.deepEqual(stamps(t), before);
   assert.deepEqual(await materialEvents(sub), []);
@@ -184,7 +184,7 @@ test("已经进入对话的材料不能替换：说明请用户上传一份新�
   const before = stamps(t);
   const refused = await rejected(service.replaceMaterial(t, path, "需求.md", Buffer.from("新的内容。")));
   assert.deepEqual([refused.code, refused.status, refused.message],
-    ["rejected", 422, "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。"]);
+    ["rejected", 422, "这份输入资料已经进入了对话，不能替换；请上传一份新的，并告诉助手以新的为准。"]);
   assert.equal(refused.message, ENTERED_CONVERSATION_REPLACE_TEXT);
   assert.deepEqual(refused.data, { path, reasons: [ENTERED_CONVERSATION_REPLACE_TEXT] });
   assert.deepEqual(stamps(t), before);
@@ -206,14 +206,14 @@ test("派生文件的路径、材料目录之外的路径、不存在的材料�
   const before = stamps(t);
   const data = Buffer.from("新的。");
   const derived = await rejected(service.replaceMaterial(t, "inputs/需求.docx.md", "新.md", data));
-  assert.deepEqual([derived.code, derived.message], ["bad_request", "这是由别的材料生成的文件，不能单独替换。"]);
+  assert.deepEqual([derived.code, derived.message], ["bad_request", "这是由别的输入资料生成的文件，不能单独替换。"]);
   assert.equal((await rejected(service.replaceMaterial(t, "task.sqlite", "新.md", data))).code, "bad_request");
   assert.equal((await rejected(service.replaceMaterial(t, "", "新.md", data))).code, "bad_request");
   assert.equal((await rejected(service.replaceMaterial(t, "inputs/没有.md", "新.md", data))).code, "not_found");
   t.executor.state = "working";
   try {
     const busy = await rejected(service.replaceMaterial(t, "inputs/需求.docx", "新.md", data));
-    assert.deepEqual([busy.code, busy.status, busy.message, busy.data.reason], ["session_busy", 409, "助手正在工作，结束后才能替换材料。", "working"]);
+    assert.deepEqual([busy.code, busy.status, busy.message, busy.data.reason], ["session_busy", 409, "助手正在工作，结束后才能替换输入资料。", "working"]);
   } finally {
     t.executor.state = "not_started";
   }

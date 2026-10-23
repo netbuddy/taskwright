@@ -14,7 +14,7 @@ import { validateDefinition, withPlatformCollections } from "../src/lib/definiti
 const SRS_DEFINITION = JSON.stringify(withPlatformCollections(JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "task-types", "requirements-engineering", "docs",
   "task-definitions", "requirements-engineering.json"), "utf-8"))).raw);
 
-const SRS_NAMES = { materials: "材料与证据", description: "业务说明", models: "分析模型", items: "需求条目", review: "评审与确认", versions: "文档与版本" };
+const SRS_NAMES = { materials: "输入资料", description: "业务说明", models: "分析模型", items: "需求条目", review: "评审与确认", versions: "文档与版本" };
 
 test("资产显示名的读法：六个键各一段文字，不多不少；去掉两头空白", () => {
   assert.deepEqual(parseAssetNames({ ...SRS_NAMES, items: " 需求条目 " }), SRS_NAMES);

@@ -7,10 +7,10 @@ import { Button, Modal, Radio } from "antd";
 import { api } from "../../api/client";
 
 /** 确认框里说用途的那一句。 */
-export const DIAGNOSTIC_PURPOSE_TEXT = "把这个任务的运行记录、对话与条目打成一个文件，供排查问题；不含材料原件与密钥。";
+export const DIAGNOSTIC_PURPOSE_TEXT = "把这个任务实例的运行记录、对话与条目打成一个文件，供排查问题；不含输入资料原件与密钥。";
 /** 两种形态各自的说明。 */
-export const FULL_FORM_TEXT = "不含材料原件，但含助手读到的材料文本、对话全文与条目，能查内容与流程问题。";
-export const REDACTED_FORM_TEXT = "读到的材料文本与来源摘录已替换，只能查流程问题，仍含业务说明与条目的转述。";
+export const FULL_FORM_TEXT = "不含输入资料原件，但含助手读到的输入资料文本、对话全文与条目，能查内容与流程问题。";
+export const REDACTED_FORM_TEXT = "读到的输入资料文本与来源摘录已替换，只能查流程问题，仍含业务说明与条目的转述。";
 
 /** 确认框里提醒保管的那一句。 */
 export const DIAGNOSTIC_KEEP_TEXT = "包里含对话全文，请妥善保管。";
@@ -31,7 +31,7 @@ export function DiagnosticExportModal({ taskId, taskName, onClose }: {
         <Button key="cancel" onClick={onClose}>取消</Button>,
         <Button key="export" type="primary" href={taskId ? api.exportDiagnosticHref(taskId, redact) : undefined} onClick={onClose} data-testid="diagnostic-export">导出</Button>,
       ]}>
-      <p data-testid="diagnostic-task">任务「{taskName}」</p>
+      <p data-testid="diagnostic-task">任务实例「{taskName}」</p>
       <p data-testid="diagnostic-purpose">{DIAGNOSTIC_PURPOSE_TEXT}</p>
       <Radio.Group value={redact ? "redacted" : "full"} onChange={(e) => setRedact(e.target.value === "redacted")} data-testid="diagnostic-form"
         style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.8rem" }}>

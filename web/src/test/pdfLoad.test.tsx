@@ -1,4 +1,4 @@
-// PDF 材料的显示库怎样加载（model/pdf.ts）与位置表、原始字节怎样读取并缓存（state/pdfStore.ts）。
+// PDF 输入资料的显示库怎样加载（model/pdf.ts）与位置表、原始字节怎样读取并缓存（state/pdfStore.ts）。
 // pdf.js 换成假的（jsdom 里没有画布，也起不了工作线程）；真的显示在浏览器里另行实测。
 
 import { afterEach, describe, expect, it, vi } from "vitest";

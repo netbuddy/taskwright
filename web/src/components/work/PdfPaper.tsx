@@ -418,7 +418,7 @@ export function PdfPaper({ taskId, path, items, locate, jump = null, paperRef, s
     return (
       <div className="pdf-paper pdf-fallback" ref={host} data-testid="pdf-fallback">
         <div className="pdf-fallback-note" data-testid="pdf-fallback-note">{PDF_FALLBACK_NOTE}</div>
-        <iframe key={fallbackAt.nonce} title={`PDF 材料 ${path.split("/").pop() ?? path}`} data-testid="pdf-fallback-frame"
+        <iframe key={fallbackAt.nonce} title={`PDF 输入资料 ${path.split("/").pop() ?? path}`} data-testid="pdf-fallback-frame"
           src={`${fileRawUrl(taskId, path)}#page=${fallbackAt.page}`} />
       </div>
     );

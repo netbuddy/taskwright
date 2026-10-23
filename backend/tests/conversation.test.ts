@@ -78,7 +78,7 @@ test("过程摘要：相邻同类合并，用时与工作编号，回复所在�
   ];
   const [first, second] = works(entries, { 材料目录: "inputs/" });
   assert.deepEqual([first.work_id, first.step_count, first.seconds, first.reply_ids, first.call_ids], ["w-u1", 5, 12, ["a4"], ["c1", "c2", "c3", "c4", "c5"]]);
-  assert.deepEqual(first.stages.map((s) => s.text), ["读了材料《甲.md》、《乙.md》", "保存修订被拒，助手正在照原因改", "写好并保存了修订 1：新增功能用例 1 个（UC-001）", "组织并发出了回复"]);
+  assert.deepEqual(first.stages.map((s) => s.text), ["读了输入资料《甲.md》、《乙.md》", "保存修订被拒，助手正在照原因改", "写好并保存了修订 1：新增功能用例 1 个（UC-001）", "组织并发出了回复"]);
   assert.ok(!("reasons" in first.stages[1]), "结果正文里取不到原因时照旧写固定的一句，不带 reasons");
   assert.deepEqual([second.work_id, second.step_count, second.stages[0].text], ["w-u2", 1, "看了目录"]);
 });
@@ -93,17 +93,17 @@ test("过程摘要：由 Word 文件生成的投影、分段清单与位置表�
   assert.deepEqual(docxDerived("办法.PDF.segments.json"), { docx: "办法.PDF", part: "outline" });
   assert.deepEqual(docxDerived("办法.pdf.locations.json"), { docx: "办法.pdf", part: "outline" });
   assert.equal(docxDerived("办法.pdf"), null);
-  assert.equal(stepText("read", { path: "inputs/办法.pdf.md" }, true, false, null, { 材料目录: "inputs/" }), "读了材料《办法.pdf》");
-  assert.equal(stepText("read", { path: "inputs/办法.pdf.segments.json" }, true, false, null, { 材料目录: "inputs/" }), "看了材料《办法.pdf》的分段清单");
+  assert.equal(stepText("read", { path: "inputs/办法.pdf.md" }, true, false, null, { 材料目录: "inputs/" }), "读了输入资料《办法.pdf》");
+  assert.equal(stepText("read", { path: "inputs/办法.pdf.segments.json" }, true, false, null, { 材料目录: "inputs/" }), "看了输入资料《办法.pdf》的分段清单");
   for (const name of ["退货说明.docx", "说明.md", "笔记.segments.json", "退货说明.docx.media"]) assert.equal(docxDerived(name), null, name);
 
   const definition = { 材料目录: "inputs/" };
   const step = (path: string, done: boolean, failed = false) => stepText("read", { path }, done, failed, null, definition);
   assert.deepEqual([step("inputs/退货说明.docx.md", false), step("inputs/退货说明.docx.md", true), step("inputs/退货说明.docx.md", true, true)],
-    ["正在读材料《退货说明.docx》", "读了材料《退货说明.docx》", "读材料《退货说明.docx》没有读成"]);
+    ["正在读输入资料《退货说明.docx》", "读了输入资料《退货说明.docx》", "读输入资料《退货说明.docx》没有读成"]);
   assert.deepEqual([step("inputs/退货说明.docx.segments.json", false), step("inputs/退货说明.docx.segments.json", true), step("inputs/退货说明.docx.segments.json", true, true)],
-    ["正在看材料《退货说明.docx》的分段清单", "看了材料《退货说明.docx》的分段清单", "看材料《退货说明.docx》的分段清单没有看成"]);
-  assert.equal(step("inputs/退货说明.docx.locations.json", true), "看了材料《退货说明.docx》的分段清单", "位置表并进分段清单的说法，不对用户说「位置表」");
+    ["正在看输入资料《退货说明.docx》的分段清单", "看了输入资料《退货说明.docx》的分段清单", "看输入资料《退货说明.docx》的分段清单没有看成"]);
+  assert.equal(step("inputs/退货说明.docx.locations.json", true), "看了输入资料《退货说明.docx》的分段清单", "位置表并进分段清单的说法，不对用户说「位置表」");
   assert.equal(step("/kb/K-001/files/退货政策.docx.md", true), "读了文件《退货政策.docx》", "知识库文档的投影同样写本名");
 
   const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-08T01:00:00.000Z", message: { role, content } });
@@ -118,11 +118,11 @@ test("过程摘要：由 Word 文件生成的投影、分段清单与位置表�
     return works(entries, definition)[0].stages.map((s) => [s.text, s.count]);
   };
   // 走查时的顺序：先看分段清单，再读投影，又读了一次投影。
-  assert.deepEqual(read("inputs/退货说明.docx.segments.json", "inputs/退货说明.docx.md", "inputs/退货说明.docx.md"), [["读了材料《退货说明.docx》", 3]]);
-  assert.deepEqual(read("inputs/退货说明.docx.segments.json"), [["看了材料《退货说明.docx》的分段清单", 1]]);
-  assert.deepEqual(read("inputs/甲.docx.segments.json", "inputs/乙.docx.locations.json"), [["看了材料《甲.docx》、《乙.docx》的分段清单", 2]]);
-  assert.deepEqual(read("inputs/甲.docx.md", "inputs/乙.docx.segments.json", "inputs/丙.md"), [["读了材料《甲.docx》、《丙.md》，看了《乙.docx》的分段清单", 3]]);
-  assert.deepEqual(read("inputs/丙.md", "inputs/丙.md", "inputs/丁.md"), [["读了材料《丙.md》、《丁.md》", 3]], "不是 Word 材料时同一份也只写一次");
+  assert.deepEqual(read("inputs/退货说明.docx.segments.json", "inputs/退货说明.docx.md", "inputs/退货说明.docx.md"), [["读了输入资料《退货说明.docx》", 3]]);
+  assert.deepEqual(read("inputs/退货说明.docx.segments.json"), [["看了输入资料《退货说明.docx》的分段清单", 1]]);
+  assert.deepEqual(read("inputs/甲.docx.segments.json", "inputs/乙.docx.locations.json"), [["看了输入资料《甲.docx》、《乙.docx》的分段清单", 2]]);
+  assert.deepEqual(read("inputs/甲.docx.md", "inputs/乙.docx.segments.json", "inputs/丙.md"), [["读了输入资料《甲.docx》、《丙.md》，看了《乙.docx》的分段清单", 3]]);
+  assert.deepEqual(read("inputs/丙.md", "inputs/丙.md", "inputs/丁.md"), [["读了输入资料《丙.md》、《丁.md》", 3]], "不是 Word 材料时同一份也只写一次");
 });
 
 test("过程摘要：read 的起始行号超过了文件末尾不算没读成，并进前一句或者写已经读到末尾；真读不到的照旧写没有读成", () => {
@@ -132,7 +132,7 @@ test("过程摘要：read 的起始行号超过了文件末尾不算没读成，
     "Validation failed for tool \"read\":\n  - path: must have required properties path", "Operation aborted", ""]) assert.equal(readPastEnd(text), false, text);
 
   const definition = { 材料目录: "inputs/" };
-  assert.equal(stepText("read", { path: "inputs/说明.docx.md", offset: 301 }, true, false, { past_end: true }, definition), "材料《说明.docx》已经读到末尾");
+  assert.equal(stepText("read", { path: "inputs/说明.docx.md", offset: 301 }, true, false, { past_end: true }, definition), "输入资料《说明.docx》已经读到末尾");
   const msg = (id: string, parentId: string | null, role: string, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-10-08T01:00:00.000Z", message: { role, content } });
   /** 一次工作：依次做这些调用，每项是 [工具, 参数, 出错时结果的正文]；返回各阶段的 [文字, 次数]。 */
   const run = (...calls: [string, Record<string, unknown>, string?][]) => {
@@ -147,15 +147,15 @@ test("过程摘要：read 的起始行号超过了文件末尾不算没读成，
   };
   // 走查时的情形：读完整份之后又从第 301 行读了一次。
   assert.deepEqual(run(["read", { path: "inputs/说明.docx.md" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST]),
-    { stages: [["读了材料《说明.docx》", 2]], steps: 2 });
+    { stages: [["读了输入资料《说明.docx》", 2]], steps: 2 });
   // 前一句不是读这一份：单独写一句，后面再读别的另起一句。
   assert.deepEqual(run(["ls", { path: "inputs" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST], ["read", { path: "inputs/乙.md" }]).stages,
-    [["看了目录", 1], ["材料《说明.docx》已经读到末尾", 1], ["读了材料《乙.md》", 1]]);
+    [["看了目录", 1], ["输入资料《说明.docx》已经读到末尾", 1], ["读了输入资料《乙.md》", 1]]);
   assert.deepEqual(run(["read", { path: "inputs/乙.md" }], ["read", { path: "inputs/说明.docx.md", offset: 301 }, PAST]).stages,
-    [["读了材料《乙.md》", 1], ["材料《说明.docx》已经读到末尾", 1]]);
+    [["读了输入资料《乙.md》", 1], ["输入资料《说明.docx》已经读到末尾", 1]]);
   // 真读不到：文件不存在、被停下，都照旧。参数不合模式是 pi 的参数校验失败，另写（见下面一条测试）。
   for (const error of ["ENOENT: no such file or directory, access '/w/inputs/没有.md'", "Operation aborted"]) {
-    assert.deepEqual(run(["read", { path: "inputs/没有.md" }, error]).stages, [["读材料《没有.md》没有读成", 1]], error);
+    assert.deepEqual(run(["read", { path: "inputs/没有.md" }, error]).stages, [["读输入资料《没有.md》没有读成", 1]], error);
   }
 });
 

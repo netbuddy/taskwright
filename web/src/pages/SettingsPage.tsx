@@ -28,7 +28,7 @@ export function SettingsPage() {
     <div className="shell settings">
       <div className="shell-card">
         <aside className="sider">
-          <a className="set-back" href={leaveSettingsHref()} data-testid="leave-settings"><LeftOutlined />回到任务</a>
+          <a className="set-back" href={leaveSettingsHref()} data-testid="leave-settings"><LeftOutlined />回到任务实例</a>
           <div className="sider-head">设置</div>
           <nav className="set-nav">
             {item("model", "模型", <DatabaseOutlined className="nic" />)}

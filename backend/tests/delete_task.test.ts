@@ -40,7 +40,7 @@ test("助手正在工作：拒绝，写明请先停止助手；任务目录、�
   try {
     t.executor.state = "working";
     const refused = await remove();
-    assert.deepEqual([refused.status, refused.body.error.code, refused.body.error.message], [409, "session_busy", "助手正在工作，请先停止助手，再删除这个任务。"]);
+    assert.deepEqual([refused.status, refused.body.error.code, refused.body.error.message], [409, "session_busy", "助手正在工作，请先停止助手，再删除这个任务实例。"]);
     t.executor.state = "not_started";
     assert.ok(existsSync(t.dir) && existsSync(join(root, "runs", taskId)));
     assert.deepEqual(service.listTasks().map((one) => one.task_id), [taskId]);

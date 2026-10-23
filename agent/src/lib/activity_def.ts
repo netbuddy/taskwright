@@ -63,7 +63,7 @@ export type Condition = (typeof CONDITIONS)[number];
 
 /** 每个前置条件给人看的说法，接在「前置条件：」后面。 */
 export const CONDITION_TEXTS: Record<Condition, string> = {
-  has_materials: "至少一份项目材料",
+  has_materials: "至少一份输入资料",
   has_pages: "业务说明至少一节",
   diagrams_viewed: "分析模型均已查看",
   has_items: "存在需求条目",

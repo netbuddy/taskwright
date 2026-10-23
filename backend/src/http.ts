@@ -297,7 +297,7 @@ export function withAttachments(text: string, paths: string[]): string {
     ...(words.length ? [`其中 Word 文件请读同名加 .md 的文字版（${words.map((p) => p + ".md").join("、")}），引用时出处写 Word 文件加段落号`] : []),
     ...(pdfs.length ? [`${words.length ? "" : "其中 "}PDF 文件请读同名加 .md 的文字版（${pdfs.map((p) => p + ".md").join("、")}），引用时出处写 PDF 文件加页与块，例如 ${pdfs[0]}#p3-2`] : []),
   ];
-  return `${text}\n（我上传了材料：${paths.join("、")}${notes.length ? "；" + notes.join("；") : ""}）`;
+  return `${text}\n（我上传了输入资料：${paths.join("、")}${notes.length ? "；" + notes.join("；") : ""}）`;
 }
 
 /**
@@ -527,7 +527,7 @@ const handlers: Record<string, Handler> = {
     const format = req.query.format || "md";
     if (format !== "md" && format !== "docx") throw new ApiError("bad_request", "format 要写 md 或 docx，不写是 md。");
     const row = library.versionRows(t.dir).find((one) => one.version_no === n);
-    if (!row) throw new ApiError("not_found", `这个任务没有第 ${req.params.version} 版。`);
+    if (!row) throw new ApiError("not_found", `这个任务实例没有第 ${req.params.version} 版。`);
     const what = format === "md" ? "Markdown" : "Word";
     const rel = format === "md" ? row.markdown_path : row.docx_path;
     if (rel === null) {
@@ -601,7 +601,7 @@ const handlers: Record<string, Handler> = {
     if (!text) throw new ApiError("bad_request", "text 不能是空的。");
     const attachments = (or(body.attachments, []) as string[]);
     for (const rel of attachments) {
-      if (!isFile(service.materialPath(t, rel))) throw new ApiError("bad_request", `附件 ${rel} 不在材料目录里。`);
+      if (!isFile(service.materialPath(t, rel))) throw new ApiError("bad_request", `附件 ${rel} 不在输入资料目录里。`);
     }
     const session = sessionParam(req, body);
     const clientId = body.client_id ?? null;

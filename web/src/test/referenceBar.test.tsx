@@ -1,4 +1,4 @@
-// 右侧栏是参照栏：页签只有原文定位、修订、评审、调试（评审与调试给了内容才有）；原文定位显示一份材料的原文，
+// 右侧栏是参照栏：页签只有原文定位、修订、评审、调试（评审与调试给了内容才有）；原文定位显示一份输入资料的原文，
 // 材料不止一份时文件名那里是下拉框，用户可以自己选一份来读。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -48,7 +48,7 @@ describe("参照栏", () => {
     expect(await screen.findByText("inputs/借阅说明.md 的原文")).toBeTruthy();
   });
 
-  it("只有一份材料：写它的名字，没有下拉框", () => {
+  it("只有一份输入资料：写它的名字，没有下拉框", () => {
     vi.spyOn(api, "materialContent").mockResolvedValue({ path: materials[0].path, text: "读者凭借书证借书。" } as never);
     render(<div className="app"><SidePanel side="material" materials={materials.slice(0, 1)} {...props} /></div>);
     expect(screen.getByTestId("material-name").textContent).toBe("借阅说明.md");

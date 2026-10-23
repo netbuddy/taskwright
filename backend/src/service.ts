@@ -44,10 +44,10 @@ import { searchKnowledge, searchRequest } from "./knowledge_search.ts";
 export const maxUpload = (): number => readUploadLimits().material_mb * MB;
 
 /** 上传的内容与本任务已有的某份材料完全相同时的那句话（错误码 duplicate_content）。 */
-export const duplicateContentText = (name: string) => `这份文件与已有的材料《${name}》内容完全相同，没有重复保存。`;
+export const duplicateContentText = (name: string) => `这份文件与已有的输入资料《${name}》内容完全相同，没有重复保存。`;
 /** 上传的文件名与本任务已有的某份材料相同、内容不同时的那句话（错误码 name_taken）。 */
 /** 补齐时文件已经在、上一次补齐也不是与导出时不同的：不用补。 */
-export const REPLENISH_PRESENT_TEXT = "这份材料的文件在，不用补齐。";
+export const REPLENISH_PRESENT_TEXT = "这份输入资料的文件在，不用补齐。";
 /** 补齐时上传的原件校验值与导出时不同：不导入（错误码 replenish_mismatch）。 */
 export const REPLENISH_MISMATCH_TEXT = "不是导出时那份文件（校验值不同），没有导入";
 /** 补齐时上传的文件类型与材料不同。 */
@@ -55,7 +55,7 @@ export const replenishTypeText = (name: string) => `补齐要上传与《${name}
 
 /** 材料表里有而文件不在的材料：读它时的那句话（页面与原文定位页签照原话显示）。 */
 export const materialMissingText = (name: string) => `文件缺失，请补齐：${name}`;
-export const nameTakenText = (name: string) => `这个任务里已经有一份叫《${name}》的材料，内容与这份不同。请给文件换一个名字再上传。`;
+export const nameTakenText = (name: string) => `这个任务实例里已经有一份叫《${name}》的输入资料，内容与这份不同。请给文件换一个名字再上传。`;
 
 /**
  * 上传的文件名与已有材料的文件名算不算同名：两边都去掉首尾空白、统一成 Unicode 规范化的 NFC 形式（macOS 会把带声调的字母
@@ -80,11 +80,11 @@ const sha256 = (data: Buffer) => createHash("sha256").update(data).digest("hex")
 /** 上传的文件超过上限时给用户看的那句话。服务信息接口把上限与这句话一起给前端，前端在发送之前就能拦下。 */
 export const tooLargeText = (): string => `单个文件不能超过 ${readUploadLimits().material_mb} MB。`;
 /** 删除一份已经进入对话的材料时的拒绝说明。 */
-export const ENTERED_CONVERSATION_TEXT = "这份材料已经进入了对话，不能删除。";
+export const ENTERED_CONVERSATION_TEXT = "这份输入资料已经进入了对话，不能删除。";
 /** 替换一份已经进入对话的材料时的拒绝说明。 */
-export const ENTERED_CONVERSATION_REPLACE_TEXT = "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。";
+export const ENTERED_CONVERSATION_REPLACE_TEXT = "这份输入资料已经进入了对话，不能替换；请上传一份新的，并告诉助手以新的为准。";
 /** 替换时新文件与被替换的那份内容完全相同时的那句话（错误码 duplicate_content）。 */
-export const SAME_AS_REPLACED_TEXT = "新文件与这份材料内容完全相同，没有替换。";
+export const SAME_AS_REPLACED_TEXT = "新文件与这份输入资料内容完全相同，没有替换。";
 /** 替换材料时暂放旧文件的目录（在任务目录下，与材料目录在同一个盘上；新文件存好了就删掉，没存成就把旧文件移回去）。 */
 export const REPLACING_DIR = ".replacing";
 export const UPLOAD_TYPES = [".md", ".txt", ".docx", ".pdf"];
@@ -393,7 +393,7 @@ export class Service {
     if (!task) {
       const problem = this.unavailable.get(taskId);
       if (problem) throw new ApiError("task_unavailable", problem.note, { status: problem.status });
-      throw new ApiError("not_found", `没有任务 ${taskId}。`);
+      throw new ApiError("not_found", `没有任务实例 ${taskId}。`);
     }
     return task;
   }
@@ -508,7 +508,7 @@ export class Service {
    */
   async deleteTask(t: Task, client: string) {
     if (t.executor.state === "working") {
-      throw new ApiError("session_busy", "助手正在工作，请先停止助手，再删除这个任务。", { active_session: t.executor.activeSession, reason: "working" });
+      throw new ApiError("session_busy", "助手正在工作，请先停止助手，再删除这个任务实例。", { active_session: t.executor.activeSession, reason: "working" });
     }
     const row = t.row();
     const name = row && truthy(row.task_name) ? String(row.task_name) : String(t.definition()["任务名"] ?? t.taskId);
@@ -539,7 +539,7 @@ export class Service {
     try {
       result = createTaskDir(join(this.tasksDir, taskId), taskType, name, tag, taskId, null, this.typesRoot);
     } catch (error) {
-      if (error instanceof CreateTaskError) throw new ApiError("rejected", "任务没有创建成功。", { reasons: [error.message] });
+      if (error instanceof CreateTaskError) throw new ApiError("rejected", "任务实例没有创建成功。", { reasons: [error.message] });
       throw error;
     }
     // 新任务只选用通用知识库。
@@ -703,14 +703,14 @@ export class Service {
   requireMaterialFile(t: Task, rel: string, target: string): void {
     if (isFile(target)) return;
     if (library.materialRecordRows(t.dir).some((row) => row.path === rel)) throw new ApiError("material_missing", materialMissingText(basename(rel)), { path: rel });
-    throw new ApiError("not_found", `没有材料 ${rel}。`);
+    throw new ApiError("not_found", `没有输入资料 ${rel}。`);
   }
 
   materialPath(t: Task, rel: string): string {
     const folder = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const base = resolvePath(join(t.dir, folder));
     const target = resolvePath(resolve(t.dir, rel));
-    if (!rel || !target.startsWith(base + sep)) throw new ApiError("bad_request", `路径 ${rel} 不在材料目录 ${folder} 里。`);
+    if (!rel || !target.startsWith(base + sep)) throw new ApiError("bad_request", `路径 ${rel} 不在输入资料目录 ${folder} 里。`);
     return target;
   }
 
@@ -720,7 +720,7 @@ export class Service {
       throw new ApiError("bad_request", "文件名里不能带路径分隔符。");
     }
     if (!UPLOAD_TYPES.some((ext) => filename.toLowerCase().endsWith(ext))) throw new ApiError("unsupported_type", unsupportedTypeText());
-    if (isReserved(filename)) throw new ApiError("bad_request", reservedNameText("材料"));
+    if (isReserved(filename)) throw new ApiError("bad_request", reservedNameText("输入资料"));
     if (data.length > maxUpload()) throw new ApiError("too_large", tooLargeText());
     const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const folder = join(t.dir, folderRel);
@@ -806,7 +806,7 @@ export class Service {
     if (slot === null || slot === "") return { slot: null, role: DEFAULT_MATERIAL_ROLE };
     const skillPath = String((t.definition() as Record<string, any>)["执行方法"] ?? "");
     const found = skillPath ? materialSlot(t.dir, skillPath, slot) : null;
-    if (found === null) throw new ApiError("bad_request", `没有叫「${slot}」的材料槽位。`);
+    if (found === null) throw new ApiError("bad_request", `没有叫「${slot}」的输入资料槽位。`);
     return { slot: found.key, role: found.role! };
   }
 
@@ -894,13 +894,13 @@ export class Service {
     const path = typeof rel === "string" ? rel : "";
     const target = this.materialPath(t, path);
     const row = library.materials(t.dir, t.definition()).find((m) => m.path === path);
-    if (row && row.derived_from !== null) throw new ApiError("bad_request", `这是由别的材料生成的文件，不能单独${verb}。`);
-    if (!row || !isFile(target)) throw new ApiError("not_found", `没有材料 ${path}。`);
+    if (row && row.derived_from !== null) throw new ApiError("bad_request", `这是由别的输入资料生成的文件，不能单独${verb}。`);
+    if (!row || !isFile(target)) throw new ApiError("not_found", `没有输入资料 ${path}。`);
     if (this.enteredConversation(target, t.executor.sessions.lastActivityMs())) {
       throw new ApiError("rejected", enteredText, { path, reasons: [enteredText] });
     }
     if (t.executor.state === "working") {
-      throw new ApiError("session_busy", `助手正在工作，结束后才能${verb}材料。`, { active_session: t.executor.activeSession, reason: "working" });
+      throw new ApiError("session_busy", `助手正在工作，结束后才能${verb}输入资料。`, { active_session: t.executor.activeSession, reason: "working" });
     }
     return { path, target };
   }
@@ -938,12 +938,12 @@ export class Service {
     const target = this.materialPath(t, path);
     const folderRel = or((t.definition() as Record<string, any>)["材料目录"], DEFAULT_MATERIALS_DIR) as string;
     const row = library.materialRecordRows(t.dir).find((one) => one.path === path);
-    if (!row) throw new ApiError("not_found", `没有材料 ${path}。`);
+    if (!row) throw new ApiError("not_found", `没有输入资料 ${path}。`);
     const expected = readExpected(t.dir, folderRel);
     const entry = expected?.materials.find((one) => one.path === path);
     if (isFile(target)) throw new ApiError("rejected", REPLENISH_PRESENT_TEXT, { path });
     if (t.executor.state === "working") {
-      throw new ApiError("session_busy", "助手正在工作，结束后才能补齐材料。", { active_session: t.executor.activeSession, reason: "working" });
+      throw new ApiError("session_busy", "助手正在工作，结束后才能补齐输入资料。", { active_session: t.executor.activeSession, reason: "working" });
     }
     if (extname(filename).toLowerCase() !== extname(path).toLowerCase()) {
       throw new ApiError("bad_request", replenishTypeText(basename(path)), { path });

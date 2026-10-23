@@ -165,7 +165,7 @@ export function SwitchWorkPanel({ open, taskId, sessionId, stage, pendingReview,
           <button className="btn" disabled={!!off || questions === 0} onClick={() => doAndClose(() => actions.onPrefill(ANSWER_QUESTIONS_TEXT))} data-testid="switch-questions">回答待澄清问题（{questions}）</button>
           <button className="btn" disabled={!!off} onClick={() => doAndClose(actions.onRetell)} data-testid="switch-retell">请助手复述当前理解</button>
           <button className="btn" disabled={!!off || pendingReview === 0} onClick={() => doAndClose(actions.onReview)} data-testid="switch-review">对已写的 {pendingReview} 条发起评审</button>
-          <button className="btn" disabled={!!off} onClick={() => fileInput.current?.click()} data-testid="switch-attach">补充项目材料</button>
+          <button className="btn" disabled={!!off} onClick={() => fileInput.current?.click()} data-testid="switch-attach">补充输入资料</button>
           <button className="btn" onClick={() => doAndClose(actions.onShowStatus)} data-testid="switch-status">查看工作进展</button>
           <input ref={fileInput} type="file" hidden data-testid="switch-attach-input"
             onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) doAndClose(() => actions.onAttach(file)); }} />

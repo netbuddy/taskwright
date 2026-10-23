@@ -42,7 +42,7 @@ function task(over: Partial<Task> = {}): Task {
         { name: "用例名称", type: "文本", required: true, values: null },
         { name: "参与者", type: "文本列表", required: true, values: null }] },
       { name: "领域说明", prefix: "DN", needs_review: false,
-        display: { group_field: "类别", leading_groups: ["术语"], note: "材料里或你说明过的背景、术语、角色，供条目引用。" },
+        display: { group_field: "类别", leading_groups: ["术语"], note: "输入资料里或你说明过的背景、术语、角色，供条目引用。" },
         fields: [
           { name: "标题", type: "文本", required: true, values: null },
           { name: "内容", type: "文本", required: true, values: null },
@@ -98,7 +98,7 @@ describe("条目区与详情", () => {
   it("写了「界面」一项的集合，页签下先写一句白话", () => {
     render(<Panel t={task()} />);
     fireEvent.click(screen.getByText("领域说明", { selector: ".itab" }));
-    expect(screen.getByTestId("collection-lead").textContent).toBe("领域说明：材料里或你说明过的背景、术语、角色，供条目引用。");
+    expect(screen.getByTestId("collection-lead").textContent).toBe("领域说明：输入资料里或你说明过的背景、术语、角色，供条目引用。");
   });
 
   it("底部「来源」一节里领域说明的编号 DN-002 点一下打开那条说明；说明的详情列出被哪些条目引用", () => {

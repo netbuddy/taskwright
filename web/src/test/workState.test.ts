@@ -254,7 +254,7 @@ describe("新加的材料（material_added）", () => {
 });
 
 describe("删除了材料（material_removed）", () => {
-  it("从材料清单里去掉那份材料与由它生成的文件；别的会话删的也收；正要选中的是它时清掉", () => {
+  it("从材料清单里去掉那份输入资料与由它生成的文件；别的会话删的也收；正要选中的是它时清掉", () => {
     const withMaterials = { ...snapshot(0), materials: [
       { path: "inputs/a.md", bytes: 1, modified_at: "", derived_from: null },
       { path: "inputs/b.docx", bytes: 1, modified_at: "", derived_from: null },
@@ -351,7 +351,7 @@ describe("只随整份数据来的几项（待核实、依据待核实、提到�
 
 describe("工作的阶段（工作项的三种库事件与库事件带来的 stage）", () => {
   const lamps = (ok: boolean): StageView["lamps"] => ({
-    reading: [{ key: "materials_cited", summary: ok ? "每份材料都被至少一页主题或一条问题引用了。" : "有 1 份材料还没有被任何一页主题或问题引用：inputs/材料.md。", ok, items: ok ? [] : ["inputs/材料.md"] }],
+    reading: [{ key: "materials_cited", summary: ok ? "每份输入资料都被至少一页主题或一条问题引用了。" : "有 1 份输入资料还没有被任何一页主题或问题引用：inputs/材料.md。", ok, items: ok ? [] : ["inputs/材料.md"] }],
     clarifying: [], modeling: [], writing: [], reviewing: [], document: [],
   });
   const staged = (seq: number): Snapshot => {

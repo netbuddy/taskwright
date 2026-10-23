@@ -91,7 +91,7 @@ export function conditionMet(condition: Condition, facts: AssetFacts): boolean {
 /** 一个前置条件没有满足时说缺什么的那半句，不带句号。 */
 export function unmetText(condition: Condition, facts: AssetFacts): string {
   switch (condition) {
-    case "has_materials": return "还没有项目材料";
+    case "has_materials": return "还没有输入资料";
     case "has_pages": return "业务说明还没有内容";
     case "diagrams_viewed": return `有 ${facts.diagramsUnviewed} 张分析模型还没有查看`;
     case "has_items": return "还没有需求条目";

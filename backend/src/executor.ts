@@ -387,7 +387,7 @@ export class Executor {
     if (this.state === "starting") throw new ApiError("executor_starting", "助手正在启动，请稍候。");
     if (this.running() && this.activeSession === sessionId) return;
     const path = this.sessions.file(sessionId);
-    if (!path || !this.sessions.isFile(path)) throw new ApiError("not_found", `这个任务里没有会话 ${sessionId}。`);
+    if (!path || !this.sessions.isFile(path)) throw new ApiError("not_found", `这个任务实例里没有会话 ${sessionId}。`);
     if (!this.running()) {
       await this.startPi(path, sessionId);
       return;

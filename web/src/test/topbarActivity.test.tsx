@@ -47,11 +47,11 @@ describe("顶栏那一处写什么", () => {
     expect(currentActivityText("parse_spec", { flows: [], activities: [{ key: "parse_spec", name: "逆向解析" }] } as never)).toBe("当前活动：逆向解析");
   });
 
-  it("自由讨论的会话写「自由讨论 · 不绑定活动」；任务没有阶段写「这个任务没有阶段」；没有「已做完」这种写法", () => {
+  it("自由讨论的会话写「自由讨论 · 不绑定活动」；任务没有阶段写「这个任务实例没有阶段」；没有「已做完」这种写法", () => {
     expect([NO_ACTIVITY_TEXT, START_WORK_TEXT]).toEqual(["自由讨论 · 不绑定活动", "启动工作"]);
     expect(topbarActivity({ stage: stage("idle") })).toEqual({ kind: "idle", text: NO_ACTIVITY_TEXT });
-    expect(topbarActivity({ stage: null })).toEqual({ kind: "plain", text: "这个任务没有阶段" });
-    expect(topbarActivity({})).toEqual({ kind: "plain", text: "这个任务没有阶段" });
+    expect(topbarActivity({ stage: null })).toEqual({ kind: "plain", text: "这个任务实例没有阶段" });
+    expect(topbarActivity({})).toEqual({ kind: "plain", text: "这个任务实例没有阶段" });
   });
 });
 
@@ -80,9 +80,9 @@ describe("工作视图的顶栏", () => {
     expect(start).toHaveClass("chip", "dark");
   });
 
-  it("任务没有阶段：写「这个任务没有阶段」，不能点，没有「启动工作」", () => {
+  it("任务没有阶段：写「这个任务实例没有阶段」，不能点，没有「启动工作」", () => {
     page(overallTask({ stage: null }));
-    expect(chip()).toHaveTextContent("这个任务没有阶段");
+    expect(chip()).toHaveTextContent("这个任务实例没有阶段");
     expect(chip().tagName).toBe("SPAN");
     expect(screen.queryByTestId("start-work")).toBeNull();
   });

@@ -200,7 +200,7 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
   return (
     <TaskFrame taskId={taskId} taskName={task.task_name} where="任务起点" here="task" sessions={task.sessions} task={task} pending={showsPendingWork(task, status)}>
       <div className="tp-page" data-testid="task-page">
-        <div className="tp-crumb"><a href={href.tasks()}>任务</a><span className="sep">›</span>{task.task_name}</div>
+        <div className="tp-crumb"><a href={href.tasks()}>任务实例</a><span className="sep">›</span>{task.task_name}</div>
 
         <header className="tp-head">
           <div className="tp-head-l">
@@ -216,7 +216,7 @@ export function TaskPage({ taskId, focus = null }: { taskId: string; focus?: "pe
           </div>
           {service.info?.debug && (
             <div className="tp-head-r">
-              <button className="btn sm" onClick={() => void exportPersona()} title="把这个任务里你说过的话整理成模拟器用户画像的草稿，存成一份文件。只在调试模式下有。"
+              <button className="btn sm" onClick={() => void exportPersona()} title="把这个任务实例里你说过的话整理成模拟器用户画像的草稿，存成一份文件。只在调试模式下有。"
                 data-testid="export-persona">导出为用户画像</button>
             </div>
           )}

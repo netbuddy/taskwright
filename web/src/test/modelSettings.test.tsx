@@ -206,7 +206,7 @@ describe("设置页面的「模型」一栏", () => {
   it("Codex 订阅的登录说明只指向页面上做得到的事：到任务里让助手说一句话，不提还没有的按钮", async () => {
     page(config({ providers: [codex()] }));
     const login = await screen.findByTestId("codex-login");
-    expect(login).toHaveTextContent("这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请选定模型后到任务里试着让助手说一句话。");
+    expect(login).toHaveTextContent("这里只能看出登录凭据在不在，看不出它是否还有效。要确认能用，请选定模型后到任务实例里试着让助手说一句话。");
     expect(login).not.toHaveTextContent("测试");
   });
 

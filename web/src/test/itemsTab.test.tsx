@@ -1,5 +1,5 @@
 // 条目区的页签：顶上一排六个加问题，需求条目页签里一排集合的子页签；一打开停在哪一个（选中的条目、地址、记住的、缺省）；
-// 用户换了页签就记下来，下次打开这个任务回到那里。
+// 用户换了页签就记下来，下次打开这个任务实例回到那里。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -40,7 +40,7 @@ describe("页签的次序", () => {
     expect(tabOrder(overallTask().definition.collections).map((c) => c.name)).toEqual(["业务说明", "功能用例", "问题"]);
     render(<Panel t={overallTask()} />);
     // 顶上一排是需求资产六类加问题；业务说明那一个集合在「业务说明」页签里，问题集合在「问题」页签里，其余集合是「需求条目」页签里的子页签。
-    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((t) => t.firstChild!.textContent)).toEqual(["材料与证据", "业务说明", "分析模型", "需求条目", "问题", "评审与确认", "文档与版本"]);
+    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((t) => t.firstChild!.textContent)).toEqual(["输入资料", "业务说明", "分析模型", "需求条目", "问题", "评审与确认", "文档与版本"]);
     expect(tabs()).toEqual(["功能用例"]);
     expect(screen.getByTestId("pane-description").querySelector(".cnt")!.textContent).toBe("11");
   });
@@ -49,7 +49,7 @@ describe("页签的次序", () => {
     const t = overallTask();
     t.definition = { ...t.definition, asset_names: { ...t.definition.asset_names, items: "要求", versions: "交付件" } };
     render(<Panel t={t} />);
-    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((one) => one.firstChild!.textContent)).toEqual(["材料与证据", "业务说明", "分析模型", "要求", "问题", "评审与确认", "交付件"]);
+    expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((one) => one.firstChild!.textContent)).toEqual(["输入资料", "业务说明", "分析模型", "要求", "问题", "评审与确认", "交付件"]);
     cleanup();
     const bare = overallTask();
     bare.definition = { collections: bare.definition.collections };
@@ -97,7 +97,7 @@ describe("一打开停在哪个页签", () => {
 });
 
 describe("记住用户上次停的页签", () => {
-  it("点别的页签就记下来，下次打开这个任务回到那里", () => {
+  it("点别的页签就记下来，下次打开这个任务实例回到那里", () => {
     const t = overallTask();
     const first = render(<Panel t={t} />);
     expect(onTab()).toBe("功能用例");

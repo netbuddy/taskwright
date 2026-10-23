@@ -1,4 +1,4 @@
-// 工作台中栏按需求资产分的六个页签：顶上一排的名字与数、点了停在哪里并记住；「材料与证据」页签的两张表与上面的操作。
+// 工作台中栏按需求资产分的六个页签：顶上一排的名字与数、点了停在哪里并记住；「输入资料」页签的两张表与上面的操作。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { App as AntApp, ConfigProvider } from "antd";
@@ -53,14 +53,14 @@ describe("顶上一排页签", () => {
     vi.spyOn(api, "getTask").mockResolvedValue(detailOf(t));
     render(<Panel t={t} />);
     expect([...document.querySelectorAll("[data-testid=asset-tabs] .itab")].map((one) => one.textContent))
-      .toEqual(["材料与证据2", "业务说明11", "分析模型0", "需求条目3", "问题3", "评审与确认", "文档与版本0"]);
+      .toEqual(["输入资料2", "业务说明11", "分析模型0", "需求条目3", "问题3", "评审与确认", "文档与版本0"]);
     expect(t.items.filter((one) => one.collection === "问题").length).toBe(4);
     expect(screen.getByTestId("pane-issues").querySelector(".cnt")).toHaveClass("open");
     const published = overallTask({ versions: [{ version_no: 2 }, { version_no: 1 }] as unknown as Task["versions"] });
     expect(paneCount("docs", published, [])).toBe("2");
   });
 
-  it("点「材料与证据」：停在那一页，没有集合的子页签与筛选；记下来，下次打开这个任务回到那里；回到需求条目页签，子页签一行回来", async () => {
+  it("点「输入资料」：停在那一页，没有集合的子页签与筛选；记下来，下次打开这个任务实例回到那里；回到需求条目页签，子页签一行回来", async () => {
     const t = overallTask();
     vi.spyOn(api, "getTask").mockResolvedValue(detailOf(t));
     const first = render(<Panel t={t} />);
@@ -81,8 +81,8 @@ describe("顶上一排页签", () => {
   });
 });
 
-describe("「材料与证据」页签", () => {
-  it("项目材料一张表：名称、类型、大小、上传时刻、被几节几处引用；由别的材料生成的文字版不列；页上一句说明", async () => {
+describe("「输入资料」页签", () => {
+  it("输入资料一张表：名称、类型、大小、上传时刻、被几节几处引用；由别的材料生成的文字版不列；页上一句说明", async () => {
     const t = overallTask();
     vi.spyOn(api, "getTask").mockResolvedValue(detailOf(t));
     render(<Wrap><div className="app"><MaterialsTab task={t} materials={MATERIALS} info={null} libraries={LIBS} readOnly={false} onView={vi.fn()} /></div></Wrap>);
@@ -109,10 +109,10 @@ describe("「材料与证据」页签", () => {
     expect(within(rules).queryByTestId("materials-delete")).toBeNull();
     const remove = vi.spyOn(api, "deleteMaterial").mockResolvedValue({ ok: true, path: "inputs/旧系统说明.docx" });
     fireEvent.click(within(old).getByTestId("materials-delete"));
-    await screen.findByText("删除材料《旧系统说明.docx》？");
+    await screen.findByText("删除输入资料《旧系统说明.docx》？");
     fireEvent.click(within(document.querySelector(".ant-modal") as HTMLElement).getByRole("button", { name: "删除" }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(t.task_id, "inputs/旧系统说明.docx"));
-    expect(screen.getByTestId("materials-upload")).toHaveTextContent("上传材料");
+    expect(screen.getByTestId("materials-upload")).toHaveTextContent("上传输入资料");
   });
 
   it("选用的知识库一张表：文档份数、本项目引用几处、每个都可以「取消选用」；表下「选用别的知识库」；没有知识库这一功能时整块不显示", async () => {

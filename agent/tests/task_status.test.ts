@@ -65,8 +65,8 @@ test("续接：上次之后的新增、修改、删除按条目合并，写明�
     "【执行者续接这条会话时（时刻）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】" +
       "修改 1 个（UC-001 修订 1 → 修订 3）；删除 1 个（UC-003）。" +
       "这些改动来自 4 次修订：用户在界面上直接做的 1 次，执行者在别的会话里做的 3 次。" +
-      `材料目录 inputs/ 里有 1 个文件：inputs/材料.md（${Buffer.byteLength(MATERIAL_TEXT)} 字节）。` +
-      "材料的引用情况：inputs/材料.md 被引用过 2 次。",
+      `输入资料目录 inputs/ 里有 1 个文件：inputs/材料.md（${Buffer.byteLength(MATERIAL_TEXT)} 字节）。` +
+      "输入资料的引用情况：inputs/材料.md 被引用过 2 次。",
   );
   assert.deepEqual(message.details.added, []);
 });
@@ -114,7 +114,7 @@ test("续接：上一次运行被用户停止时加一句并记 last_run_stopped
   saveRevision({ ...callIn(dir), callId: "ui-op-2", actor: ACTOR_USER },
     { operations: [{ op: "update", item: "UC-001", base_revision: 1, fields: { 名称: "用口令登录" } }] });
   const changed = taskStatusMessage(dir, { ...facts, lastRunStopped: true }, "s")!;
-  assert.match(changed.text, /修改 1 个（UC-001 修订 1 → 修订 2）。.*材料的引用情况：[^。]*。上一次运行被用户停止，没有做完。$/);
+  assert.match(changed.text, /修改 1 个（UC-001 修订 1 → 修订 2）。.*输入资料的引用情况：[^。]*。上一次运行被用户停止，没有做完。$/);
   assert.equal(changed.details.last_run_stopped, true);
   assert.equal("last_run_stopped" in taskStatusMessage(dir, facts, "s")!.details, false, "没有被停止时不带这个字段");
 });
@@ -122,13 +122,13 @@ test("续接：上一次运行被用户停止时加一句并记 last_run_stopped
 test("新会话的现状列出材料目录里的文件名与大小，不列隐藏文件与子目录；没有文件也明说", () => {
   const dir = makeWorkspace(undefined, { material: false });
   createTask(callIn(dir), { definition_path: DEFINITION_PATH });
-  assert.match(taskStatusMessage(dir, FRESH, "s")!.text, /材料目录 inputs\/ 里现在没有文件。$/);
+  assert.match(taskStatusMessage(dir, FRESH, "s")!.text, /输入资料目录 inputs\/ 里现在没有文件。$/);
   mkdirSync(join(dir, "inputs/旧稿"), { recursive: true });
   writeFileSync(join(dir, "inputs/借阅需求.md"), "读者可以借书。\n".repeat(200), "utf-8");
   writeFileSync(join(dir, "inputs/补充说明.txt"), "续借一次。", "utf-8");
   writeFileSync(join(dir, "inputs/.DS_Store"), "x");
   const message = taskStatusMessage(dir, FRESH, "s")!;
-  assert.match(message.text, /材料目录 inputs\/ 里有 2 个文件：inputs\/借阅需求\.md（4\.3 KB）、inputs\/补充说明\.txt（15 字节）。$/);
+  assert.match(message.text, /输入资料目录 inputs\/ 里有 2 个文件：inputs\/借阅需求\.md（4\.3 KB）、inputs\/补充说明\.txt（15 字节）。$/);
   assert.deepEqual(message.details.materials, {
     dir: "inputs/",
     files: [{ path: "inputs/借阅需求.md", bytes: 4400 }, { path: "inputs/补充说明.txt", bytes: 15 }],
@@ -150,8 +150,8 @@ test("续接：交付物没有变化但有上次之后新放进来的材料时�
   assert.equal(
     message.text.replace(/（\d\d:\d\d:\d\d）/, "（时刻）"),
     "【执行者续接这条会话时（时刻）看到的、上次之后交付物的变化：由扩展写入，不是用户打的字】交付物没有变化。" +
-      "材料目录 inputs/ 里有 2 个文件：inputs/新材料.md（3 字节）、inputs/旧材料.md（3 字节）。其中上次之后新放进来的是：inputs/新材料.md。" +
-      "材料的引用情况：inputs/新材料.md 被引用过 0 次；inputs/旧材料.md 被引用过 0 次。",
+      "输入资料目录 inputs/ 里有 2 个文件：inputs/新材料.md（3 字节）、inputs/旧材料.md（3 字节）。其中上次之后新放进来的是：inputs/新材料.md。" +
+      "输入资料的引用情况：inputs/新材料.md 被引用过 0 次；inputs/旧材料.md 被引用过 0 次。",
   );
   assert.deepEqual(message.details.new_materials, ["inputs/新材料.md"]);
   assert.deepEqual(listMaterials(dir, "inputs/").files.map((f) => f.path), ["inputs/新材料.md", "inputs/旧材料.md"]);
@@ -164,7 +164,7 @@ test("材料清单里有 Word 文件与它的投影时，另加一句：读投�
     { path: "inputs/补充.md", bytes: 3, modifiedAt: 0 },
   ];
   assert.equal(materialsSentence({ dir: "inputs/", files }),
-    "材料目录 inputs/ 里有 3 个文件：inputs/需求.docx（2.0 KB）、inputs/需求.docx.md（100 字节）、inputs/补充.md（3 字节）。" +
+    "输入资料目录 inputs/ 里有 3 个文件：inputs/需求.docx（2.0 KB）、inputs/需求.docx.md（100 字节）、inputs/补充.md（3 字节）。" +
     "其中 inputs/需求.docx 是 Word 文件，请读由它生成的文字版 inputs/需求.docx.md（每段一行，段落号写在方括号里）；引用它作来源时，出处写 Word 文件加段落号，例如 inputs/需求.docx#p12。");
   const legacy = [files[0], { path: "inputs/需求.docx.txt", bytes: 100, modifiedAt: 0 }];
   assert.match(materialsSentence({ dir: "inputs/", files: legacy }), /请读由它生成的文字版 inputs\/需求\.docx\.txt（/);
@@ -196,7 +196,7 @@ test("Word 材料：现状写段数、块数与分段清单；续接写还有几
   const last = Date.now() - 60_000;
   const message = taskStatusMessage(dir, { hasUserMessage: true, hasStatusMessage: true, lastMessageAt: last }, "s")!;
   // p7、p8 由 UC-001 引，p25（UC-002 的旧来源仍被沿用，改名不改来源）与 p81 由 UC-002 引；p110 的条目删掉了。
-  assert.match(message.text, /材料的引用情况：inputs\/requirements-styled\.docx 还有 104 段没有被任何条目引用。$/);
+  assert.match(message.text, /输入资料的引用情况：inputs\/requirements-styled\.docx 还有 104 段没有被任何条目引用。$/);
   assert.deepEqual(message.details.materials, {
     dir: "inputs/",
     files: listMaterials(dir, "inputs/").files.map((f) => ({ path: f.path, bytes: f.bytes })),
@@ -251,8 +251,8 @@ test("材料表里有而文件不在的材料（导入不带材料的数据包�
   insertMaterial(dir, "inputs/缺的.docx", { slot: "spec", role: "既有规格说明" });
   const message = taskStatusMessage(dir, FRESH, "s")!;
   assert.deepEqual([message.details.materials.files.map((f: { path: string }) => f.path), message.details.materials.missing], [["inputs/在的.md"], ["inputs/缺的.docx"]]);
-  assert.match(message.text, /材料目录 inputs\/ 里有 1 个文件：inputs\/在的\.md/);
-  assert.match(message.text, /材料表里另有 1 份材料的文件缺失，用户补齐前读不到：inputs\/缺的\.docx。/);
+  assert.match(message.text, /输入资料目录 inputs\/ 里有 1 个文件：inputs\/在的\.md/);
+  assert.match(message.text, /输入资料表里另有 1 份输入资料的文件缺失，用户补齐前读不到：inputs\/缺的\.docx。/);
 });
 
 test("没有缺失的材料时，任务状况里不写缺失那一句", () => {

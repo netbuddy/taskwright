@@ -45,7 +45,7 @@ function status(over: Partial<TaskStatusView> = {}): TaskStatusView {
   return {
     generated_at: "", activity: { kind: "stage", key: "writing", name: "写条目", ordinal: 4, flow: "analysis", moved_by: "user", moved_at: null, reason: null },
     description: { sections: 9, chapters: [], unsorted: 0, open_questions: 2 }, models: [], items: [], missing: [], proposal: null, versions: [], launch: null,
-    assets: [cell("materials", "材料与证据", 1, "1 份"), cell("description", "业务说明", 9, "9 节"), cell("models", "分析模型", 4, "4 张"),
+    assets: [cell("materials", "输入资料", 1, "1 份"), cell("description", "业务说明", 9, "9 节"), cell("models", "分析模型", 4, "4 张"),
       cell("items", "需求条目", 6, "6 条"), cell("review", "评审与确认", 0, "未评审"), cell("versions", "文档与版本", 0, "未发布")],
     work_items: [FLOW_ITEM, item(3)],
     catalog: {
@@ -77,11 +77,11 @@ function panel(stage: StageView, st: TaskStatusView = status(), off: string | nu
 const text = (el: Element | null) => (el?.textContent ?? "").replace(/\s+/g, " ").trim();
 
 describe("面板上的几句话", () => {
-  it("标题下一句：本会话属于哪个工作项、哪天启动、流程在第几站、本任务另有几个；自由讨论的会话写它不绑定活动", () => {
-    expect(panelSubtitle(flowStage, status())).toBe("本会话属于工作项「需求分析」（10-08） · 位于第 4 站「写条目」 · 本任务另有 1 个工作项");
-    expect(panelSubtitle(aloneStage, status())).toBe("本会话属于工作项「整理建模」（10-13） · 本任务另有 1 个工作项");
-    expect(panelSubtitle(freeStage, status())).toBe("本会话是自由讨论，不绑定活动 · 本任务有 2 个工作项");
-    expect(panelSubtitle(freeStage, status({ work_items: [] }))).toBe("本会话是自由讨论，不绑定活动 · 本任务还没有工作项");
+  it("标题下一句：本会话属于哪个工作项、哪天启动、流程在第几站、本任务实例另有几个；自由讨论的会话写它不绑定活动", () => {
+    expect(panelSubtitle(flowStage, status())).toBe("本会话属于工作项「需求分析」（10-08） · 位于第 4 站「写条目」 · 本任务实例另有 1 个工作项");
+    expect(panelSubtitle(aloneStage, status())).toBe("本会话属于工作项「整理建模」（10-13） · 本任务实例另有 1 个工作项");
+    expect(panelSubtitle(freeStage, status())).toBe("本会话是自由讨论，不绑定活动 · 本任务实例有 2 个工作项");
+    expect(panelSubtitle(freeStage, status({ work_items: [] }))).toBe("本会话是自由讨论，不绑定活动 · 本任务实例还没有工作项");
     expect(ownItemLine(flowStage)).toBe("现在在第 4 站「写条目」。完成后助手将提议进入「评审确认」。");
     expect(ownItemLine({ ...flowStage, current: "document", node: "document" })).toBe("现在在第 6 站「编写文档」。这是最后一站，完成后请你过目。");
     expect(ownItemLine(aloneStage)).toBe("单项活动：做够了由助手在回复里汇报做完，不提议下一站；工作项照旧留着，可以接着说。");
@@ -90,7 +90,7 @@ describe("面板上的几句话", () => {
     const catalog = { flows: [flow({ key: "reengineering", name: "需求再工程", nodes: rewriteNodes })], activities: [activity("parse_spec", "逆向解析", { stage: "reading" }), activity("publish", "发布", { mode: "user_only" })] };
     const rewriteStage: StageView = { ...flowStage, current: "reading", activity: "parse_spec", node: "parse_spec", catalog,
       work_item: { ...FLOW_BRIEF, name: "需求再工程", activity: "parse_spec", flow: "reengineering" } };
-    expect(panelSubtitle(rewriteStage, status({ work_items: [] }))).toBe("本会话属于工作项「需求再工程」（10-08） · 位于第 1 站「逆向解析」 · 本任务没有别的工作项");
+    expect(panelSubtitle(rewriteStage, status({ work_items: [] }))).toBe("本会话属于工作项「需求再工程」（10-08） · 位于第 1 站「逆向解析」 · 本任务实例没有别的工作项");
     expect(ownItemLine(rewriteStage)).toBe("现在在第 1 站「逆向解析」。完成后助手将提议进入「核读材料」。");
     expect(ownItemLine({ ...rewriteStage, current: "document", activity: "document", node: "document" })).toBe("现在在第 7 站「编写文档」。这是最后一站，完成后请你过目。");
   });
@@ -108,14 +108,14 @@ describe("切换工作面板", () => {
   it("流程的工作项的会话：标题与一句、六格；第一组写在第几站、下一站，三个按钮；辅助操作五个；其他活动里流程项写「已在进行」、本会话就是它的会话", async () => {
     const { acts, onClose } = panel(flowStage);
     expect(await screen.findByTestId("switch-title")).toHaveTextContent("切换工作");
-    await waitFor(() => expect(screen.getByTestId("switch-subtitle")).toHaveTextContent("本会话属于工作项「需求分析」（10-08） · 位于第 4 站「写条目」 · 本任务另有 1 个工作项"));
+    await waitFor(() => expect(screen.getByTestId("switch-subtitle")).toHaveTextContent("本会话属于工作项「需求分析」（10-08） · 位于第 4 站「写条目」 · 本任务实例另有 1 个工作项"));
     expect(screen.getByTestId("asset-cells")).toBeInTheDocument();
     const own = screen.getByTestId("switch-own");
     expect(text(own.querySelector(".gt"))).toBe("本会话的工作项需求分析 · 写条目");
     expect([...own.querySelectorAll("button")].map(text)).toEqual(["继续写条目", "换一条干净的会话接着", "删除这个工作项"]);
     expect(own).toHaveTextContent("完成后助手将提议进入「评审确认」。");
     expect([...screen.getByTestId("switch-basics").querySelectorAll("button")].map(text)).toEqual([
-      "回答待澄清问题（2）", "请助手复述当前理解", "对已写的 5 条发起评审", "补充项目材料", "查看工作进展"]);
+      "回答待澄清问题（2）", "请助手复述当前理解", "对已写的 5 条发起评审", "补充输入资料", "查看工作进展"]);
     const analysis = screen.getByTestId("switch-flow-analysis");
     expect([text(analysis.querySelector(".t")), analysis.textContent?.includes("本会话就是它的会话。"), analysis.querySelector("button")]).toEqual(["需求分析工作流程已在进行", true, null]);
     // 活动卡：已有工作项的标个数（不写「进行中」）；缺前提的变淡、写前置条件。

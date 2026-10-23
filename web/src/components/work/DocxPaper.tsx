@@ -141,7 +141,7 @@ export function DocxPaper({ taskId, path, items, locate, paperRef, onOpenItem, o
     } else {
       const { page, position } = n ? pageAndPosition(t, n) : { page: null, position: null };
       const where = n ? placeText(page, entry?.locations ? chapterOf(entry.locations, n) : null, position) : [];
-      setNote(`没有在${where.length ? `${where.join(" · ")}附近` : "材料里"}找到这段原文。`);
+      setNote(`没有在${where.length ? `${where.join(" · ")}附近` : "输入资料里"}找到这段原文。`);
     }
     const timer = setTimeout(() => { undo(); setNote(null); }, ms);
     return () => { clearTimeout(timer); undo(); };

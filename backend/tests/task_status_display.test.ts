@@ -126,7 +126,7 @@ const START_DETAILS = {
   open_acts: [{ act_id: "A-1", function: "ask", summary: "要不要拆成两条" }],
 };
 
-test("给页面的 details：去掉 open_acts；材料清单里由 Word、PDF 材料生成的文件标出是由哪份生成的，本体不在的不算生成的；别的照原样", () => {
+test("给页面的 details：去掉 open_acts；材料清单里由 Word、PDF 输入资料生成的文件标出是由哪份生成的，本体不在的不算生成的；别的照原样", () => {
   const shown = taskStatusDisplayDetails(START_DETAILS)!;
   assert.ok(!("open_acts" in shown));
   assert.deepEqual(shown.materials.files.map((f: Dict) => [f.path, f.derived_from]), [

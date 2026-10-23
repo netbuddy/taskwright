@@ -73,18 +73,18 @@ export function NewTaskModal({ open, onClose }: { open: boolean; onClose: () => 
       });
       onClose();
       form.resetFields();
-      toast.success(`已新建任务「${values.task_name.trim()}」。`);
+      toast.success(`已新建任务实例「${values.task_name.trim()}」。`);
       go(href.task(task_id));
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : "新建任务没有成功。");
+      toast.error(error instanceof ApiError ? error.message : "新建任务实例没有成功。");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Modal title="新建任务" open={open} onCancel={onClose} onOk={submit} okText="新建" cancelText="取消" confirmLoading={saving} destroyOnHidden>
-      <p className="muted small">一个任务一份交付物。新建之后在任务页上传材料，再新建会话交给助手。</p>
+    <Modal title="新建任务实例" open={open} onCancel={onClose} onOk={submit} okText="新建" cancelText="取消" confirmLoading={saving} destroyOnHidden>
+      <p className="muted small">一个任务实例一份交付物。新建之后在任务起点页上传输入资料，再新建会话交给助手。</p>
       <Form form={form} layout="vertical">
         <Form.Item label="任务类型" name="task_type" rules={[{ required: true, message: "请选一种任务类型" }]}>
           <Select options={types} placeholder={types.length ? undefined : "没有读到任务类型"} />

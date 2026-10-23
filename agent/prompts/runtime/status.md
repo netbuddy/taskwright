@@ -48,25 +48,25 @@
 
 ## `status.materials_none`
 
-用途：材料目录里没有文件时的那一句。
+用途：输入资料目录里没有文件时的那一句。
 
-材料目录 {{dir}} 里现在没有文件。
+输入资料目录 {{dir}} 里现在没有文件。
 
 ## `status.materials`
 
-用途：材料清单那一句。files 是每份材料的 status.material_file；word、pdf 是 Word 与 PDF 材料的说明（没有就是空的）；segments 是每份 Word、PDF 材料的分段情况。
+用途：输入资料清单那一句。files 是每份输入资料的 status.material_file；word、pdf 是 Word 与 PDF 输入资料的说明（没有就是空的）；segments 是每份 Word、PDF 输入资料的分段情况。
 
-材料目录 {{dir}} 里有 {{count}} 个文件：{{files}}。{{word}}{{pdf}}{{segments}}
+输入资料目录 {{dir}} 里有 {{count}} 个文件：{{files}}。{{word}}{{pdf}}{{segments}}
 
 ## `status.materials_missing`
 
-用途：材料表里有而文件不在的材料（从不带材料的数据包导入、还没补齐），接在材料清单那一句之后；没有缺失时不写。count 是份数，files 是这几份的路径，用「、」隔开。
+用途：输入资料表里有而文件不在的输入资料（从不带输入资料的数据包导入、还没补齐），接在输入资料清单那一句之后；没有缺失时不写。count 是份数，files 是这几份的路径，用「、」隔开。
 
-材料表里另有 {{count}} 份材料的文件缺失，用户补齐前读不到：{{files}}。
+输入资料表里另有 {{count}} 份输入资料的文件缺失，用户补齐前读不到：{{files}}。
 
 ## `status.material_file`
 
-用途：材料清单里的一份材料：路径与大小。
+用途：输入资料清单里的一份输入资料：路径与大小。
 
 {{path}}（{{size}}）
 
@@ -90,85 +90,85 @@
 
 ## `status.materials_word`
 
-用途：材料里有 Word 文件时，告诉助手读它的文字版、出处怎样写。first 是第一份 Word 文件。
+用途：输入资料里有 Word 文件时，告诉助手读它的文字版、出处怎样写。first 是第一份 Word 文件。
 
 其中 {{words}} 是 Word 文件，请读由它生成的文字版 {{projections}}（每段一行，段落号写在方括号里）；引用它作来源时，出处写 Word 文件加段落号，例如 {{first}}#p12。
 
 ## `status.materials_pdf`
 
-用途：材料里有 PDF 文件而没有 Word 文件时，告诉助手读它的文字版、出处怎样写。
+用途：输入资料里有 PDF 文件而没有 Word 文件时，告诉助手读它的文字版、出处怎样写。
 
 其中 {{pdfs}} 是 PDF 文件，请读由它生成的文字版 {{projections}}（每块一行，行首方括号里是页与块）；引用它作来源时，出处写 PDF 文件加页与块，例如 {{first}}#p3-2。
 
 ## `status.materials_pdf_also`
 
-用途：材料里 Word 与 PDF 文件都有时，接在 Word 那一句后面的 PDF 那一句。
+用途：输入资料里 Word 与 PDF 文件都有时，接在 Word 那一句后面的 PDF 那一句。
 
 {{pdfs}} 是 PDF 文件，请读由它生成的文字版 {{projections}}（每块一行，行首方括号里是页与块）；引用它作来源时，出处写 PDF 文件加页与块，例如 {{first}}#p3-2。
 
 ## `status.segments_word`
 
-用途：一份 Word 材料的分段情况。list 是空的或者 status.segments_word_list。
+用途：一份 Word 输入资料的分段情况。list 是空的或者 status.segments_word_list。
 
 {{path}} 共 {{text_paragraphs}} 段有文字（段落号 1 到 {{paragraphs}}）、{{blocks}} 块{{list}}。
 
 ## `status.segments_word_list`
 
-用途：Word 材料有分段清单时，接在分段情况后面的半句。
+用途：Word 输入资料有分段清单时，接在分段情况后面的半句。
 
 ，分段清单见 {{file}}
 
 ## `status.segments_pdf`
 
-用途：一份 PDF 材料的分段情况。no_text 是空的或者 status.segments_pdf_no_text，list 是空的或者 status.segments_pdf_list。
+用途：一份 PDF 输入资料的分段情况。no_text 是空的或者 status.segments_pdf_no_text，list 是空的或者 status.segments_pdf_list。
 
 {{path}} 共 {{pages}} 页、{{units}} 块{{no_text}}{{list}}。
 
 ## `status.segments_pdf_no_text`
 
-用途：PDF 材料有没有文字的页时，接在分段情况里的半句。
+用途：PDF 输入资料有没有文字的页时，接在分段情况里的半句。
 
 ，其中第 {{pages}} 页没有文字
 
 ## `status.segments_pdf_list`
 
-用途：PDF 材料有分段清单时，接在分段情况后面的半句。
+用途：PDF 输入资料有分段清单时，接在分段情况后面的半句。
 
 ，分段清单按页，见 {{file}}
 
 ## `status.citations`
 
-用途：续接时材料的引用情况那一句。parts 是每份材料的 status.cited_* 那一项，用「；」接起。
+用途：续接时输入资料的引用情况那一句。parts 是每份输入资料的 status.cited_* 那一项，用「；」接起。
 
-材料的引用情况：{{parts}}。
+输入资料的引用情况：{{parts}}。
 
 ## `status.cited_word_all`
 
-用途：引用情况里，一份 Word 材料每段都有条目引用。
+用途：引用情况里，一份 Word 输入资料每段都有条目引用。
 
 {{path}} 每段都有条目引用
 
 ## `status.cited_word_some`
 
-用途：引用情况里，一份 Word 材料还有几段没有被引用。
+用途：引用情况里，一份 Word 输入资料还有几段没有被引用。
 
 {{path}} 还有 {{count}} 段没有被任何条目引用
 
 ## `status.cited_pdf_all`
 
-用途：引用情况里，一份 PDF 材料每块都有条目引用。
+用途：引用情况里，一份 PDF 输入资料每块都有条目引用。
 
 {{path}} 每块都有条目引用
 
 ## `status.cited_pdf_some`
 
-用途：引用情况里，一份 PDF 材料还有几块没有被引用。
+用途：引用情况里，一份 PDF 输入资料还有几块没有被引用。
 
 {{path}} 还有 {{count}} 块没有被任何条目引用
 
 ## `status.cited_text`
 
-用途：引用情况里，一份文本材料被引用过几次。
+用途：引用情况里，一份文本输入资料被引用过几次。
 
 {{path}} 被引用过 {{count}} 次
 
@@ -176,7 +176,7 @@
 
 用途：「这个任务选用的知识库」一段的开头。里面的规矩与平台说明「知识库怎样用」、查找知识库工具的说明（tools/search_knowledge.md）是同一条，改一处要三处一起改。
 
-这个任务选用的知识库（参考资料，不整理成条目；材料里把具体规定指给了别的文档时，必须到这里把那条规定查出来写进条目并记来源；查知识库用 search_knowledge，不要用 grep 去翻知识库，命中太多也拿不全；查法与来源的写法见平台说明「知识库怎样用」；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：
+这个任务选用的知识库（参考资料，不整理成条目；输入资料里把具体规定指给了别的文档时，必须到这里把那条规定查出来写进条目并记来源；查知识库用 search_knowledge，不要用 grep 去翻知识库，命中太多也拿不全；查法与来源的写法见平台说明「知识库怎样用」；引用时来源种类写「文档原文」，出处照抄每份文档后面的写法）：
 
 ## `status.knowledge_library_empty`
 
@@ -216,7 +216,7 @@
 
 ## `status.no_changes`
 
-用途：续接时交付物没有变化（只有新材料、知识库变过、开着的提议或者上一次运行被停止）。
+用途：续接时交付物没有变化（只有新输入资料、知识库变过、开着的提议或者上一次运行被停止）。
 
 交付物没有变化。
 
@@ -264,7 +264,7 @@
 
 ## `status.new_materials`
 
-用途：续接时上次之后新放进来的材料。
+用途：续接时上次之后新放进来的输入资料。
 
 其中上次之后新放进来的是：{{files}}。
 

@@ -14,7 +14,9 @@ import { ACTIVITY_START_TEXTS, STAGE_START_TEXTS, STATUS_NEXT_TEXT, cardMove } f
 /** 一条会话的对话消息（conversation.ts 的 baseMessages 给的形状），按先后。 */
 export type SessionMessages = Record<string, any>[];
 
-const START_TEXTS = new Set<string>([...Object.values(STAGE_START_TEXTS), ...Object.values(ACTIVITY_START_TEXTS), STATUS_NEXT_TEXT]);
+/** 早先版本替用户发的固定句：已有会话里记的是它们，同样不收。 */
+const EARLIER_START_TEXTS = ["请通读材料，把材料里已经写明的概念、角色、流程与目标各立一页主题。"];
+const START_TEXTS = new Set<string>([...Object.values(STAGE_START_TEXTS), ...Object.values(ACTIVITY_START_TEXTS), STATUS_NEXT_TEXT, ...EARLIER_START_TEXTS]);
 
 export interface PersonaFact {
   事实: string;

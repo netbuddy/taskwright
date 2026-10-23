@@ -16,7 +16,7 @@ const RESUME_TEXT = "接着这条会话继续时（11:30:00），上次之后交
 const FALLBACK_TEXT = "助手这次没有用回复工具说话，系统自动提醒了它一句：「请用 reply 工具把要对用户说的话发出来」。这句不是你说的。";
 
 const file = (path: string, derived_from: string | null = null) => ({ path, bytes: 1, derived_from });
-/** 两份材料（一份 Word、一份 PDF）连同由它们生成的文件。 */
+/** 两份输入资料（一份 Word、一份 PDF）连同由它们生成的文件。 */
 const FILES = [
   file("inputs/办法.pdf"), file("inputs/办法.pdf.md", "inputs/办法.pdf"), file("inputs/办法.pdf.segments.json", "inputs/办法.pdf"),
   file("inputs/需求.docx"), file("inputs/需求.docx.md", "inputs/需求.docx"), file("inputs/需求.docx.segments.json", "inputs/需求.docx"),
@@ -34,32 +34,32 @@ const RESUME_DETAILS = {
 const note = (over: Partial<SystemNote>): SystemNote => ({ type: "system_note", message_id: "n1", at: "", text: START_TEXT, kind: "task_status", ...over });
 
 describe("折叠成的那一行写什么", () => {
-  it("开始会话、有知识库：几份材料（由别的文件生成的不算）· 几个知识库几份文档 · 完成条件（分母不算暂时不用核对的）· 未解决的问题", () => {
-    expect(statusNoteLine(note({ details: START_DETAILS }))).toBe("助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
+  it("开始会话、有知识库：几份输入资料（由别的文件生成的不算）· 几个知识库几份文档 · 完成条件（分母不算暂时不用核对的）· 未解决的问题", () => {
+    expect(statusNoteLine(note({ details: START_DETAILS }))).toBe("助手开始这条会话时看到的任务状况：2 份输入资料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
   });
 
   it("开始会话、有文件缺失的材料（details.materials.missing）：连它们一起数，与材料卡一致", () => {
     const details = { ...START_DETAILS, materials: { dir: "inputs/", files: [], missing: ["inputs/需求.docx", "inputs/办法.pdf"], citations: [] } };
-    expect(statusNoteLine(note({ details }))).toBe("助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
+    expect(statusNoteLine(note({ details }))).toBe("助手开始这条会话时看到的任务状况：2 份输入资料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
     const mixed = { ...START_DETAILS, materials: { dir: "inputs/", files: FILES, missing: ["inputs/旧稿.md"], citations: [] } };
-    expect(statusNoteLine(note({ details: mixed }))).toBe("助手开始这条会话时看到的任务状况：3 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
+    expect(statusNoteLine(note({ details: mixed }))).toBe("助手开始这条会话时看到的任务状况：3 份输入资料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决");
   });
 
-  it("开始会话、没有知识库文档、还没有材料：不写知识库那一项", () => {
+  it("开始会话、没有知识库文档、还没有输入资料：不写知识库那一项", () => {
     const { knowledge: _, ...rest } = START_DETAILS;
     const details = { ...rest, materials: { dir: "inputs/", files: [] }, conditions_total: 6, conditions_met: 0, conditions_empty: 5, unresolved: 2 };
-    expect(statusNoteLine(note({ details }))).toBe("助手开始这条会话时看到的任务状况：0 份材料 · 完成条件 0/1 · 问题 2 条未解决");
+    expect(statusNoteLine(note({ details }))).toBe("助手开始这条会话时看到的任务状况：0 份输入资料 · 完成条件 0/1 · 问题 2 条未解决");
   });
 
   it("续接有变化：只写不为零的项；新材料只数用户放进来的那几份", () => {
-    expect(statusNoteLine(note({ text: RESUME_TEXT, details: RESUME_DETAILS }))).toBe("助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新材料 1 份");
+    expect(statusNoteLine(note({ text: RESUME_TEXT, details: RESUME_DETAILS }))).toBe("助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新输入资料 1 份");
     expect(statusNoteLine(note({ text: RESUME_TEXT, details: { ...RESUME_DETAILS, added: [], updated: [], deleted: ["UC-009"], new_materials: [] } })))
       .toBe("助手续接这条会话时看到的变化：删除 1 条");
   });
 
   it("续接时选用的知识库变过：末尾加一句；交付物与材料都没有变时只有这一句", () => {
     const knowledge = START_DETAILS.knowledge;
-    expect(statusNoteLine(note({ text: RESUME_TEXT, details: { ...RESUME_DETAILS, knowledge } }))).toBe("助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新材料 1 份、选用的知识库有变化");
+    expect(statusNoteLine(note({ text: RESUME_TEXT, details: { ...RESUME_DETAILS, knowledge } }))).toBe("助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新输入资料 1 份、选用的知识库有变化");
     expect(statusNoteLine(note({ text: RESUME_TEXT, details: { kind: "变化", added: [], updated: [], deleted: [], new_materials: [], knowledge } })))
       .toBe("助手续接这条会话时看到的变化：选用的知识库有变化");
   });
@@ -75,8 +75,8 @@ describe("折叠成的那一行写什么", () => {
 
   it("材料清单没有标出哪些是生成的文件时（取不到 derived_from）照清单的个数写；新材料的清单取不到材料清单时照原样数", () => {
     const bare = FILES.map(({ path, bytes }) => ({ path, bytes }));
-    expect(statusNoteLine(note({ details: { kind: "现状", materials: { files: bare } } }))).toBe("助手开始这条会话时看到的任务状况：6 份材料");
-    expect(statusNoteLine(note({ text: RESUME_TEXT, details: { kind: "变化", new_materials: ["inputs/a.md", "inputs/b.md"] } }))).toBe("助手续接这条会话时看到的变化：新材料 2 份");
+    expect(statusNoteLine(note({ details: { kind: "现状", materials: { files: bare } } }))).toBe("助手开始这条会话时看到的任务状况：6 份输入资料");
+    expect(statusNoteLine(note({ text: RESUME_TEXT, details: { kind: "变化", new_materials: ["inputs/a.md", "inputs/b.md"] } }))).toBe("助手续接这条会话时看到的变化：新输入资料 2 份");
   });
 
   it("哪些折叠：kind 是 task_status 的折叠，是 reply_fallback 的不折叠；没有 kind 的旧数据按文字的开头认", () => {
@@ -107,7 +107,7 @@ describe("对话区里的任务状况消息", () => {
     show([note({ details: START_DETAILS })]);
     const box = screen.getByTestId("system-note");
     const line = screen.getByTestId("system-note-line");
-    expect(box.textContent).toBe("助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决▸");
+    expect(box.textContent).toBe("助手开始这条会话时看到的任务状况：2 份输入资料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决▸");
     expect(line).toHaveAttribute("role", "button");
     expect(line).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByTestId("system-note-full")).toBeNull();
@@ -142,8 +142,8 @@ describe("对话区里的任务状况消息", () => {
     show([note({ details: START_DETAILS }), note({ message_id: "n2", text: RESUME_TEXT, details: RESUME_DETAILS })]);
     const lines = screen.getAllByTestId("system-note-line");
     expect(lines.map((l) => l.textContent)).toEqual([
-      "助手开始这条会话时看到的任务状况：2 份材料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决▸",
-      "助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新材料 1 份▸",
+      "助手开始这条会话时看到的任务状况：2 份输入资料 · 2 个知识库 6 份文档 · 完成条件 1/3 · 问题 0 条未解决▸",
+      "助手续接这条会话时看到的变化：新增 2 条、修改 1 条、新输入资料 1 份▸",
     ]);
     fireEvent.click(lines[1]);
     expect(screen.getAllByTestId("system-note-full").map((f) => f.textContent)).toEqual([`系统说明${RESUME_TEXT}`]);

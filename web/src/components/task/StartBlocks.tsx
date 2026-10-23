@@ -116,7 +116,7 @@ export function FlowCards({ taskId, flows, onOpenWorkItem }: {
             </dl>
             <div className="eg"><b>示例</b>{flow.example}</div>
             <div className="tp-go">
-              {running && <span className="tp-quiet" data-testid="flow-position">{flowPositionLine(flow)}（见上）。一个任务同一时刻只有一条流程工作项。</span>}
+              {running && <span className="tp-quiet" data-testid="flow-position">{flowPositionLine(flow)}（见上）。一个任务实例同一时刻只有一条流程工作项。</span>}
               {running && onOpenWorkItem && (
                 <button className="btn sm" onClick={() => onOpenWorkItem(flow.work_item!.record_id)} data-testid="flow-open-work-item">打开它的会话</button>
               )}

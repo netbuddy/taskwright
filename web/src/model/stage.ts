@@ -18,7 +18,7 @@ export function reportOnlyStation(lamps: readonly Pick<StageLamp, "key">[] | nul
   return !!lamps && lamps.length > 0 && lamps.every((one) => REPORT_ONLY_LAMPS.has(one.key));
 }
 
-/** 所属流程给人看的名字：认得的写中文名（现在只有「需求分析」；早先的键 initial 也是它），认不出的照原样写，没有给的写「（没有记）」。 */
+/** 所属流程给人看的名字：认得的写中文名（需求分析、需求变更、需求再工程；早先的键 initial 是需求分析），认不出的照原样写键，没有给的写「（没有记）」。 */
 export function flowName(flow: string | null | undefined): string {
   // null 是不在任何流程里：单项活动的工作项。早先的后端不给这一项。
   if (flow === null) return "单项活动";
@@ -98,7 +98,7 @@ export const currentActivityText = (activity: PositionKey | string, catalog?: Ac
  */
 export type TopbarActivity = { kind: "plain" | "active" | "idle"; text: string };
 export function topbarActivity(task: { stage?: Pick<StageView, "current" | "activity" | "catalog"> | null }): TopbarActivity {
-  if (!task.stage) return { kind: "plain", text: "这个任务没有阶段" };
+  if (!task.stage) return { kind: "plain", text: "这个任务实例没有阶段" };
   if (isIdle(task.stage)) return { kind: "idle", text: NO_ACTIVITY_TEXT };
   return { kind: "active", text: currentActivityText(stageActivity(task.stage), task.stage.catalog) };
 }

@@ -50,7 +50,7 @@ const version = (no: number, revision: number, at = "2026-10-13T09:00:00") =>
   ({ version_no: no, revision_no: revision, published_at: at, actor: "user" as const, note: null, figure_count: null, figure_pictures: null, has_markdown: true, has_docx: true });
 
 const card = (keys: string[]): ConversationMessage => ({ type: "assistant_reply", session_id: "s", message_id: "a1", at: "", text: "……", informs: [],
-  act: { kind: "choose", text: "这个任务是否已经完成？", options: keys.map((key) => ({ key, text: key })) } } as unknown as ConversationMessage);
+  act: { kind: "choose", text: "这个任务实例是否已经完成？", options: keys.map((key) => ({ key, text: key })) } } as unknown as ConversationMessage);
 const said: ConversationMessage = { type: "user_message", session_id: "s", message_id: "u1", at: "", text: "我选：已完成，发布版本", origin: "card_choice" } as unknown as ConversationMessage;
 
 describe("提示条显示的条件与问句", () => {

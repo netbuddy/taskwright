@@ -52,14 +52,14 @@ test("没有结果的各种工具都不写成做完了，沿用各自「没有�
     call("c9", "search_knowledge", { query: "罚款" }),
   )];
   const texts = stagesOf(entries, nothing);
-  assert.deepEqual(texts, ["读材料《材料.md》没有读成", "看目录没有看成", "查看条目 UC-002 没有成", "查看任务状态没有成", "请评审者评审没有做成",
+  assert.deepEqual(texts, ["读输入资料《材料.md》没有读成", "看目录没有看成", "查看条目 UC-002 没有成", "查看任务状态没有成", "请评审者评审没有做成",
     "发布版本没有做成", "组织回复没有做成", "调用 grep 没有做成", "查找知识库没有成"]);
   assert.equal(stagesOf([userEntry, aborted(call("c6", "publish_version"))], null)[0], "发布版本没有做完");
   assert.equal(stagesOf([userEntry, aborted(call("c6", "publish_version"))], { ...nothing, completed: (id) => id === "c6" })[0], "发布了一个版本");
   for (const text of texts) assert.doesNotMatch(text, /None/);
   // 由 Word 材料生成的文件写 Word 文件的本名；被停下的是看分段清单那一步时照「看」的说法。
   assert.deepEqual(stagesOf([userEntry, aborted(call("c1", "read", { path: "inputs/材料.docx.md" }), call("c2", "read", { path: "inputs/材料.docx.segments.json" }))], nothing),
-    ["读材料《材料.docx》没有读成", "看材料《材料.docx》的分段清单没有看成"]);
+    ["读输入资料《材料.docx》没有读成", "看输入资料《材料.docx》的分段清单没有看成"]);
 });
 
 test("callFacts 从任务库按调用编号查出修订号与碰到的条目；查不到、库不在时为空", () => {

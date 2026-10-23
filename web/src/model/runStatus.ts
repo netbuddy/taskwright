@@ -5,7 +5,7 @@ import type { RunStatus } from "../api/types";
 
 /** 工具的叫法：助手常用的几个工具写成中文，别的照原名。 */
 const TOOL_NAMES: Record<string, string> = {
-  save_revision: "保存修订", reply: "回复", get_item: "查看", get_task_status: "查询任务状态", read: "读文件", grep: "搜索材料", ls: "列目录",
+  save_revision: "保存修订", reply: "回复", get_item: "查看", get_task_status: "查询任务状态", read: "读文件", grep: "搜索输入资料", ls: "列目录",
   find: "找文件", save_diagram: "保存图", search_knowledge: "查知识库", request_review: "请求评审", publish_version: "发布版本",
 };
 export const toolName = (name: string | null): string => (name ? TOOL_NAMES[name] ?? name : "工具");

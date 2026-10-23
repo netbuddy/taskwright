@@ -150,7 +150,7 @@ export function readPastEnd(text: string): boolean {
 const ARGS_INVALID = /^Validation failed for tool "/;
 export const ARGS_INVALID_REPEAT = 3;
 export const ARGS_INVALID_TEXT = "助手写的参数不合格式，已自行改正";
-export const ARGS_INVALID_REPEATED_TEXT = "模型多次写错参数格式，建议换模型或缩短材料";
+export const ARGS_INVALID_REPEATED_TEXT = "模型多次写错参数格式，建议换模型或缩短输入资料";
 
 /** 一次出错的工具调用是不是 pi 的参数校验失败。text 是工具结果的正文。 */
 export function argsInvalid(text: string): boolean {
@@ -199,7 +199,7 @@ export function readKind(path: string, definition: Dict): [string, string, DocxP
   if (path.includes(".pi/skills/") || path.endsWith("SKILL.md")) return ["方法说明", "方法说明", null];
   if ((or(definition["领域规矩"], []) as string[]).some((r) => path.endsWith(r) || path.includes(r))) return ["领域规矩", `《${name}》`, part];
   if (path.includes("task-definitions/")) return ["任务定义", "任务定义", null];
-  if (path.includes(`/${materials}`) || path.startsWith(materials)) return ["材料", `《${name}》`, part];
+  if (path.includes(`/${materials}`) || path.startsWith(materials)) return ["输入资料", `《${name}》`, part];
   return ["文件", `《${name}》`, part];
 }
 
@@ -456,7 +456,7 @@ export function stages(calls: Dict[], definition: Dict) {
         lastKey = null;
         continue;
       }
-      if (lastKey === key && ["材料", "领域规矩", "文件"].includes(kind)) {
+      if (lastKey === key && ["输入资料", "领域规矩", "文件"].includes(kind)) {
         // 同一份只写一次：分几次读同一份材料，或者先看分段清单再读正文，都还是一个名字。
         const last = out[out.length - 1];
         if (!last.names.includes(name)) last.names.push(name);

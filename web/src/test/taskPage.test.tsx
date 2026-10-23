@@ -1,5 +1,5 @@
 // 任务起点页：任务头、需求资产现状六格、工作流程（三步一行、处境标签、流程卡）、单项活动、会话清单、材料卡、选用的知识库；
-// 从任务列表打开一个任务时去哪里。随助手做完一轮重读见 taskPageEvents.test.tsx。完成条件的句子（model/completionLines.ts）也在这里测。
+// 从任务实例列表打开一个任务实例时去哪里。随助手做完一轮重读见 taskPageEvents.test.tsx。完成条件的句子（model/completionLines.ts）也在这里测。
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -95,12 +95,12 @@ const text = (el: Element | null) => (el?.textContent ?? "").replace(/\s+/g, " "
 const cell = (key: string, name: string, count: number, unit: string, shown: string, note = "", produced_by: string[] = []): AssetCell =>
   ({ key, name, count, unit, text: shown, note, produced_by });
 const EMPTY_ASSETS = [
-  cell("materials", "材料与证据", 0, "份", "0 份"), cell("description", "业务说明", 0, "节", "0 节", "", ["核读材料", "澄清", "整理建模", "编写文档"]),
+  cell("materials", "输入资料", 0, "份", "0 份"), cell("description", "业务说明", 0, "节", "0 节", "", ["核读材料", "澄清", "整理建模", "编写文档"]),
   cell("models", "分析模型", 0, "张", "0 张", "", ["整理建模"]), cell("items", "需求条目", 0, "条", "0 条", "", ["写条目", "评审确认"]),
   cell("review", "评审与确认", 0, "轮", "未评审", "", ["评审确认"]), cell("versions", "文档与版本", 0, "版", "未发布", "", ["编写文档", "发布"]),
 ];
 const FILLED_ASSETS = [
-  cell("materials", "材料与证据", 2, "份", "2 份", "均有引用"), cell("description", "业务说明", 9, "节", "9 节", "1 处待澄清", ["核读材料", "澄清", "整理建模", "编写文档"]),
+  cell("materials", "输入资料", 2, "份", "2 份", "均有引用"), cell("description", "业务说明", 9, "节", "9 节", "1 处待澄清", ["核读材料", "澄清", "整理建模", "编写文档"]),
   cell("models", "分析模型", 4, "张", "4 张", "1 未查看", ["整理建模"]), cell("items", "需求条目", 6, "条", "6 条", "6 未读 · 1 待核实", ["写条目", "评审确认"]),
   cell("review", "评审与确认", 0, "轮", "未评审", "", ["评审确认"]), cell("versions", "文档与版本", 0, "版", "未发布", "", ["编写文档", "发布"]),
 ];
@@ -114,13 +114,13 @@ function activityOf(key: string, name: string, over: Partial<CatalogActivity> = 
 const NODES = [kind("reading", "核读材料"), kind("clarifying", "澄清"), kind("writing", "写条目"), kind("publish", "发布")];
 function flowOf(key: string, name: string, over: Partial<CatalogFlow> = {}): CatalogFlow {
   return {
-    key, name, purpose: `${name}的目的。`, applies: `${name}的适用情形。`, nodes: NODES, inputs: "项目材料（可选）、目标系统描述",
+    key, name, purpose: `${name}的目的。`, applies: `${name}的适用情形。`, nodes: NODES, inputs: "输入资料（可选）、目标系统描述",
     prerequisite_text: "无前置条件；可从空白开始。", example: `${name}的经过。`, enabled: true, state: "可以启动", recommended: false, at: null, start: "clarifying", cases: [], ...over,
   };
 }
 const CHANGE = flowOf("change", "需求变更", { enabled: false, state: "还没有已发布的版本", prerequisite_text: "前置条件：存在已发布的版本。", start: null, cases: ["已发布过，现在要改"] });
 const PUBLISH = activityOf("publish", "发布", { mode: "user_only", mode_name: "仅限用户发起", enabled: false, state: "此版本尚未提供", prerequisite_text: "前置条件：评审无未处理发现，确认记录待处理为 0。" });
-const TEXTS = { lead: "本任务用于编制并持续维护「退款需求走查」的需求规格说明。" };
+const TEXTS = { lead: "本任务实例用于编制并持续维护「退款需求走查」的需求规格说明。" };
 const IDLE_ACTIVITY = { kind: "idle" as const, key: "idle" as const, name: "空闲", ordinal: null, flow: "analysis", moved_by: null, moved_at: null, reason: null };
 /** 任务状况里的一个工作项。 */
 function workItem(recordId: number, over: Partial<WorkItemView> = {}): WorkItemView {
@@ -142,11 +142,11 @@ function statusOf(over: Partial<TaskStatusView> = {}): TaskStatusView {
     catalog: {
       flows: [flowOf("analysis", "需求分析", { recommended: true, cases: ["我有调研材料", "我只有口头想法"] }), CHANGE],
       activities: [
-        activityOf("reading", "核读材料", { enabled: false, state: "还没有项目材料", prerequisite_text: "前置条件：至少一份项目材料。" }),
+        activityOf("reading", "核读材料", { enabled: false, state: "还没有输入资料", prerequisite_text: "前置条件：至少一份输入资料。" }),
         activityOf("clarifying", "澄清", { mode: "dialogue", mode_name: "逐项对话", prerequisite_text: "无前置条件；可从空白开始。", writes: [kind("description", "业务说明")] }),
         activityOf("writing", "写条目", { enabled: false, state: "业务说明还没有内容；有 1 张分析模型还没有查看", prerequisite_text: "前置条件：业务说明至少一节，分析模型均已查看。" }),
         PUBLISH,
-        activityOf("parse_spec", "逆向解析", { alone: false, prerequisite_text: "前置条件：至少一份项目材料。" }),
+        activityOf("parse_spec", "逆向解析", { alone: false, prerequisite_text: "前置条件：至少一份输入资料。" }),
       ],
     },
     ...over,
@@ -157,7 +157,7 @@ describe("任务头", () => {
   it("写面包屑、任务类型与时刻一行、任务名；外框是工作视图的顶栏加导航条，顶栏写任务名与「任务起点」，不写会话名", async () => {
     page(detail({ domain_tag: "电商售后", sessions: [session("S1", "第一句", "2026-09-28T18:02:00"), session("S2", "第二句", "2026-09-29T10:02:00")] }));
     const root = await ready();
-    expect(text(root.querySelector(".tp-crumb"))).toBe("任务›退款需求走查");
+    expect(text(root.querySelector(".tp-crumb"))).toBe("任务实例›退款需求走查");
     expect(root.querySelector(".tp-crumb a")).toHaveAttribute("href", "#/tasks");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("退款需求走查");
     expect(screen.getByTestId("task-meta").textContent).toBe("任务类型：需求工程 · 电商售后 · 创建于 2026-09-28 17:49，最近一次活动在 2026-09-29 10:02。");
@@ -170,7 +170,7 @@ describe("任务头", () => {
     expect(frame.querySelector(".chat")).toBeNull();
     expect(screen.queryByRole("button", { name: "生成文档" })).toBeNull();
     expect(screen.queryByRole("button", { name: /新建会话/ })).toBeNull();
-    // 左边导航栏的会话一段列出这个任务的会话（按建立时间倒序；这一页没有当前会话），点一条进它的工作台；顶栏没有「会话 ▾」菜单。
+    // 左边导航栏的会话一段列出这个任务实例的会话（按建立时间倒序；这一页没有当前会话），点一条进它的工作台；顶栏没有「会话 ▾」菜单。
     expect(screen.queryByTestId("session-menu-button")).toBeNull();
     expect(screen.queryByTestId("nav-current-session")).toBeNull();
     const rows = screen.getAllByTestId("nav-session");
@@ -214,7 +214,7 @@ describe("起点页：空任务", () => {
     page(detail(), info, statusOf());
     await ready();
     expect(await screen.findByTestId("task-state")).toHaveTextContent("尚无需求资产");
-    expect(screen.getByTestId("task-lead")).toHaveTextContent("本任务用于编制并持续维护「退款需求走查」的需求规格说明。");
+    expect(screen.getByTestId("task-lead")).toHaveTextContent("本任务实例用于编制并持续维护「退款需求走查」的需求规格说明。");
     expect([screen.queryByTestId("start-guide"), screen.queryByTestId("start-cases"), screen.queryByTestId("guide-start")]).toEqual([null, null, null]);
     expect(text(screen.getByTestId("start-steps-line"))).toBe("选一条流程 › 提供输入 › 由助手推进，每一步由你确认");
     // 处境标签按流程的先后、每条流程声明的 cases 的先后。
@@ -223,7 +223,7 @@ describe("起点页：空任务", () => {
     expect(screen.queryByTestId("work-items")).toBeNull();
     const cells = [...screen.getByTestId("asset-cells").querySelectorAll(".tp-cell")];
     expect(cells.map((one) => [text(one.querySelector(".n")), text(one.querySelector(".v")), text(one.querySelector(".w"))])).toEqual([
-      ["材料与证据", "0 份", "来源：上传"], ["业务说明", "0 节", "核读材料、澄清、整理建模、编写文档"], ["分析模型", "0 张", "整理建模"],
+      ["输入资料", "0 份", "来源：上传"], ["业务说明", "0 节", "核读材料、澄清、整理建模、编写文档"], ["分析模型", "0 张", "整理建模"],
       ["需求条目", "0 条", "写条目、评审确认"], ["评审与确认", "未评审", "评审确认"], ["文档与版本", "未发布", "编写文档、发布"]]);
     expect(cells.every((one) => one.querySelector(".v")!.classList.contains("zero") && one.querySelector(".s") === null)).toBe(true);
   });
@@ -234,7 +234,7 @@ describe("起点页：空任务", () => {
     const analysis = await screen.findByTestId("flow-analysis");
     expect(analysis).toHaveClass("rec");
     expect(text(analysis.querySelector(".t"))).toBe("需求分析推荐");
-    expect([...analysis.querySelectorAll(".tp-kv dd")].map(text)).toEqual(["需求分析的适用情形。", "核读材料 › 澄清 › 写条目 › 发布", "项目材料（可选）、目标系统描述"]);
+    expect([...analysis.querySelectorAll(".tp-kv dd")].map(text)).toEqual(["需求分析的适用情形。", "核读材料 › 澄清 › 写条目 › 发布", "输入资料（可选）、目标系统描述"]);
     // 卡上第一行是「适用」，目的排在它后面。
     expect(text(analysis.querySelector("dl dt"))).toBe("适用");
     expect(analysis.querySelector("dl")!.compareDocumentPosition(analysis.querySelector("p")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -390,7 +390,7 @@ describe("起点页：有内容的任务", () => {
     expect(section.closest(".tp-sec")!.querySelector("h2")).toHaveTextContent("工作项");
     const cards = [...section.querySelectorAll(".tp-run")];
     expect(cards.map((one) => text(one.querySelector(".t")))).toEqual([
-      "需求分析工作流程10-08 启动 · 本任务唯一的流程工作项", "澄清单项活动10-11 启动", "整理建模单项活动10-13 启动"]);
+      "需求分析工作流程10-08 启动 · 本任务实例唯一的流程工作项", "澄清单项活动10-11 启动", "整理建模单项活动10-13 启动"]);
     expect([text(cards[0].querySelector(".pos")), text(cards[0].querySelector(".scope")), text(cards[0].querySelector(".sess"))])
       .toEqual(["现在在第 4 站「写条目」。", "范围覆盖借阅主流程。", `2 条会话 · 最近 ${formatTimeShort("2026-10-13T09:10:00")}「需求分析 · 写条目」`]);
     expect([cards[1].querySelector(".pos"), text(cards[1].querySelector(".scope"))]).toEqual([null, "范围只问续借规则。"]);
@@ -452,7 +452,7 @@ describe("起点页：有内容的任务", () => {
     await ready();
     const analysis = await screen.findByTestId("flow-analysis");
     expect([analysis.tagName, analysis.classList.contains("off"), analysis.classList.contains("now"), text(analysis.querySelector(".t"))]).toEqual(["DIV", false, true, "需求分析已在进行"]);
-    expect(text(screen.getByTestId("flow-position"))).toBe("已在进行，位于第 3 站「写条目」（见上）。一个任务同一时刻只有一条流程工作项。");
+    expect(text(screen.getByTestId("flow-position"))).toBe("已在进行，位于第 3 站「写条目」（见上）。一个任务实例同一时刻只有一条流程工作项。");
     expect(analysis.querySelector(".tp-arrow")).toBeNull();
     expect(analysis.textContent).not.toMatch(/前置条件未满足|无前置条件/);
     fireEvent.click(screen.getByTestId("flow-open-work-item"));
@@ -512,7 +512,7 @@ describe("起点页：有内容的任务", () => {
   });
 });
 
-describe("打开一个任务时去哪里", () => {
+describe("打开一个任务实例时去哪里", () => {
   const withSections = (count: number) => ({ ok: true, status: statusOf({ assets: EMPTY_ASSETS.map((one) => (one.key === "description" ? cell("description", "业务说明", count, "节", `${count} 节`) : one)) }) });
 
   it("业务说明已经有内容、又有会话：进最近活动的那条会话的工作台；与有没有活动在进行无关", async () => {
@@ -532,7 +532,7 @@ describe("打开一个任务时去哪里", () => {
     vi.spyOn(api, "taskStatus").mockResolvedValue(withSections(2));
     sessions.mockResolvedValue([]);
     expect(await taskEntryHref("TASK-P")).toBe("#/tasks/TASK-P");
-    vi.spyOn(api, "taskStatus").mockRejectedValue(new ApiError("not_found", "没有这个任务。", 404));
+    vi.spyOn(api, "taskStatus").mockRejectedValue(new ApiError("not_found", "没有这个任务实例。", 404));
     expect(await taskEntryHref("TASK-P")).toBe("#/tasks/TASK-P");
     vi.spyOn(api, "taskStatus").mockResolvedValue({ ok: true, status: null });
     expect(await taskEntryHref("TASK-P")).toBe("#/tasks/TASK-P");
@@ -710,13 +710,13 @@ describe("材料", () => {
   it("点「删除」先弹确认，写明删除之后助手不会再看到它；确定之后调删除接口并重读任务", async () => {
     const calls = page(detail({ materials }));
     fireEvent.click(await screen.findByTestId("material-delete"));
-    expect(await screen.findByText("删除材料《补充说明.docx》？")).toBeInTheDocument();
-    expect(screen.getByText("删除之后这份材料就没有了，助手下次开始会话时不会再看到它。")).toBeInTheDocument();
+    expect(await screen.findByText("删除输入资料《补充说明.docx》？")).toBeInTheDocument();
+    expect(screen.getByText("删除之后这份输入资料就没有了，助手下次开始会话时不会再看到它。")).toBeInTheDocument();
     expect(calls.remove).not.toHaveBeenCalled();
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
     await waitFor(() => expect(calls.remove).toHaveBeenCalledWith("TASK-P", "inputs/补充说明.docx"));
     await waitFor(() => expect(calls.get).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("已删除材料《补充说明.docx》。")).toBeInTheDocument();
+    expect(await screen.findByText("已删除输入资料《补充说明.docx》。")).toBeInTheDocument();
   });
 
   it("删除请求还没有回来时，确认框的「删除」转圈、「取消」不可点，再点「删除」不会发第二次请求；回来之后照常提示并重读任务", async () => {
@@ -724,7 +724,7 @@ describe("材料", () => {
     let finish: (value: { ok: true; path: string }) => void = () => {};
     calls.remove.mockImplementation(() => new Promise((ok) => { finish = ok; }));
     fireEvent.click(await screen.findByTestId("material-delete"));
-    await screen.findByText("删除材料《补充说明.docx》？");
+    await screen.findByText("删除输入资料《补充说明.docx》？");
     const ok = () => document.querySelector(".ant-modal .ant-btn-primary") as HTMLButtonElement;
     const cancel = () => document.querySelector(".ant-modal .ant-btn-default") as HTMLButtonElement;
     fireEvent.click(ok());
@@ -734,21 +734,21 @@ describe("材料", () => {
     fireEvent.click(ok());
     fireEvent.click(cancel());
     expect(calls.remove).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("删除材料《补充说明.docx》？")).toBeInTheDocument();
+    expect(screen.getByText("删除输入资料《补充说明.docx》？")).toBeInTheDocument();
     finish({ ok: true, path: "inputs/补充说明.docx" });
-    expect(await screen.findByText("已删除材料《补充说明.docx》。")).toBeInTheDocument();
+    expect(await screen.findByText("已删除输入资料《补充说明.docx》。")).toBeInTheDocument();
     await waitFor(() => expect(calls.get).toHaveBeenCalledTimes(2));
     expect(calls.remove).toHaveBeenCalledTimes(1);
   });
 
   it("删除被后端拒绝（材料刚进入了对话）：红色提示照写后端的原话，并重读任务，「删除」随新的数据消失", async () => {
     const calls = page(detail({ materials }));
-    calls.remove.mockRejectedValue(new ApiError("rejected", "这份材料已经进入了对话，不能删除。", 422));
+    calls.remove.mockRejectedValue(new ApiError("rejected", "这份输入资料已经进入了对话，不能删除。", 422));
     fireEvent.click(await screen.findByTestId("material-delete"));
-    await screen.findByText("删除材料《补充说明.docx》？");
+    await screen.findByText("删除输入资料《补充说明.docx》？");
     calls.get.mockResolvedValue(detail({ materials: materials.map((m) => ({ ...m, deletable: false })) }));
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
-    expect(await screen.findByText("这份材料已经进入了对话，不能删除。")).toBeInTheDocument();
+    expect(await screen.findByText("这份输入资料已经进入了对话，不能删除。")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByTestId("material-delete")).toBeNull());
   });
 
@@ -765,7 +765,7 @@ describe("材料", () => {
     expect(off).toHaveTextContent("替换");
     expect(off).toHaveClass("off");
     expect(off).toHaveAttribute("aria-disabled", "true");
-    expect(off).toHaveAttribute("title", "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。");
+    expect(off).toHaveAttribute("title", "这份输入资料已经进入了对话，不能替换；请上传一份新的，并告诉助手以新的为准。");
     fireEvent.click(off);
     expect(document.querySelector(".ant-modal")).toBeNull();
     expect(calls.replace).not.toHaveBeenCalled();
@@ -777,12 +777,12 @@ describe("材料", () => {
     const calls = page(detail({ materials }));
     const file = newer();
     await pickReplacement(file);
-    expect(await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？")).toBeInTheDocument();
-    expect(screen.getByText("用新文件替换这份材料，旧文件就没有了；助手下次开始会话时看到的是新文件。")).toBeInTheDocument();
+    expect(await screen.findByText("用《补充说明第二版.docx》替换输入资料《补充说明.docx》？")).toBeInTheDocument();
+    expect(screen.getByText("用新文件替换这份输入资料，旧文件就没有了；助手下次开始会话时看到的是新文件。")).toBeInTheDocument();
     expect(calls.replace).not.toHaveBeenCalled();
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
     await waitFor(() => expect(calls.replace).toHaveBeenCalledWith("TASK-P", "inputs/补充说明.docx", file));
-    expect(await screen.findByText("已把材料《补充说明.docx》替换成《补充说明第二版.docx》。")).toBeInTheDocument();
+    expect(await screen.findByText("已把输入资料《补充说明.docx》替换成《补充说明第二版.docx》。")).toBeInTheDocument();
     await waitFor(() => expect(calls.get).toHaveBeenCalledTimes(2));
     expect(calls.material).not.toHaveBeenCalled();
   });
@@ -790,7 +790,7 @@ describe("材料", () => {
   it("在确认框里点「取消」不调替换接口，也不重读任务", async () => {
     const calls = page(detail({ materials }));
     await pickReplacement(newer());
-    await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？");
+    await screen.findByText("用《补充说明第二版.docx》替换输入资料《补充说明.docx》？");
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-default")!);
     await new Promise((ok) => setTimeout(ok, 50));
     expect(calls.replace).not.toHaveBeenCalled();
@@ -801,9 +801,9 @@ describe("材料", () => {
     const calls = page(detail({ materials }));
     calls.replace.mockResolvedValue({ ok: true, path: "inputs/补充说明.docx", replaced: "inputs/补充说明.docx" });
     await pickReplacement(new File(["y"], "补充说明.docx"));
-    await screen.findByText("用《补充说明.docx》替换材料《补充说明.docx》？");
+    await screen.findByText("用《补充说明.docx》替换输入资料《补充说明.docx》？");
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
-    expect(await screen.findByText("已替换材料《补充说明.docx》。")).toBeInTheDocument();
+    expect(await screen.findByText("已替换输入资料《补充说明.docx》。")).toBeInTheDocument();
     expect(calls.replace).toHaveBeenCalledTimes(1);
   });
 
@@ -824,7 +824,7 @@ describe("材料", () => {
     let finish: (value: { ok: true; path: string; replaced: string }) => void = () => {};
     calls.replace.mockImplementation(() => new Promise((ok) => { finish = ok; }));
     await pickReplacement(newer());
-    await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？");
+    await screen.findByText("用《补充说明第二版.docx》替换输入资料《补充说明.docx》？");
     const ok = () => document.querySelector(".ant-modal .ant-btn-primary") as HTMLButtonElement;
     const cancel = () => document.querySelector(".ant-modal .ant-btn-default") as HTMLButtonElement;
     fireEvent.click(ok());
@@ -834,18 +834,18 @@ describe("材料", () => {
     fireEvent.click(cancel());
     expect(calls.replace).toHaveBeenCalledTimes(1);
     finish({ ok: true, path: "inputs/补充说明第二版.docx", replaced: "inputs/补充说明.docx" });
-    expect(await screen.findByText("已把材料《补充说明.docx》替换成《补充说明第二版.docx》。")).toBeInTheDocument();
+    expect(await screen.findByText("已把输入资料《补充说明.docx》替换成《补充说明第二版.docx》。")).toBeInTheDocument();
     expect(calls.replace).toHaveBeenCalledTimes(1);
   });
 
   it("替换被后端拒绝（材料刚进入了对话）：红色提示照写后端的原话，并重读任务，「替换」随新的数据变灰", async () => {
     const calls = page(detail({ materials }));
-    calls.replace.mockRejectedValue(new ApiError("rejected", "这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。", 422));
+    calls.replace.mockRejectedValue(new ApiError("rejected", "这份输入资料已经进入了对话，不能替换；请上传一份新的，并告诉助手以新的为准。", 422));
     await pickReplacement(newer());
-    await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？");
+    await screen.findByText("用《补充说明第二版.docx》替换输入资料《补充说明.docx》？");
     calls.get.mockResolvedValue(detail({ materials: materials.map((m) => ({ ...m, deletable: false })) }));
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
-    expect(await screen.findByText("这份材料已经进入了对话，不能替换；请上传一份新材料，并告诉助手以新的为准。")).toBeInTheDocument();
+    expect(await screen.findByText("这份输入资料已经进入了对话，不能替换；请上传一份新的，并告诉助手以新的为准。")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByTestId("material-replace")).toBeNull());
     expect(screen.getAllByTestId("material-replace-off")).toHaveLength(2);
   });
@@ -867,9 +867,9 @@ describe("材料", () => {
     calls.replace.mockResolvedValue({ ok: true, path: "inputs/补充说明.docx", replaced: "inputs/补充说明.docx" });
     const raw = await cached();
     await pickReplacement(new File(["y"], "补充说明.docx"));
-    await screen.findByText("用《补充说明.docx》替换材料《补充说明.docx》？");
+    await screen.findByText("用《补充说明.docx》替换输入资料《补充说明.docx》？");
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
-    await screen.findByText("已替换材料《补充说明.docx》。");
+    await screen.findByText("已替换输入资料《补充说明.docx》。");
     expect(docxEntry("TASK-P", "inputs/补充说明.docx").status).toBe("loading");
     await waitFor(() => expect(raw).toHaveBeenCalledTimes(2));
   });
@@ -878,14 +878,14 @@ describe("材料", () => {
     page(detail({ materials }));
     const raw = await cached();
     fireEvent.click(await screen.findByTestId("material-delete"));
-    await screen.findByText("删除材料《补充说明.docx》？");
+    await screen.findByText("删除输入资料《补充说明.docx》？");
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
-    await screen.findByText("已删除材料《补充说明.docx》。");
+    await screen.findByText("已删除输入资料《补充说明.docx》。");
     expect(docxEntry("TASK-P", "inputs/补充说明.docx").status).toBe("loading");
     await waitFor(() => expect(raw).toHaveBeenCalledTimes(2));
   });
 
-  it("PDF 材料读过的那一份同样丢掉：替换成功之后，被替换的与换上来的两个路径上的都丢", async () => {
+  it("PDF 输入资料读过的那一份同样丢掉：替换成功之后，被替换的与换上来的两个路径上的都丢", async () => {
     // 缓存按「任务加路径」记，不看扩展名，材料卡也不分类型都丢；这里沿用上面 Word 的那两个路径。
     const calls = page(detail({ materials }));
     calls.replace.mockResolvedValue({ ok: true, path: "inputs/补充说明第二版.docx", replaced: "inputs/补充说明.docx" });
@@ -896,24 +896,24 @@ describe("材料", () => {
     await waitFor(() => expect(paths.map((path) => pdfBytesEntry("TASK-P", path).status)).toEqual(["ready", "ready", "ready"]));
     const before = paths.map((path) => pdfBytesEntry("TASK-P", path));
     await pickReplacement(newer());
-    await screen.findByText("用《补充说明第二版.docx》替换材料《补充说明.docx》？");
+    await screen.findByText("用《补充说明第二版.docx》替换输入资料《补充说明.docx》？");
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
-    await screen.findByText("已把材料《补充说明.docx》替换成《补充说明第二版.docx》。");
+    await screen.findByText("已把输入资料《补充说明.docx》替换成《补充说明第二版.docx》。");
     const after = paths.map((path) => pdfBytesEntry("TASK-P", path));
     expect(after.map((entry, i) => entry === before[i])).toEqual([false, false, true]);
     resetPdfStore();
   });
 
-  it("PDF 材料读过的那一份同样丢掉：删除成功之后那一份丢", async () => {
+  it("PDF 输入资料读过的那一份同样丢掉：删除成功之后那一份丢", async () => {
     page(detail({ materials }));
     vi.spyOn(api, "materialRaw").mockResolvedValue(new ArrayBuffer(4));
     await ready();
     pdfBytesEntry("TASK-P", "inputs/补充说明.docx");
     await waitFor(() => expect(pdfBytesEntry("TASK-P", "inputs/补充说明.docx").status).toBe("ready"));
     fireEvent.click(await screen.findByTestId("material-delete"));
-    await screen.findByText("删除材料《补充说明.docx》？");
+    await screen.findByText("删除输入资料《补充说明.docx》？");
     fireEvent.click(document.querySelector(".ant-modal .ant-btn-primary")!);
-    await screen.findByText("已删除材料《补充说明.docx》。");
+    await screen.findByText("已删除输入资料《补充说明.docx》。");
     expect(pdfBytesEntry("TASK-P", "inputs/补充说明.docx").status).toBe("loading");
     resetPdfStore();
   });
@@ -937,7 +937,7 @@ describe("材料", () => {
   it("没有材料时写一句话，不画空表；上传区的说明只说材料", async () => {
     page();
     await ready();
-    expect(screen.getByText("这个任务还没有材料。")).toBeInTheDocument();
+    expect(screen.getByText("这个任务实例还没有输入资料。")).toBeInTheDocument();
     expect(document.querySelector(".tp-mtable")).toBeNull();
     await waitFor(() => expect(screen.getByTestId("upload-hint").textContent).toMatch(/^把文件拖到这里，或者点这里选择文件。只收 \.md、\.txt 与 Word 的 \.docx，单个不超过 /));
     expect(screen.getByTestId("upload-hint").textContent).not.toContain("知识库");
@@ -976,7 +976,7 @@ describe("选用的知识库", () => {
     const picker = await screen.findByTestId("kb-picker");
     const boxes = within(picker).getAllByRole("checkbox") as HTMLInputElement[];
     expect(boxes.map((b) => [b.checked, b.disabled])).toEqual([[true, false], [false, false], [true, false]]);
-    expect(picker.textContent).toContain("城北区图书馆的资料5 份文档 · 没有任务在用");
+    expect(picker.textContent).toContain("城北区图书馆的资料5 份文档 · 没有任务实例在用");
     fireEvent.click(boxes[1]);
     fireEvent.click(boxes[0]);
     fireEvent.click(within(picker).getByTestId("kb-pick-ok"));
@@ -988,7 +988,7 @@ describe("一个知识库都没有选用", () => {
   it("任务页的知识库卡写明还没有选用、助手查不到参考资料，个数是 0", () => {
     render(<AntApp><TaskKnowledgeCard libraries={[]} selected={[]} readOnly={false} onChange={async () => true} /></AntApp>);
     expect(screen.getByTestId("kb-count").textContent).toBe("0 个");
-    expect(screen.getByTestId("kb-none").textContent).toBe("这个任务还没有选用知识库，助手查不到参考资料。");
+    expect(screen.getByTestId("kb-none").textContent).toBe("这个任务实例还没有选用知识库，助手查不到参考资料。");
   });
 });
 

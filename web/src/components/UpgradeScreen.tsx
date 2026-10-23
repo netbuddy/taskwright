@@ -66,9 +66,9 @@ export function UpgradeScreen({ onContinue }: { onContinue: () => void }) {
         {!view && !error && <span>正在查看这台电脑上的数据……</span>}
         {error && <p className="upg-err" data-testid="upgrade-error">{error} <a role="button" onClick={load}>再看一次</a></p>}
         {view?.state === "pending" && <>
-          <p>这台电脑上有上一版留下的数据，要先升级到现在的格式才能接着用。升级不改动任务的内容。</p>
+          <p>这台电脑上有上一版留下的数据，要先升级到现在的格式才能接着用。升级不改动任务实例的内容。</p>
           <ul className="upg-what" data-testid="upgrade-what">
-            {view.tasks.length > 0 && <li>要升级的任务有 {view.tasks.length} 个：{taskNames(view)}。</li>}
+            {view.tasks.length > 0 && <li>要升级的任务实例有 {view.tasks.length} 个：{taskNames(view)}。</li>}
             {view.service && <li>任务登记要升级。</li>}
             <li>知识库不需要升级。</li>
             <li>升级之前会先备份，备份放在 <code>{view.backup_dir}</code>。</li>
@@ -83,7 +83,7 @@ export function UpgradeScreen({ onContinue }: { onContinue: () => void }) {
           {view.progress?.current && <span data-testid="upgrade-current">{view.progress.current}……</span>}
         </>}
         {view?.state === "done" && report && report.failed > 0 && <>
-          <p data-testid="upgrade-result">升级做完了：{report.succeeded} 个任务做成了，{report.failed} 个没有做成。没有做成的任务原样没动，在任务列表里标着「需要处理」。</p>
+          <p data-testid="upgrade-result">升级做完了：{report.succeeded} 个任务实例做成了，{report.failed} 个没有做成。没有做成的任务实例原样没动，在任务实例列表里标着「需要处理」。</p>
           <pre className="upg-report" data-testid="upgrade-report">{report.text}</pre>
           <Button type="primary" onClick={onContinue} data-testid="upgrade-continue">继续使用</Button>
         </>}

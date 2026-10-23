@@ -72,7 +72,7 @@ export function startSubtitle(target: StartTarget): string {
   const start = flow.nodes.find((one) => one.key === flow.start);
   if (!start) return "";
   const first = flow.nodes[0];
-  return first && first.key !== start.key ? `从「${start.name}」开始；上传项目材料后从「${first.name}」开始` : `从「${start.name}」开始`;
+  return first && first.key !== start.key ? `从「${start.name}」开始；上传输入资料后从「${first.name}」开始` : `从「${start.name}」开始`;
 }
 
 /** 主按钮上的字：「启动某项」。 */
@@ -104,7 +104,7 @@ export function inputSlots(target: StartTarget): FlowSlot[] {
  */
 export function missingInput(target: StartTarget, blocks: InputBlocks, assets: AssetCell[] | undefined, description: string): string | null {
   if (target.kind !== "flow" || !blocks.description) return null;
-  return assetCount(assets, "materials") === 0 && description.trim() === "" ? "请先上传项目材料，或填写目标系统描述。" : null;
+  return assetCount(assets, "materials") === 0 && description.trim() === "" ? "请先上传输入资料，或填写目标系统描述。" : null;
 }
 
 /** 启动之后替用户发的第一句话：写了目标系统描述就是那段描述，没有写是这项活动的那句固定的话。 */

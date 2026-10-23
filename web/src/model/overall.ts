@@ -218,7 +218,7 @@ export function sourceShortText(source: Pick<Source, "kind" | "locator" | "excer
   const quote = source.excerpt.length > 36 ? `${source.excerpt.slice(0, 36)}…` : source.excerpt;
   if (kind === SOURCE_SUPPLEMENT) return `${pending ? "助手补的" : "助手补的，你确认过"} · 理由：${source.excerpt}`;
   if (kind === SOURCE_USER_WORDS) return `你说的「${quote}」`;
-  if (kind === SOURCE_DOCUMENT) return `材料 ${source.locator.split("/").pop() ?? source.locator}「${quote}」`;
+  if (kind === SOURCE_DOCUMENT) return `输入资料 ${source.locator.split("/").pop() ?? source.locator}「${quote}」`;
   if (kind === "用户直接修改") return "你亲手改的";
   return `${kind} ${source.locator}`.trim();
 }

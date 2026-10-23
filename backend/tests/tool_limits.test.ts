@@ -82,7 +82,7 @@ test("read 读知识库里的文件不写要读几行时只读回 120 行；写�
     assert.match(toolResult(requests, "call-read-past-end"), /^Offset 400 is beyond end of file \(\d+ lines total\)/);
     const { messages } = (await s.call("GET", `/api/v1/tasks/${s.taskId}/conversation?session=${s.session}`)).body;
     const stages: string[] = messages.find((m: Dict) => m.type === "work_summary").stages.map((stage: Dict) => stage.text);
-    assert.deepEqual(stages, ["读了文件《大文档.md》", "读了材料《长材料.md》", "看了目录", "组织并发出了回复"]);
+    assert.deepEqual(stages, ["读了文件《大文档.md》", "读了输入资料《长材料.md》", "看了目录", "组织并发出了回复"]);
   });
 });
 

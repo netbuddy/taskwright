@@ -113,7 +113,7 @@ describe("建任务失败时整体清理", () => {
     process.env.TASKWRIGHT_TASKS_ROOT = join(tmp, "somewhere-else");
     const service = newService();
     try {
-      assert.throws(() => service.create({}), (e: unknown) => e instanceof ApiError && e.code === "rejected" && e.message === "任务没有创建成功。" &&
+      assert.throws(() => service.create({}), (e: unknown) => e instanceof ApiError && e.code === "rejected" && e.message === "任务实例没有创建成功。" &&
         Array.isArray(e.data.reasons) && /任务记录没有写成/.test(String((e.data.reasons as string[])[0])));
       assert.deepEqual(readdirSync(service.tasksDir), []);
     } finally {

@@ -1,4 +1,4 @@
-// 任务页的「导出为用户画像」：服务开着调试模式才有这个按钮；点了让后端把这个任务里用户说过的话整理成草稿，存成一份 JSON 文件，
+// 任务页的「导出为用户画像」：服务开着调试模式才有这个按钮；点了让后端把这个任务实例里用户说过的话整理成草稿，存成一份 JSON 文件，
 // 文件名用后端给的，内容就是后端给的画像；取不到时报出原因，不存文件。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";

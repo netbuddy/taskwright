@@ -64,7 +64,7 @@ describe("卡片的键与种类", () => {
   });
 
   it("任务空闲时提议开始核读材料的早先卡片：标题写「开始核读材料 · 请决定」，「先不开始」是不生效的那一项、写成「继续本步」", () => {
-    const card = { kind: "choose", text: "你上传了一份材料。现在开始核读材料吗？", options: [{ key: "enter_reading", text: "开始核读材料" }, { key: "stay_idle", text: "先不开始" }] };
+    const card = { kind: "choose", text: "你上传了一份输入资料。现在开始核读材料吗？", options: [{ key: "enter_reading", text: "开始核读材料" }, { key: "stay_idle", text: "先不开始" }] };
     show([{ type: "assistant_reply", message_id: "r1", at: "", work_id: null, via_reply_tool: true, informs: [], act: card, text: "现在开始核读材料吗？" }]);
     const shown = screen.getByTestId("act-choose");
     expect(shown.querySelector(".tt")).toHaveTextContent(START_CARD_TITLE);
