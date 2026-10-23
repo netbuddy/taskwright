@@ -21,6 +21,10 @@
  * SHA-256（导出时从磁盘现算）、三样派生文件各自的大小与 SHA-256、分段清单的块数；文档清单照抄 documents.json。带不带原件，两张清单都写。
  * 导出时磁盘上已经没有的材料（例如从不带材料的包导入、还没补齐），清单里那一项照上一个包的清单（previous）抄，没有可抄的就不写大小与校验值。
  *
+ * 诊断包：数据包的一种用途（diagnostic，命令行 --diagnostic），不另起格式，范围只能是一个任务。它固定带事件归档、不带材料原件，
+ * 另在包根带两样给人排查用的附件：logs/ 下任务建立以来写过的后端日志文件（日志目录里的，整份，原名）与 settings.redacted.json（设置摘录，
+ * 见 product_settings.ts 的 settingsExcerpt）；清单文件另有 diagnostic 一节。诊断包照样可以导入，导入时这两样附件不解出来。
+ *
  * 目录名一律用编号：任务目录与归档目录都按任务编号（归档本来就是按任务编号放的；任务目录平时也以编号为名，手工复制来的可以不同，
  * 清单文件里记着原来的目录名）。读不出任务编号的目录不进包，导出的结果里写原因。
  *
@@ -64,6 +68,7 @@ import * as occupancy from "./occupancy.ts";
 import { type TaskOutcome, type UpgradeReport, planUpgrade, runUpgrade } from "./data_upgrade.ts";
 import { appVersion } from "./paths.ts";
 import { PDFJS_VERSION } from "./pdf_projection.ts";
+import { type SettingsExcerpt, excerptLanguageModel } from "./product_settings.ts";
 import { UPLOADING_DIR, newTaskId } from "./service.ts";
 import { DATA_FORMAT, ServiceDb, type TaskEntry, peekDataDirectory } from "./service_db.ts";
 import { readTaskJson } from "./task_json.ts";
@@ -71,8 +76,21 @@ import { ZipError, type ZipEntry, ZipReader, ZipTooLarge, ZipWriter, validEntryN
 
 /** 数据包文件名的结尾。 */
 export const PACK_SUFFIX = ".taskwright.zip";
+/** 诊断包的文件名：diag-<任务编号>-<年月日-时分>.taskwright.zip，时刻是本机时间。 */
+export function diagnosticPackName(taskId: string, at: Date = new Date()): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `diag-${taskId}-${at.getFullYear()}${two(at.getMonth() + 1)}${two(at.getDate())}-${two(at.getHours())}${two(at.getMinutes())}${PACK_SUFFIX}`;
+}
+
 /** 包根上给人看的说明的名字。 */
 export const README_NAME = "说明.txt";
+/** 诊断包里设置摘录的名字（包根上）。 */
+export const SETTINGS_EXCERPT_NAME = "settings.redacted.json";
+/** 诊断包里后端日志的目录（包根上）。 */
+export const PACK_LOGS_DIR = "logs";
+/** 数据目录的日志目录里后端日志的文件名：backend-<年月日>.log，日期是写它的那个进程启动的那一天。 */
+const BACKEND_LOG = /^backend-(\d{8})\.log$/;
+
 /** 知识库目录里放文档本体与派生文件的目录：缺省不带进包。 */
 export const LIBRARY_FILES_DIR = "files";
 /** 归档里的事件归档目录：缺省不带进包。 */
@@ -151,6 +169,22 @@ export interface PackDocument {
   uploaded_at: string;
 }
 
+/** 诊断包的那一节。 */
+export interface PackDiagnostic {
+  /** 完整的（full）；脱敏的另有写法。 */
+  purpose: "full";
+  /** 按任务（task）；按会话的另有写法。 */
+  granularity: "task";
+  /** 按会话切的诊断包写那条会话；按任务的是 null。 */
+  session_id: string | null;
+  product_version: string;
+  task_db_version: number;
+  /** 设置里选中的语言模型：模型名与模型服务的名字；没有选过是 null（这时运行用的是启动配置里的模型）。 */
+  model: { model: string; provider: string } | null;
+  /** 带上的后端日志覆盖的时段：任务建立的时刻到导出的时刻；一份日志都没有带时是 null。 */
+  log_range: { from: string; to: string } | null;
+}
+
 /** 生成文字版、分段清单与位置表所用的规则版本与参数，取导出时这个程序的值。 */
 export interface PackProjection {
   pdf_location_rules_version: number;
@@ -194,6 +228,8 @@ export interface Manifest {
   with_materials: boolean;
   /** 文字版与分段清单的规则版本与参数。早先的包没有这一项。 */
   projection?: PackProjection;
+  /** 诊断包才有：用途、粒度与排查用的几样事实。 */
+  diagnostic?: PackDiagnostic;
   tasks: PackTask[];
   libraries: PackLibrary[];
   files: PackFile[];
@@ -228,6 +264,8 @@ export interface ExportResult {
   files: number;
   /** 带没带材料与知识库文档的原件。 */
   with_materials: boolean;
+  /** 是不是诊断包；是的话带了几份后端日志。 */
+  diagnostic: { logs: number } | null;
   skipped: Skipped[];
 }
 
@@ -248,6 +286,11 @@ export interface ExportOptions {
   segmentParams?: SegmentParams;
   /** 上一个包的清单（升级数据包时给）：磁盘上已经没有的材料，清单里的指纹照它抄。 */
   previous?: Manifest;
+  /**
+   * 导出成诊断包：给这一项就是。settings 是设置摘录；logsDir 是后端日志所在的目录（paths.ts 的 logDir：环境变量另给了用它，否则是数据目录下的 logs）。
+   * 范围只能是一个任务；事件归档一定带，材料原件一定不带，withEvents 与 withMaterials 不看。
+   */
+  diagnostic?: { settings: SettingsExcerpt; logsDir: string };
   productVersion?: string;
 }
 
@@ -404,6 +447,32 @@ const isDir = (path: string) => {
   }
 };
 
+/**
+ * 诊断包要带的后端日志：日志目录里 backend-<年月日>.log 中，文件名的日期不晚于导出那天、最后修改不早于任务建立时刻的那几份，按名字排。
+ * 文件名的日期是写它的进程启动的那一天，进程跨天也一直写这一份，所以不能只按日期落在任务建立之后来取。since 读不出来时一份都不取。
+ */
+function backendLogsSince(dir: string, since: string | null, until: Date): { name: string; path: string; mtimeMs: number }[] {
+  const from = since ? new Date(since).getTime() : NaN;
+  if (Number.isNaN(from)) return [];
+  const today = `${until.getFullYear()}${String(until.getMonth() + 1).padStart(2, "0")}${String(until.getDate()).padStart(2, "0")}`;
+  let names: string[];
+  try {
+    names = readdirSync(dir).sort(library.byCodePoint);
+  } catch {
+    return [];
+  }
+  return names.flatMap((name) => {
+    const day = BACKEND_LOG.exec(name)?.[1];
+    if (!day || day > today) return [];
+    try {
+      const st = statSync(join(dir, name));
+      return st.isFile() && st.mtimeMs >= from ? [{ name, path: join(dir, name), mtimeMs: Math.floor(st.mtimeMs) }] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
 /** 知识库清单里的条目；没有知识库、清单不在或者读不出来时是空的。只读，不建任何东西。 */
 function librariesIn(knowledgeDir: string | null): LibraryRow[] {
   if (!knowledgeDir) return [];
@@ -418,7 +487,9 @@ function librariesIn(knowledgeDir: string | null): LibraryRow[] {
  * 导出一个数据包。范围是一个任务或一个知识库而它不在时抛 PackError（not_found）；目标文件已经在时抛 exists；
  * 超过包的上限时抛 too_large。出错时不留下写了一半的文件。
  */
-export async function exportPack(where: PackLocations, options: ExportOptions): Promise<ExportResult> {
+export async function exportPack(where: PackLocations, given: ExportOptions): Promise<ExportResult> {
+  if (given.diagnostic && given.scope !== "task") throw new PackError("refused", "诊断包只能按一个任务导出。");
+  const options: ExportOptions = given.diagnostic ? { ...given, withEvents: true, withMaterials: false } : given;
   const skipped: Skipped[] = [];
   // 要带的任务。
   const chosen: { dir: string; row: NonNullable<ReturnType<typeof taskRow>> }[] = [];
@@ -537,11 +608,24 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
     }
     if (libraries.length > 0) await putJson(PACK_LIBRARIES, { version: 1, libraries });
     if (register.length > 0) await putJson(PACK_REGISTER, { version: 1, tasks: register });
+    if (options.diagnostic) {
+      // 后端日志：任务建立以来写过的日志文件整份带（日志行没有时刻，不切行）。
+      const since = chosen[0].row.created_at;
+      const logs = backendLogsSince(options.diagnostic.logsDir, since, new Date());
+      for (const one of logs) await put(`${PACK_LOGS_DIR}/${one.name}`, one.path, one.mtimeMs);
+      await putJson(SETTINGS_EXCERPT_NAME, options.diagnostic.settings);
+      manifest.diagnostic = {
+        purpose: "full", granularity: "task", session_id: null, product_version: manifest.product_version, task_db_version: manifest.task_db_version,
+        model: excerptLanguageModel(options.diagnostic.settings),
+        log_range: logs.length > 0 && since ? { from: since, to: manifest.exported_at } : null,
+      };
+    }
     await writer.addBuffer(README_NAME, Buffer.from(packReadme(manifest), "utf-8"), { mtime: new Date() });
     await writer.addBuffer(MANIFEST_NAME, Buffer.from(JSON.stringify(manifest, null, 2) + "\n", "utf-8"));
     const bytes = writer.finish();
     renameSync(partial, options.to);
-    return { file: options.to, bytes, scope: options.scope, tasks: manifest.tasks, libraries: manifest.libraries, files: manifest.files.length, with_materials: manifest.with_materials, skipped };
+    return { file: options.to, bytes, scope: options.scope, tasks: manifest.tasks, libraries: manifest.libraries, files: manifest.files.length, with_materials: manifest.with_materials,
+      diagnostic: manifest.diagnostic ? { logs: manifest.files.filter((f) => f.path.startsWith(`${PACK_LOGS_DIR}/`)).length } : null, skipped };
   } catch (error) {
     writer.close();
     rmSync(partial, { force: true });
@@ -556,7 +640,8 @@ export async function exportPack(where: PackLocations, options: ExportOptions): 
  * 包根上那份给人看的说明（说明.txt）：用日常语言写包里有什么、没有什么、怎样导入。照导出的范围与带没带事件归档、材料原件写，
  * 不列具体文件（具体文件在清单文件里）。
  */
-export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_version" | "scope" | "with_events" | "with_materials" | "tasks" | "libraries">): string {
+export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_version" | "scope" | "with_events" | "with_materials" | "tasks" | "libraries" | "diagnostic">): string {
+  if (manifest.diagnostic) return diagnosticReadme(manifest, manifest.diagnostic);
   const bare = !manifest.with_materials;
   const scope = manifest.scope === "task" ? "一个任务" : manifest.scope === "library" ? "一个知识库" : "全部任务与知识库";
   const tasks = manifest.tasks.map((t) => `  ${t.task_id}${t.name ? `「${t.name}」` : ""}`);
@@ -599,6 +684,38 @@ export function packReadme(manifest: Pick<Manifest, "exported_at" | "product_ver
   return lines.join("\n");
 }
 
+/** 诊断包的说明：开头写明它是排查用的，再写包里有什么、没有什么，与怎样用。 */
+function diagnosticReadme(manifest: Pick<Manifest, "exported_at" | "product_version" | "tasks">, diagnostic: PackDiagnostic): string {
+  const tasks = manifest.tasks.map((t) => `  ${t.task_id}${t.name ? `「${t.name}」` : ""}`);
+  const model = diagnostic.model ? `${diagnostic.model.model}（${diagnostic.model.provider}）` : "设置里没有选定，用的是启动配置里的模型";
+  return [
+    "这是诊断包，用来排查问题，不用来恢复任务。",
+    `导出时刻：${manifest.exported_at}　产品版本：${manifest.product_version}　语言模型：${model}`,
+    "包里的任务：", ...tasks,
+    "",
+    "包里有什么",
+    "- 运行轨迹：助手每一步的原始记录与运行日志（runs/<任务编号>/pi-events）。",
+    "- 对话记录：与助手的每一条会话（runs/<任务编号>/pi-sessions）。",
+    "- 任务库：条目、修订、评审与确认、版本记录等，一份完整的副本（tasks/<任务编号>/task.sqlite），连同这个任务用的任务类型说明与规则的副本。",
+    diagnostic.log_range
+      ? `- 后端日志：任务建立（${diagnostic.log_range.from}）以来写过的后端日志文件，整份（logs/）。`
+      : "- 后端日志：这个数据目录里没有任务建立以来写过的后端日志文件，包里没有带。",
+    "- 设置摘录：选中的模型与各模型服务的种类、名字、地址与模型清单（settings.redacted.json），不含密钥。",
+    "- 材料清单：每份材料的文件名、大小、校验值与它的文字版、分段清单、位置表的校验值（manifest.json 里）。",
+    "- 清单文件 manifest.json：每个文件的大小与校验值，以及诊断包的用途、产品版本与模型（diagnostic 一节）。",
+    "",
+    "包里没有什么",
+    "- 材料与知识库的原件和文字版。",
+    "- 密钥：模型服务的接口密钥与登录凭据。",
+    "",
+    "包里含对话全文与条目摘录，请妥善保管。",
+    "",
+    "怎样用",
+    "- 发给帮你排查的人。它也可以像数据包一样导入（taskwright data import --from <这个文件>），导入时后端日志与设置摘录不解出来。",
+    "",
+  ].join("\n");
+}
+
 /** 数据目录的格式版本；还没有服务级库，或者读不出来，是 0。 */
 function peekData(dataDir: string): number {
   try {
@@ -621,7 +738,7 @@ const sizeText = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1
 
 /** 导出的结果写成给人看的几行（命令行打印的就是它）。 */
 export function exportText(result: ExportResult): string {
-  const lines = [`数据包已经写好：${result.file}（${result.files} 个文件，${sizeText(result.bytes)}）`];
+  const lines = [`${result.diagnostic ? "诊断包" : "数据包"}已经写好：${result.file}（${result.files} 个文件，${sizeText(result.bytes)}）`];
   for (const task of result.tasks) {
     const using = task.assistant_working ? "；导出时助手正在这个任务里工作" : task.in_use ? "；导出时这个任务正在使用" : "";
     lines.push(`任务 ${task.task_id}${task.name ? `「${task.name}」` : ""}：${task.files} 个文件${using}`);
@@ -629,6 +746,11 @@ export function exportText(result: ExportResult): string {
   for (const one of result.libraries) lines.push(`知识库 ${one.id}「${one.name}」：${one.files} 个文件`);
   if (result.tasks.length === 0 && result.libraries.length === 0) lines.push("这个数据目录里没有任务，也没有知识库：包里只有清单文件与说明。");
   for (const one of result.skipped) lines.push(`没有带：${one.what}（${one.reason}）`);
+  if (result.diagnostic) {
+    lines.push(result.diagnostic.logs > 0 ? `带了 ${result.diagnostic.logs} 份后端日志与设置摘录。` : "这个数据目录里没有任务建立以来写过的后端日志，只带了设置摘录。");
+    lines.push("包里含对话全文与条目摘录，请妥善保管。材料与知识库的原件、密钥不在包里。");
+    return lines.join("\n") + "\n";
+  }
   lines.push(result.with_materials
     ? "包里有材料与对话记录的副本，请妥善保管。产品设置、模型配置与密钥不在包里。"
     : "包里有对话记录与条目里的摘录，请妥善保管。材料与知识库的原件不在包里（要带上它们，导出时加 --with-materials），产品设置、模型配置与密钥也不在。");
@@ -664,6 +786,18 @@ function documentsIn(raw: unknown): PackDocument[] | undefined {
   return raw.flatMap((one: unknown) => (isObject(one) && typeof one.name === "string" && isCount(one.bytes) && isSha(one.sha256)
     ? [{ name: one.name, kind: typeof one.kind === "string" ? one.kind : "", bytes: one.bytes, sha256: one.sha256, uploaded_at: typeof one.uploaded_at === "string" ? one.uploaded_at : "" }]
     : []));
+}
+
+/** 清单文件里诊断包的那一节；没有或者写得不对时是 undefined（当作普通的数据包）。 */
+function diagnosticIn(raw: unknown): PackDiagnostic | undefined {
+  if (!isObject(raw) || raw.purpose !== "full" || raw.granularity !== "task") return undefined;
+  const model = isObject(raw.model) && typeof raw.model.model === "string" && typeof raw.model.provider === "string" ? { model: raw.model.model, provider: raw.model.provider } : null;
+  const range = isObject(raw.log_range) && typeof raw.log_range.from === "string" && typeof raw.log_range.to === "string" ? { from: raw.log_range.from, to: raw.log_range.to } : null;
+  return {
+    purpose: "full", granularity: "task", session_id: typeof raw.session_id === "string" ? raw.session_id : null,
+    product_version: typeof raw.product_version === "string" ? raw.product_version : "", task_db_version: isCount(raw.task_db_version) ? raw.task_db_version : 0,
+    model, log_range: range,
+  };
 }
 
 /** 清单文件里的规则版本与参数；没有或者写得不对时是 undefined。 */
@@ -718,14 +852,17 @@ function parseManifest(text: string): Manifest {
     data_format: raw.data_format, task_db_version: raw.task_db_version, exported_at: typeof raw.exported_at === "string" ? raw.exported_at : "",
     scope: raw.scope, with_events: raw.with_events === undefined ? true : raw.with_events === true,
     with_materials: raw.with_materials === undefined ? true : raw.with_materials === true,
+    ...(diagnosticIn(raw.diagnostic) ? { diagnostic: diagnosticIn(raw.diagnostic) } : {}),
     ...(projectionIn(raw.projection) ? { projection: projectionIn(raw.projection) } : {}), tasks, libraries, files, empty_dirs: emptyDirs,
   };
 }
 
 /** 包里的一个路径落在哪里：某个任务的目录、某个任务的归档、某个知识库的目录，或者两个固定的文件。都不是就是 null（不该有的路径）。 */
-function placeOf(path: string, manifest: Manifest): "task" | "archive" | "library" | "fixed" | null {
+function placeOf(path: string, manifest: Manifest): "task" | "archive" | "library" | "fixed" | "attachment" | null {
   if (!validEntryName(path) || /[\0-\x1f:]/.test(path)) return null;
   if (path === PACK_LIBRARIES || path === PACK_REGISTER) return "fixed";
+  // 诊断包的两样附件：导入时不解出来。
+  if (manifest.diagnostic && (path === SETTINGS_EXCERPT_NAME || /^logs\/backend-\d{8}\.log$/.test(path))) return "attachment";
   const parts = path.split("/");
   if (parts.length < 3) return null;
   if (parts[0] === "tasks" && manifest.tasks.some((t) => t.task_id === parts[1])) return "task";
@@ -846,6 +983,7 @@ function stagedPath(staging: Staging, path: string): string {
 async function extractPack(pack: OpenedPack, staging: Staging): Promise<void> {
   const entries = new Map<string, ZipEntry>(pack.reader.entries.map((one) => [one.name, one]));
   for (const file of pack.manifest.files) {
+    if (placeOf(file.path, pack.manifest) === "attachment") continue;
     const target = stagedPath(staging, file.path);
     let written;
     try {

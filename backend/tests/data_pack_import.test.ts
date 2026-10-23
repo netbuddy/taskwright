@@ -416,3 +416,20 @@ test("导入不带材料的包：任务导入了，材料目录在而且是空�
   const without = (files: Record<string, string>) => Object.fromEntries(Object.entries(files).filter(([name]) => !name.startsWith("inputs/") && !name.startsWith(DB_NAME)));
   assert.deepEqual(without(tree(imported)), without(tree(task)));
 });
+
+test("导入诊断包：任务照常导入，事件归档也进了归档目录；后端日志与设置摘录不解出来，数据目录里没有它们", async () => {
+  const where = await dataWith(fresh("data"), ["甲"]);
+  const [a] = where.ids;
+  putArchive(where, a);
+  put(join(where.dataDir, "logs", "backend-20260102.log"), "日志一行\n");
+  const file = packFile(`diag-${a}`);
+  await exportPack(where, { scope: "task", taskId: a, to: file, diagnostic: { settings: { version: 2, selection: { language: null, embedding: null }, providers: {} }, logsDir: join(where.dataDir, "logs") } });
+  const target = locations(fresh("target"));
+  const report = await importPack(target, { file });
+  assert.equal(report.fatal, null);
+  assert.deepEqual(report.tasks.map((t) => [t.task_id, t.outcome]), [[a, "imported"]]);
+  assert.ok(readdirSync(join(target.runsDir, a)).includes("pi-events"));
+  assert.equal(existsSync(join(target.dataDir, "settings.redacted.json")), false);
+  const logs = join(target.dataDir, "logs");
+  assert.deepEqual(existsSync(logs) ? readdirSync(logs).filter((name) => name.startsWith("backend-")) : [], []);
+});

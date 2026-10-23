@@ -96,6 +96,15 @@ test("导出接口：任务与知识库各回一个 zip 下载，里面是范围
     put(libFullFile, Buffer.from(await libFull.arrayBuffer()));
     assert.ok(readPack(libFullFile).names.includes(`knowledge/${lib.id}/files/退款处理规范.md`));
 
+    // diagnostic=1：诊断包，文件名是 diag-<任务编号>-<时刻>，带事件归档与设置摘录。
+    const diag = await fetch(`http://127.0.0.1:${port}/api/v1/tasks/${a}/export?diagnostic=1`);
+    assert.equal(diag.status, 200);
+    assert.match(String(diag.headers.get("content-disposition")), new RegExp(`^attachment; filename="diag-${a}-\\d{8}-\\d{4}\\.taskwright\\.zip"$`));
+    const diagFile = join(fresh("got"), "diag.zip");
+    put(diagFile, Buffer.from(await diag.arrayBuffer()));
+    assert.deepEqual([readPack(diagFile).manifest.diagnostic?.granularity, readPack(diagFile).manifest.with_events, readPack(diagFile).names.includes("settings.redacted.json")],
+      ["task", true, true]);
+
     const none = await getJson(port, "/api/v1/tasks/TASK-NOPE/export");
     assert.deepEqual([none.status, none.body.error.code], [404, "not_found"]);
     const noLibrary = await getJson(port, "/api/v1/knowledge/libraries/lib-00000000/export");

@@ -198,6 +198,34 @@ export function readPiDirSettings(agentDir: string, env: NodeJS.ProcessEnv | Rec
   return normalize(value?.pi_dirs?.[resolve(agentDir)]);
 }
 
+/** 诊断包里的设置摘录（settings.redacted.json）：版本、选中的模型、各模型服务的种类、用途、名字、地址与模型清单。 */
+export interface SettingsExcerpt {
+  version: number;
+  selection: Selection;
+  providers: Record<string, Pick<StoredProvider, "kind" | "purpose" | "name" | "base_url" | "models">>;
+}
+
+/**
+ * 某个 pi 配置目录的设置摘录：从读出的设置里一项一项挑，不复制原文件。设置文件本来不存密钥，挑字段是为了以后加进来的键不会跟着出去。
+ * dataDir 是设置文件不另给位置时所在的数据目录（命令行导出时给，服务里不给，按环境变量定）。文件不在、读不出时是空的一份。
+ */
+export function settingsExcerpt(agentDir: string, env: NodeJS.ProcessEnv | Record<string, string> = process.env, dataDir?: string): SettingsExcerpt {
+  const file = settingsFile(env, dataDir);
+  const value = existsSync(file) ? readForView(file) : null;
+  const dir = normalize(value?.pi_dirs?.[resolve(agentDir)]);
+  const providers: SettingsExcerpt["providers"] = {};
+  for (const [id, one] of Object.entries(dir.providers)) {
+    providers[id] = { kind: one.kind, purpose: one.purpose, name: one.name, base_url: one.base_url, models: one.models };
+  }
+  return { version: typeof value?.version === "number" ? value.version : SETTINGS_VERSION, selection: dir.selection, providers };
+}
+
+/** 设置摘录里选中的语言模型：模型名与模型服务的名字（不在名单上时写服务名）；没有选过是 null。 */
+export function excerptLanguageModel(excerpt: SettingsExcerpt): { model: string; provider: string } | null {
+  const language = excerpt.selection.language;
+  return language ? { model: language.model, provider: excerpt.providers[language.provider]?.name ?? language.provider } : null;
+}
+
 /**
  * 选中的语言模型，写成交给 pi 的「服务商/模型」；没有选过时是 null。选中的模型服务在名单上而它提供的不是语言模型时，也当作没有选。
  * 服务商那一段一般就是模型服务的服务名（它在 pi 的模型登记文件里登记的名字）；Codex 订阅不登记，pi 不认识产品给它起的服务名，

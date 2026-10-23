@@ -110,3 +110,27 @@ describe("删除任务", () => {
     expect(screen.getByTestId("task-progress-T1")).toBeInTheDocument();
   });
 });
+
+describe("导出诊断包", () => {
+  const row = { ...base, task_id: "T1", task_name: "出了问题的任务", unavailable: null, supported: true, item_count: 2, completion_total: 1, completion_unmet: 0,
+    session_count: 1, last_active_at: "2026-10-14T01:00:00-07:00" } as TaskListEntry;
+
+  it("菜单里「导出诊断包」排在「删除任务」之上；点它弹确认框写明用途与保管，「导出」是加 diagnostic=1 的下载地址；不删任何东西", async () => {
+    vi.spyOn(api, "listTasks").mockResolvedValue([row]);
+    const remove = vi.spyOn(api, "deleteTask");
+    render(<ConfigProvider><AntApp><TaskListPage /></AntApp></ConfigProvider>);
+    fireEvent.click(await screen.findByTestId("task-menu-T1"));
+    const items = (await screen.findAllByRole("menuitem")).map((one) => one.textContent);
+    expect(items).toEqual(["导出诊断包", "删除任务"]);
+    fireEvent.click(screen.getByText("导出诊断包"));
+    expect(await screen.findByText("导出诊断包", { selector: ".ant-modal-title" })).toBeInTheDocument();
+    expect(screen.getByTestId("diagnostic-task")).toHaveTextContent("任务「出了问题的任务」");
+    expect(screen.getByTestId("diagnostic-purpose")).toHaveTextContent("把这个任务的运行记录、对话与条目打成一个文件，供排查问题；不含材料原件与密钥。");
+    expect(screen.getByTestId("diagnostic-keep")).toHaveTextContent("包里含对话全文，请妥善保管。");
+    const button = screen.getByTestId("diagnostic-export");
+    expect(button).toHaveAttribute("href", "/api/v1/tasks/T1/export?diagnostic=1");
+    fireEvent.click(button);
+    expect(remove).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("delete-task-text")).toBeNull();
+  });
+});

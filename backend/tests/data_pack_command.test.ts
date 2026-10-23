@@ -211,5 +211,28 @@ test("导出：缺省不带材料，加 --with-materials 才带；用法里写�
   assert.equal(full.status, 0, full.err);
   assert.deepEqual([readPack(join(dir, "bare.zip")).manifest.with_materials, readPack(join(dir, "bare.zip")).names.includes(`tasks/${a}/inputs/材料.md`)], [false, false]);
   assert.deepEqual([readPack(join(dir, "full.zip")).manifest.with_materials, readPack(join(dir, "full.zip")).names.includes(`tasks/${a}/inputs/材料.md`)], [true, true]);
-  assert.match(run(["data", "export"]).err, /\[--with-events\] \[--with-materials\] --to <数据包>/);
+  assert.match(run(["data", "export"]).err, /\[--with-events\] \[--with-materials\] \[--diagnostic\] --to <数据包>/);
+});
+
+test("导出诊断包：--diagnostic 只能与 --task 一起写；导出的是诊断包，带事件归档，设置摘录取数据目录下的设置文件", async () => {
+  const where = await dataWith(fresh("data"), ["甲"]);
+  const [a] = where.ids;
+  putArchive(where, a);
+  const dir = outDir();
+  const alone = run(["data", "export", "--data", where.dataDir, "--diagnostic", "--to", join(dir, "all.zip")]);
+  assert.equal(alone.status, 2);
+  assert.match(alone.err, /--diagnostic 要与 --task 一起写：诊断包只能按一个任务导出。/);
+  const done = run(["data", "export", "--data", where.dataDir, "--task", a, "--diagnostic", "--to", join(dir, "diag.zip")]);
+  assert.equal(done.status, 0, done.err);
+  assert.match(done.out, /^诊断包已经写好：/);
+  const { manifest, names } = readPack(join(dir, "diag.zip"));
+  assert.deepEqual([manifest.diagnostic?.purpose, manifest.with_events, names.includes("settings.redacted.json")], ["full", true, true]);
+  // 后端日志的目录由环境变量另给时，从那里取。
+  const logs = fresh("logs");
+  put(join(logs, "backend-20260102.log"), "另给的日志目录里的一行\n");
+  const env = { ...process.env, TASKWRIGHT_LOG_DIR: logs };
+  const moved = spawnSync(process.execPath, [BACKEND_MAIN, "data", "export", "--data", where.dataDir, "--task", a, "--diagnostic", "--to", join(dir, "diag-logs.zip")],
+    { encoding: "utf-8", timeout: 60000, env });
+  assert.equal(moved.status, 0, moved.stderr);
+  assert.deepEqual(readPack(join(dir, "diag-logs.zip")).names.filter((one) => one.startsWith("logs/")), ["logs/backend-20260102.log"]);
 });
