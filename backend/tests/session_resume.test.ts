@@ -19,7 +19,7 @@ import { after, test } from "node:test";
 import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
 import { FakeModel } from "../../tools/fake-model/server.ts";
 import { RESUME_FAILED_STATE_TEXT, RESUME_FAILED_TEXT } from "../src/executor.ts";
-import { captureConsole, ROOT, sendAndWaitTurn, spawnBackend, tempDir } from "./helpers.ts";
+import { captureConsole, ROOT, sendAndWaitTurn, spawnBackend, tempDir, piMissing } from "./helpers.ts";
 
 // 后端在子进程里运行，它的输出接到管道上；测试进程里另有假模型端点与本文件的代码。以防它们日后写日志，
 // console 的输出一律收进内存，不写标准输出（原因见 helpers.ts 的 captureConsole）。
@@ -30,7 +30,7 @@ const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
-const NO_PI = spawnSync("pi", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 pi" : false;
+const NO_PI = piMissing();
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "TASKWRIGHT_TASKS_ROOT", "PI_CODING_AGENT_DIR",
   "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT"];
 

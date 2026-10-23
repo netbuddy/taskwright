@@ -7,14 +7,14 @@
  */
 
 import assert from "node:assert/strict";
-import { type ChildProcess, spawnSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
 import { FakeModel } from "../../tools/fake-model/server.ts";
-import { captureConsole, sendAndWaitTurn, spawnBackend, tempDir } from "./helpers.ts";
+import { captureConsole, sendAndWaitTurn, spawnBackend, tempDir, piMissing } from "./helpers.ts";
 
 captureConsole();
 
@@ -22,7 +22,7 @@ type Dict = Record<string, any>;
 const tmp = tempDir();
 after(() => rmSync(tmp, { recursive: true, force: true }));
 
-const NO_PI = spawnSync("pi", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 pi" : false;
+const NO_PI = piMissing();
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "TASKWRIGHT_TASKS_ROOT",
   "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT"];
 

@@ -9,7 +9,6 @@
  */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -23,12 +22,12 @@ import { testEmbeddingModel, testLanguageModel } from "../src/model_test.ts";
 import { updatePiDirSettings } from "../src/product_settings.ts";
 import { Service } from "../src/service.ts";
 import { RpcTransport } from "../src/transport_rpc.ts";
-import { captureConsole, tempDir } from "./helpers.ts";
+import { captureConsole, tempDir, piMissing } from "./helpers.ts";
 
 captureConsole();
 
 type Dict = Record<string, any>;
-const NO_PI = spawnSync("pi", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 pi" : false;
+const NO_PI = piMissing();
 const CASE = { skip: NO_PI };
 const ENV_NAMES = ["PI_CODING_AGENT_DIR", "TASKWRIGHT_SETTINGS_FILE", "PI_OFFLINE", "TMPDIR"];
 

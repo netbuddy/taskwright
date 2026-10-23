@@ -88,6 +88,21 @@ export function tempDir(prefix = "taskwright-backend-"): string {
   return dir;
 }
 
+/**
+ * 本机 PATH 上没有 pi 时给出跳过的原因，有时是 false。探测用 pi --version，配置目录指到一个用完就删的临时目录：
+ * pi 一启动就给自己配置目录里的 settings.json 加锁（建一个 settings.json.lock 目录再删掉），不另指的话会落在
+ * 用户本机的 ~/.pi/agent 里。在测试文件顶层调用时，测试还没有设 PI_CODING_AGENT_DIR，所以这里自己指。
+ */
+export function piMissing(): string | false {
+  const agentDir = mkdtempSync(join(tmpdir(), "taskwright-pi-probe-"));
+  try {
+    const done = spawnSync("pi", ["--version"], { encoding: "utf-8", env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: "1" } });
+    return done.error ? "本机 PATH 上没有 pi" : false;
+  } finally {
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+}
+
 function node(args: string[]): void {
   const done = spawnSync(process.execPath, args, { encoding: "utf-8" });
   if (done.status !== 0) throw new Error(`夹具脚本失败：${done.stderr}`);

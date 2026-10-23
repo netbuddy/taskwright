@@ -10,12 +10,12 @@ import { request } from "node:http";
 import { join } from "node:path";
 import { writeAgentDir } from "../../tools/fake-model/agent_config.ts";
 import { FakeModel } from "../../tools/fake-model/server.ts";
-import { ROOT, sendAndWaitTurn, spawnBackend } from "./helpers.ts";
+import { ROOT, sendAndWaitTurn, spawnBackend, piMissing } from "./helpers.ts";
 
 export type Dict = Record<string, any>;
 export const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
 
-export const NO_PI = spawnSync("pi", ["--version"], { encoding: "utf-8" }).error ? "本机 PATH 上没有 pi" : false;
+export const NO_PI = piMissing();
 const DROPPED_ENV = ["TASKWRIGHT_LANGFUSE_PLUGIN", "TASKWRIGHT_LANGFUSE_ENV_FILE", "TASKWRIGHT_RUNS_DIR", "TASKWRIGHT_TASKS_ROOT",
   "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL", "LANGFUSE_TRACING_ENVIRONMENT"];
 
