@@ -9,9 +9,9 @@ import { createReadStream, createWriteStream, mkdirSync, mkdtempSync, readFileSy
 import { tmpdir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
+import { type ExportOptions, PACK_MAX_UPLOAD, PACK_SUFFIX, diagnosticPackName, PACK_UPLOAD_TOO_LARGE_TEXT, PackError, exportPack, importPack, importText, importingName } from "./data_pack.ts";
 import { ApiError } from "./errors.ts";
-import { segmentParamsOf } from "./launch.ts";
+import { launchModelOf, piAgentDir, resolveModel, segmentParamsOf } from "./launch.ts";
 import * as library from "./library.ts";
 import { type SessionFact, taskStatus, workItemView } from "./task_status.ts";
 import { UPGRADED_VERSION_NOTE } from "../../agent/src/lib/schema.ts";
@@ -27,7 +27,7 @@ import { isObject, or, truthy } from "./py.ts";
 import * as conversation from "./conversation.ts";
 import type { Subscriber } from "./hub.ts";
 import { pyDumps } from "./py.ts";
-import { appVersion } from "./paths.ts";
+import { appVersion, logDir } from "./paths.ts";
 import * as debugPrompt from "./debug_prompt.ts";
 import * as modelConfig from "./model_config.ts";
 import * as modelTest from "./model_test.ts";
@@ -35,7 +35,7 @@ import { probeModel } from "./model_probe.ts";
 import { type Service, UPLOAD_TYPES, maxUpload, taskTypes, tooLargeText, unsupportedTypeText, uploadTypesText, wordsLocator } from "./service.ts";
 import { isWebPath, webFile } from "./web.ts";
 import { KIND_NAMES, knowledgeMaxUpload, knowledgeTooLargeText } from "./knowledge.ts";
-import { UPLOAD_CAP_MB, UPLOAD_DEFAULT_MB, readUploadLimits, validUploadMb, writeUploadLimits } from "./product_settings.ts";
+import { UPLOAD_CAP_MB, UPLOAD_DEFAULT_MB, readUploadLimits, settingsExcerpt, validUploadMb, writeUploadLimits } from "./product_settings.ts";
 
 /** 材料原样取回时按扩展名给的内容类型；不在表里的给 application/octet-stream。 */
 export const RAW_TYPES: Record<string, string> = {
@@ -425,9 +425,17 @@ const handlers: Record<string, Handler> = {
   },
   // 把一个任务导出成数据包（任务目录与它的对话记录），回一个 zip 文件。查询参数 with_events=1 时另带事件归档（pi-events），
   // with_materials=1 时另带材料原件与派生文件（缺省只带材料清单）。
+  // diagnostic=1 时导出成诊断包（固定带事件归档、不带材料原件，另带后端日志与设置摘录；with_events 与 with_materials 不看），文件名是 diag-<任务编号>-<时刻>。
   export_task: (service, req) => {
     const t = service.task(req.params.task);
-    return packDownload(service, { scope: "task", taskId: t.taskId, working: () => t.executor.state === "working", withEvents: req.query.with_events === "1",
+    const working = () => t.executor.state === "working";
+    if (req.query.diagnostic === "1") {
+      const settings = settingsExcerpt(piAgentDir(process.env), process.env);
+      const logsDir = logDir(service.packLocations().dataDir);
+      const launchModel = launchModelOf(resolveModel(service.profile));
+      return packDownload(service, { scope: "task", taskId: t.taskId, working, diagnostic: { settings, logsDir, launchModel } }, diagnosticPackName(t.taskId));
+    }
+    return packDownload(service, { scope: "task", taskId: t.taskId, working, withEvents: req.query.with_events === "1",
       withMaterials: req.query.with_materials === "1" }, `${t.taskId}${PACK_SUFFIX}`);
   },
   // 把一个知识库导出成数据包。查询参数 with_materials=1 时另带文档原件与派生文件（缺省只带文档清单）。

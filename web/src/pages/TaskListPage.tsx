@@ -1,6 +1,6 @@
 // 任务列表页：一次普通读取（GET /api/v1/tasks），不连事件流。任务没有状态：按最近活动排，最近的在前；每行写进展（流程到了哪一站、
 // 几个工作项、几条阻断问题），数据随列表一起来，不逐个任务去取任务状况。版本不在这里写，在起点页的「文档与版本」与工作台的版本一节。
-// 每行末尾除了「打开」还有一个菜单，里面是「删除任务」（确认框见 DeleteTaskModal）。
+// 每行末尾除了「打开」还有一个菜单，里面是「导出诊断包」（确认框见 DiagnosticExportModal）与「删除任务」（确认框见 DeleteTaskModal）。
 // 打开一个任务时去哪里由 model/startPage.ts 的 taskEntryHref 定：业务说明已经有内容的进工作台，否则进任务起点页。
 
 import { useEffect, useState } from "react";
@@ -10,6 +10,7 @@ import { api, ApiError } from "../api/client";
 import type { TaskListEntry } from "../api/types";
 import { NewTaskModal, Shell, sortByActivity } from "../components/Shell";
 import { DeleteTaskModal } from "../components/task/DeleteTaskModal";
+import { DiagnosticExportModal } from "../components/task/DiagnosticExportModal";
 import { formatTime } from "../model/format";
 import { openTask } from "../model/startPage";
 import { go } from "../router";
@@ -30,6 +31,7 @@ export function TaskListPage() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState<TaskListEntry | null>(null);
+  const [diagnosing, setDiagnosing] = useState<TaskListEntry | null>(null);
 
   useEffect(() => {
     api.listTasks().then((list) => setTasks(sortByActivity(list))).catch((e) => setError(e instanceof ApiError ? e.message : String(e)));
@@ -73,7 +75,10 @@ export function TaskListPage() {
           { title: "", render: (_: unknown, t) => (unsupported(t) ? null : (
             <span style={{ display: "inline-flex", gap: "0.3rem" }} onClick={(e) => e.stopPropagation()}>
               <Button size="small" onClick={() => openTask(t.task_id, go)}>打开</Button>
-              <Dropdown trigger={["click"]} menu={{ items: [{ key: "delete", label: "删除任务", danger: true }], onClick: () => setDeleting(t) }}>
+              <Dropdown trigger={["click"]} menu={{
+                items: [{ key: "diagnostic", label: "导出诊断包" }, { key: "delete", label: "删除任务", danger: true }],
+                onClick: ({ key }) => (key === "delete" ? setDeleting(t) : setDiagnosing(t)),
+              }}>
                 <Button size="small" icon={<EllipsisOutlined />} aria-label="更多操作" title="更多操作" data-testid={`task-menu-${t.task_id}`} />
               </Dropdown>
             </span>
@@ -81,6 +86,7 @@ export function TaskListPage() {
         ]}
       />
       <NewTaskModal open={open} onClose={() => setOpen(false)} />
+      <DiagnosticExportModal taskId={diagnosing?.task_id ?? null} taskName={diagnosing?.task_name ?? ""} onClose={() => setDiagnosing(null)} />
       <DeleteTaskModal taskId={deleting?.task_id ?? null} taskName={deleting?.task_name ?? ""} onClose={() => setDeleting(null)}
         onDeleted={(id) => { setDeleting(null); setTasks((list) => list?.filter((one) => one.task_id !== id) ?? null); }} />
     </Shell>

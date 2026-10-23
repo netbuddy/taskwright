@@ -14,6 +14,7 @@ import { after, test } from "node:test";
 import { insertMaterial } from "../../agent/src/lib/material_db.ts";
 import { PACK_MAX_UPLOAD, PACK_UPLOAD_TOO_LARGE_TEXT, exportPack } from "../src/data_pack.ts";
 import { UPGRADE_PENDING_TEXT, makeServer } from "../src/http.ts";
+import { launchModelOf, resolveModel } from "../src/launch.ts";
 import { KnowledgeStore } from "../src/knowledge.ts";
 import { Service } from "../src/service.ts";
 import { ServiceDb } from "../src/service_db.ts";
@@ -95,6 +96,18 @@ test("导出接口：任务与知识库各回一个 zip 下载，里面是范围
     const libFullFile = join(fresh("got"), "lib-full.zip");
     put(libFullFile, Buffer.from(await libFull.arrayBuffer()));
     assert.ok(readPack(libFullFile).names.includes(`knowledge/${lib.id}/files/退款处理规范.md`));
+
+    // diagnostic=1：诊断包，文件名是 diag-<任务编号>-<时刻>，带事件归档与设置摘录。
+    const diag = await fetch(`http://127.0.0.1:${port}/api/v1/tasks/${a}/export?diagnostic=1`);
+    assert.equal(diag.status, 200);
+    assert.match(String(diag.headers.get("content-disposition")), new RegExp(`^attachment; filename="diag-${a}-\\d{8}-\\d{4}\\.taskwright\\.zip"$`));
+    const diagFile = join(fresh("got"), "diag.zip");
+    put(diagFile, Buffer.from(await diag.arrayBuffer()));
+    assert.deepEqual([readPack(diagFile).manifest.diagnostic?.granularity, readPack(diagFile).manifest.with_events, readPack(diagFile).names.includes("settings.redacted.json")],
+      ["task", true, true]);
+    // 实际交给 pi 的模型：服务用的启动配置（测试用的 fake）里的那个。
+    const launched = launchModelOf(resolveModel(started.service.profile));
+    assert.deepEqual(readPack(diagFile).manifest.diagnostic?.launch_model, launched);
 
     const none = await getJson(port, "/api/v1/tasks/TASK-NOPE/export");
     assert.deepEqual([none.status, none.body.error.code], [404, "not_found"]);

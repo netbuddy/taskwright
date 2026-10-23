@@ -303,6 +303,8 @@ export const api = {
   deleteTask: (taskId: string) => request<{ ok: true; task_id: string }>("POST", `${task(taskId)}/delete`),
   /** 把一个任务导出成数据包的下载地址（以后可以在设置里导入）。 */
   exportTaskHref: (taskId: string) => `${BASE}${task(taskId)}/export`,
+  /** 这个任务的诊断包的下载地址（排查问题用：带运行轨迹、后端日志与设置摘录，不带材料原件）。 */
+  exportDiagnosticHref: (taskId: string) => `${BASE}${task(taskId)}/export?diagnostic=1`,
   deleteMaterial: (taskId: string, path: string) => request<{ ok: true; path: string }>("POST", `${task(taskId)}/materials/delete`, { path }),
   /** 用 file 替换 path 这份材料（只有还没有进入对话的材料换得掉）；返回新材料的路径与被换掉的那份的路径。 */
   replaceMaterial: (taskId: string, path: string, file: File) => {

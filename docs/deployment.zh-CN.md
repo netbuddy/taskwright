@@ -220,6 +220,7 @@ node backend/src/main.mts data export --data <数据目录> --to <数据包>    
 node backend/src/main.mts data export --data <数据目录> --task <任务编号> --to <数据包>      # 一个任务
 node backend/src/main.mts data export --data <数据目录> --task <任务编号> --with-events --to <数据包>  # 一个任务，带上事件归档
 node backend/src/main.mts data export --data <数据目录> --with-materials --to <数据包>       # 整套，带上材料与知识库文档的原件
+node backend/src/main.mts data export --data <数据目录> --task <任务编号> --diagnostic --to <诊断包>   # 一个任务的诊断包
 node backend/src/main.mts data export --data <数据目录> --library <知识库编号> --to <数据包>  # 一个知识库
 node backend/src/main.mts data import --data <数据目录> --from <数据包> [--renumber]
 node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
@@ -229,6 +230,23 @@ node backend/src/main.mts data upgrade --pack <数据包> --to <新的数据包>
 - `data import`：有服务正在用这个数据目录时不做，先停下它（或者经服务的接口导入）；这个数据目录自己有上一版的数据还没有升级时也不做，先运行 `data upgrade`。目标可以是一个空目录。
 - `data upgrade --pack`：把一个旧版本的数据导出的包升到现在的格式，写成一个新的包，原来的包不动；不需要数据目录。导入时遇到旧格式的包会自己先升级，所以这条命令只在想先得到一个新格式的包时才用。
 - 退出码：0 是都做成了（导入时因为已经存在而跳过的不算没有做成）；1 是有任务或知识库没有做成，或者导出时有任务目录没有带上；2 是没有做（参数不对、数据目录正被服务使用、数据包不对或者比这个程序新、目标文件已经在）。
+
+**数据包与诊断包。** 同一种 zip，两种用途：
+
+| | 数据包 | 诊断包 |
+|---|---|---|
+| 用来做什么 | 恢复、换机器、升级之前留一份 | 排查问题，发给帮你排查的人 |
+| 怎样导出 | `data export`；页面上删除确认框里的「先导出存档」 | `data export --task <任务编号> --diagnostic`；页面上任务列表行菜单里的「导出诊断包」（接口 `?diagnostic=1`） |
+| 范围 | 整套、一个任务、一个知识库 | 只能是一个任务 |
+| 对话记录（`pi-sessions/`） | 带 | 带 |
+| 运行轨迹（`pi-events/`） | 缺省不带，`--with-events` 才带 | 一定带 |
+| 材料与知识库原件 | 缺省不带，`--with-materials` 才带 | 一定不带 |
+| 后端日志 | 不带 | 带：数据目录 `logs/` 下文件名日期不晚于导出那天、最后修改不早于任务建立时刻的 `backend-<年月日>.log`，整份，放在包里的 `logs/` 下（日志行没有时刻，所以不切行；文件名的日期是写它的进程启动那天） |
+| 设置摘录 | 不带 | 带：`settings.redacted.json`，只有设置版本、选中的模型、各模型服务的种类、用途、名字、地址与模型清单；从读出的设置里挑这几项写出，不复制设置文件，不含密钥 |
+| 清单文件里另有 | — | `diagnostic` 一节：`purpose`（`full`）、`granularity`（`task`）、`session_id`（按任务的为 null）、`product_version`、`task_db_version`、`model`（设置里选中的语言模型的模型名与模型服务的名字，没有选过为 null）、`launch_model`（后端起助手时实际用的模型：模型名、服务商名与它取自哪里——产品设置、启动配置或助手程序的设置；排查时看这一项；命令行导出不知道服务用的启动配置，为 null）、`log_range`（`{from, to}`：任务建立到导出；一份日志都没有带时为 null） |
+| 文件名 | `<任务编号>.taskwright.zip`（命令行由 `--to` 定） | `diag-<任务编号>-<年月日-时分>.taskwright.zip`（命令行由 `--to` 定） |
+
+诊断包照样可以导入（它是数据包的超集），导入时后端日志与设置摘录不解出来。诊断包不用于升级与恢复：`data upgrade --pack` 遇到诊断包时打印「这是诊断包，升级后只保留数据包部分」，写出的新包是普通的数据包，没有后端日志、设置摘录与 `diagnostic` 一节。
 
 **包里有什么。**
 
