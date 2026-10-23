@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from taskwright_observatory.api import Index, NotFound
 from taskwright_observatory.langfuse import LangfuseLinks
-from taskwright_observatory import evals, taskpage
+from taskwright_observatory import evals, pack as packs, taskpage
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -101,7 +101,11 @@ class IndexCache:
             return self._index
 
 
-def make_handler(cache: IndexCache):
+#: 打开的是数据包、按会话编号要的会话不在包里时的说法。
+NOT_IN_PACK_TEXT = "这段的归档不在包里"
+
+
+def make_handler(cache: IndexCache, pack: "packs.OpenedPack | None" = None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "taskwright-observatory"
 
@@ -138,7 +142,10 @@ def make_handler(cache: IndexCache):
                 else:
                     self._static(path)
             except NotFound as error:
-                self._error(404, str(error))
+                if pack is not None and path.startswith(("/api/sessions/", "/api/taskpage/session/")):
+                    self._error(404, f"{NOT_IN_PACK_TEXT}（{error}）")
+                else:
+                    self._error(404, str(error))
             except BrokenPipeError:
                 pass
             except Exception:                     # noqa: BLE001 - 服务不能被一次出错带倒
@@ -151,9 +158,12 @@ def make_handler(cache: IndexCache):
             if parts and parts[0] == "evals":
                 # 评测的三个读取接口只读演练根目录下的评测结果文件，不用扫归档。
                 return self._evals(parts[1:], query)
+            if parts and parts[0] == "pack":
+                return self._pack(parts[1:])
             index = cache.get()
             if parts == ["overview"]:
-                return self._json(200, index.overview())
+                # 打开的是数据包时多一项「诊断包」：首页顶部那一块的各项（见 pack.py 的 header）。
+                return self._json(200, {**index.overview(), "诊断包": packs.header(pack) if pack is not None else None})
             if parts == ["sessions"]:
                 return self._json(200, index.session_list())
             if len(parts) == 2 and parts[0] == "sessions":
@@ -189,6 +199,21 @@ def make_handler(cache: IndexCache):
                 return self._json(200, {"会话": index.session_options()})
             return self._error(404, f"没有这个读取接口：/api/{route}")
 
+        def _pack(self, rest: list[str]):
+            """打开的数据包里的后端日志与设置摘录。不是打开的包时没有这几个接口。"""
+            if pack is None:
+                return self._error(404, "观测台没有打开数据包（启动时没有给 --pack）。")
+            if rest == ["logs"]:
+                return self._json(200, {"日志": packs.log_files(pack)})
+            if len(rest) == 2 and rest[0] == "logs":
+                try:
+                    return self._json(200, {"文件": rest[1], "全文": packs.log_text(pack, rest[1])})
+                except FileNotFoundError:
+                    raise NotFound(f"包里没有这份日志：{rest[1]}") from None
+            if rest == ["settings"]:
+                return self._json(200, {"设置摘录": packs.settings_excerpt(pack)})
+            return self._error(404, f"没有这个读取接口：/api/pack/{'/'.join(rest)}")
+
         def _evals(self, rest: list[str], query: dict):
             try:
                 if not rest:
@@ -217,12 +242,18 @@ def make_handler(cache: IndexCache):
 
 
 def serve(given_dirs: list[Path], workspaces_dir: Path | None, port: int, host: str,
-          langfuse_base: str, langfuse_project: str, sim_root: Path | None = None) -> None:
-    """given_dirs 是命令行给的目录（归档目录，或者它们的上一级目录），每次读取前重新展开。sim_root 是模拟器的演练根目录，可以不给。"""
+          langfuse_base: str, langfuse_project: str, sim_root: Path | None = None,
+          pack: "packs.OpenedPack | None" = None) -> None:
+    """given_dirs 是命令行给的目录（归档目录，或者它们的上一级目录），每次读取前重新展开。sim_root 是模拟器的演练根目录，可以不给。
+    pack 是 --pack 打开的数据包（见 pack.py），给了时首页显示包头，并多出读包里日志与设置摘录的接口。"""
     cache = IndexCache(given_dirs, workspaces_dir, langfuse_base, langfuse_project, sim_root)
     cache.get()                                   # 先读一遍，启动时就能暴露路径写错之类的问题
-    httpd = ThreadingHTTPServer((host, port), make_handler(cache))
+    httpd = ThreadingHTTPServer((host, port), make_handler(cache, pack))
     print(f"观测台已经起来了，用浏览器打开 http://127.0.0.1:{port}/ 就能看。")
+    if pack is not None:
+        print(f"  打开的包是 {pack.source}，解到 {pack.root}")
+        if pack.too_new:
+            print(f"  {pack.too_new}包里的数据没有解析。")
     if given_dirs:
         print(f"  归档目录是 {'、'.join(str(d) for d in given_dirs)}（上一级目录下新建的任务随时收进来）")
         print(f"  任务目录所在目录是 {workspaces_dir}")

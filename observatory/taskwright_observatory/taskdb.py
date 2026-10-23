@@ -29,6 +29,13 @@ FORMAT_PRE_REVISION = "修订统一之前的格式"
 PRE_REVISION_TEXT = "这个任务是旧格式（修订统一之前建的，条目还按内容版本号记），本版本不支持。"
 FORMAT_UNKNOWN = "认不出的格式"
 
+#: 观测台认得的最新格式（--pack 打开数据包时核对，见 pack.py）：数据包格式与 backend/src/data_pack.ts 的 PACK_FORMAT、
+#: 任务库格式与 agent/src/lib/schema.ts 的 TASK_DB_VERSION 是同一个数，由测试核对。包里的比这里新时不解析，请用导出它的那一版观测台。
+#:   产品版本     数据包格式   任务库格式
+#:   0.6 开发中       1            11
+KNOWN_PACK_FORMAT = 1
+KNOWN_TASK_DB_VERSION = 11
+
 #: 任务定义里不写「材料目录」时用的值，与 agent/src/lib/definition.ts 里的 DEFAULT_MATERIALS_DIR 是同一个。
 DEFAULT_MATERIALS_DIR = "inputs/"
 

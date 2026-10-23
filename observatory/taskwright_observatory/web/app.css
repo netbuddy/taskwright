@@ -132,3 +132,9 @@ a.evcell{text-decoration:none}
 a.evcell:hover .chip{outline:2px solid var(--accent-bg)}
 td.evworse{color:var(--bad);font-weight:600;background:var(--bad-soft)}
 div.evworse{color:var(--bad);font-weight:600;font-size:11.5px}
+/* --pack 打开数据包时首页顶部的包头、后端日志与设置摘录 */
+#pack{margin:0 auto}
+.warn{color:var(--bad, #a33);font-weight:600}
+.packlog{max-height:60vh;overflow:auto}
+.packlog .ln{display:inline-block;min-width:4.5em;color:var(--muted);user-select:none}
+.packlog .hit{background:var(--accent-bg)}

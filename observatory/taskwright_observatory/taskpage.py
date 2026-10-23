@@ -32,6 +32,8 @@ from taskwright_observatory.diffs import diff_list, diff_text
 HERE = Path(__file__).resolve().parent
 RULES_FILE = HERE / "stage_rules.json"
 CHECK_SCRIPT = HERE.parents[1] / "agent" / "src" / "cli" / "check_completion.mts"
+#: 本机没有 node 时，完成条件的核对写这一句，任务页其余照常（「回复」的排版退回原文）。
+NO_NODE_TEXT = "未核对（本机没有 node）"
 #: 「回复」怎样排成几行给人看，只在 agent 里写一份（终端界面与终端客户端也用它），这里经它的命令行入口调用。
 RENDER_SCRIPT = HERE.parents[1] / "agent" / "src" / "cli" / "render.mts"
 
@@ -1113,13 +1115,16 @@ def check_completion(db_path: Path, task_id: str, completion: dict) -> tuple[lis
     概括句也由 agent 那一份函数写，与任务现状消息、查询任务状态工具、网页用同一种说法。"""
     node = shutil.which("node")
     if not node:
-        return None, "本机找不到 node，调不动 agent 里的核对函数，完成条件无从核对。", ""
+        return None, NO_NODE_TEXT, ""
     if not completion:
         return [], "", ""
     try:
         done = subprocess.run([node, str(CHECK_SCRIPT), str(db_path), task_id,
                                json.dumps(completion, ensure_ascii=False)],
                               capture_output=True, text=True, timeout=30)
+    except FileNotFoundError:
+        # 找到的 node 在调用时已经不在了（例如换了版本）：与没有 node 一样说。
+        return None, NO_NODE_TEXT, ""
     except (OSError, subprocess.TimeoutExpired) as error:
         return None, f"调用 agent 的核对函数时出错了：{error}", ""
     if done.returncode != 0:

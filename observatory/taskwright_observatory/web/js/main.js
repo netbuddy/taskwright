@@ -8,6 +8,7 @@ import { renderSession } from "./session.js";
 import { renderTask, renderTaskList } from "./task.js";
 import { renderHealth } from "./health.js";
 import { renderConcepts } from "./concepts.js";
+import { renderPack } from "./pack.js";
 import { renderEvalCompare, renderEvalDetail, renderEvalList } from "./evals.js";
 
 const TABS = [
@@ -39,9 +40,14 @@ function showError(error) {
     `<p class="muted">这是观测台自己出的错，不是被观测的那次运行出的错。</p></section>`;
 }
 
+/** 打开了数据包时为真：包头一块只在首页（会话列表）显示。 */
+let packShown = false;
+
 async function route() {
   const hash = (location.hash || "#/sessions").replace(/^#\//, "");
   const parts = hash.split("/").map(decodeURIComponent);
+  const home = !["health", "concepts", "evals", "session", "task", "tasks"].includes(parts[0]);
+  $("#pack").hidden = !(packShown && home);
   try {
     if (parts[0] === "health") { markTab("health"); await renderHealth(); }
     else if (parts[0] === "concepts") { markTab("concepts"); await renderConcepts(); }
@@ -82,6 +88,9 @@ async function start() {
     `属于 pi 的概念一律用 pi 的名字，含义与出处见<a href="#/concepts">概念对照</a>那一页。` +
     (overview["有没有配 Langfuse"] ? "" :
       "（没有给 Langfuse 的地址与项目标识，所以这一次不显示到 Langfuse 的链接。）");
+  // 打开的是数据包（--pack）时顶部多一块包头；包的格式比观测台新时只显示包头，不读别的。
+  if (!(await renderPack(overview))) return;
+  packShown = !!overview["诊断包"];
   window.addEventListener("hashchange", route);
   await route();
 }
